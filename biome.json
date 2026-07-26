@@ -6,7 +6,13 @@
     "indentStyle": "space"
   },
   "files": {
-    "includes": ["**", "!**/cosmos-export", "!**/dist", "!**/package.json"]
+    "includes": [
+      "**",
+      "!**/.vercel",
+      "!**/cosmos-export",
+      "!**/dist",
+      "!**/package.json"
+    ]
   },
   "javascript": {
     "formatter": {
