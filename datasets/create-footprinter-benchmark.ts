@@ -1,6 +1,7 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { fp } from "@tscircuit/footprinter"
-import type { PcbSmtPad } from "circuit-json"
+import type { PcbCourtyardOutline, PcbSmtPad } from "circuit-json"
+import type { Bounds } from "lib/types"
 
 type BenchmarkPad = Extract<PcbSmtPad, { shape: "circle" }>
 
@@ -32,6 +33,16 @@ interface SelectedPad {
   pad: BenchmarkPad
   row: number
   column: number
+}
+
+interface FootprintGeometry {
+  pads: SelectedPad[]
+  courtyardBounds: Bounds
+}
+
+export interface FootprinterBenchmarkProblem {
+  simpleRouteJson: SimpleRouteJson
+  componentBounds: Readonly<Record<string, Bounds>>
 }
 
 const DIRECTIONS = ["NORTH", "EAST", "SOUTH", "WEST"] as const
@@ -111,7 +122,9 @@ function resolveFootprints(
   })
 }
 
-function getPads(footprint: ResolvedBenchmarkFootprint): SelectedPad[] {
+function getFootprintGeometry(
+  footprint: ResolvedBenchmarkFootprint,
+): FootprintGeometry {
   const { center, gridSize, pitch, padDiameter } = footprint
   const circuitJson = fp()
     .bga(gridSize * gridSize)
@@ -120,6 +133,15 @@ function getPads(footprint: ResolvedBenchmarkFootprint): SelectedPad[] {
     .pad(padDiameter)
     .circularpads(true)
     .soup()
+  const courtyard = circuitJson.find(
+    (element): element is PcbCourtyardOutline =>
+      element.type === "pcb_courtyard_outline",
+  )
+  if (!courtyard) {
+    throw new Error(
+      `Benchmark ${footprint.componentId} did not produce a courtyard outline`,
+    )
+  }
   const pads = circuitJson
     .filter(
       (element): element is BenchmarkPad =>
@@ -127,15 +149,23 @@ function getPads(footprint: ResolvedBenchmarkFootprint): SelectedPad[] {
     )
     .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
 
-  return pads.map((pad, index) => ({
-    pad: {
-      ...pad,
-      x: pad.x + center.x,
-      y: pad.y + center.y,
+  return {
+    pads: pads.map((pad, index) => ({
+      pad: {
+        ...pad,
+        x: pad.x + center.x,
+        y: pad.y + center.y,
+      },
+      row: Math.floor(index / gridSize),
+      column: index % gridSize,
+    })),
+    courtyardBounds: {
+      minX: Math.min(...courtyard.outline.map((point) => point.x)) + center.x,
+      maxX: Math.max(...courtyard.outline.map((point) => point.x)) + center.x,
+      minY: Math.min(...courtyard.outline.map((point) => point.y)) + center.y,
+      maxY: Math.max(...courtyard.outline.map((point) => point.y)) + center.y,
     },
-    row: Math.floor(index / gridSize),
-    column: index % gridSize,
-  }))
+  }
 }
 
 function selectBusPads(
@@ -199,9 +229,9 @@ function getTargetPoint(
   }
 }
 
-export function createFootprinterBenchmarkSrj(
+export function createFootprinterBenchmarkProblem(
   params: BenchmarkParams = {},
-): SimpleRouteJson {
+): FootprinterBenchmarkProblem {
   const layerCount = params.layerCount ?? 4
   if (!Number.isInteger(layerCount) || layerCount < 1) {
     throw new Error("Benchmark layerCount must be a positive integer")
@@ -211,6 +241,7 @@ export function createFootprinterBenchmarkSrj(
   const connections: SimpleRouteJson["connections"] = []
   const buses: NonNullable<SimpleRouteJson["buses"]> = []
   const obstacles: SimpleRouteJson["obstacles"] = []
+  const componentBounds: Record<string, Bounds> = {}
 
   for (
     let footprintIndex = 0;
@@ -218,7 +249,8 @@ export function createFootprinterBenchmarkSrj(
     footprintIndex++
   ) {
     const footprint = footprints[footprintIndex]!
-    const pads = getPads(footprint)
+    const { pads, courtyardBounds } = getFootprintGeometry(footprint)
+    componentBounds[footprint.componentId] = courtyardBounds
     const connectionNameByPad = new Map<BenchmarkPad, string>()
     const targetDistance = Math.max(8, footprint.gridSize * footprint.pitch)
     const connectionPrefix = `FP${String(footprintIndex + 1).padStart(2, "0")}`
@@ -280,6 +312,10 @@ export function createFootprinterBenchmarkSrj(
   }
 
   const xExtents = [
+    ...Object.values(componentBounds).flatMap((bounds) => [
+      bounds.minX,
+      bounds.maxX,
+    ]),
     ...obstacles.flatMap((obstacle) => [
       obstacle.center.x - obstacle.width / 2,
       obstacle.center.x + obstacle.width / 2,
@@ -289,6 +325,10 @@ export function createFootprinterBenchmarkSrj(
     ),
   ]
   const yExtents = [
+    ...Object.values(componentBounds).flatMap((bounds) => [
+      bounds.minY,
+      bounds.maxY,
+    ]),
     ...obstacles.flatMap((obstacle) => [
       obstacle.center.y - obstacle.height / 2,
       obstacle.center.y + obstacle.height / 2,
@@ -299,22 +339,31 @@ export function createFootprinterBenchmarkSrj(
   ]
 
   return {
-    layerCount,
-    minTraceWidth: 0.1,
-    nominalTraceWidth: 0.1,
-    minViaPadDiameter: 0.2,
-    minViaHoleDiameter: 0.1,
-    minTraceToPadEdgeClearance: 0.06,
-    minViaEdgeToPadEdgeClearance: 0.06,
-    defaultObstacleMargin: 0.06,
-    bounds: {
-      minX: Math.min(...xExtents) - 1,
-      maxX: Math.max(...xExtents) + 1,
-      minY: Math.min(...yExtents) - 1,
-      maxY: Math.max(...yExtents) + 1,
+    componentBounds,
+    simpleRouteJson: {
+      layerCount,
+      minTraceWidth: 0.1,
+      nominalTraceWidth: 0.1,
+      minViaPadDiameter: 0.2,
+      minViaHoleDiameter: 0.1,
+      minTraceToPadEdgeClearance: 0.06,
+      minViaEdgeToPadEdgeClearance: 0.06,
+      defaultObstacleMargin: 0.06,
+      bounds: {
+        minX: Math.min(...xExtents) - 1,
+        maxX: Math.max(...xExtents) + 1,
+        minY: Math.min(...yExtents) - 1,
+        maxY: Math.max(...yExtents) + 1,
+      },
+      obstacles,
+      connections,
+      buses,
     },
-    obstacles,
-    connections,
-    buses,
   }
+}
+
+export function createFootprinterBenchmarkSrj(
+  params: BenchmarkParams = {},
+): SimpleRouteJson {
+  return createFootprinterBenchmarkProblem(params).simpleRouteJson
 }

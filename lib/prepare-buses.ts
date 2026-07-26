@@ -64,6 +64,51 @@ function getComponentBounds(obstacles: Obstacle[]): Bounds {
   }
 }
 
+function resolveComponentBounds(
+  grid: ComponentGrid,
+  options: FanoutSolverOptions,
+): Bounds {
+  const requestedBounds = options.componentBounds?.[grid.componentId]
+  if (!requestedBounds) {
+    const inferredMarginX = grid.pitchX * 2.25
+    const inferredMarginY = grid.pitchY * 2.25
+    return {
+      minX: grid.bounds.minX - inferredMarginX,
+      maxX: grid.bounds.maxX + inferredMarginX,
+      minY: grid.bounds.minY - inferredMarginY,
+      maxY: grid.bounds.maxY + inferredMarginY,
+    }
+  }
+
+  const values = [
+    requestedBounds.minX,
+    requestedBounds.maxX,
+    requestedBounds.minY,
+    requestedBounds.maxY,
+  ]
+  if (
+    values.some((value) => !Number.isFinite(value)) ||
+    requestedBounds.minX >= requestedBounds.maxX ||
+    requestedBounds.minY >= requestedBounds.maxY
+  ) {
+    throw new Error(
+      `FanoutSolver: componentBounds for "${grid.componentId}" must contain finite, increasing bounds`,
+    )
+  }
+  if (
+    requestedBounds.minX > grid.bounds.minX + 1e-6 ||
+    requestedBounds.maxX < grid.bounds.maxX - 1e-6 ||
+    requestedBounds.minY > grid.bounds.minY + 1e-6 ||
+    requestedBounds.maxY < grid.bounds.maxY - 1e-6
+  ) {
+    throw new Error(
+      `FanoutSolver: componentBounds for "${grid.componentId}" must contain every component pad`,
+    )
+  }
+
+  return { ...requestedBounds }
+}
+
 function findComponentGrids(obstacles: Obstacle[]): ComponentGrid[] {
   const obstaclesByComponent = new Map<string, Obstacle[]>()
   for (const obstacle of obstacles) {
@@ -382,7 +427,7 @@ export function prepareFanoutBuses(
       connections: preparedConnections,
       componentId: sourceGrid.componentId,
       componentObstacles: sourceGrid.obstacles,
-      componentBounds: sourceGrid.bounds,
+      componentBounds: resolveComponentBounds(sourceGrid, options),
       pitchX: sourceGrid.pitchX,
       pitchY: sourceGrid.pitchY,
     })

@@ -19,6 +19,7 @@
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
     "benchmark": "bun benchmarks/run-benchmark.ts",
+    "render:dataset": "bun scripts/render-dataset-pngs.ts",
     "format": "biome format --write .",
     "format:check": "biome format ."
   },

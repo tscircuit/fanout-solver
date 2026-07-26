@@ -14,6 +14,9 @@ decision atomically.
   `busId` and names such as `BUS_DDR_01`.
 - Detects rectangular BGA pad grids through obstacle `componentId` metadata.
 - Handles buses from multiple BGA footprints in the same routing problem.
+- Routes exits beyond each component courtyard when `componentBounds` are
+  supplied. Without explicit bounds, it conservatively inflates the detected
+  pad grid from its pitch.
 - Infers one outward direction per bus from the bus endpoints, or accepts an
   explicit direction override.
 - Enumerates combinations of the copper layers implied by `layerCount`.
@@ -40,6 +43,9 @@ import { FanoutSolver } from "@tscircuit/fanout-solver"
 
 const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   maxLayerCombinations: 256,
+  componentBounds: {
+    "bga-01": { minX: -4.7, maxX: 4.7, minY: -4.7, maxY: 4.7 },
+  },
   busDirections: {
     ddr: "right",
   },
@@ -98,7 +104,9 @@ solved as one `SimpleRouteJson`.
 | `sample005` | 5 | 236 | 76 |
 
 The Cosmos debugger provides Previous/Next controls and direct sample tabs. It
-also stores the selected sample in the `sample` URL parameter.
+also stores the selected sample in the `sample` URL parameter. Dataset
+component bounds come from each footprinter-generated
+`pcb_courtyard_outline`.
 
 ## Development
 
@@ -107,12 +115,15 @@ bun install
 bun run typecheck
 bun test
 bun run benchmark
+bun run render:dataset
 bun run start
 ```
 
 The benchmark runs every Dataset 01 sample and reports footprint, pad,
 connection, routing, and layer-assignment metrics. `bun run start` opens the
-same dataset in the standard tscircuit solver debugger.
+same dataset in the standard tscircuit solver debugger. `bun run
+render:dataset` writes a `graphics-debug` PNG for each sample with red courtyard
+boundaries and green fanout-exit markers.
 
 ## Scope
 

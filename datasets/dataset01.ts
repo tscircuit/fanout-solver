@@ -1,7 +1,8 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import type { FanoutSolverOptions } from "lib/types"
 import {
   type BenchmarkFootprintParams,
-  createFootprinterBenchmarkSrj,
+  createFootprinterBenchmarkProblem,
 } from "./create-footprinter-benchmark"
 
 export interface FanoutDatasetSample {
@@ -10,6 +11,7 @@ export interface FanoutDatasetSample {
   description: string
   footprintCount: number
   simpleRouteJson: SimpleRouteJson
+  solverOptions: FanoutSolverOptions
 }
 
 const FOOTPRINT_CENTERS = [
@@ -34,6 +36,10 @@ export const fanoutDataset01: FanoutDatasetSample[] = Array.from(
   { length: 5 },
   (_, index) => {
     const footprintCount = index + 1
+    const problem = createFootprinterBenchmarkProblem({
+      footprints: createFootprints(footprintCount),
+      layerCount: 4,
+    })
     return {
       id: `sample${String(footprintCount).padStart(3, "0")}`,
       name: `${footprintCount} BGA footprint${footprintCount === 1 ? "" : "s"}`,
@@ -41,10 +47,10 @@ export const fanoutDataset01: FanoutDatasetSample[] = Array.from(
         footprintCount === 1 ? "" : "s"
       } in one SimpleRouteJson.`,
       footprintCount,
-      simpleRouteJson: createFootprinterBenchmarkSrj({
-        footprints: createFootprints(footprintCount),
-        layerCount: 4,
-      }),
+      simpleRouteJson: problem.simpleRouteJson,
+      solverOptions: {
+        componentBounds: problem.componentBounds,
+      },
     }
   },
 )

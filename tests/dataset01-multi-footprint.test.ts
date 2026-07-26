@@ -23,7 +23,10 @@ test("dataset01 solves samples containing one through five footprints", () => {
       expectedFootprintCount * 4,
     )
 
-    const solver = new FanoutSolver(sample.simpleRouteJson)
+    const solver = new FanoutSolver(
+      sample.simpleRouteJson,
+      sample.solverOptions,
+    )
     expect(
       new Set(solver.preparedBuses.map((bus) => bus.componentId)).size,
     ).toBe(expectedFootprintCount)

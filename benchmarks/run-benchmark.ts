@@ -4,7 +4,7 @@ import { fanoutDataset01 } from "../datasets/dataset01"
 const rows: Array<Record<string, string | number>> = []
 for (const sample of fanoutDataset01) {
   const srj = sample.simpleRouteJson
-  const solver = new FanoutSolver(srj)
+  const solver = new FanoutSolver(srj, sample.solverOptions)
   const startTime = performance.now()
   solver.solve()
   const elapsedMilliseconds = performance.now() - startTime

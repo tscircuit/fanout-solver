@@ -142,7 +142,12 @@ export default function FanoutSolverPage() {
 
       <GenericSolverDebugger
         key={selectedSample.id}
-        createSolver={() => new FanoutSolver(selectedSample.simpleRouteJson)}
+        createSolver={() =>
+          new FanoutSolver(
+            selectedSample.simpleRouteJson,
+            selectedSample.solverOptions,
+          )
+        }
         animationSpeed={80}
       />
     </div>

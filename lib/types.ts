@@ -16,6 +16,7 @@ export interface FanoutBusSpec extends SimpleRouteBus {
 export interface FanoutSolverOptions {
   buses?: FanoutBusSpec[]
   busDirections?: Readonly<Record<string, FanoutDirection>>
+  componentBounds?: Readonly<Record<string, Bounds>>
   escapeLayers?: string[]
   maxLayerCombinations?: number
   traceWidth?: number
