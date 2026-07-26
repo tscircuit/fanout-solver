@@ -43,6 +43,7 @@ interface FootprintGeometry {
 export interface FootprinterBenchmarkProblem {
   simpleRouteJson: SimpleRouteJson
   componentBounds: Readonly<Record<string, Bounds>>
+  sharedBoundary: Bounds
 }
 
 const DIRECTIONS = ["NORTH", "EAST", "SOUTH", "WEST"] as const
@@ -168,65 +169,93 @@ function getFootprintGeometry(
   }
 }
 
-function selectBusPads(
-  pads: SelectedPad[],
-  gridSize: number,
-  direction: BenchmarkDirection,
-): SelectedPad[] {
-  switch (direction) {
-    case "NORTH":
-      return pads.filter(
-        ({ row, column }) =>
-          row === gridSize - 2 && column >= 1 && column <= gridSize - 2,
-      )
-    case "SOUTH":
-      return pads.filter(
-        ({ row, column }) => row === 1 && column >= 1 && column <= gridSize - 2,
-      )
-    case "EAST":
-      return pads.filter(
-        ({ row, column }) =>
-          column === gridSize - 2 && row >= 2 && row <= gridSize - 3,
-      )
-    case "WEST":
-      return pads.filter(
-        ({ row, column }) => column === 1 && row >= 2 && row <= gridSize - 3,
-      )
-  }
-}
-
 function getTargetPoint(
   pad: BenchmarkPad,
-  footprint: ResolvedBenchmarkFootprint,
   direction: BenchmarkDirection,
-  targetDistance: number,
+  sharedBoundary: Bounds,
+  targetMargin: number,
 ): { x: number; y: number; layer: string } {
   switch (direction) {
     case "NORTH":
       return {
         x: pad.x,
-        y: footprint.center.y + targetDistance,
+        y: sharedBoundary.maxY + targetMargin,
         layer: "top",
       }
     case "SOUTH":
       return {
         x: pad.x,
-        y: footprint.center.y - targetDistance,
+        y: sharedBoundary.minY - targetMargin,
         layer: "top",
       }
     case "EAST":
       return {
-        x: footprint.center.x + targetDistance,
+        x: sharedBoundary.maxX + targetMargin,
         y: pad.y,
         layer: "top",
       }
     case "WEST":
       return {
-        x: footprint.center.x - targetDistance,
+        x: sharedBoundary.minX - targetMargin,
         y: pad.y,
         layer: "top",
       }
   }
+}
+
+interface BenchmarkBus {
+  busId: string
+  direction: BenchmarkDirection
+  pads: SelectedPad[]
+}
+
+function getPrimaryDirection(
+  footprint: ResolvedBenchmarkFootprint,
+  layoutCenter: { x: number; y: number },
+): BenchmarkDirection | null {
+  const dx = footprint.center.x - layoutCenter.x
+  const dy = footprint.center.y - layoutCenter.y
+  if (Math.hypot(dx, dy) < 1e-6) return null
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "EAST" : "WEST"
+  return dy >= 0 ? "NORTH" : "SOUTH"
+}
+
+function createBenchmarkBuses(params: {
+  footprint: ResolvedBenchmarkFootprint
+  footprintIndex: number
+  pads: SelectedPad[]
+  layoutCenter: { x: number; y: number }
+}): BenchmarkBus[] {
+  const { footprint, footprintIndex, pads, layoutCenter } = params
+  const connectionPrefix = `FP${String(footprintIndex + 1).padStart(2, "0")}`
+  const primaryDirection = getPrimaryDirection(footprint, layoutCenter)
+  const buses: BenchmarkBus[] = []
+
+  if (primaryDirection === "EAST" || primaryDirection === "WEST") {
+    for (let column = 0; column < footprint.gridSize; column++) {
+      buses.push({
+        busId: `${footprint.componentId}:${primaryDirection.toLowerCase()}:column-${String(column + 1).padStart(2, "0")}`,
+        direction: primaryDirection,
+        pads: pads.filter((pad) => pad.column === column),
+      })
+    }
+    return buses
+  }
+
+  for (let row = 0; row < footprint.gridSize; row++) {
+    const direction =
+      primaryDirection ?? (row < footprint.gridSize / 2 ? "SOUTH" : "NORTH")
+    buses.push({
+      busId: `${footprint.componentId}:${direction.toLowerCase()}:row-${String(row + 1).padStart(2, "0")}`,
+      direction,
+      pads: pads.filter((pad) => pad.row === row),
+    })
+  }
+
+  if (buses.some((bus) => bus.pads.length === 0)) {
+    throw new Error(`${connectionPrefix} produced an empty benchmark bus`)
+  }
+  return buses
 }
 
 export function createFootprinterBenchmarkProblem(
@@ -238,10 +267,45 @@ export function createFootprinterBenchmarkProblem(
   }
 
   const footprints = resolveFootprints(params)
+  const geometries = footprints.map((footprint) =>
+    getFootprintGeometry(footprint),
+  )
   const connections: SimpleRouteJson["connections"] = []
   const buses: NonNullable<SimpleRouteJson["buses"]> = []
   const obstacles: SimpleRouteJson["obstacles"] = []
-  const componentBounds: Record<string, Bounds> = {}
+  const componentBounds = Object.fromEntries(
+    footprints.map((footprint, index) => [
+      footprint.componentId,
+      geometries[index]!.courtyardBounds,
+    ]),
+  )
+  const boundaryMargin =
+    Math.max(...footprints.map((footprint) => footprint.pitch)) * 4
+  const sharedBoundary: Bounds = {
+    minX:
+      Math.min(...Object.values(componentBounds).map((bounds) => bounds.minX)) -
+      boundaryMargin,
+    maxX:
+      Math.max(...Object.values(componentBounds).map((bounds) => bounds.maxX)) +
+      boundaryMargin,
+    minY:
+      Math.min(...Object.values(componentBounds).map((bounds) => bounds.minY)) -
+      boundaryMargin,
+    maxY:
+      Math.max(...Object.values(componentBounds).map((bounds) => bounds.maxY)) +
+      boundaryMargin,
+  }
+  const layoutCenter = {
+    x:
+      (Math.min(...footprints.map((footprint) => footprint.center.x)) +
+        Math.max(...footprints.map((footprint) => footprint.center.x))) /
+      2,
+    y:
+      (Math.min(...footprints.map((footprint) => footprint.center.y)) +
+        Math.max(...footprints.map((footprint) => footprint.center.y))) /
+      2,
+  }
+  const targetMargin = boundaryMargin
 
   for (
     let footprintIndex = 0;
@@ -249,20 +313,21 @@ export function createFootprinterBenchmarkProblem(
     footprintIndex++
   ) {
     const footprint = footprints[footprintIndex]!
-    const { pads, courtyardBounds } = getFootprintGeometry(footprint)
-    componentBounds[footprint.componentId] = courtyardBounds
+    const { pads } = geometries[footprintIndex]!
     const connectionNameByPad = new Map<BenchmarkPad, string>()
-    const targetDistance = Math.max(8, footprint.gridSize * footprint.pitch)
     const connectionPrefix = `FP${String(footprintIndex + 1).padStart(2, "0")}`
 
-    for (const direction of DIRECTIONS) {
-      const busPads = selectBusPads(pads, footprint.gridSize, direction)
+    for (const benchmarkBus of createBenchmarkBuses({
+      footprint,
+      footprintIndex,
+      pads,
+      layoutCenter,
+    })) {
       const connectionNames: string[] = []
-      for (let index = 0; index < busPads.length; index++) {
-        const selectedPad = busPads[index]!
-        const connectionName = `BUS_${connectionPrefix}_${direction}_${String(
-          index + 1,
-        ).padStart(2, "0")}`
+      for (const selectedPad of benchmarkBus.pads) {
+        const connectionName = `BUS_${connectionPrefix}_${benchmarkBus.direction}_R${String(
+          selectedPad.row + 1,
+        ).padStart(2, "0")}_C${String(selectedPad.column + 1).padStart(2, "0")}`
         const pointId = `${footprint.componentId}:${selectedPad.row}:${selectedPad.column}`
         connectionNameByPad.set(selectedPad.pad, connectionName)
         connectionNames.push(connectionName)
@@ -278,15 +343,15 @@ export function createFootprinterBenchmarkProblem(
             },
             getTargetPoint(
               selectedPad.pad,
-              footprint,
-              direction,
-              targetDistance,
+              benchmarkBus.direction,
+              sharedBoundary,
+              targetMargin,
             ),
           ],
         })
       }
       buses.push({
-        busId: `${footprint.componentId}:${direction.toLowerCase()}`,
+        busId: benchmarkBus.busId,
         connectionNames,
       })
     }
@@ -312,6 +377,8 @@ export function createFootprinterBenchmarkProblem(
   }
 
   const xExtents = [
+    sharedBoundary.minX,
+    sharedBoundary.maxX,
     ...Object.values(componentBounds).flatMap((bounds) => [
       bounds.minX,
       bounds.maxX,
@@ -325,6 +392,8 @@ export function createFootprinterBenchmarkProblem(
     ),
   ]
   const yExtents = [
+    sharedBoundary.minY,
+    sharedBoundary.maxY,
     ...Object.values(componentBounds).flatMap((bounds) => [
       bounds.minY,
       bounds.maxY,
@@ -340,6 +409,7 @@ export function createFootprinterBenchmarkProblem(
 
   return {
     componentBounds,
+    sharedBoundary,
     simpleRouteJson: {
       layerCount,
       minTraceWidth: 0.1,

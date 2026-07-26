@@ -8,7 +8,7 @@ test("escape vias sit in the gap between adjacent BGA pads", () => {
   solver.solve()
   const output = solver.getOutput()
   const connection = srj.connections.find(
-    (candidate) => candidate.name === "BUS_FP01_NORTH_01",
+    (candidate) => candidate.name === "BUS_FP01_SOUTH_R04_C04",
   )!
   const sourcePoint = connection.pointsToConnect[0]!
   const trace = output.fanoutTraces.find(
@@ -28,14 +28,14 @@ test("escape vias sit in the gap between adjacent BGA pads", () => {
   const sourcePadIndex = padsInColumn.findIndex(
     (obstacle) => Math.abs(obstacle.center.y - sourcePoint.y) < 1e-6,
   )
-  const outwardNeighbor = padsInColumn[sourcePadIndex + 1]!
+  const outwardNeighbor = padsInColumn[sourcePadIndex - 1]!
 
   expect(via.x).toBeCloseTo(sourcePoint.x, 8)
-  expect(via.y).toBeGreaterThan(sourcePoint.y)
-  expect(via.y).toBeLessThan(outwardNeighbor.center.y)
+  expect(via.y).toBeLessThan(sourcePoint.y)
+  expect(via.y).toBeGreaterThan(outwardNeighbor.center.y)
   expect(via.y).toBeCloseTo((sourcePoint.y + outwardNeighbor.center.y) / 2, 8)
   expect(
-    outwardNeighbor.center.y - outwardNeighbor.height / 2 - via.y,
+    via.y - (outwardNeighbor.center.y + outwardNeighbor.height / 2),
   ).toBeGreaterThanOrEqual(
     (via.via_diameter ?? 0) / 2 + (srj.minViaEdgeToPadEdgeClearance ?? 0),
   )

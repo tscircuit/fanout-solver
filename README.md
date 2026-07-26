@@ -3,20 +3,20 @@
 BGA fanout preprocessor for
 [`SimpleRouteJson`](https://github.com/tscircuit/tscircuit-autorouter).
 
-`FanoutSolver` routes short pad-to-breakout prefixes before the general-purpose
-autorouter runs. It can put an escape via in the gap between adjacent BGA pads,
-routes every member of a bus in the same direction, and treats each bus-layer
-decision atomically.
+`FanoutSolver` routes every connected BGA pad to one shared breakout boundary
+before the general-purpose autorouter runs. It can put an escape via in the gap
+between adjacent BGA pads, routes every member of a bus in the same direction,
+and treats each bus-layer decision atomically.
 
 ## Behavior
 
 - Uses `SimpleRouteJson.buses` when present. It also understands a point
   `busId` and names such as `BUS_DDR_01`.
 - Detects rectangular BGA pad grids through obstacle `componentId` metadata.
-- Handles buses from multiple BGA footprints in the same routing problem.
-- Routes exits beyond each component courtyard when `componentBounds` are
-  supplied. Without explicit bounds, it conservatively inflates the detected
-  pad grid from its pitch.
+- Handles multiple BGA footprints inside one shared breakout boundary.
+- Routes perimeter and inner-matrix pads; the benchmark connects every pad.
+- Uses `sharedBoundary` as the common exit rectangle. Without one, it infers a
+  shared rectangle around all detected component bounds and pad grids.
 - Infers one outward direction per bus from the bus endpoints, or accepts an
   explicit direction override.
 - Enumerates combinations of the copper layers implied by `layerCount`.
@@ -43,6 +43,12 @@ import { FanoutSolver } from "@tscircuit/fanout-solver"
 
 const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   maxLayerCombinations: 256,
+  sharedBoundary: {
+    minX: -25,
+    maxX: 25,
+    minY: -25,
+    maxY: 25,
+  },
   componentBounds: {
     "bga-01": { minX: -4.7, maxX: 4.7, minY: -4.7, maxY: 4.7 },
   },
@@ -97,16 +103,16 @@ solved as one `SimpleRouteJson`.
 
 | Sample | Footprints | Pads | Connections |
 | --- | ---: | ---: | ---: |
-| `sample001` | 1 | 64 | 20 |
-| `sample002` | 2 | 100 | 32 |
-| `sample003` | 3 | 136 | 44 |
-| `sample004` | 4 | 200 | 64 |
-| `sample005` | 5 | 236 | 76 |
+| `sample001` | 1 | 64 | 64 |
+| `sample002` | 2 | 100 | 100 |
+| `sample003` | 3 | 136 | 136 |
+| `sample004` | 4 | 200 | 200 |
+| `sample005` | 5 | 236 | 236 |
 
 The Cosmos debugger provides Previous/Next controls and direct sample tabs. It
-also stores the selected sample in the `sample` URL parameter. Dataset
-component bounds come from each footprinter-generated
-`pcb_courtyard_outline`.
+also stores the selected sample in the `sample` URL parameter. Each sample has
+one shared boundary around all of its footprints, and component bounds come
+from each footprinter-generated `pcb_courtyard_outline`.
 
 ## Development
 
@@ -122,8 +128,8 @@ bun run start
 The benchmark runs every Dataset 01 sample and reports footprint, pad,
 connection, routing, and layer-assignment metrics. `bun run start` opens the
 same dataset in the standard tscircuit solver debugger. `bun run
-render:dataset` writes a `graphics-debug` PNG for each sample with red courtyard
-boundaries and green fanout-exit markers.
+render:dataset` writes a `graphics-debug` PNG for each sample with a red shared
+boundary, gray component courtyards, and green fanout-exit markers.
 
 ## Scope
 

@@ -109,6 +109,69 @@ function resolveComponentBounds(
   return { ...requestedBounds }
 }
 
+function validateSharedBoundary(
+  boundary: Bounds,
+  componentGrids: ComponentGrid[],
+): Bounds {
+  const values = [boundary.minX, boundary.maxX, boundary.minY, boundary.maxY]
+  if (
+    values.some((value) => !Number.isFinite(value)) ||
+    boundary.minX >= boundary.maxX ||
+    boundary.minY >= boundary.maxY
+  ) {
+    throw new Error(
+      "FanoutSolver: sharedBoundary must contain finite, increasing bounds",
+    )
+  }
+  for (const grid of componentGrids) {
+    if (
+      boundary.minX > grid.bounds.minX + 1e-6 ||
+      boundary.maxX < grid.bounds.maxX - 1e-6 ||
+      boundary.minY > grid.bounds.minY + 1e-6 ||
+      boundary.maxY < grid.bounds.maxY - 1e-6
+    ) {
+      throw new Error(
+        `FanoutSolver: sharedBoundary must contain every pad of component "${grid.componentId}"`,
+      )
+    }
+  }
+  return { ...boundary }
+}
+
+function resolveSharedBoundary(
+  componentGrids: ComponentGrid[],
+  options: FanoutSolverOptions,
+): Bounds {
+  if (options.sharedBoundary) {
+    return validateSharedBoundary(options.sharedBoundary, componentGrids)
+  }
+
+  const componentBounds = componentGrids.map((grid) =>
+    resolveComponentBounds(grid, options),
+  )
+  const maximumPitch = Math.max(
+    ...componentGrids.flatMap((grid) => [grid.pitchX, grid.pitchY]),
+  )
+  const inferredMargin = maximumPitch * 2.25
+  return validateSharedBoundary(
+    {
+      minX:
+        Math.min(...componentBounds.map((bounds) => bounds.minX)) -
+        inferredMargin,
+      maxX:
+        Math.max(...componentBounds.map((bounds) => bounds.maxX)) +
+        inferredMargin,
+      minY:
+        Math.min(...componentBounds.map((bounds) => bounds.minY)) -
+        inferredMargin,
+      maxY:
+        Math.max(...componentBounds.map((bounds) => bounds.maxY)) +
+        inferredMargin,
+    },
+    componentGrids,
+  )
+}
+
 function findComponentGrids(obstacles: Obstacle[]): ComponentGrid[] {
   const obstaclesByComponent = new Map<string, Obstacle[]>()
   for (const obstacle of obstacles) {
@@ -394,6 +457,7 @@ export function prepareFanoutBuses(
     srj.connections.map((connection, index) => [connection.name, index]),
   )
   const buses: PreparedBus[] = []
+  const sharedBoundary = resolveSharedBoundary(componentGrids, options)
 
   for (const busSpec of resolveBusSpecs(srj, options)) {
     const connections = busSpec.connectionNames.map((connectionName) => {
@@ -428,6 +492,9 @@ export function prepareFanoutBuses(
       componentId: sourceGrid.componentId,
       componentObstacles: sourceGrid.obstacles,
       componentBounds: resolveComponentBounds(sourceGrid, options),
+      sharedBoundary,
+      xCoordinates: [...sourceGrid.xCoordinates],
+      yCoordinates: [...sourceGrid.yCoordinates],
       pitchX: sourceGrid.pitchX,
       pitchY: sourceGrid.pitchY,
     })

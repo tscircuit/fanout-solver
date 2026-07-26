@@ -33,75 +33,10 @@ interface RouteBusParams {
   breakoutMargin: number
 }
 
-interface TrackLayout {
-  spread: number
-  offsetSteps: number
-  reverse: boolean
-  preserveSourceSpacing: boolean
+interface TrackCandidate {
+  value: number
+  kind: "corridor" | "gap" | "margin"
 }
-
-const TRACK_LAYOUTS: TrackLayout[] = [
-  {
-    spread: 1,
-    offsetSteps: 0,
-    reverse: false,
-    preserveSourceSpacing: true,
-  },
-  {
-    spread: 1.25,
-    offsetSteps: 0,
-    reverse: false,
-    preserveSourceSpacing: true,
-  },
-  {
-    spread: 1.5,
-    offsetSteps: 0,
-    reverse: false,
-    preserveSourceSpacing: true,
-  },
-  {
-    spread: 1,
-    offsetSteps: 0,
-    reverse: false,
-    preserveSourceSpacing: false,
-  },
-  {
-    spread: 1.25,
-    offsetSteps: 0,
-    reverse: false,
-    preserveSourceSpacing: false,
-  },
-  {
-    spread: 1.5,
-    offsetSteps: 0,
-    reverse: false,
-    preserveSourceSpacing: false,
-  },
-  {
-    spread: 1,
-    offsetSteps: -0.5,
-    reverse: false,
-    preserveSourceSpacing: false,
-  },
-  {
-    spread: 1,
-    offsetSteps: 0.5,
-    reverse: false,
-    preserveSourceSpacing: false,
-  },
-  {
-    spread: 2,
-    offsetSteps: 0,
-    reverse: false,
-    preserveSourceSpacing: false,
-  },
-  {
-    spread: 1.25,
-    offsetSteps: 0,
-    reverse: true,
-    preserveSourceSpacing: false,
-  },
-]
 
 function isHorizontal(direction: FanoutDirection): boolean {
   return direction === "left" || direction === "right"
@@ -135,13 +70,13 @@ function makePoint(
 function getExitAxis(bus: PreparedBus, breakoutMargin: number): number {
   switch (bus.direction) {
     case "right":
-      return bus.componentBounds.maxX + breakoutMargin
+      return bus.sharedBoundary.maxX + breakoutMargin
     case "left":
-      return bus.componentBounds.minX - breakoutMargin
+      return bus.sharedBoundary.minX - breakoutMargin
     case "up":
-      return bus.componentBounds.maxY + breakoutMargin
+      return bus.sharedBoundary.maxY + breakoutMargin
     case "down":
-      return bus.componentBounds.minY - breakoutMargin
+      return bus.sharedBoundary.minY - breakoutMargin
   }
 }
 
@@ -161,77 +96,145 @@ function pointIsInsideBounds(
   )
 }
 
-function getTrackMap(params: {
+function getTracksInSpan(
+  minimum: number,
+  maximum: number,
+  traceWidth: number,
+  clearance: number,
+  kind: TrackCandidate["kind"],
+): TrackCandidate[] {
+  const freeWidth = maximum - minimum
+  const trackCount = Math.floor(
+    (freeWidth - clearance) / (traceWidth + clearance) + 1e-9,
+  )
+  if (trackCount < 1) return []
+  const usedWidth = trackCount * traceWidth + (trackCount - 1) * clearance
+  const firstTrack = minimum + (freeWidth - usedWidth) / 2 + traceWidth / 2
+  return Array.from({ length: trackCount }, (_, index) => ({
+    value: firstTrack + index * (traceWidth + clearance),
+    kind,
+  }))
+}
+
+function getTrackCandidates(params: {
   bus: PreparedBus
+  connection: PreparedConnection
   traceWidth: number
   clearance: number
-  layout: TrackLayout
-}): Map<string, number> {
-  const { bus, traceWidth, clearance, layout } = params
-  const sign = directionSign(bus.direction)
-  const sortedConnections = [...bus.connections].sort((a, b) => {
-    const perpendicularDifference =
-      getPerpendicularAxis(a.sourcePoint, bus.direction) -
-      getPerpendicularAxis(b.sourcePoint, bus.direction)
-    if (Math.abs(perpendicularDifference) > 1e-6) {
-      return perpendicularDifference
+}): TrackCandidate[] {
+  const { bus, connection, traceWidth, clearance } = params
+  const coordinates = (
+    isHorizontal(bus.direction) ? bus.yCoordinates : bus.xCoordinates
+  ).toSorted((a, b) => a - b)
+  const obstacleHalfSize = Math.max(
+    ...bus.componentObstacles.map((obstacle) =>
+      isHorizontal(bus.direction) ? obstacle.height / 2 : obstacle.width / 2,
+    ),
+  )
+  const boundaryMinimum = isHorizontal(bus.direction)
+    ? bus.sharedBoundary.minY
+    : bus.sharedBoundary.minX
+  const boundaryMaximum = isHorizontal(bus.direction)
+    ? bus.sharedBoundary.maxY
+    : bus.sharedBoundary.maxX
+  const perpendicularPitch = isHorizontal(bus.direction)
+    ? bus.pitchY
+    : bus.pitchX
+  const maximumJog = perpendicularPitch * 2
+  const ladderMinimum = Math.max(
+    boundaryMinimum,
+    coordinates[0]! - obstacleHalfSize - maximumJog,
+  )
+  const ladderMaximum = Math.min(
+    boundaryMaximum,
+    coordinates.at(-1)! + obstacleHalfSize + maximumJog,
+  )
+  const tracks: TrackCandidate[] = [
+    ...getTracksInSpan(
+      ladderMinimum,
+      coordinates[0]! - obstacleHalfSize,
+      traceWidth,
+      clearance,
+      "margin",
+    ),
+  ]
+  for (let index = 0; index < coordinates.length; index++) {
+    tracks.push({ value: coordinates[index]!, kind: "corridor" })
+    if (index < coordinates.length - 1) {
+      tracks.push(
+        ...getTracksInSpan(
+          coordinates[index]! + obstacleHalfSize,
+          coordinates[index + 1]! - obstacleHalfSize,
+          traceWidth,
+          clearance,
+          "gap",
+        ),
+      )
     }
-    return (
+  }
+  tracks.push(
+    ...getTracksInSpan(
+      coordinates.at(-1)! + obstacleHalfSize,
+      ladderMaximum,
+      traceWidth,
+      clearance,
+      "margin",
+    ),
+  )
+
+  const sourceTrack = getPerpendicularAxis(
+    connection.sourcePoint,
+    bus.direction,
+  )
+  const componentCenter = (coordinates[0]! + coordinates.at(-1)!) / 2
+  return tracks
+    .filter((track) => Math.abs(track.value - sourceTrack) <= maximumJog + 1e-9)
+    .sort(
+      (a, b) =>
+        Math.abs(a.value - sourceTrack) -
+        Math.abs(b.value - sourceTrack) -
+        (Math.abs(a.value - componentCenter) -
+          Math.abs(b.value - componentCenter)) *
+          1e-3,
+    )
+}
+
+function getConnectionOrders(bus: PreparedBus): PreparedConnection[][] {
+  const sign = directionSign(bus.direction)
+  const outwardFirst = [...bus.connections].sort((a, b) => {
+    const directionalDifference =
       sign *
       (getAxis(b.sourcePoint, bus.direction) -
         getAxis(a.sourcePoint, bus.direction))
+    if (Math.abs(directionalDifference) > 1e-6) {
+      return directionalDifference
+    }
+    return (
+      getPerpendicularAxis(a.sourcePoint, bus.direction) -
+      getPerpendicularAxis(b.sourcePoint, bus.direction)
     )
   })
-  if (layout.reverse) sortedConnections.reverse()
-
-  const trackPitch = (traceWidth + clearance) * layout.spread
-  if (layout.preserveSourceSpacing) {
-    const connectionsBySourceTrack = new Map<number, PreparedConnection[]>()
-    for (const connection of sortedConnections) {
-      const sourceTrack = getPerpendicularAxis(
-        connection.sourcePoint,
-        bus.direction,
-      )
-      const trackKey = Math.round(sourceTrack * 1e6)
-      const sharingConnections = connectionsBySourceTrack.get(trackKey) ?? []
-      sharingConnections.push(connection)
-      connectionsBySourceTrack.set(trackKey, sharingConnections)
-    }
-    const trackEntries: Array<[string, number]> = []
-    for (const sharingConnections of connectionsBySourceTrack.values()) {
-      const sourceTrack = getPerpendicularAxis(
-        sharingConnections[0]!.sourcePoint,
-        bus.direction,
-      )
-      for (let index = 0; index < sharingConnections.length; index++) {
-        trackEntries.push([
-          sharingConnections[index]!.connection.name,
-          sourceTrack -
-            ((sharingConnections.length - 1) * trackPitch) / 2 +
-            index * trackPitch +
-            layout.offsetSteps * trackPitch,
-        ])
-      }
-    }
-    return new Map(trackEntries)
-  }
-
-  const center =
-    bus.connections.reduce(
-      (sum, connection) =>
-        sum + getPerpendicularAxis(connection.sourcePoint, bus.direction),
-      0,
-    ) / bus.connections.length
-  const firstTrack =
-    center -
-    ((sortedConnections.length - 1) * trackPitch) / 2 +
-    layout.offsetSteps * trackPitch
-  return new Map(
-    sortedConnections.map((connection, index) => [
-      connection.connection.name,
-      firstTrack + index * trackPitch,
-    ]),
+  const perpendicularFirst = [...bus.connections].sort(
+    (a, b) =>
+      getPerpendicularAxis(a.sourcePoint, bus.direction) -
+        getPerpendicularAxis(b.sourcePoint, bus.direction) ||
+      sign *
+        (getAxis(b.sourcePoint, bus.direction) -
+          getAxis(a.sourcePoint, bus.direction)),
   )
+  const orders = [
+    outwardFirst,
+    [...outwardFirst].reverse(),
+    perpendicularFirst,
+    [...perpendicularFirst].reverse(),
+  ]
+  for (let offset = 1; offset < Math.min(outwardFirst.length, 8); offset++) {
+    orders.push([
+      ...outwardFirst.slice(offset),
+      ...outwardFirst.slice(0, offset),
+    ])
+  }
+  return orders
 }
 
 function appendSegment(
@@ -531,49 +534,47 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
   } = params
   const exitAxis = getExitAxis(bus, breakoutMargin)
 
-  for (const layout of TRACK_LAYOUTS) {
-    const trackByConnectionName = getTrackMap({
-      bus,
-      traceWidth,
-      clearance,
-      layout,
-    })
+  for (const connectionOrder of getConnectionOrders(bus)) {
     const candidatePlans: FanoutRoutePlan[] = []
-    let layoutIsClear = true
-    for (const preparedConnection of bus.connections) {
-      const track = trackByConnectionName.get(
-        preparedConnection.connection.name,
-      )
-      if (track === undefined) {
-        throw new Error(
-          `FanoutSolver: no track was assigned to "${preparedConnection.connection.name}"`,
-        )
-      }
-      const plan = buildPlan({
-        preparedConnection,
+    let orderIsClear = true
+    for (const preparedConnection of connectionOrder) {
+      let acceptedPlan: FanoutRoutePlan | null = null
+      for (const track of getTrackCandidates({
         bus,
-        targetLayer,
-        track,
-        exitAxis,
-        layerNames,
+        connection: preparedConnection,
         traceWidth,
-        viaDiameter,
-        viaHoleDiameter,
-      })
-      if (
-        !planIsClear({
-          plan,
-          otherPlans: [...acceptedPlans, ...candidatePlans],
-          srj,
-          clearance,
+        clearance,
+      })) {
+        const plan = buildPlan({
+          preparedConnection,
+          bus,
+          targetLayer,
+          track: track.value,
+          exitAxis,
+          layerNames,
+          traceWidth,
+          viaDiameter,
+          viaHoleDiameter,
         })
-      ) {
-        layoutIsClear = false
+        if (
+          planIsClear({
+            plan,
+            otherPlans: [...acceptedPlans, ...candidatePlans],
+            srj,
+            clearance,
+          })
+        ) {
+          acceptedPlan = plan
+          break
+        }
+      }
+      if (!acceptedPlan) {
+        orderIsClear = false
         break
       }
-      candidatePlans.push(plan)
+      candidatePlans.push(acceptedPlan)
     }
-    if (layoutIsClear) return candidatePlans
+    if (orderIsClear) return candidatePlans
   }
 
   return null

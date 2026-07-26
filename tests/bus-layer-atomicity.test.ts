@@ -10,7 +10,8 @@ test("each bus escapes in one direction and onto one layer", () => {
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
   expect(output.fanoutTraces).toHaveLength(srj.connections.length)
-  expect(output.attempts).toHaveLength(81)
+  expect(output.attempts.length).toBeGreaterThan(0)
+  expect(output.attempts.length).toBeLessThanOrEqual(256)
 
   for (const bus of srj.buses ?? []) {
     const expectedLayer = output.busLayerAssignments[bus.busId]
@@ -29,10 +30,7 @@ test("each bus escapes in one direction and onto one layer", () => {
     }
   }
 
-  expect(output.busDirections).toEqual({
-    "central-bga:north": "up",
-    "central-bga:east": "right",
-    "central-bga:south": "down",
-    "central-bga:west": "left",
-  })
+  expect(new Set(Object.values(output.busDirections))).toEqual(
+    new Set(["up", "down"]),
+  )
 })

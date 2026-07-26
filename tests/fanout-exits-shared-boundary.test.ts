@@ -3,7 +3,7 @@ import { FanoutSolver } from "lib/fanout-solver"
 import type { Bounds, FanoutDirection, Point2D } from "lib/types"
 import { fanoutDataset01 } from "../datasets/dataset01"
 
-function expectPointOutsideCourtyard(
+function expectPointOutsideSharedBoundary(
   point: Point2D,
   bounds: Bounds,
   direction: FanoutDirection,
@@ -23,7 +23,7 @@ function expectPointOutsideCourtyard(
   }
 }
 
-test("every Dataset 01 fanout exits its component courtyard", () => {
+test("every Dataset 01 pad exits the one shared breakout boundary", () => {
   for (const sample of fanoutDataset01) {
     const solver = new FanoutSolver(
       sample.simpleRouteJson,
@@ -31,10 +31,9 @@ test("every Dataset 01 fanout exits its component courtyard", () => {
     )
     solver.solve()
     const output = solver.getOutput()
-    const componentBounds = sample.solverOptions.componentBounds!
 
     for (const bus of solver.preparedBuses) {
-      const bounds = componentBounds[bus.componentId]!
+      expect(bus.sharedBoundary).toEqual(sample.sharedBoundary)
       for (const preparedConnection of bus.connections) {
         const connectionName = preparedConnection.connection.name
         const outputConnection = output.simpleRouteJson.connections.find(
@@ -53,8 +52,16 @@ test("every Dataset 01 fanout exits its component courtyard", () => {
           )
         }
 
-        expectPointOutsideCourtyard(exitPoint, bounds, bus.direction)
-        expectPointOutsideCourtyard(finalRoutePoint, bounds, bus.direction)
+        expectPointOutsideSharedBoundary(
+          exitPoint,
+          sample.sharedBoundary,
+          bus.direction,
+        )
+        expectPointOutsideSharedBoundary(
+          finalRoutePoint,
+          sample.sharedBoundary,
+          bus.direction,
+        )
         expect(finalRoutePoint.x).toBeCloseTo(exitPoint.x)
         expect(finalRoutePoint.y).toBeCloseTo(exitPoint.y)
       }

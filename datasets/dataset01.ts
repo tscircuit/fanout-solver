@@ -1,5 +1,5 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
-import type { FanoutSolverOptions } from "lib/types"
+import type { Bounds, FanoutSolverOptions } from "lib/types"
 import {
   type BenchmarkFootprintParams,
   createFootprinterBenchmarkProblem,
@@ -12,14 +12,16 @@ export interface FanoutDatasetSample {
   footprintCount: number
   simpleRouteJson: SimpleRouteJson
   solverOptions: FanoutSolverOptions
+  componentBounds: Readonly<Record<string, Bounds>>
+  sharedBoundary: Bounds
 }
 
 const FOOTPRINT_CENTERS = [
   { x: 0, y: 0 },
-  { x: 18, y: 0 },
-  { x: -18, y: 0 },
-  { x: 0, y: 18 },
-  { x: 0, y: -18 },
+  { x: 18, y: 6 },
+  { x: -18, y: -6 },
+  { x: -7, y: 18 },
+  { x: 7, y: -18 },
 ] as const
 
 const FOOTPRINT_GRID_SIZES = [8, 6, 6, 8, 6] as const
@@ -43,14 +45,17 @@ export const fanoutDataset01: FanoutDatasetSample[] = Array.from(
     return {
       id: `sample${String(footprintCount).padStart(3, "0")}`,
       name: `${footprintCount} BGA footprint${footprintCount === 1 ? "" : "s"}`,
-      description: `Routes every bus across ${footprintCount} independently placed BGA footprint${
+      description: `Routes every pad across ${footprintCount} BGA footprint${
         footprintCount === 1 ? "" : "s"
-      } in one SimpleRouteJson.`,
+      } to one shared breakout boundary.`,
       footprintCount,
       simpleRouteJson: problem.simpleRouteJson,
       solverOptions: {
         componentBounds: problem.componentBounds,
+        sharedBoundary: problem.sharedBoundary,
       },
+      componentBounds: problem.componentBounds,
+      sharedBoundary: problem.sharedBoundary,
     }
   },
 )

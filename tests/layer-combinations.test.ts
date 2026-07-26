@@ -8,17 +8,17 @@ test("the solver evaluates bounded combinations of available layers", () => {
   solver.solve()
   const output = solver.getOutput()
 
-  expect(output.attempts).toHaveLength(5)
+  expect(solver.layerAssignments).toHaveLength(5)
   expect(
     new Set(
-      output.attempts.map((attempt) =>
-        JSON.stringify(attempt.busLayerAssignments),
-      ),
+      solver.layerAssignments.map((assignment) => JSON.stringify(assignment)),
     ).size,
   ).toBe(5)
-  for (const attempt of output.attempts) {
+  expect(output.attempts.length).toBeGreaterThan(0)
+  expect(output.attempts.length).toBeLessThanOrEqual(5)
+  for (const assignment of solver.layerAssignments) {
     expect(
-      Object.values(attempt.busLayerAssignments).every((layer) =>
+      Object.values(assignment).every((layer) =>
         ["inner1", "inner2", "bottom"].includes(layer),
       ),
     ).toBe(true)

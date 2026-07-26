@@ -17,6 +17,7 @@ export interface FanoutSolverOptions {
   buses?: FanoutBusSpec[]
   busDirections?: Readonly<Record<string, FanoutDirection>>
   componentBounds?: Readonly<Record<string, Bounds>>
+  sharedBoundary?: Bounds
   escapeLayers?: string[]
   maxLayerCombinations?: number
   traceWidth?: number
@@ -72,6 +73,9 @@ export interface PreparedBus {
   componentId: string
   componentObstacles: Obstacle[]
   componentBounds: Bounds
+  sharedBoundary: Bounds
+  xCoordinates: number[]
+  yCoordinates: number[]
   pitchX: number
   pitchY: number
 }

@@ -124,6 +124,27 @@ function assignmentLoadPenalty(
   )
 }
 
+function getBusDistanceToBoundary(bus: PreparedBus): number {
+  const averageSource =
+    bus.connections.reduce((sum, connection) => {
+      const sourceAxis =
+        bus.direction === "left" || bus.direction === "right"
+          ? connection.sourcePoint.x
+          : connection.sourcePoint.y
+      return sum + sourceAxis
+    }, 0) / bus.connections.length
+  switch (bus.direction) {
+    case "right":
+      return bus.sharedBoundary.maxX - averageSource
+    case "left":
+      return averageSource - bus.sharedBoundary.minX
+    case "up":
+      return bus.sharedBoundary.maxY - averageSource
+    case "down":
+      return averageSource - bus.sharedBoundary.minY
+  }
+}
+
 export class FanoutSolver extends BaseSolver {
   readonly preparedBuses: PreparedBus[]
   readonly attempts: FanoutAttemptSummary[] = []
@@ -158,7 +179,9 @@ export class FanoutSolver extends BaseSolver {
     const plans: AssignmentAttempt["plans"] = []
     const failedBusIds: string[] = []
     const busesInRoutingOrder = [...this.preparedBuses].sort(
-      (a, b) => b.connections.length - a.connections.length,
+      (a, b) =>
+        b.connections.length - a.connections.length ||
+        getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b),
     )
 
     for (const bus of busesInRoutingOrder) {
@@ -254,6 +277,11 @@ export class FanoutSolver extends BaseSolver {
       routedConnections: `${attempt.summary.routedConnectionCount}/${this.inputSrj.connections.length}`,
       failedBuses: attempt.summary.failedBusIds.join(", ") || "none",
       bestScore: this.bestAttempt.summary.score,
+    }
+    if (
+      attempt.summary.routedConnectionCount === this.inputSrj.connections.length
+    ) {
+      this.solved = true
     }
   }
 
