@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
-import { createFootprinterBenchmarkSrj } from "tests/fixtures/create-footprinter-benchmark"
+import { createFootprinterBenchmarkSrj } from "../datasets/create-footprinter-benchmark"
 
 test("escape vias sit in the gap between adjacent BGA pads", () => {
   const srj = createFootprinterBenchmarkSrj({ gridSize: 8 })
@@ -8,7 +8,7 @@ test("escape vias sit in the gap between adjacent BGA pads", () => {
   solver.solve()
   const output = solver.getOutput()
   const connection = srj.connections.find(
-    (candidate) => candidate.name === "BUS_NORTH_01",
+    (candidate) => candidate.name === "BUS_FP01_NORTH_01",
   )!
   const sourcePoint = connection.pointsToConnect[0]!
   const trace = output.fanoutTraces.find(

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
-import { createFootprinterBenchmarkSrj } from "tests/fixtures/create-footprinter-benchmark"
+import { createFootprinterBenchmarkSrj } from "../datasets/create-footprinter-benchmark"
 
 test("footprinter BGA64 benchmark fully escapes", () => {
   const srj = createFootprinterBenchmarkSrj({ gridSize: 8 })

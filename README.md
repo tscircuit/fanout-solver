@@ -13,6 +13,7 @@ decision atomically.
 - Uses `SimpleRouteJson.buses` when present. It also understands a point
   `busId` and names such as `BUS_DDR_01`.
 - Detects rectangular BGA pad grids through obstacle `componentId` metadata.
+- Handles buses from multiple BGA footprints in the same routing problem.
 - Infers one outward direction per bus from the bus endpoints, or accepts an
   explicit direction override.
 - Enumerates combinations of the copper layers implied by `layerCount`.
@@ -82,6 +83,23 @@ current layer assignment and tries another combination.
 - `busDirections`: the direction shared by each bus
 - `attempts`: score and success metadata for every tried layer combination
 
+## Dataset 01
+
+`datasets/dataset01.ts` contains five deterministic footprinter samples. The
+samples contain exactly one through five BGA footprints, and every sample is
+solved as one `SimpleRouteJson`.
+
+| Sample | Footprints | Pads | Connections |
+| --- | ---: | ---: | ---: |
+| `sample001` | 1 | 64 | 20 |
+| `sample002` | 2 | 100 | 32 |
+| `sample003` | 3 | 136 | 44 |
+| `sample004` | 4 | 200 | 64 |
+| `sample005` | 5 | 236 | 76 |
+
+The Cosmos debugger provides Previous/Next controls and direct sample tabs. It
+also stores the selected sample in the `sample` URL parameter.
+
 ## Development
 
 ```sh
@@ -92,10 +110,9 @@ bun run benchmark
 bun run start
 ```
 
-The benchmark builds 6×6, 8×8, and 10×10 BGA pad grids with
-`@tscircuit/footprinter`, creates four outward buses, and reports routing time
-and attempted layer assignments. `bun run start` opens the same footprinter
-BGA64 case in the standard tscircuit solver debugger.
+The benchmark runs every Dataset 01 sample and reports footprint, pad,
+connection, routing, and layer-assignment metrics. `bun run start` opens the
+same dataset in the standard tscircuit solver debugger.
 
 ## Scope
 

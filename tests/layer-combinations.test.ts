@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
-import { createFootprinterBenchmarkSrj } from "tests/fixtures/create-footprinter-benchmark"
+import { createFootprinterBenchmarkSrj } from "../datasets/create-footprinter-benchmark"
 
 test("the solver evaluates bounded combinations of available layers", () => {
   const srj = createFootprinterBenchmarkSrj({ gridSize: 6, layerCount: 4 })

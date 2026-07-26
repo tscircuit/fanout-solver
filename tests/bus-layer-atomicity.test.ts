@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
-import { createFootprinterBenchmarkSrj } from "tests/fixtures/create-footprinter-benchmark"
+import { createFootprinterBenchmarkSrj } from "../datasets/create-footprinter-benchmark"
 
 test("each bus escapes in one direction and onto one layer", () => {
   const srj = createFootprinterBenchmarkSrj({ gridSize: 8 })
@@ -30,9 +30,9 @@ test("each bus escapes in one direction and onto one layer", () => {
   }
 
   expect(output.busDirections).toEqual({
-    north: "up",
-    east: "right",
-    south: "down",
-    west: "left",
+    "central-bga:north": "up",
+    "central-bga:east": "right",
+    "central-bga:south": "down",
+    "central-bga:west": "left",
   })
 })
