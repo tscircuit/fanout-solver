@@ -13,12 +13,13 @@ export interface BenchmarkFootprintParams {
   padDiameter?: number
 }
 
-interface BenchmarkParams {
+export interface BenchmarkParams {
   footprints?: BenchmarkFootprintParams[]
   gridSize?: number
   layerCount?: number
   pitch?: number
   padDiameter?: number
+  boundaryMargin?: number
 }
 
 interface ResolvedBenchmarkFootprint {
@@ -280,7 +281,11 @@ export function createFootprinterBenchmarkProblem(
     ]),
   )
   const boundaryMargin =
+    params.boundaryMargin ??
     Math.max(...footprints.map((footprint) => footprint.pitch)) * 4
+  if (!Number.isFinite(boundaryMargin) || boundaryMargin < 0) {
+    throw new Error("Benchmark boundaryMargin must be a non-negative number")
+  }
   const sharedBoundary: Bounds = {
     minX:
       Math.min(...Object.values(componentBounds).map((bounds) => bounds.minX)) -

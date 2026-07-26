@@ -1,7 +1,7 @@
 import { GenericSolverDebugger } from "@tscircuit/solver-utils/react"
 import { FanoutSolver } from "lib/fanout-solver"
 import { useEffect, useState } from "react"
-import { fanoutDataset01 } from "../datasets/dataset01"
+import { fanoutDatasets } from "../datasets"
 
 const buttonStyle: React.CSSProperties = {
   border: "1px solid #cbd5e1",
@@ -14,31 +14,43 @@ const buttonStyle: React.CSSProperties = {
 }
 
 export default function FanoutSolverPage() {
+  const [selectedDatasetIndex, setSelectedDatasetIndex] = useState(0)
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const selectedSample = fanoutDataset01[selectedIndex]!
+  const selectedDataset = fanoutDatasets[selectedDatasetIndex]!
+  const selectedSample = selectedDataset.samples[selectedIndex]!
 
   useEffect(() => {
-    const requestedSample = new URLSearchParams(window.location.search).get(
-      "sample",
+    const params = new URLSearchParams(window.location.search)
+    const requestedDatasetIndex = fanoutDatasets.findIndex(
+      (dataset) => dataset.id === params.get("dataset"),
     )
-    const requestedIndex = fanoutDataset01.findIndex(
-      (sample) => sample.id === requestedSample,
-    )
-    if (requestedIndex >= 0) setSelectedIndex(requestedIndex)
+    const datasetIndex = requestedDatasetIndex >= 0 ? requestedDatasetIndex : 0
+    const requestedSampleIndex = fanoutDatasets[
+      datasetIndex
+    ]!.samples.findIndex((sample) => sample.id === params.get("sample"))
+    setSelectedDatasetIndex(datasetIndex)
+    if (requestedSampleIndex >= 0) setSelectedIndex(requestedSampleIndex)
   }, [])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    params.set("dataset", selectedDataset.id)
     params.set("sample", selectedSample.id)
     window.history.replaceState(
       null,
       "",
       `${window.location.pathname}?${params.toString()}`,
     )
-  }, [selectedSample.id])
+  }, [selectedDataset.id, selectedSample.id])
+
+  const selectDataset = (index: number) => {
+    if (index < 0 || index >= fanoutDatasets.length) return
+    setSelectedDatasetIndex(index)
+    setSelectedIndex(0)
+  }
 
   const selectSample = (index: number) => {
-    if (index < 0 || index >= fanoutDataset01.length) return
+    if (index < 0 || index >= selectedDataset.samples.length) return
     setSelectedIndex(index)
   }
 
@@ -70,7 +82,9 @@ export default function FanoutSolverPage() {
           }}
         >
           <div>
-            <strong>Fanout Solver · Dataset 01</strong>
+            <strong>
+              Fanout Solver · {selectedDataset.id} · {selectedDataset.name}
+            </strong>
             <div style={{ color: "#475569", fontSize: 13, marginTop: 4 }}>
               {selectedSample.id} · {selectedSample.name} ·{" "}
               {selectedSample.simpleRouteJson.connections.length} connections ·{" "}
@@ -93,15 +107,17 @@ export default function FanoutSolverPage() {
             <button
               type="button"
               onClick={() => selectSample(selectedIndex + 1)}
-              disabled={selectedIndex === fanoutDataset01.length - 1}
+              disabled={selectedIndex === selectedDataset.samples.length - 1}
               style={{
                 ...buttonStyle,
                 cursor:
-                  selectedIndex === fanoutDataset01.length - 1
+                  selectedIndex === selectedDataset.samples.length - 1
                     ? "not-allowed"
                     : "pointer",
                 opacity:
-                  selectedIndex === fanoutDataset01.length - 1 ? 0.45 : 1,
+                  selectedIndex === selectedDataset.samples.length - 1
+                    ? 0.45
+                    : 1,
               }}
             >
               Next
@@ -110,11 +126,41 @@ export default function FanoutSolverPage() {
         </div>
 
         <div
-          aria-label="Dataset 01 samples"
+          aria-label="Fanout datasets"
           role="tablist"
           style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
         >
-          {fanoutDataset01.map((sample, index) => {
+          {fanoutDatasets.map((dataset, index) => {
+            const isSelected = index === selectedDatasetIndex
+            return (
+              <button
+                aria-selected={isSelected}
+                key={dataset.id}
+                onClick={() => selectDataset(index)}
+                role="tab"
+                style={{
+                  ...buttonStyle,
+                  background: isSelected ? "#0f172a" : "#ffffff",
+                  color: isSelected ? "#ffffff" : "#0f172a",
+                }}
+                type="button"
+              >
+                {dataset.id} · {dataset.name}
+              </button>
+            )
+          })}
+        </div>
+
+        <div style={{ color: "#475569", fontSize: 13 }}>
+          {selectedDataset.description}
+        </div>
+
+        <div
+          aria-label={`${selectedDataset.id} samples`}
+          role="tablist"
+          style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+        >
+          {selectedDataset.samples.map((sample, index) => {
             const isSelected = index === selectedIndex
             return (
               <button
@@ -141,7 +187,7 @@ export default function FanoutSolverPage() {
       </header>
 
       <GenericSolverDebugger
-        key={selectedSample.id}
+        key={`${selectedDataset.id}:${selectedSample.id}`}
         createSolver={() =>
           new FanoutSolver(
             selectedSample.simpleRouteJson,

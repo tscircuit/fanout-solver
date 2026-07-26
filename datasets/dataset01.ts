@@ -1,20 +1,8 @@
-import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
-import type { Bounds, FanoutSolverOptions } from "lib/types"
 import {
   type BenchmarkFootprintParams,
   createFootprinterBenchmarkProblem,
 } from "./create-footprinter-benchmark"
-
-export interface FanoutDatasetSample {
-  id: string
-  name: string
-  description: string
-  footprintCount: number
-  simpleRouteJson: SimpleRouteJson
-  solverOptions: FanoutSolverOptions
-  componentBounds: Readonly<Record<string, Bounds>>
-  sharedBoundary: Bounds
-}
+import type { FanoutDatasetSample } from "./dataset-types"
 
 const FOOTPRINT_CENTERS = [
   { x: 0, y: 0 },

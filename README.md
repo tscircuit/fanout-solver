@@ -110,9 +110,27 @@ solved as one `SimpleRouteJson`.
 | `sample005` | 5 | 236 | 236 |
 
 The Cosmos debugger provides Previous/Next controls and direct sample tabs. It
-also stores the selected sample in the `sample` URL parameter. Each sample has
-one shared boundary around all of its footprints, and component bounds come
-from each footprinter-generated `pcb_courtyard_outline`.
+also stores the selected dataset and sample in the `dataset` and `sample` URL
+parameters. Each sample has one shared boundary around all of its footprints,
+and component bounds come from each footprinter-generated
+`pcb_courtyard_outline`.
+
+## Dataset 02
+
+`datasets/dataset02.ts` is the stress dataset. It uses six copper layers,
+mixed-pitch BGA64 through BGA196 footprints, and a shared boundary only 0.80 mm
+beyond the outer courtyards.
+
+| Sample | Footprints | Pads | Buses | Stress condition |
+| --- | ---: | ---: | ---: | --- |
+| `sample001` | 1 | 196 | 14 | 14×14 BGA at 0.70 mm pitch |
+| `sample002` | 2 | 244 | 22 | Mixed BGA144/BGA100 |
+| `sample003` | 3 | 344 | 32 | Shared horizontal and vertical corridors |
+| `sample004` | 4 | 408 | 40 | Four dense mixed-pitch footprints |
+| `sample005` | 5 | 472 | 48 | `inner1` barrier forces layer reassignment |
+
+Every pad is connected in every stress sample. The final sample deliberately
+rejects the initial balanced bus-layer map before finding a complete solution.
 
 ## Development
 
@@ -125,11 +143,12 @@ bun run render:dataset
 bun run start
 ```
 
-The benchmark runs every Dataset 01 sample and reports footprint, pad,
+The benchmark runs every sample in both datasets and reports footprint, pad,
 connection, routing, and layer-assignment metrics. `bun run start` opens the
-same dataset in the standard tscircuit solver debugger. `bun run
-render:dataset` writes a `graphics-debug` PNG for each sample with a red shared
-boundary, gray component courtyards, and green fanout-exit markers.
+datasets in the standard tscircuit solver debugger. `bun run
+render:dataset` writes `graphics-debug` PNGs under one subdirectory per dataset,
+with a red shared boundary, gray component courtyards, and green fanout-exit
+markers.
 
 ## Scope
 

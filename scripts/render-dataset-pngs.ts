@@ -8,7 +8,7 @@ import {
 } from "graphics-debug"
 import { FanoutSolver } from "lib/fanout-solver"
 import type { Bounds } from "lib/types"
-import { fanoutDataset01 } from "../datasets/dataset01"
+import { fanoutDatasets } from "../datasets"
 
 interface ComponentBounds {
   componentId: string
@@ -85,37 +85,45 @@ function getVerificationViewbox(sharedBoundary: Bounds): Viewbox {
 const outputDirectory = process.argv[2] ?? "verification-pngs"
 await mkdir(outputDirectory, { recursive: true })
 
-for (const sample of fanoutDataset01) {
-  const solver = new FanoutSolver(sample.simpleRouteJson, sample.solverOptions)
-  solver.solve()
-  if (solver.failed) {
-    throw new Error(
-      `${sample.id} failed: ${solver.error ?? "unknown solver error"}`,
-    )
-  }
+for (const dataset of fanoutDatasets) {
+  const datasetDirectory = `${outputDirectory}/${dataset.id}`
+  await mkdir(datasetDirectory, { recursive: true })
 
-  const output = solver.getOutput()
-  const componentBounds = getComponentBounds(sample.componentBounds)
-  const graphics = mergeGraphics(
-    {
-      ...solver.visualize(),
-      title: `${sample.id}: ${sample.name}`,
-    },
-    createVerificationOverlay(
-      output.simpleRouteJson,
-      componentBounds,
-      sample.sharedBoundary,
-    ),
-  )
-  const png = await getPngBufferFromGraphicsObject(graphics, {
-    backgroundColor: "#ffffff",
-    includeTextLabels: ["rects"],
-    padding: 24,
-    pngHeight: 1400,
-    pngWidth: 1400,
-    viewbox: getVerificationViewbox(sample.sharedBoundary),
-  })
-  const outputPath = `${outputDirectory}/${sample.id}.png`
-  await writeFile(outputPath, png)
-  console.log(`wrote ${outputPath}`)
+  for (const sample of dataset.samples) {
+    const solver = new FanoutSolver(
+      sample.simpleRouteJson,
+      sample.solverOptions,
+    )
+    solver.solve()
+    if (solver.failed) {
+      throw new Error(
+        `${dataset.id}/${sample.id} failed: ${solver.error ?? "unknown solver error"}`,
+      )
+    }
+
+    const output = solver.getOutput()
+    const componentBounds = getComponentBounds(sample.componentBounds)
+    const graphics = mergeGraphics(
+      {
+        ...solver.visualize(),
+        title: `${dataset.id}/${sample.id}: ${sample.name}`,
+      },
+      createVerificationOverlay(
+        output.simpleRouteJson,
+        componentBounds,
+        sample.sharedBoundary,
+      ),
+    )
+    const png = await getPngBufferFromGraphicsObject(graphics, {
+      backgroundColor: "#ffffff",
+      includeTextLabels: ["rects"],
+      padding: 24,
+      pngHeight: 1400,
+      pngWidth: 1400,
+      viewbox: getVerificationViewbox(sample.sharedBoundary),
+    })
+    const outputPath = `${datasetDirectory}/${sample.id}.png`
+    await writeFile(outputPath, png)
+    console.log(`wrote ${outputPath}`)
+  }
 }

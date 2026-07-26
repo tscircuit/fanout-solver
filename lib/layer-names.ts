@@ -89,7 +89,37 @@ export function generateLayerAssignments(params: {
     return (mixed ^ (mixed >>> 15)) >>> 0
   }
 
-  addAssignment(busIds.map((_, busIndex) => busIndex % layers.length))
+  const balancedLayerIndexes = busIds.map(
+    (_, busIndex) => busIndex % layers.length,
+  )
+  addAssignment(balancedLayerIndexes)
+  for (
+    let globalShift = 1;
+    globalShift < layers.length && assignments.length < combinationCount;
+    globalShift++
+  ) {
+    addAssignment(
+      balancedLayerIndexes.map(
+        (layerIndex) => (layerIndex + globalShift) % layers.length,
+      ),
+    )
+  }
+  for (
+    let busIndex = 0;
+    busIndex < busIds.length && assignments.length < combinationCount;
+    busIndex++
+  ) {
+    for (
+      let shift = 1;
+      shift < layers.length && assignments.length < combinationCount;
+      shift++
+    ) {
+      const layerIndexes = [...balancedLayerIndexes]
+      layerIndexes[busIndex] =
+        (balancedLayerIndexes[busIndex]! + shift) % layers.length
+      addAssignment(layerIndexes)
+    }
+  }
   for (
     let seed = 1;
     assignments.length < combinationCount && seed < combinationCount * 20;
