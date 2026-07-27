@@ -20,21 +20,21 @@ function pointIsOutsideInDirection(
   }
 }
 
-test("Dataset 02 completely breaks out a 0.4 mm-pitch BGA400", () => {
+test("Dataset 02 completely breaks out a four-layer BGA400", () => {
   expect(fanoutDataset02).toHaveLength(1)
   const sample = fanoutDataset02[0]!
   const srj = sample.simpleRouteJson
   const padObstacles = srj.obstacles.filter((obstacle) => obstacle.componentId)
-  const footprinterString = "bga400_grid20x20_p0.4mm_pad0.2mm_circularpads"
+  const footprinterString = "bga400_grid20x20_p0.8mm_pad0.3mm_circularpads"
 
   expect(sample.footprintCount).toBe(1)
   expect(sample.footprinterStrings).toEqual([footprinterString])
-  expect(srj.layerCount).toBe(10)
+  expect(srj.layerCount).toBe(4)
   expect(srj.nominalTraceWidth).toBe(0.1)
   expect(srj.minTraceToPadEdgeClearance).toBe(0.1)
   expect(srj.minViaEdgeToPadEdgeClearance).toBe(0.1)
-  expect(srj.minViaPadDiameter).toBe(0.15)
-  expect(srj.minViaHoleDiameter).toBe(0.1)
+  expect(srj.minViaPadDiameter).toBe(0.25)
+  expect(srj.minViaHoleDiameter).toBe(0.15)
   expect(srj.connections).toHaveLength(400)
   expect(srj.buses).toHaveLength(20)
   expect(padObstacles).toHaveLength(400)
@@ -70,17 +70,31 @@ test("Dataset 02 completely breaks out a 0.4 mm-pitch BGA400", () => {
       (layer) => layer === "top",
     ),
   ).toHaveLength(2)
+  expect(
+    Object.values(output.busLayerAssignments).reduce<Record<string, number>>(
+      (counts, layer) => ({
+        ...counts,
+        [layer]: (counts[layer] ?? 0) + 1,
+      }),
+      {},
+    ),
+  ).toEqual({
+    top: 2,
+    inner1: 6,
+    inner2: 6,
+    bottom: 6,
+  })
 
   const expectedLayersByDepth = [
     "top",
     "inner1",
     "inner2",
-    "inner3",
-    "inner4",
-    "inner5",
-    "inner6",
-    "inner7",
-    "inner8",
+    "bottom",
+    "inner1",
+    "inner2",
+    "bottom",
+    "inner1",
+    "inner2",
     "bottom",
   ]
   let viaCount = 0
@@ -111,8 +125,8 @@ test("Dataset 02 completely breaks out a 0.4 mm-pitch BGA400", () => {
       if (via?.route_type === "via") {
         viaCount++
         expect(via.to_layer).toBe(expectedLayer)
-        expect(Math.abs(via.x - connection.sourcePoint.x)).toBeCloseTo(0.2)
-        expect(Math.abs(via.y - connection.sourcePoint.y)).toBeCloseTo(0.2)
+        expect(Math.abs(via.x - connection.sourcePoint.x)).toBeCloseTo(0)
+        expect(Math.abs(via.y - connection.sourcePoint.y)).toBeCloseTo(0.4)
         expect(
           trace.route
             .slice(viaIndex + 1)
@@ -135,10 +149,10 @@ test("Dataset 02 completely breaks out a 0.4 mm-pitch BGA400", () => {
 
     expect(new Set(busViaUse).size).toBe(1)
     expect(busViaUse[0]).toBe(expectedLayer !== "top")
-    expect(Math.max(...exitTracks) - Math.min(...exitTracks)).toBeCloseTo(3.8)
-    expect(Math.max(...exitTracks) - Math.min(...exitTracks)).toBeLessThan(
-      sourceTrackSpan,
-    )
+    const exitTrackSpan = Math.max(...exitTracks) - Math.min(...exitTracks)
+    expect(exitTrackSpan).toBeGreaterThanOrEqual(14.5)
+    expect(exitTrackSpan).toBeLessThanOrEqual(16)
+    expect(Math.abs(exitTrackSpan - sourceTrackSpan)).toBeLessThanOrEqual(0.8)
   }
 
   expect(viaCount).toBe(360)

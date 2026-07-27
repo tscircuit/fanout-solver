@@ -1,16 +1,16 @@
 import { createFootprinterBenchmarkProblem } from "./create-footprinter-benchmark"
 import type { FanoutDatasetSample } from "./dataset-types"
 
-const PITCH = 0.4
-const PAD_DIAMETER = 0.2
-const VIA_DIAMETER = 0.15
-const VIA_HOLE_DIAMETER = 0.1
+const PITCH = 0.8
+const PAD_DIAMETER = 0.3
+const VIA_DIAMETER = 0.25
+const VIA_HOLE_DIAMETER = 0.15
 const TRACE_WIDTH = 0.1
 const CLEARANCE = 0.1
 const BOUNDARY_MARGIN = 4
 const ROW_COUNT = 20
 const COLUMN_COUNT = 20
-const LAYER_COUNT = 10
+const LAYER_COUNT = 4
 const MAX_CONNECTIONS_PER_BUS = 20
 
 const problem = createFootprinterBenchmarkProblem({
@@ -40,12 +40,12 @@ export const fanoutDataset02: FanoutDatasetSample[] = [
     id: "sample001",
     name: "Complete 20×20 BGA400 breakout",
     description:
-      "Routes all 400 balls as twenty atomic 20-trace row buses. The two perimeter buses stay on top; each successively deeper north/south bus pair escapes on the next copper layer through four-pad corner interstices.",
+      "Routes all 400 balls as twenty atomic 20-trace row buses on four copper layers. The perimeter pair stays on top; deeper north/south bus pairs cycle through inner1, inner2, and bottom while clearing earlier via rows.",
     footprintCount: 1,
     footprinterStrings: problem.footprinterStrings,
     simpleRouteJson: problem.simpleRouteJson,
     solverOptions: {
-      compactBusTracks: true,
+      compactBusTracks: false,
       componentBounds: problem.componentBounds,
       sharedBoundary: problem.sharedBoundary,
     },

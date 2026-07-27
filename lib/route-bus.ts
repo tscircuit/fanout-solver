@@ -273,7 +273,7 @@ function getPreferredTrack(params: {
     connection.sourcePoint,
     bus.direction,
   )
-  if (!targetUsesVia || compactBusTracks) {
+  if (compactBusTracks) {
     const connectionRank = getConnectionRank(bus, connection)
     const componentCenter =
       (perpendicularCoordinates[0]! + perpendicularCoordinates.at(-1)!) / 2
@@ -283,6 +283,7 @@ function getPreferredTrack(params: {
         (traceWidth + clearance)
     )
   }
+  if (!targetUsesVia) return sourceTrack
   if (!interstitialEscape) return sourceTrack
 
   const depthInRows = getDepthInRows(bus)

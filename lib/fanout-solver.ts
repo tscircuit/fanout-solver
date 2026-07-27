@@ -218,9 +218,7 @@ function createPreferredLayerAssignment(params: {
       if (hasOpposingDirection) {
         const depthInRows = getBusDepthInRows(bus)
         assignment[bus.busId] =
-          viaLayers[
-            Math.min(Math.max(depthInRows - 1, 0), viaLayers.length - 1)
-          ]!
+          viaLayers[Math.max(depthInRows - 1, 0) % viaLayers.length]!
       } else {
         assignment[bus.busId] = viaLayers[nextViaLayerIndex % viaLayers.length]!
         nextViaLayerIndex++

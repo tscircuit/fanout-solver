@@ -21,10 +21,9 @@ and treats each bus-layer decision atomically.
 - Infers one outward direction per bus from the bus endpoints, or accepts an
   explicit direction override.
 - Enumerates combinations of the copper layers implied by `layerCount`.
-- Prefers depth-ordered layer assignments: matching north/south (or east/west)
-  bus depths share a layer, and progressively deeper buses move progressively
-  deeper into the stack. This prevents deep through-vias from fencing in a
-  shallower bus.
+- Prefers depth-cycled layer assignments: matching north/south (or east/west)
+  bus depths share a layer, and deeper pairs cycle through every available
+  escape layer. This forces a small stackup to reuse routing channels.
 - Keeps outward-edge buses on their source layer when possible. If a bus needs
   a via, every connection in that bus receives one and moves to the same
   assigned layer; mixed via use within a bus is never committed.
@@ -132,34 +131,33 @@ extents.
 
 ## Dataset 02
 
-`datasets/dataset02.ts` is the BGA400 stress benchmark. It routes every ball in
-the exact footprinter string
-`bga400_grid20x20_p0.4mm_pad0.2mm_circularpads`; the debugger includes that
+`datasets/dataset02.ts` is the four-layer BGA400 stress benchmark. It routes
+every ball in the exact footprinter string
+`bga400_grid20x20_p0.8mm_pad0.3mm_circularpads`; the debugger includes that
 string in both the visible sample heading and browser title. The sample uses
-[JLCPCB's published 0.10/0.10 mm trace and spacing capability](https://jlcpcb.com/capabilities/pcb-capabilities/)
-and 0.10 mm pad/copper clearance.
+[JLCPCB's published 0.10/0.10 mm trace and spacing capability](https://jlcpcb.com/capabilities/pcb-capabilities/),
+0.10 mm pad/copper clearance, and standard 0.25/0.15 mm vias.
 
-At 0.4 mm pitch, a 0.15 mm algorithmic HDI microvia has 0.108 mm clearance
-from each 0.20 mm circular pad at a four-pad corner, but only 0.025 mm at a
-pair midpoint. That forces the intended corner-interstitial strategy. These
-0.15/0.10 mm microvias are intentionally smaller than JLCPCB's published
-standard two-layer 0.25/0.15 mm mechanical via minimum: the standard via would
-have only 0.058 mm corner clearance and cannot satisfy the same 0.10 mm rule.
-The BGA400 uses ten copper layers. Two perimeter buses (40 balls) stay
-via-free on top. The remaining eighteen 20-trace buses use 360 bus-atomic
-layer-spanning vias, and matching north/south bus depths share each progressively
-deeper layer. A two-layer version cannot break out all twenty dense rows while
-preserving 0.10 mm clearance: the first via row would form a copper fence in
-front of every deeper bus.
+The two perimeter buses (40 balls) stay via-free on top. The remaining
+eighteen 20-trace buses use 360 bus-atomic vias. Matching north/south depths
+cycle through `inner1`, `inner2`, and `bottom`, so every escape layer carries
+three nested depth bands in each direction instead of receiving one easy bus.
+
+The earlier 0.4 mm corner-interstitial case remains a dedicated regression
+test. It cannot honestly route the full BGA400 on four layers with the retained
+0.10 mm rules: adjacent 0.15 mm via centers are 0.40 mm apart, but a crossing
+0.10 mm trace needs 0.45 mm center-to-center capacity after both clearances are
+included. The repeated via row is therefore a physical copper wall. The
+0.8 mm BGA400 leaves real reusable channels while still forcing a four-layer
+solution.
 
 | Sample      | Footprints | Pads | Buses | Vias | Layers |
 | ----------- | ---------: | ---: | ----: | ---: | -----: |
-| `sample001` |          1 |  400 |    20 |  360 |     10 |
+| `sample001` |          1 |  400 |    20 |  360 |      4 |
 
-Every 20-trace bus bends from the 7.6 mm pad-row span into a 3.8 mm routing
-envelope, exits the shared component boundary, and uses only straight or 45°
-segments. Non-top-layer traces render as solid blue in both Cosmos and the
-verification PNG.
+Every 20-trace bus exits the shared component boundary and uses only straight
+or 45° segments. Non-top-layer traces render as solid blue in both Cosmos and
+the verification PNG.
 
 ## Development
 

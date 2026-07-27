@@ -1,10 +1,30 @@
 import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
-import { fanoutDataset02 } from "../datasets/dataset02"
+import { createFootprinterBenchmarkProblem } from "../datasets/create-footprinter-benchmark"
 
 test("oversized vias use four-pad corner interstices instead of pair gaps", () => {
-  const sample = fanoutDataset02[0]!
-  const srj = sample.simpleRouteJson
+  const problem = createFootprinterBenchmarkProblem({
+    boundaryMargin: 4,
+    clearance: 0.1,
+    footprints: [
+      {
+        componentId: "corner-via-bga",
+        center: { x: 0, y: 0 },
+        gridSize: 4,
+        rowCount: 4,
+        columnCount: 10,
+        pitch: 0.4,
+        padDiameter: 0.2,
+      },
+    ],
+    layerCount: 2,
+    busDirectionMode: "vertical-split",
+    maxConnectionsPerBus: 10,
+    traceWidth: 0.1,
+    viaDiameter: 0.15,
+    viaHoleDiameter: 0.1,
+  })
+  const srj = problem.simpleRouteJson
   const viaDiameter = srj.minViaPadDiameter!
   const clearance = srj.minViaEdgeToPadEdgeClearance!
   const pad = srj.obstacles.find((obstacle) => obstacle.componentId)!
@@ -23,7 +43,11 @@ test("oversized vias use four-pad corner interstices instead of pair gaps", () =
   expect(pairGapClearance).toBeLessThan(requiredViaClearance)
   expect(cornerClearance).toBeGreaterThan(requiredViaClearance)
 
-  const solver = new FanoutSolver(srj, sample.solverOptions)
+  const solver = new FanoutSolver(srj, {
+    compactBusTracks: true,
+    componentBounds: problem.componentBounds,
+    sharedBoundary: problem.sharedBoundary,
+  })
   solver.solve()
   const output = solver.getOutput()
   let interiorViaCount = 0
@@ -56,5 +80,5 @@ test("oversized vias use four-pad corner interstices instead of pair gaps", () =
     }
   }
 
-  expect(interiorViaCount).toBe(342)
+  expect(interiorViaCount).toBe(18)
 })

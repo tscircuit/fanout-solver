@@ -23,7 +23,7 @@ interface NamedVia {
   spanLayers: string[]
 }
 
-test("the BGA400 breakout clears JLCPCB copper spacing with explicit HDI microvias", () => {
+test("the four-layer BGA400 clears JLCPCB copper and standard-via rules", () => {
   const sample = fanoutDataset02.at(-1)!
   const solver = new FanoutSolver(sample.simpleRouteJson, sample.solverOptions)
   solver.solve()
@@ -181,27 +181,22 @@ test("the BGA400 breakout clears JLCPCB copper spacing with explicit HDI microvi
     }
   }
 
-  const pitch = 0.4
-  const padDiameter = 0.2
+  const pitch = 0.8
+  const padDiameter = 0.3
   const jlcStandardViaDiameter = 0.25
-  const configuredMicroviaDiameter = 0.15
-  const cornerDistance = Math.hypot(pitch / 2, pitch / 2)
-  const standardViaToPadEdgeGap =
-    cornerDistance - padDiameter / 2 - jlcStandardViaDiameter / 2
-  const microviaToPadEdgeGap =
-    cornerDistance - padDiameter / 2 - configuredMicroviaDiameter / 2
+  const pairViaToPadEdgeGap =
+    pitch / 2 - padDiameter / 2 - jlcStandardViaDiameter / 2
 
   expect(segments.length).toBeGreaterThan(1_000)
   expect(vias).toHaveLength(360)
-  expect(standardViaToPadEdgeGap).toBeLessThan(0.1)
-  expect(microviaToPadEdgeGap).toBeGreaterThanOrEqual(0.1)
-  expect(vias.every((via) => via.diameter === 0.15)).toBe(true)
-  expect(vias.every((via) => via.holeDiameter === 0.1)).toBe(true)
+  expect(pairViaToPadEdgeGap).toBeGreaterThanOrEqual(0.1)
+  expect(vias.every((via) => via.diameter === 0.25)).toBe(true)
+  expect(vias.every((via) => via.holeDiameter === 0.15)).toBe(true)
   expect(minimumTraceSpacing).toBeGreaterThanOrEqual(0.1 - 1e-6)
   expect(minimumPadToTrace).toBeGreaterThanOrEqual(0.1 - 1e-6)
   expect(minimumViaToPad).toBeGreaterThanOrEqual(0.1 - 1e-6)
   expect(minimumViaCopperToTrace).toBeGreaterThanOrEqual(0.1 - 1e-6)
-  expect(minimumViaHoleToTrace).toBeGreaterThanOrEqual(0.125 - 1e-6)
+  expect(minimumViaHoleToTrace).toBeGreaterThanOrEqual(0.15 - 1e-6)
   expect(minimumViaCopperSpacing).toBeGreaterThanOrEqual(0.1 - 1e-6)
-  expect(minimumViaHoleSpacing).toBeGreaterThanOrEqual(0.15 - 1e-6)
+  expect(minimumViaHoleSpacing).toBeGreaterThanOrEqual(0.2 - 1e-6)
 })

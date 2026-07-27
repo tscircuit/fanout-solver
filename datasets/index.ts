@@ -14,7 +14,7 @@ export const fanoutDatasets: FanoutDataset[] = [
     id: "dataset02",
     name: "BGA400",
     description:
-      "A complete 20×20, 400-pin BGA breakout with depth-ordered bus layers, bus-atomic four-pad-corner vias, and 4/4 mil copper rules.",
+      "A complete four-layer, 20×20 BGA400 breakout with repeated depth bands, bus-atomic standard vias, and 4/4 mil copper rules.",
     samples: fanoutDataset02,
   },
 ]
