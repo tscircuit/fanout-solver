@@ -7,9 +7,11 @@ export type {
   FanoutBorderDistribution,
   FanoutBorderTarget,
   FanoutBusSpec,
+  FanoutBusTermination,
   FanoutCorner,
   FanoutDirection,
   FanoutEdge,
   FanoutSolverOptions,
   FanoutSolverOutput,
+  FanoutPlaneTermination,
 } from "./types"

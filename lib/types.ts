@@ -21,9 +21,25 @@ export type FanoutBorderTarget = FanoutEdge | FanoutCorner
 
 export type FanoutBorderDistribution = "preserve" | "even"
 
+export type FanoutBusTermination =
+  | {
+      type: "boundary"
+    }
+  | {
+      type: "plane"
+      layer: string
+    }
+
 export interface FanoutBusSpec extends SimpleRouteBus {
   direction?: FanoutDirection
   preferredExit?: FanoutBorderTarget
+  /**
+   * Defaults to `{ type: "boundary" }`.
+   *
+   * Plane-terminated connections are considered complete at their escaped via
+   * and are removed from the downstream SimpleRouteJson connection list.
+   */
+  termination?: FanoutBusTermination
 }
 
 export interface FanoutSolverOptions {
@@ -55,6 +71,7 @@ export interface FanoutAttemptSummary {
 export interface FanoutSolverOutput {
   simpleRouteJson: SimpleRouteJson
   fanoutTraces: SimplifiedPcbTrace[]
+  planeTerminations: FanoutPlaneTermination[]
   busLayerAssignments: Readonly<Record<string, string>>
   busDirections: Readonly<Record<string, FanoutDirection>>
   attempts: FanoutAttemptSummary[]
@@ -86,6 +103,7 @@ export interface PreparedBus {
   busId: string
   direction: FanoutDirection
   preferredExit?: FanoutBorderTarget
+  termination: FanoutBusTermination
   connections: PreparedConnection[]
   componentId: string
   componentObstacles: Obstacle[]
@@ -122,12 +140,20 @@ export interface FanoutRoutePlan {
   sourceObstacle: Obstacle
   sourceLayer: string
   targetLayer: string
+  termination: FanoutBusTermination
   direction: FanoutDirection
   exitPoint: Point2D
   trace: SimplifiedPcbTrace
   segments: RoutedSegment[]
   via?: RoutedVia
   length: number
+}
+
+export interface FanoutPlaneTermination {
+  busId: string
+  connectionName: string
+  layer: string
+  via: RoutedVia
 }
 
 export interface AssignmentAttempt {

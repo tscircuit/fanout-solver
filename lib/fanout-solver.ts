@@ -263,6 +263,10 @@ function createPreferredLayerAssignment(params: {
     if (!sourceLayer) {
       throw new Error(`FanoutSolver: bus "${bus.busId}" has no connections`)
     }
+    if (bus.termination.type === "plane") {
+      assignment[bus.busId] = bus.termination.layer
+      continue
+    }
     const viaLayers = escapeLayers.filter((layer) => layer !== sourceLayer)
     if (
       escapeLayers.includes(sourceLayer) &&
@@ -326,11 +330,42 @@ export class FanoutSolver extends BaseSolver {
     super()
     this.config = resolveConfig(inputSrj, options)
     this.preparedBuses = prepareFanoutBuses(inputSrj, options)
+    for (const bus of this.preparedBuses) {
+      if (bus.termination.type !== "plane") continue
+      const planeLayer = bus.termination.layer
+      if (!this.config.layerNames.includes(planeLayer)) {
+        throw new Error(
+          `FanoutSolver: plane-terminated bus "${bus.busId}" targets unavailable layer "${planeLayer}"`,
+        )
+      }
+      if (
+        bus.connections.some(
+          (connection) => connection.sourceLayer === planeLayer,
+        )
+      ) {
+        throw new Error(
+          `FanoutSolver: plane-terminated bus "${bus.busId}" must target a layer below its source pad`,
+        )
+      }
+    }
+    const boundaryBusIds = this.preparedBuses
+      .filter((bus) => bus.termination.type === "boundary")
+      .map((bus) => bus.busId)
+    const fixedPlaneAssignments = Object.fromEntries(
+      this.preparedBuses.flatMap((bus) =>
+        bus.termination.type === "plane"
+          ? [[bus.busId, bus.termination.layer] as const]
+          : [],
+      ),
+    )
     const generatedAssignments = generateLayerAssignments({
-      busIds: this.preparedBuses.map((bus) => bus.busId),
+      busIds: boundaryBusIds,
       layers: this.config.escapeLayers,
       maxAssignments: this.config.maxLayerCombinations,
-    })
+    }).map((assignment) => ({
+      ...assignment,
+      ...fixedPlaneAssignments,
+    }))
     this.layerAssignments = prioritizeLayerAssignment({
       preferredAssignment: createPreferredLayerAssignment({
         buses: this.preparedBuses,
@@ -372,6 +407,8 @@ export class FanoutSolver extends BaseSolver {
     }
     const busesInRoutingOrder = [...this.preparedBuses].sort(
       (a, b) =>
+        Number(a.termination.type === "plane") -
+          Number(b.termination.type === "plane") ||
         b.componentObstacles.length - a.componentObstacles.length ||
         (isSingleLayerFanout
           ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
@@ -500,6 +537,18 @@ export class FanoutSolver extends BaseSolver {
     return {
       simpleRouteJson: this.bestAttempt.outputSrj,
       fanoutTraces: this.bestAttempt.plans.map((plan) => plan.trace),
+      planeTerminations: this.bestAttempt.plans.flatMap((plan) =>
+        plan.termination.type === "plane" && plan.via
+          ? [
+              {
+                busId: plan.busId,
+                connectionName: plan.connectionName,
+                layer: plan.termination.layer,
+                via: plan.via,
+              },
+            ]
+          : [],
+      ),
       busLayerAssignments: this.bestAttempt.summary.busLayerAssignments,
       busDirections: Object.fromEntries(
         this.preparedBuses.map((bus) => [bus.busId, bus.direction]),

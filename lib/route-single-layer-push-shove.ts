@@ -757,6 +757,7 @@ function buildPlan(path: RoutedPath): FanoutRoutePlan {
     sourceObstacle: item.connection.sourceObstacle,
     sourceLayer: item.connection.sourceLayer,
     targetLayer: "top",
+    termination: item.bus.termination,
     direction: item.direction,
     exitPoint: points.at(-1)!,
     trace: {

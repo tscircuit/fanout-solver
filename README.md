@@ -42,6 +42,11 @@ and treats each bus-layer decision atomically.
 - Keeps outward-edge buses on their source layer when possible. If a bus needs
   a via, every connection in that bus receives one and moves to the same
   assigned layer; mixed via use within a bus is never committed.
+- Accepts a bus-level `termination` target. The default
+  `{ type: "boundary" }` preserves the ordinary breakout contract, while
+  `{ type: "plane", layer: "inner1" }` escapes each source pad to a legal local
+  via and considers the connection complete on that plane instead of extending
+  it to the shared boundary.
 - Uses a straight pad-pair escape when the via fits. Otherwise it uses a 45°
   four-pad interstitial escape and nested side bands that spread deeper
   two-layer buses around already-routed outer buses.
@@ -88,6 +93,14 @@ const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   },
   borderDistribution: "even",
   compactBusTracks: true,
+  buses: [
+    {
+      busId: "ground",
+      connectionNames: ["VSS_A1", "VSS_A2"],
+      direction: "right",
+      termination: { type: "plane", layer: "inner1" },
+    },
+  ],
 })
 fanoutSolver.solve()
 
@@ -122,12 +135,27 @@ routed cleanly, the solver rejects that bus for the current layer assignment and
 tries another combination. `busExitPreferences` provides the same override
 without modifying the input object.
 
+`termination` is another additive extension:
+
+```ts
+type FanoutBusTermination =
+  | { type: "boundary" }
+  | { type: "plane"; layer: string }
+```
+
+A plane-targeted connection may contain only its package-pad source point. The
+solver creates the local dogbone and via, records it in `planeTerminations`, and
+removes the completed connection from the returned downstream
+`SimpleRouteJson`. Plane layers are fixed targets and are not included in the
+bus-layer combination search.
+
 ## Output contract
 
 `getOutput()` returns:
 
 - `simpleRouteJson`: the downstream routing problem with fanout prefixes
 - `fanoutTraces`: the newly supplied pad-to-breakout traces
+- `planeTerminations`: the completed local-via connection, layer, and via data
 - `busLayerAssignments`: the selected layer for every bus
 - `busDirections`: the direction shared by each bus
 - `attempts`: score and success metadata for every tried layer combination
@@ -247,6 +275,25 @@ BGA pad coverage, ordered push-and-shove bends, and the absence of 90° corners.
 | `sample003` |          9 |          52 |    28 |    0 |      1 |
 | `sample004` |          9 |          80 |    32 |    0 |      1 |
 | `sample005` |          9 |          73 |    73 |    0 |      1 |
+
+## Dataset 05
+
+`datasets/dataset05.ts` uses the attached Rockchip RK3588 V1.1 ball-assignment
+data as its checked-in source of truth. It preserves the exact 34×34 published
+orientation, all 1,088 populated ball coordinates and names, and all 68
+unpopulated positions. Every generated connection and pad obstacle carries its
+complete source assignment as `rk3588BallAssignment` metadata.
+
+The six-layer sample dedicates `inner1` to the 422 ground balls and `inner2` to
+the 167 power balls. Those 589 connections end at unique 0.25/0.15 mm local
+dogbone vias. The remaining 499 signal balls are divided into short,
+direction-consistent geometric buses and escape to the shared boundary on
+`top`, `inner3`, `inner4`, and `bottom`. All copper uses the same 0.10 mm trace
+and clearance values as the JLCPCB regressions.
+
+| Sample      | Package      | Balls | Plane terminations | Boundary signals | Layers |
+| ----------- | ------------ | ----: | -----------------: | ---------------: | -----: |
+| `sample001` | FCBGA1088L   |  1088 |                589 |              499 |      6 |
 
 ## Development
 

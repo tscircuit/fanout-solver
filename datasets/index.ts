@@ -3,6 +3,7 @@ import { fanoutDataset01 } from "./dataset01"
 import { fanoutDataset02 } from "./dataset02"
 import { fanoutDataset03 } from "./dataset03"
 import { fanoutDataset04 } from "./dataset04"
+import { fanoutDataset05 } from "./dataset05"
 
 export const fanoutDatasets: FanoutDataset[] = [
   {
@@ -32,6 +33,13 @@ export const fanoutDatasets: FanoutDataset[] = [
     description:
       "Larger BGAs and an RP2040-class QFN56 package, each surrounded at all eight compass positions by cap0603 footprints and escaped through one shared boundary using top-copper push-and-shove bends.",
     samples: fanoutDataset04,
+  },
+  {
+    id: "dataset05",
+    name: "RK3588 plane-aware breakout",
+    description:
+      "An exact 1,088-ball RK3588 FCBGA map with local ground and power plane terminations plus a four-routing-layer shared-boundary signal breakout.",
+    samples: fanoutDataset05,
   },
 ]
 

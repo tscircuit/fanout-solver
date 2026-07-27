@@ -9,6 +9,7 @@ import type {
   Bounds,
   FanoutBorderTarget,
   FanoutBusSpec,
+  FanoutBusTermination,
   FanoutDirection,
   FanoutSolverOptions,
   PreparedBus,
@@ -331,6 +332,25 @@ function resolvePreferredExit(
   return value
 }
 
+function resolveTermination(
+  busId: string,
+  value: FanoutBusTermination | undefined,
+): FanoutBusTermination {
+  if (value === undefined || value.type === "boundary") {
+    return { type: "boundary" }
+  }
+  if (
+    value.type !== "plane" ||
+    typeof value.layer !== "string" ||
+    value.layer.length === 0
+  ) {
+    throw new Error(
+      `FanoutSolver: bus "${busId}" has an invalid termination target`,
+    )
+  }
+  return { type: "plane", layer: value.layer }
+}
+
 function resolveBusSpecs(
   srj: SimpleRouteJson,
   options: FanoutSolverOptions,
@@ -359,16 +379,27 @@ function resolveBusSpecs(
       }
       claimedConnectionNames.add(connectionName)
     }
+    const termination = resolveTermination(
+      requestedBus.busId,
+      (requestedBus as FanoutBusSpec).termination,
+    )
+    const preferredExit = resolvePreferredExit(
+      requestedBus.busId,
+      options.busExitPreferences?.[requestedBus.busId] ??
+        (requestedBus as FanoutBusSpec).preferredExit,
+    )
+    if (termination.type === "plane" && preferredExit !== undefined) {
+      throw new Error(
+        `FanoutSolver: plane-terminated bus "${requestedBus.busId}" cannot also specify preferredExit`,
+      )
+    }
     specsById.set(requestedBus.busId, {
       ...requestedBus,
       direction:
         options.busDirections?.[requestedBus.busId] ??
         (requestedBus as FanoutBusSpec).direction,
-      preferredExit: resolvePreferredExit(
-        requestedBus.busId,
-        options.busExitPreferences?.[requestedBus.busId] ??
-          (requestedBus as FanoutBusSpec).preferredExit,
-      ),
+      preferredExit,
+      termination,
     })
   }
 
@@ -390,6 +421,7 @@ function resolveBusSpecs(
           options.busExitPreferences?.[inferredBusId] ??
             existing?.preferredExit,
         ),
+        termination: existing?.termination ?? { type: "boundary" },
       })
     } else {
       const singletonBusId = `connection:${connection.name}`
@@ -401,6 +433,7 @@ function resolveBusSpecs(
           singletonBusId,
           options.busExitPreferences?.[singletonBusId],
         ),
+        termination: { type: "boundary" },
       })
     }
   }
@@ -457,6 +490,7 @@ function chooseTargetPoint(
   sourcePoint: ConnectionPoint,
   connection: SimpleRouteConnection,
   sourcePointIndex: number,
+  termination: FanoutBusTermination,
 ): ConnectionPoint {
   const targetCandidates = connection.pointsToConnect.filter(
     (_, pointIndex) => pointIndex !== sourcePointIndex,
@@ -464,6 +498,9 @@ function chooseTargetPoint(
   const targetPoint = targetCandidates.sort(
     (a, b) => distance(sourcePoint, b) - distance(sourcePoint, a),
   )[0]
+  if (!targetPoint && termination.type === "plane") {
+    return sourcePoint
+  }
   if (!targetPoint) {
     throw new Error(
       `FanoutSolver: connection "${connection.name}" has no target beyond its BGA pad`,
@@ -477,8 +514,15 @@ function prepareConnection(params: {
   connectionIndex: number
   sourceGrid: ComponentGrid
   componentGrids: ComponentGrid[]
+  termination: FanoutBusTermination
 }): PreparedConnection {
-  const { connection, connectionIndex, sourceGrid, componentGrids } = params
+  const {
+    connection,
+    connectionIndex,
+    sourceGrid,
+    componentGrids,
+    termination,
+  } = params
   for (
     let sourcePointIndex = 0;
     sourcePointIndex < connection.pointsToConnect.length;
@@ -506,7 +550,12 @@ function prepareConnection(params: {
       sourcePointIndex,
       sourceLayer,
       sourceObstacle: sourceMatch.obstacle,
-      targetPoint: chooseTargetPoint(sourcePoint, connection, sourcePointIndex),
+      targetPoint: chooseTargetPoint(
+        sourcePoint,
+        connection,
+        sourcePointIndex,
+        termination,
+      ),
     }
   }
   throw new Error(
@@ -675,6 +724,7 @@ export function prepareFanoutBuses(
         connectionIndex: connectionIndexByName.get(connection.name)!,
         sourceGrid,
         componentGrids,
+        termination: busSpec.termination ?? { type: "boundary" },
       }),
     )
     buses.push({
@@ -688,6 +738,7 @@ export function prepareFanoutBuses(
         sharedBoundary,
       }),
       preferredExit: busSpec.preferredExit,
+      termination: busSpec.termination ?? { type: "boundary" },
       connections: preparedConnections,
       componentId: sourceGrid.componentId,
       componentObstacles: sourceGrid.obstacles,

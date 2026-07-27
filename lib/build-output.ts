@@ -39,6 +39,7 @@ export function buildOutputSimpleRouteJson(params: {
     pointsToConnect: connection.pointsToConnect.map((point) => ({ ...point })),
   }))
   const viaObstacles: Obstacle[] = []
+  const planeTerminatedConnectionNames = new Set<string>()
 
   for (const plan of plans) {
     const connection = outputConnections[plan.connectionIndex]
@@ -51,7 +52,13 @@ export function buildOutputSimpleRouteJson(params: {
       x: plan.exitPoint.x,
       y: plan.exitPoint.y,
       layer: plan.targetLayer,
-      pointId: `fanout-exit:${plan.connectionName}`,
+      pointId:
+        plan.termination.type === "plane"
+          ? `fanout-plane:${plan.connectionName}`
+          : `fanout-exit:${plan.connectionName}`,
+    }
+    if (plan.termination.type === "plane") {
+      planeTerminatedConnectionNames.add(plan.connectionName)
     }
     const viaObstacle = createViaObstacle(plan, layerNames)
     if (viaObstacle) viaObstacles.push(viaObstacle)
@@ -101,7 +108,18 @@ export function buildOutputSimpleRouteJson(params: {
   return {
     ...inputSrj,
     bounds: outputBounds,
-    connections: outputConnections,
+    connections: outputConnections.filter(
+      (connection) => !planeTerminatedConnectionNames.has(connection.name),
+    ),
+    buses: inputSrj.buses
+      ?.map((bus) => ({
+        ...bus,
+        connectionNames: bus.connectionNames.filter(
+          (connectionName) =>
+            !planeTerminatedConnectionNames.has(connectionName),
+        ),
+      }))
+      .filter((bus) => bus.connectionNames.length > 0),
     obstacles: [
       ...inputSrj.obstacles.map((obstacle) => ({
         ...obstacle,

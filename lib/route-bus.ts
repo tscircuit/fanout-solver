@@ -445,6 +445,7 @@ function buildPlan(params: {
   interstitialEscape: boolean
   spreadLaneIndex: number
   clearance: number
+  terminateAtVia: boolean
 }): FanoutRoutePlan {
   const {
     preparedConnection,
@@ -460,6 +461,7 @@ function buildPlan(params: {
     interstitialEscape,
     spreadLaneIndex,
     clearance,
+    terminateAtVia,
   } = params
   const sourcePoint = {
     x: preparedConnection.sourcePoint.x,
@@ -515,7 +517,9 @@ function buildPlan(params: {
     ? getAxis(spreadPoint, bus.direction)
     : viaAxis + sign * Math.abs(track - viaPerpendicularAxis)
   const doglegPoint = makePoint(targetLayerDoglegAxis, track, bus.direction)
-  const exitPoint = makePoint(exitAxis, track, bus.direction)
+  const exitPoint = terminateAtVia
+    ? viaPoint
+    : makePoint(exitAxis, track, bus.direction)
   const segments: RoutedSegment[] = []
   const route: SimplifiedPcbTrace["route"] = []
 
@@ -575,12 +579,14 @@ function buildPlan(params: {
     })
   }
 
-  const targetLayerPoints = useNestedSpread
-    ? chamferOrthogonalPolyline(
-        [viaPoint, spreadPoint, doglegPoint, exitPoint],
-        Math.max(traceWidth + clearance, traceWidth * 2),
-      )
-    : [viaPoint, doglegPoint, exitPoint]
+  const targetLayerPoints = terminateAtVia
+    ? [viaPoint]
+    : useNestedSpread
+      ? chamferOrthogonalPolyline(
+          [viaPoint, spreadPoint, doglegPoint, exitPoint],
+          Math.max(traceWidth + clearance, traceWidth * 2),
+        )
+      : [viaPoint, doglegPoint, exitPoint]
   for (let index = 1; index < targetLayerPoints.length; index++) {
     const previousPoint = targetLayerPoints[index - 1]!
     const nextPoint = targetLayerPoints[index]!
@@ -603,6 +609,7 @@ function buildPlan(params: {
     sourceObstacle: preparedConnection.sourceObstacle,
     sourceLayer: preparedConnection.sourceLayer,
     targetLayer,
+    termination: bus.termination,
     direction: bus.direction,
     exitPoint,
     trace: {
@@ -748,6 +755,79 @@ function planIsClear(params: {
   return true
 }
 
+function routePlaneTerminatedBus(
+  params: RouteBusParams,
+): FanoutRoutePlan[] | null {
+  const {
+    srj,
+    bus,
+    targetLayer,
+    acceptedPlans,
+    layerNames,
+    traceWidth,
+    viaDiameter,
+    viaHoleDiameter,
+    clearance,
+  } = params
+  const sourceObstacle = bus.connections[0]?.sourceObstacle
+  if (!sourceObstacle || bus.termination.type !== "plane") return null
+  const sourceLayer = bus.connections[0]!.sourceLayer
+  if (targetLayer === sourceLayer) return null
+  const directionalPadSize = isHorizontal(bus.direction)
+    ? sourceObstacle.width
+    : sourceObstacle.height
+  const pairChannelFitsVia =
+    getDirectionalPitch(bus) / 2 - directionalPadSize / 2 >=
+    viaDiameter / 2 + clearance - 1e-9
+  const viaHandednesses: readonly ViaHandedness[] = pairChannelFitsVia
+    ? [0]
+    : [1, -1]
+
+  for (const viaHandedness of viaHandednesses) {
+    for (const connectionOrder of getConnectionOrders(bus)) {
+      const candidatePlans: FanoutRoutePlan[] = []
+      let orderIsClear = true
+      for (const preparedConnection of connectionOrder) {
+        const sourceTrack = getPerpendicularAxis(
+          preparedConnection.sourcePoint,
+          bus.direction,
+        )
+        const plan = buildPlan({
+          preparedConnection,
+          bus,
+          targetLayer,
+          track: sourceTrack,
+          exitAxis: getExitAxis(bus),
+          layerNames,
+          traceWidth,
+          viaDiameter,
+          viaHoleDiameter,
+          viaHandedness,
+          interstitialEscape: !pairChannelFitsVia,
+          spreadLaneIndex: 0,
+          clearance,
+          terminateAtVia: true,
+        })
+        if (
+          !planIsClear({
+            plan,
+            otherPlans: [...acceptedPlans, ...candidatePlans],
+            srj,
+            clearance,
+          })
+        ) {
+          orderIsClear = false
+          break
+        }
+        candidatePlans.push(plan)
+      }
+      if (orderIsClear) return candidatePlans
+    }
+  }
+
+  return null
+}
+
 export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
   const {
     srj,
@@ -761,6 +841,9 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
     clearance,
     compactBusTracks,
   } = params
+  if (bus.termination.type === "plane") {
+    return routePlaneTerminatedBus(params)
+  }
   const exitAxis = getExitAxis(bus)
   const sourceObstacle = bus.connections[0]?.sourceObstacle
   if (!sourceObstacle) return []
@@ -822,6 +905,7 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
                 1,
             ),
             clearance,
+            terminateAtVia: false,
           })
           if (
             planIsClear({
