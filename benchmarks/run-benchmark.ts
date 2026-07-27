@@ -10,12 +10,20 @@ for (const dataset of fanoutDatasets) {
     solver.solve()
     const elapsedMilliseconds = performance.now() - startTime
     const output = solver.getOutput()
+    const viaCount = output.fanoutTraces.filter((trace) =>
+      trace.route.some((routePoint) => routePoint.route_type === "via"),
+    ).length
     rows.push({
       dataset: dataset.id,
       sample: sample.id,
+      layers: srj.layerCount,
       footprints: sample.footprintCount,
       pads: srj.obstacles.filter((obstacle) => obstacle.componentId).length,
       connections: srj.connections.length,
+      vias: viaCount,
+      viaFreeBuses: Object.values(output.busLayerAssignments).filter(
+        (layer) => layer === "top",
+      ).length,
       attempts: output.attempts.length,
       routed: output.fanoutTraces.length,
       milliseconds: Number(elapsedMilliseconds.toFixed(2)),

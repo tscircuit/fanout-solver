@@ -24,6 +24,7 @@ export interface BenchmarkParams {
   viaDiameter?: number
   viaHoleDiameter?: number
   clearance?: number
+  maxConnectionsPerBus?: number
 }
 
 interface ResolvedBenchmarkFootprint {
@@ -230,18 +231,47 @@ function createBenchmarkBuses(params: {
   footprintIndex: number
   pads: SelectedPad[]
   layoutCenter: { x: number; y: number }
+  maxConnectionsPerBus: number
 }): BenchmarkBus[] {
-  const { footprint, footprintIndex, pads, layoutCenter } = params
+  const {
+    footprint,
+    footprintIndex,
+    pads,
+    layoutCenter,
+    maxConnectionsPerBus,
+  } = params
   const connectionPrefix = `FP${String(footprintIndex + 1).padStart(2, "0")}`
   const primaryDirection = getPrimaryDirection(footprint, layoutCenter)
   const buses: BenchmarkBus[] = []
 
+  function addSplitBuses(params: {
+    baseBusId: string
+    direction: BenchmarkDirection
+    selectedPads: SelectedPad[]
+  }): void {
+    const { baseBusId, direction, selectedPads } = params
+    const partCount = Math.ceil(selectedPads.length / maxConnectionsPerBus)
+    for (let partIndex = 0; partIndex < partCount; partIndex++) {
+      buses.push({
+        busId:
+          partCount === 1
+            ? baseBusId
+            : `${baseBusId}:part-${String(partIndex + 1).padStart(2, "0")}`,
+        direction,
+        pads: selectedPads.slice(
+          partIndex * maxConnectionsPerBus,
+          (partIndex + 1) * maxConnectionsPerBus,
+        ),
+      })
+    }
+  }
+
   if (primaryDirection === "EAST" || primaryDirection === "WEST") {
     for (let column = 0; column < footprint.gridSize; column++) {
-      buses.push({
-        busId: `${footprint.componentId}:${primaryDirection.toLowerCase()}:column-${String(column + 1).padStart(2, "0")}`,
+      addSplitBuses({
+        baseBusId: `${footprint.componentId}:${primaryDirection.toLowerCase()}:column-${String(column + 1).padStart(2, "0")}`,
         direction: primaryDirection,
-        pads: pads.filter((pad) => pad.column === column),
+        selectedPads: pads.filter((pad) => pad.column === column),
       })
     }
     return buses
@@ -250,10 +280,10 @@ function createBenchmarkBuses(params: {
   for (let row = 0; row < footprint.gridSize; row++) {
     const direction =
       primaryDirection ?? (row < footprint.gridSize / 2 ? "SOUTH" : "NORTH")
-    buses.push({
-      busId: `${footprint.componentId}:${direction.toLowerCase()}:row-${String(row + 1).padStart(2, "0")}`,
+    addSplitBuses({
+      baseBusId: `${footprint.componentId}:${direction.toLowerCase()}:row-${String(row + 1).padStart(2, "0")}`,
       direction,
-      pads: pads.filter((pad) => pad.row === row),
+      selectedPads: pads.filter((pad) => pad.row === row),
     })
   }
 
@@ -290,6 +320,10 @@ export function createFootprinterBenchmarkProblem(
     throw new Error(
       "Benchmark viaHoleDiameter must be smaller than viaDiameter",
     )
+  }
+  const maxConnectionsPerBus = params.maxConnectionsPerBus ?? Number.MAX_VALUE
+  if (!Number.isInteger(maxConnectionsPerBus) || maxConnectionsPerBus < 1) {
+    throw new Error("Benchmark maxConnectionsPerBus must be a positive integer")
   }
 
   const footprints = resolveFootprints(params)
@@ -352,6 +386,7 @@ export function createFootprinterBenchmarkProblem(
       footprintIndex,
       pads,
       layoutCenter,
+      maxConnectionsPerBus,
     })) {
       const connectionNames: string[] = []
       for (const selectedPad of benchmarkBus.pads) {

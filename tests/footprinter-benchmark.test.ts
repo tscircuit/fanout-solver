@@ -13,10 +13,10 @@ test("footprinter BGA64 benchmark escapes every pad", () => {
 
   expect(output.fanoutTraces).toHaveLength(64)
   expect(
-    output.fanoutTraces.every((trace) =>
+    output.fanoutTraces.filter((trace) =>
       trace.route.some((routePoint) => routePoint.route_type === "via"),
     ),
-  ).toBe(true)
+  ).toHaveLength(48)
   expect(output.simpleRouteJson.traces).toHaveLength(64)
-  expect(output.simpleRouteJson.obstacles).toHaveLength(128)
+  expect(output.simpleRouteJson.obstacles).toHaveLength(112)
 })

@@ -19,7 +19,7 @@ test("the solver evaluates bounded combinations of available layers", () => {
   for (const assignment of solver.layerAssignments) {
     expect(
       Object.values(assignment).every((layer) =>
-        ["inner1", "inner2", "bottom"].includes(layer),
+        ["top", "inner1", "inner2", "bottom"].includes(layer),
       ),
     ).toBe(true)
   }

@@ -10,19 +10,20 @@ interface StressSampleSpec {
   footprints: BenchmarkFootprintParams[]
 }
 
-const PITCH = 1
-const PAD_DIAMETER = 0.6
+const PITCH = 1.52
+const PAD_DIAMETER = 1
 const VIA_DIAMETER = 0.4
 const VIA_HOLE_DIAMETER = 0.2
-const TRACE_WIDTH = 0.06
-const CLEARANCE = 0.03
-const BOUNDARY_MARGIN = 8
+const TRACE_WIDTH = 0.1
+const CLEARANCE = 0.1
+const BOUNDARY_MARGIN = 20
+const MAX_CONNECTIONS_PER_BUS = 10
 
 const STRESS_SAMPLE_SPECS: StressSampleSpec[] = [
   {
-    name: "Two-layer interstitial BGA100",
+    name: "JLCPCB two-layer interstitial BGA100",
     description:
-      "A 10×10 BGA whose 0.40 mm vias cannot fit between adjacent 0.60 mm pads and must use four-pad corner interstices.",
+      "A 10×10 BGA using JLCPCB 4/4 mil rules; inner buses use four-pad interstitial vias while the outer bus on each side remains via-free.",
     footprints: [
       {
         componentId: "stress-bga-01",
@@ -40,14 +41,14 @@ const STRESS_SAMPLE_SPECS: StressSampleSpec[] = [
     footprints: [
       {
         componentId: "stress-bga-01",
-        center: { x: -8, y: 0 },
+        center: { x: -20, y: 0 },
         gridSize: 10,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-02",
-        center: { x: 8, y: 0 },
+        center: { x: 20, y: 0 },
         gridSize: 10,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
@@ -61,7 +62,7 @@ const STRESS_SAMPLE_SPECS: StressSampleSpec[] = [
     footprints: [
       {
         componentId: "stress-bga-01",
-        center: { x: -16, y: 0 },
+        center: { x: -40, y: 0 },
         gridSize: 8,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
@@ -75,7 +76,7 @@ const STRESS_SAMPLE_SPECS: StressSampleSpec[] = [
       },
       {
         componentId: "stress-bga-03",
-        center: { x: 16, y: 0 },
+        center: { x: 40, y: 0 },
         gridSize: 8,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
@@ -89,28 +90,28 @@ const STRESS_SAMPLE_SPECS: StressSampleSpec[] = [
     footprints: [
       {
         componentId: "stress-bga-01",
-        center: { x: -12, y: -16 },
+        center: { x: -20, y: -38 },
         gridSize: 8,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-02",
-        center: { x: 12, y: -16 },
+        center: { x: 20, y: -38 },
         gridSize: 8,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-03",
-        center: { x: -12, y: 16 },
+        center: { x: -20, y: 38 },
         gridSize: 8,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-04",
-        center: { x: 12, y: 16 },
+        center: { x: 20, y: 38 },
         gridSize: 8,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
@@ -120,7 +121,7 @@ const STRESS_SAMPLE_SPECS: StressSampleSpec[] = [
   {
     name: "Five-footprint two-layer BGA356",
     description:
-      "A central BGA100 plus four BGA64s require 356 collision-free interstitial vias and heavily spread bottom-layer escapes.",
+      "A central BGA100 plus four BGA64s use JLCPCB-safe geometry, sparse bus-atomic vias, and heavily spread bottom-layer escapes.",
     footprints: [
       {
         componentId: "stress-bga-01",
@@ -131,28 +132,28 @@ const STRESS_SAMPLE_SPECS: StressSampleSpec[] = [
       },
       {
         componentId: "stress-bga-02",
-        center: { x: -16, y: -10 },
+        center: { x: -40, y: -22 },
         gridSize: 8,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-03",
-        center: { x: 16, y: -10 },
+        center: { x: 40, y: -22 },
         gridSize: 8,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-04",
-        center: { x: -16, y: 10 },
+        center: { x: -40, y: 22 },
         gridSize: 8,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-05",
-        center: { x: 16, y: 10 },
+        center: { x: 40, y: 22 },
         gridSize: 8,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
@@ -168,6 +169,7 @@ export const fanoutDataset02: FanoutDatasetSample[] = STRESS_SAMPLE_SPECS.map(
       clearance: CLEARANCE,
       footprints: spec.footprints,
       layerCount: 2,
+      maxConnectionsPerBus: MAX_CONNECTIONS_PER_BUS,
       traceWidth: TRACE_WIDTH,
       viaDiameter: VIA_DIAMETER,
       viaHoleDiameter: VIA_HOLE_DIAMETER,

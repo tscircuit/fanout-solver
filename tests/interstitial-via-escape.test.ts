@@ -8,7 +8,14 @@ test("oversized vias use four-pad corner interstices instead of pair gaps", () =
   const viaDiameter = srj.minViaPadDiameter!
   const clearance = srj.minViaEdgeToPadEdgeClearance!
   const pad = srj.obstacles.find((obstacle) => obstacle.componentId)!
-  const pitch = 1
+  const xCoordinates = [
+    ...new Set(
+      srj.obstacles
+        .filter((obstacle) => obstacle.componentId === pad.componentId)
+        .map((obstacle) => obstacle.center.x),
+    ),
+  ].sort((a, b) => a - b)
+  const pitch = xCoordinates[1]! - xCoordinates[0]!
   const pairGapClearance = (pitch - pad.width) / 2
   const cornerClearance = Math.hypot(pairGapClearance, pairGapClearance)
   const requiredViaClearance = viaDiameter / 2 + clearance
@@ -33,8 +40,8 @@ test("oversized vias use four-pad corner interstices instead of pair gaps", () =
       )!
       const via = trace.route.find(
         (routePoint) => routePoint.route_type === "via",
-      )!
-      if (via.route_type !== "via") continue
+      )
+      if (via?.route_type !== "via") continue
       if (via.x <= minX || via.x >= maxX || via.y <= minY || via.y >= maxY) {
         continue
       }

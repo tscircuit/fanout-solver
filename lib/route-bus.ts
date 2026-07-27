@@ -345,6 +345,54 @@ function appendSegment(
   segments.push({ start, end, width, layer })
 }
 
+function chamferOrthogonalPolyline(
+  points: Point2D[],
+  requestedChamfer: number,
+): Point2D[] {
+  if (points.length < 3) return points
+  const chamfered: Point2D[] = [points[0]!]
+
+  for (let index = 1; index < points.length - 1; index++) {
+    const previous = points[index - 1]!
+    const corner = points[index]!
+    const next = points[index + 1]!
+    const incomingLength = distance(previous, corner)
+    const outgoingLength = distance(corner, next)
+    if (incomingLength < 1e-9 || outgoingLength < 1e-9) continue
+    const incomingUnit = {
+      x: (corner.x - previous.x) / incomingLength,
+      y: (corner.y - previous.y) / incomingLength,
+    }
+    const outgoingUnit = {
+      x: (next.x - corner.x) / outgoingLength,
+      y: (next.y - corner.y) / outgoingLength,
+    }
+    const dot =
+      incomingUnit.x * outgoingUnit.x + incomingUnit.y * outgoingUnit.y
+    if (Math.abs(dot) > 1e-6) {
+      chamfered.push(corner)
+      continue
+    }
+
+    const chamfer = Math.min(
+      requestedChamfer,
+      incomingLength / 2,
+      outgoingLength / 2,
+    )
+    chamfered.push({
+      x: corner.x - incomingUnit.x * chamfer,
+      y: corner.y - incomingUnit.y * chamfer,
+    })
+    chamfered.push({
+      x: corner.x + outgoingUnit.x * chamfer,
+      y: corner.y + outgoingUnit.y * chamfer,
+    })
+  }
+
+  chamfered.push(points.at(-1)!)
+  return chamfered
+}
+
 function buildPlan(params: {
   preparedConnection: PreparedConnection
   bus: PreparedBus
@@ -469,34 +517,24 @@ function buildPlan(params: {
     })
   }
 
-  appendSegment(segments, viaPoint, spreadPoint, traceWidth, targetLayer)
-  if (distance(viaPoint, spreadPoint) >= 1e-9) {
+  const targetLayerPoints = useNestedSpread
+    ? chamferOrthogonalPolyline(
+        [viaPoint, spreadPoint, doglegPoint, exitPoint],
+        Math.max(traceWidth + clearance, traceWidth * 2),
+      )
+    : [viaPoint, doglegPoint, exitPoint]
+  for (let index = 1; index < targetLayerPoints.length; index++) {
+    const previousPoint = targetLayerPoints[index - 1]!
+    const nextPoint = targetLayerPoints[index]!
+    appendSegment(segments, previousPoint, nextPoint, traceWidth, targetLayer)
     route.push({
       route_type: "wire",
-      x: spreadPoint.x,
-      y: spreadPoint.y,
+      x: nextPoint.x,
+      y: nextPoint.y,
       width: traceWidth,
       layer: targetLayer,
     })
   }
-  appendSegment(segments, spreadPoint, doglegPoint, traceWidth, targetLayer)
-  if (distance(spreadPoint, doglegPoint) >= 1e-9) {
-    route.push({
-      route_type: "wire",
-      x: doglegPoint.x,
-      y: doglegPoint.y,
-      width: traceWidth,
-      layer: targetLayer,
-    })
-  }
-  appendSegment(segments, doglegPoint, exitPoint, traceWidth, targetLayer)
-  route.push({
-    route_type: "wire",
-    x: exitPoint.x,
-    y: exitPoint.y,
-    width: traceWidth,
-    layer: targetLayer,
-  })
 
   return {
     busId: bus.busId,
@@ -671,12 +709,17 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
   const directionalPadSize = isHorizontal(bus.direction)
     ? sourceObstacle.width
     : sourceObstacle.height
+  const sourceLayer = bus.connections[0]!.sourceLayer
+  const targetUsesVia = targetLayer !== sourceLayer
   const pairChannelFitsVia =
     getDirectionalPitch(bus) / 2 - directionalPadSize / 2 >=
     viaDiameter / 2 + clearance - 1e-9
-  const viaHandednesses: readonly ViaHandedness[] = pairChannelFitsVia
-    ? [0]
-    : [1, -1]
+  const interstitialEscape = targetUsesVia && !pairChannelFitsVia
+  const viaHandednesses: readonly ViaHandedness[] = targetUsesVia
+    ? pairChannelFitsVia
+      ? [0]
+      : [1, -1]
+    : [0]
 
   for (const viaHandedness of viaHandednesses) {
     for (const connectionOrder of getConnectionOrders(bus)) {
@@ -690,7 +733,7 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
           preferredTrack: getPreferredTrack({
             bus,
             connection: preparedConnection,
-            interstitialEscape: !pairChannelFitsVia,
+            interstitialEscape,
             traceWidth,
             viaDiameter,
             clearance,
@@ -709,7 +752,7 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
             viaDiameter,
             viaHoleDiameter,
             viaHandedness,
-            interstitialEscape: !pairChannelFitsVia,
+            interstitialEscape,
             spreadLaneIndex: Math.min(
               getConnectionRank(bus, preparedConnection),
               bus.connections.length -

@@ -77,11 +77,7 @@ function resolveConfig(
     options.breakoutMargin ?? Math.max(viaDiameter, traceWidth + clearance),
   )
   const layerNames = getCopperLayerNames(srj.layerCount)
-  const escapeLayers =
-    options.escapeLayers ??
-    (layerNames.length > 1
-      ? layerNames.filter((layer) => layer !== "top")
-      : layerNames)
+  const escapeLayers = options.escapeLayers ?? layerNames
   for (const layer of escapeLayers) {
     if (!layerNames.includes(layer)) {
       throw new Error(
@@ -145,6 +141,70 @@ function getBusDistanceToBoundary(bus: PreparedBus): number {
   }
 }
 
+function busIsOnOutwardComponentEdge(bus: PreparedBus): boolean {
+  const isHorizontal = bus.direction === "left" || bus.direction === "right"
+  const directionalCoordinates = isHorizontal
+    ? bus.xCoordinates
+    : bus.yCoordinates
+  const averageSource =
+    bus.connections.reduce(
+      (sum, connection) =>
+        sum +
+        (isHorizontal ? connection.sourcePoint.x : connection.sourcePoint.y),
+      0,
+    ) / bus.connections.length
+  const outwardCoordinate =
+    bus.direction === "right" || bus.direction === "up"
+      ? Math.max(...directionalCoordinates)
+      : Math.min(...directionalCoordinates)
+  return Math.abs(averageSource - outwardCoordinate) < 1e-6
+}
+
+function createPreferredLayerAssignment(params: {
+  buses: PreparedBus[]
+  escapeLayers: string[]
+}): Readonly<Record<string, string>> {
+  const { buses, escapeLayers } = params
+  const assignment: Record<string, string> = {}
+  let nextViaLayerIndex = 0
+
+  for (const bus of buses) {
+    const sourceLayer = bus.connections[0]?.sourceLayer
+    if (!sourceLayer) {
+      throw new Error(`FanoutSolver: bus "${bus.busId}" has no connections`)
+    }
+    const viaLayers = escapeLayers.filter((layer) => layer !== sourceLayer)
+    if (
+      escapeLayers.includes(sourceLayer) &&
+      busIsOnOutwardComponentEdge(bus)
+    ) {
+      assignment[bus.busId] = sourceLayer
+    } else if (viaLayers.length > 0) {
+      assignment[bus.busId] = viaLayers[nextViaLayerIndex % viaLayers.length]!
+      nextViaLayerIndex++
+    } else {
+      assignment[bus.busId] = sourceLayer
+    }
+  }
+
+  return assignment
+}
+
+function prioritizeLayerAssignment(params: {
+  preferredAssignment: Readonly<Record<string, string>>
+  generatedAssignments: Array<Readonly<Record<string, string>>>
+  maxAssignments: number
+}): Array<Readonly<Record<string, string>>> {
+  const { preferredAssignment, generatedAssignments, maxAssignments } = params
+  const preferredKey = JSON.stringify(preferredAssignment)
+  return [
+    preferredAssignment,
+    ...generatedAssignments.filter(
+      (assignment) => JSON.stringify(assignment) !== preferredKey,
+    ),
+  ].slice(0, maxAssignments)
+}
+
 export class FanoutSolver extends BaseSolver {
   readonly preparedBuses: PreparedBus[]
   readonly attempts: FanoutAttemptSummary[] = []
@@ -160,9 +220,17 @@ export class FanoutSolver extends BaseSolver {
     super()
     this.config = resolveConfig(inputSrj, options)
     this.preparedBuses = prepareFanoutBuses(inputSrj, options)
-    this.layerAssignments = generateLayerAssignments({
+    const generatedAssignments = generateLayerAssignments({
       busIds: this.preparedBuses.map((bus) => bus.busId),
       layers: this.config.escapeLayers,
+      maxAssignments: this.config.maxLayerCombinations,
+    })
+    this.layerAssignments = prioritizeLayerAssignment({
+      preferredAssignment: createPreferredLayerAssignment({
+        buses: this.preparedBuses,
+        escapeLayers: this.config.escapeLayers,
+      }),
+      generatedAssignments,
       maxAssignments: this.config.maxLayerCombinations,
     })
     this.MAX_ITERATIONS = this.layerAssignments.length + 2

@@ -21,10 +21,14 @@ and treats each bus-layer decision atomically.
 - Infers one outward direction per bus from the bus endpoints, or accepts an
   explicit direction override.
 - Enumerates combinations of the copper layers implied by `layerCount`.
-- Moves an entire bus to one assigned layer. A partial bus is never committed.
+- Keeps outward-edge buses on their source layer when possible. If a bus needs
+  a via, every connection in that bus receives one and moves to the same
+  assigned layer; mixed via use within a bus is never committed.
 - Uses a straight pad-pair escape when the via fits. Otherwise it uses a 45°
   four-pad interstitial escape and nested side bands that spread deeper
   two-layer buses around already-routed outer buses.
+- Chamfers orthogonal routing corners into 45° segments before validating and
+  emitting the fanout.
 - Verifies pad, via, trace, and already-routed fanout clearance.
 - Emits supplied fanout traces, via obstacles, and moved breakout endpoints in a
   new `SimpleRouteJson`. The returned problem is ready for a downstream
@@ -120,23 +124,27 @@ and component bounds come from each footprinter-generated
 
 ## Dataset 02
 
-`datasets/dataset02.ts` is the geometric stress dataset. Every sample has only
-top and bottom copper. Its 0.40 mm vias plus clearance cannot fit at the
-midpoint between adjacent 0.60 mm pads on 1.00 mm pitch, but do fit diagonally
-at the center of four pad corners. Inner buses must spread into nested side
-bands before crossing the shared boundary.
+`datasets/dataset02.ts` is the geometric stress dataset. Every sample uses
+[JLCPCB's published 1 oz, two-layer 0.10/0.10 mm trace and spacing capability](https://jlcpcb.com/capabilities/pcb-capabilities/),
+0.10 mm pad/copper clearance, and 0.40/0.20 mm vias. The 1.00 mm pads on
+1.52 mm pitch provide only 0.26 mm at a pad-pair midpoint—less than the
+0.30 mm required by a via and clearance—but provide 0.368 mm at a four-corner
+interstice. Inner buses spread into nested side bands while outward-edge buses
+remain via-free on top copper.
 
 | Sample | Footprints | Pads | Buses | Stress condition |
 | --- | ---: | ---: | ---: | --- |
-| `sample001` | 1 | 100 | 10 | One BGA100, interstitial vias, north/south spreading |
-| `sample002` | 2 | 200 | 20 | Opposed BGA100 footprints on one bottom layer |
-| `sample003` | 3 | 228 | 26 | Simultaneous left/right/north/south bundles |
-| `sample004` | 4 | 256 | 32 | Four BGA64 footprints share top/bottom exits |
-| `sample005` | 5 | 356 | 42 | Central BGA100 plus four BGA64 footprints |
+| `sample001` | 1 | 100 | 10 | 80 vias; two perimeter buses stay on top |
+| `sample002` | 2 | 200 | 20 | 180 vias; opposed perimeter buses stay on top |
+| `sample003` | 3 | 228 | 26 | 192 vias; four-sided top/bottom spreading |
+| `sample004` | 4 | 256 | 32 | 224 vias; four perimeter buses stay on top |
+| `sample005` | 5 | 356 | 42 | 304 vias; six perimeter buses stay on top |
 
-Every pad is connected in every stress sample. More than 95% of their breakout
-tracks leave the perpendicular span of their source footprint, making the
-required outward spreading visible in both Cosmos and the verification PNGs.
+Every pad is connected in every stress sample. Via use is atomic per bus and
+all emitted corners are straight or 45°. More than 95% of the via-bearing
+breakout tracks leave the perpendicular span of their source footprint, making
+the required outward spreading visible in both Cosmos and the verification
+PNGs.
 
 ## Development
 
