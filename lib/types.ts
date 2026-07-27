@@ -31,6 +31,8 @@ export type FanoutBusTermination =
     }
 
 export interface FanoutBusSpec extends SimpleRouteBus {
+  /** Component whose connection endpoints should be escaped. */
+  sourceComponentId?: string
   direction?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   /**
@@ -44,6 +46,12 @@ export interface FanoutBusSpec extends SimpleRouteBus {
 
 export interface FanoutSolverOptions {
   buses?: FanoutBusSpec[]
+  /** Default source component for every bus in this fanout operation. */
+  sourceComponentId?: string
+  /** Default direction for every bus in this fanout operation. */
+  defaultDirection?: FanoutDirection
+  /** Default boundary target for every bus in this fanout operation. */
+  defaultPreferredExit?: FanoutBorderTarget
   busDirections?: Readonly<Record<string, FanoutDirection>>
   busExitPreferences?: Readonly<Record<string, FanoutBorderTarget>>
   componentBounds?: Readonly<Record<string, Bounds>>

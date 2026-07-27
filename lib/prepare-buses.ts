@@ -386,7 +386,8 @@ function resolveBusSpecs(
     const preferredExit = resolvePreferredExit(
       requestedBus.busId,
       options.busExitPreferences?.[requestedBus.busId] ??
-        (requestedBus as FanoutBusSpec).preferredExit,
+        (requestedBus as FanoutBusSpec).preferredExit ??
+        options.defaultPreferredExit,
     )
     if (termination.type === "plane" && preferredExit !== undefined) {
       throw new Error(
@@ -395,9 +396,13 @@ function resolveBusSpecs(
     }
     specsById.set(requestedBus.busId, {
       ...requestedBus,
+      sourceComponentId:
+        (requestedBus as FanoutBusSpec).sourceComponentId ??
+        options.sourceComponentId,
       direction:
         options.busDirections?.[requestedBus.busId] ??
-        (requestedBus as FanoutBusSpec).direction,
+        (requestedBus as FanoutBusSpec).direction ??
+        options.defaultDirection,
       preferredExit,
       termination,
     })
@@ -415,11 +420,16 @@ function resolveBusSpecs(
           connection.name,
         ],
         direction:
-          options.busDirections?.[inferredBusId] ?? existing?.direction,
+          options.busDirections?.[inferredBusId] ??
+          existing?.direction ??
+          options.defaultDirection,
+        sourceComponentId:
+          existing?.sourceComponentId ?? options.sourceComponentId,
         preferredExit: resolvePreferredExit(
           inferredBusId,
           options.busExitPreferences?.[inferredBusId] ??
-            existing?.preferredExit,
+            existing?.preferredExit ??
+            options.defaultPreferredExit,
         ),
         termination: existing?.termination ?? { type: "boundary" },
       })
@@ -428,10 +438,13 @@ function resolveBusSpecs(
       specsById.set(singletonBusId, {
         busId: singletonBusId,
         connectionNames: [connection.name],
-        direction: options.busDirections?.[singletonBusId],
+        sourceComponentId: options.sourceComponentId,
+        direction:
+          options.busDirections?.[singletonBusId] ?? options.defaultDirection,
         preferredExit: resolvePreferredExit(
           singletonBusId,
-          options.busExitPreferences?.[singletonBusId],
+          options.busExitPreferences?.[singletonBusId] ??
+            options.defaultPreferredExit,
         ),
         termination: { type: "boundary" },
       })
@@ -475,15 +488,28 @@ function chooseSourceGrid(params: {
     if (countDifference !== 0) return countDifference
     return b.obstacles.length - a.obstacles.length
   })[0]
-  const selectedMatchCount = selectedGrid
-    ? (matchCountByComponent.get(selectedGrid.componentId) ?? 0)
-    : 0
-  if (!selectedGrid || selectedMatchCount !== connections.length) {
+  const requestedGrid = busSpec.sourceComponentId
+    ? componentGrids.find(
+        (grid) => grid.componentId === busSpec.sourceComponentId,
+      )
+    : undefined
+  if (busSpec.sourceComponentId && !requestedGrid) {
     throw new Error(
-      `FanoutSolver: bus "${busSpec.busId}" does not have one component endpoint on every connection`,
+      `FanoutSolver: source component "${busSpec.sourceComponentId}" for bus "${busSpec.busId}" was not found`,
     )
   }
-  return selectedGrid
+  const sourceGrid = requestedGrid ?? selectedGrid
+  const sourceMatchCount = sourceGrid
+    ? (matchCountByComponent.get(sourceGrid.componentId) ?? 0)
+    : 0
+  if (!sourceGrid || sourceMatchCount !== connections.length) {
+    throw new Error(
+      busSpec.sourceComponentId
+        ? `FanoutSolver: source component "${busSpec.sourceComponentId}" is not an endpoint on every connection in bus "${busSpec.busId}"`
+        : `FanoutSolver: bus "${busSpec.busId}" does not have one component endpoint on every connection`,
+    )
+  }
+  return sourceGrid
 }
 
 function chooseTargetPoint(
