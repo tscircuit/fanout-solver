@@ -28,9 +28,9 @@ export const fanoutDatasets: FanoutDataset[] = [
   },
   {
     id: "dataset04",
-    name: "Single-layer BGA + 8×0603",
+    name: "Larger packages + 8×caps",
     description:
-      "A one-layer BGA16 breakout surrounded on all eight compass positions by 0603 passives, with all 32 independent nets escaping one shared boundary without vias.",
+      "BGA16 through BGA64 and an RP2040-class QFN56 thermal-pad package, each surrounded at all eight compass positions by cap0603 footprints and routed through one shared boundary.",
     samples: fanoutDataset04,
   },
 ]

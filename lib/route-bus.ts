@@ -475,7 +475,9 @@ function buildPlan(params: {
     : preparedConnection.sourceObstacle.height
   const initialEscapeDistance =
     targetUsesVia && !busIsOnOutwardComponentEdge(bus)
-      ? directionalPitch * 0.5
+      ? directionalPadSize >= directionalPitch
+        ? directionalPadSize / 2 + viaDiameter / 2 + clearance + 1e-3
+        : directionalPitch * 0.5
       : !targetUsesVia
         ? directionalPadSize / 2 + traceWidth / 2 + clearance + 1e-3
         : Math.max(

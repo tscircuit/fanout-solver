@@ -55,8 +55,8 @@ bun add https://github.com/tscircuit/fanout-solver
 ## Usage
 
 ```ts
-import { CapacityMeshSolver } from "@tscircuit/capacity-autorouter";
-import { FanoutSolver } from "@tscircuit/fanout-solver";
+import { CapacityMeshSolver } from "@tscircuit/capacity-autorouter"
+import { FanoutSolver } from "@tscircuit/fanout-solver"
 
 const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   maxLayerCombinations: 256,
@@ -73,17 +73,17 @@ const fanoutSolver = new FanoutSolver(simpleRouteJson, {
     ddr: "right",
   },
   compactBusTracks: true,
-});
-fanoutSolver.solve();
+})
+fanoutSolver.solve()
 
 if (fanoutSolver.failed) {
-  throw new Error(fanoutSolver.error ?? "Fanout failed");
+  throw new Error(fanoutSolver.error ?? "Fanout failed")
 }
 
 const autorouter = new CapacityMeshSolver(
   fanoutSolver.getOutputSimpleRouteJson(),
-);
-autorouter.solve();
+)
+autorouter.solve()
 ```
 
 The canonical bus input is the current `SimpleRouteJson` bus structure:
@@ -188,25 +188,32 @@ standard 0.25/0.15 mm via constraints.
 
 ## Dataset 04
 
-`datasets/dataset04.ts` is a single-layer shared-boundary breakout containing
-the exact circular-pad footprint
-`bga16_grid4x4_p0.8mm_pad0.3mm_circularpads`, four `res0603` footprints, and
-four `cap0603` footprints. The passives occupy all eight compass positions
-around the BGA in alternating orientations.
+`datasets/dataset04.ts` contains five package-plus-decoupling stress cases.
+Every sample places exactly eight `cap0603` footprints at the cardinal and
+diagonal positions around one central package, then breaks every connected pad
+out of one shared boundary.
 
-Before the fanout result is accepted, the regression independently runs
-`AutoroutingPipelineSolver` from `tscircuit/tscircuit-autorouter` against the
-same 32-net `SimpleRouteJson` and requires 32 distinct top-layer routes. The
-fanout solver then produces its own via-free breakout and separately verifies
-JLCPCB's 0.10 mm trace width and 0.10 mm copper clearance rules.
+The BGA cases scale from 16 to 64 balls while the stackup scales from one to
+four layers. Every inner ball is connected and grid-line buses remain atomic.
+The final sample is an RP2040-class package using the exact footprinter string
+`qfn56_w7_h7_p0.4mm_thermalpad3.2x3.2_startingpin(topside,rightpin)_ccw`.
+It routes all 56 perimeter pins, the exposed pad, and all 16 capacitor pads on
+two layers. The thermal-pad via is placed beyond the 3.2 mm pad edge with full
+copper clearance.
 
-All sixteen BGA balls are connected, including the four inner balls. Grid-line
-buses escape atomically through all four package sides, all sixteen 0603 pads
-escape with them, and every route terminates outside the one shared boundary.
+The one-layer BGA16 regression also runs `AutoroutingPipelineSolver` from
+`tscircuit/tscircuit-autorouter` as an independent feasibility check. All five
+fanout results separately verify JLCPCB's 0.10 mm trace width and 0.10 mm copper
+clearance rules, standard 0.25/0.15 mm via constraints, shared-boundary exits,
+bus-atomic via use, and the absence of 90° corners.
 
 | Sample      | Footprints | Pads | Buses | Vias | Layers |
 | ----------- | ---------: | ---: | ----: | ---: | -----: |
 | `sample001` |          9 |   32 |    24 |    0 |      1 |
+| `sample002` |          9 |   41 |    25 |   29 |      2 |
+| `sample003` |          9 |   52 |    28 |   40 |      3 |
+| `sample004` |          9 |   80 |    32 |   68 |      4 |
+| `sample005` |          9 |   73 |    73 |   21 |      2 |
 
 ## Development
 
