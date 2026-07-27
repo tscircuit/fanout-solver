@@ -38,7 +38,6 @@ export interface FanoutSolverOptions {
   viaDiameter?: number
   viaHoleDiameter?: number
   clearance?: number
-  breakoutMargin?: number
   compactBusTracks?: boolean
   singleLayerPushAndShove?: boolean
   borderDistribution?: FanoutBorderDistribution

@@ -19,6 +19,9 @@ and treats each bus-layer decision atomically.
 - Routes perimeter and inner-matrix pads; the benchmark connects every pad.
 - Uses `sharedBoundary` as the common exit rectangle. Without one, it infers a
   shared rectangle around all detected component bounds and pad grids.
+- Ends every fanout trace exactly on its selected `sharedBoundary` edge. Border
+  distribution and lane spreading happen inside the rectangle, never after the
+  trace has crossed the boundary.
 - Infers one outward direction per bus from the bus endpoints, or accepts an
   explicit direction override.
 - Accepts an additive `preferredExit` bus field for a particular edge

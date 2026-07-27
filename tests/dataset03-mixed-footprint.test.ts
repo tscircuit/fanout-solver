@@ -21,20 +21,37 @@ interface NamedVia {
   holeDiameter: number
 }
 
-function pointIsOutsideBoundary(
+function pointIsOnBoundary(
   point: Point2D,
   direction: FanoutDirection,
   boundary: (typeof fanoutDataset03)[number]["sharedBoundary"],
 ): boolean {
+  const epsilon = 1e-6
   switch (direction) {
     case "left":
-      return point.x < boundary.minX
+      return (
+        Math.abs(point.x - boundary.minX) <= epsilon &&
+        point.y >= boundary.minY - epsilon &&
+        point.y <= boundary.maxY + epsilon
+      )
     case "right":
-      return point.x > boundary.maxX
+      return (
+        Math.abs(point.x - boundary.maxX) <= epsilon &&
+        point.y >= boundary.minY - epsilon &&
+        point.y <= boundary.maxY + epsilon
+      )
     case "up":
-      return point.y > boundary.maxY
+      return (
+        Math.abs(point.y - boundary.maxY) <= epsilon &&
+        point.x >= boundary.minX - epsilon &&
+        point.x <= boundary.maxX + epsilon
+      )
     case "down":
-      return point.y < boundary.minY
+      return (
+        Math.abs(point.y - boundary.minY) <= epsilon &&
+        point.x >= boundary.minX - epsilon &&
+        point.x <= boundary.maxX + epsilon
+      )
   }
 }
 
@@ -97,11 +114,7 @@ test("dataset03 fans out a rotated QFN50 and two oriented 0603s on two JLCPCB-ru
           throw new Error(`${trace.connection_name} does not end in a wire`)
         }
         expect(
-          pointIsOutsideBoundary(
-            finalPoint,
-            bus.direction,
-            sample.sharedBoundary,
-          ),
+          pointIsOnBoundary(finalPoint, bus.direction, sample.sharedBoundary),
         ).toBe(true)
         return trace.route.some((routePoint) => routePoint.route_type === "via")
       })

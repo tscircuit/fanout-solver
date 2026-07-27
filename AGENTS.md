@@ -34,7 +34,8 @@
 - All footprints in one problem escape through the same shared boundary.
 - Keep the output compatible with `SimpleRouteJson`: committed fanout prefixes
   become supplied traces and the remaining connection endpoint moves to the
-  outside of the shared breakout edge.
+  shared breakout edge. Every route must distribute before that edge and end
+  exactly on it; fanout geometry must never continue beyond the boundary.
 - Throw on invalid input or impossible internal state. Do not silently return a
   partially routed bus as a successful solve.
 - Use kebab-case filenames and one test per file.

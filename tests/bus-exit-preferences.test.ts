@@ -125,7 +125,7 @@ test("buses can target an edge or corner while exits distribute along the border
   }
 
   const solver = new FanoutSolver(simpleRouteJson, {
-    sharedBoundary: { minX: -3, maxX: 4, minY: -3, maxY: 3 },
+    sharedBoundary: { minX: -3, maxX: 4.8, minY: -3, maxY: 3 },
     escapeLayers: ["top"],
     singleLayerPushAndShove: true,
     borderDistribution: "even",
@@ -143,6 +143,9 @@ test("buses can target an edge or corner while exits distribute along the border
   })
 
   solver.solve()
+  if (solver.failed) {
+    throw new Error(solver.error ?? "Expected edge and corner fanout to solve")
+  }
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
   const edgeAExit = output.fanoutTraces
@@ -161,11 +164,11 @@ test("buses can target an edge or corner while exits distribute along the border
   ) {
     throw new Error("Expected edge and corner fanouts to end in wire points")
   }
-  expect(edgeAExit.y).toBeGreaterThan(3)
-  expect(edgeBExit.y).toBeGreaterThan(3)
+  expect(edgeAExit.y).toBeCloseTo(3)
+  expect(edgeBExit.y).toBeCloseTo(3)
   expect(Math.abs(edgeAExit.x - edgeBExit.x)).toBeGreaterThan(0.8)
-  expect(cornerExit.x).toBeGreaterThan(4)
-  expect(cornerExit.y).toBeGreaterThanOrEqual(2.85)
+  expect(cornerExit.x).toBeCloseTo(4.8)
+  expect(cornerExit.y).toBeGreaterThanOrEqual(2.45)
   expect(
     output.fanoutTraces.every((trace) =>
       trace.route.every(

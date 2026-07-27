@@ -3,23 +3,31 @@ import { FanoutSolver } from "lib/fanout-solver"
 import type { Bounds, FanoutDirection, Point2D } from "lib/types"
 import { fanoutDataset01 } from "../datasets/dataset01"
 
-function expectPointOutsideSharedBoundary(
+function expectPointOnSharedBoundary(
   point: Point2D,
   bounds: Bounds,
   direction: FanoutDirection,
 ): void {
   switch (direction) {
     case "left":
-      expect(point.x).toBeLessThan(bounds.minX)
-      return
+      expect(point.x).toBeCloseTo(bounds.minX)
+      break
     case "right":
-      expect(point.x).toBeGreaterThan(bounds.maxX)
-      return
+      expect(point.x).toBeCloseTo(bounds.maxX)
+      break
     case "up":
-      expect(point.y).toBeGreaterThan(bounds.maxY)
-      return
+      expect(point.y).toBeCloseTo(bounds.maxY)
+      break
     case "down":
-      expect(point.y).toBeLessThan(bounds.minY)
+      expect(point.y).toBeCloseTo(bounds.minY)
+      break
+  }
+  if (direction === "left" || direction === "right") {
+    expect(point.y).toBeGreaterThanOrEqual(bounds.minY)
+    expect(point.y).toBeLessThanOrEqual(bounds.maxY)
+  } else {
+    expect(point.x).toBeGreaterThanOrEqual(bounds.minX)
+    expect(point.x).toBeLessThanOrEqual(bounds.maxX)
   }
 }
 
@@ -52,16 +60,38 @@ test("every Dataset 01 pad exits the one shared breakout boundary", () => {
           )
         }
 
-        expectPointOutsideSharedBoundary(
+        expectPointOnSharedBoundary(
           exitPoint,
           sample.sharedBoundary,
           bus.direction,
         )
-        expectPointOutsideSharedBoundary(
+        expectPointOnSharedBoundary(
           finalRoutePoint,
           sample.sharedBoundary,
           bus.direction,
         )
+        for (const routePoint of trace.route) {
+          if (
+            routePoint.route_type !== "wire" &&
+            routePoint.route_type !== "via"
+          ) {
+            throw new Error(
+              `Fanout trace "${connectionName}" contains unsupported route type "${routePoint.route_type}"`,
+            )
+          }
+          expect(routePoint.x).toBeGreaterThanOrEqual(
+            sample.sharedBoundary.minX - 1e-6,
+          )
+          expect(routePoint.x).toBeLessThanOrEqual(
+            sample.sharedBoundary.maxX + 1e-6,
+          )
+          expect(routePoint.y).toBeGreaterThanOrEqual(
+            sample.sharedBoundary.minY - 1e-6,
+          )
+          expect(routePoint.y).toBeLessThanOrEqual(
+            sample.sharedBoundary.maxY + 1e-6,
+          )
+        }
         expect(finalRoutePoint.x).toBeCloseTo(exitPoint.x)
         expect(finalRoutePoint.y).toBeCloseTo(exitPoint.y)
       }

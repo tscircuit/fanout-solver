@@ -30,7 +30,6 @@ interface RouteBusParams {
   viaDiameter: number
   viaHoleDiameter: number
   clearance: number
-  breakoutMargin: number
   compactBusTracks: boolean
 }
 
@@ -70,16 +69,16 @@ function makePoint(
     : { x: perpendicularAxis, y: axis }
 }
 
-function getExitAxis(bus: PreparedBus, breakoutMargin: number): number {
+function getExitAxis(bus: PreparedBus): number {
   switch (bus.direction) {
     case "right":
-      return bus.sharedBoundary.maxX + breakoutMargin
+      return bus.sharedBoundary.maxX
     case "left":
-      return bus.sharedBoundary.minX - breakoutMargin
+      return bus.sharedBoundary.minX
     case "up":
-      return bus.sharedBoundary.maxY + breakoutMargin
+      return bus.sharedBoundary.maxY
     case "down":
-      return bus.sharedBoundary.minY - breakoutMargin
+      return bus.sharedBoundary.minY
   }
 }
 
@@ -760,10 +759,9 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
     viaDiameter,
     viaHoleDiameter,
     clearance,
-    breakoutMargin,
     compactBusTracks,
   } = params
-  const exitAxis = getExitAxis(bus, breakoutMargin)
+  const exitAxis = getExitAxis(bus)
   const sourceObstacle = bus.connections[0]?.sourceObstacle
   if (!sourceObstacle) return []
   const directionalPadSize = isHorizontal(bus.direction)

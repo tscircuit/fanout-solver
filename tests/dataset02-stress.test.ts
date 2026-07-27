@@ -4,20 +4,37 @@ import { getCopperLayerColor } from "lib/layer-colors"
 import type { Bounds, FanoutDirection, Point2D } from "lib/types"
 import { fanoutDataset02 } from "../datasets/dataset02"
 
-function pointIsOutsideInDirection(
+function pointIsOnBoundaryInDirection(
   point: Point2D,
   bounds: Bounds,
   direction: FanoutDirection,
 ): boolean {
+  const epsilon = 1e-6
   switch (direction) {
     case "left":
-      return point.x < bounds.minX
+      return (
+        Math.abs(point.x - bounds.minX) <= epsilon &&
+        point.y >= bounds.minY - epsilon &&
+        point.y <= bounds.maxY + epsilon
+      )
     case "right":
-      return point.x > bounds.maxX
+      return (
+        Math.abs(point.x - bounds.maxX) <= epsilon &&
+        point.y >= bounds.minY - epsilon &&
+        point.y <= bounds.maxY + epsilon
+      )
     case "up":
-      return point.y > bounds.maxY
+      return (
+        Math.abs(point.y - bounds.maxY) <= epsilon &&
+        point.x >= bounds.minX - epsilon &&
+        point.x <= bounds.maxX + epsilon
+      )
     case "down":
-      return point.y < bounds.minY
+      return (
+        Math.abs(point.y - bounds.minY) <= epsilon &&
+        point.x >= bounds.minX - epsilon &&
+        point.x <= bounds.maxX + epsilon
+      )
   }
 }
 
@@ -191,7 +208,11 @@ test("Dataset 02 completely breaks out a four-layer BGA400", () => {
       expect(exit.route_type).toBe("wire")
       if (exit.route_type === "wire") {
         expect(
-          pointIsOutsideInDirection(exit, sample.sharedBoundary, bus.direction),
+          pointIsOnBoundaryInDirection(
+            exit,
+            sample.sharedBoundary,
+            bus.direction,
+          ),
         ).toBe(true)
         exitTracks.push(horizontal ? exit.y : exit.x)
       }

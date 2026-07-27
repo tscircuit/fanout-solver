@@ -24,7 +24,6 @@ interface PushShoveParams {
   buses: PreparedBus[]
   traceWidth: number
   clearance: number
-  breakoutMargin: number
   borderDistribution: FanoutBorderDistribution
 }
 
@@ -76,16 +75,16 @@ function makePoint(
     : { x: perpendicularAxis, y: axis }
 }
 
-function getExitAxis(bus: PreparedBus, breakoutMargin: number): number {
+function getExitAxis(bus: PreparedBus): number {
   switch (bus.direction) {
     case "right":
-      return bus.sharedBoundary.maxX + breakoutMargin
+      return bus.sharedBoundary.maxX
     case "left":
-      return bus.sharedBoundary.minX - breakoutMargin
+      return bus.sharedBoundary.minX
     case "up":
-      return bus.sharedBoundary.maxY + breakoutMargin
+      return bus.sharedBoundary.maxY
     case "down":
-      return bus.sharedBoundary.minY - breakoutMargin
+      return bus.sharedBoundary.minY
   }
 }
 
@@ -127,6 +126,62 @@ function getPathSegments(
     })
   }
   return segments
+}
+
+function getMaximumObstacleClearDistributionShift(params: {
+  route: ActiveRoute
+  direction: FanoutDirection
+  exitAxis: number
+  signedShift: number
+  maximumShift: number
+  obstacles: Obstacle[]
+  requiredObstacleDistance: number
+}): number {
+  const {
+    route,
+    direction,
+    exitAxis,
+    signedShift,
+    maximumShift,
+    obstacles,
+    requiredObstacleDistance,
+  } = params
+  if (maximumShift <= 1e-9 || Math.abs(signedShift) <= 1e-9) return 0
+  const perpendicularSign = Math.sign(signedShift)
+  const shiftIsClear = (shift: number): boolean => {
+    if (shift <= 1e-9) return true
+    const segment = {
+      start: makePoint(
+        exitAxis - directionSign(direction) * shift,
+        route.track,
+        direction,
+      ),
+      end: makePoint(
+        exitAxis,
+        route.track + perpendicularSign * shift,
+        direction,
+      ),
+      width: 0,
+      layer: "top",
+    }
+    return obstacles.every(
+      (obstacle) =>
+        obstacle === route.item.connection.sourceObstacle ||
+        !obstacle.layers.includes("top") ||
+        distanceSegmentToObstacle(segment, obstacle) >=
+          requiredObstacleDistance - 1e-9,
+    )
+  }
+  if (shiftIsClear(maximumShift)) return maximumShift
+
+  let lowerShift = 0
+  let upperShift = maximumShift
+  for (let iteration = 0; iteration < 32; iteration++) {
+    const candidateShift = (lowerShift + upperShift) / 2
+    if (shiftIsClear(candidateShift)) lowerShift = candidateShift
+    else upperShift = candidateShift
+  }
+  return lowerShift
 }
 
 /**
@@ -414,14 +469,31 @@ function getFinalTrackTargets(params: {
   ) {
     return null
   }
-  for (let index = 0; index < minimumCornerIndexes.length; index++) {
-    targetTracks[index] = minimumLane + index * distributedPitch
+  const cornerInset = lanePitch * 2
+  if (minimumCornerIndexes.length > 0) {
+    targetTracks[0] = minimumLane + cornerInset
+    for (let index = 1; index < minimumCornerIndexes.length; index++) {
+      const preservedPitch = Math.max(
+        distributedPitch,
+        sourceTracks[index]! - sourceTracks[index - 1]!,
+      )
+      targetTracks[index] = targetTracks[index - 1]! + preservedPitch
+    }
   }
-  for (let offset = 0; offset < maximumCornerIndexes.length; offset++) {
-    const index = orderedItems.length - maximumCornerIndexes.length + offset
-    targetTracks[index] =
-      maximumLane -
-      (maximumCornerIndexes.length - 1 - offset) * distributedPitch
+  if (maximumCornerIndexes.length > 0) {
+    const lastIndex = orderedItems.length - 1
+    targetTracks[lastIndex] = maximumLane - cornerInset
+    for (
+      let index = lastIndex - 1;
+      index >= orderedItems.length - maximumCornerIndexes.length;
+      index--
+    ) {
+      const preservedPitch = Math.max(
+        distributedPitch,
+        sourceTracks[index + 1]! - sourceTracks[index]!,
+      )
+      targetTracks[index] = targetTracks[index + 1]! - preservedPitch
+    }
   }
 
   return {
@@ -486,18 +558,17 @@ function routesAreClear(params: {
   obstacles: Obstacle[]
   traceWidth: number
   clearance: number
-  breakoutMargin: number
 }): boolean {
-  const { paths, obstacles, traceWidth, clearance, breakoutMargin } = params
+  const { paths, obstacles, traceWidth, clearance } = params
   const requiredObstacleDistance = traceWidth / 2 + clearance
   const requiredCenterDistance = traceWidth + clearance
 
   for (const path of paths) {
     if (
-      directionSign(path.item.direction) *
-        (getAxis(path.points.at(-1)!, path.item.direction) -
-          getExitAxis(path.item.bus, breakoutMargin)) <
-      -1e-6
+      Math.abs(
+        getAxis(path.points.at(-1)!, path.item.direction) -
+          getExitAxis(path.item.bus),
+      ) > 1e-6
     ) {
       return false
     }
@@ -548,14 +619,7 @@ function routesAreClear(params: {
 export function routeSingleLayerWithPushAndShove(
   params: PushShoveParams,
 ): FanoutRoutePlan[] | null {
-  const {
-    srj,
-    buses,
-    traceWidth,
-    clearance,
-    breakoutMargin,
-    borderDistribution,
-  } = params
+  const { srj, buses, traceWidth, clearance, borderDistribution } = params
   const requiredObstacleDistance = traceWidth / 2 + clearance
   const recordsByConnectionName = new Map<string, ActiveRoute>()
   const enforcedFinalTargets = new Map<string, number>()
@@ -589,11 +653,7 @@ export function routeSingleLayerWithPushAndShove(
     const boundaryMaximum = isHorizontal(direction)
       ? directionItems[0]!.bus.sharedBoundary.maxY
       : directionItems[0]!.bus.sharedBoundary.maxX
-    const rawExitAxis = getExitAxis(directionItems[0]!.bus, breakoutMargin)
-    const exitAxis =
-      sign > 0
-        ? Math.ceil(rawExitAxis / traceWidth) * traceWidth
-        : Math.floor(rawExitAxis / traceWidth) * traceWidth
+    const exitAxis = getExitAxis(directionItems[0]!.bus)
     const sourcesByEventKey = new Map<string, RoutingItem[]>()
     const obstaclesByEventKey = new Map<string, Obstacle[]>()
     const axisByEventKey = new Map<string, number>()
@@ -723,12 +783,6 @@ export function routeSingleLayerWithPushAndShove(
       ),
     })
     if (!finalTrackTargets) return null
-    for (const connectionName of finalTrackTargets.enforcedConnectionNames) {
-      enforcedFinalTargets.set(
-        connectionName,
-        finalTrackTargets.byConnectionName.get(connectionName)!,
-      )
-    }
     const orderedActiveRoutes = [...active.values()].toSorted(
       (first, second) =>
         first.track - second.track ||
@@ -737,7 +791,8 @@ export function routeSingleLayerWithPushAndShove(
         ),
     )
     const distributionStartOffsetByConnectionName = new Map<string, number>()
-    let nextMinimumStartOffset = 0
+    const lanePitch = traceWidth + clearance
+    let nextMinimumStartOffset = lanePitch
     for (const route of orderedActiveRoutes) {
       const connectionName = route.item.connection.connection.name
       if (!finalTrackTargets.enforcedConnectionNames.has(connectionName)) {
@@ -751,9 +806,9 @@ export function routeSingleLayerWithPushAndShove(
         connectionName,
         nextMinimumStartOffset,
       )
-      nextMinimumStartOffset += Math.abs(signedShift) + traceWidth + clearance
+      nextMinimumStartOffset += lanePitch * 2
     }
-    let nextMaximumStartOffset = 0
+    let nextMaximumStartOffset = lanePitch
     for (let index = orderedActiveRoutes.length - 1; index >= 0; index--) {
       const route = orderedActiveRoutes[index]!
       const connectionName = route.item.connection.connection.name
@@ -768,37 +823,119 @@ export function routeSingleLayerWithPushAndShove(
         connectionName,
         nextMaximumStartOffset,
       )
-      nextMaximumStartOffset += Math.abs(signedShift) + traceWidth + clearance
+      nextMaximumStartOffset += lanePitch * 2
     }
 
     for (const route of orderedActiveRoutes) {
       const connectionName = route.item.connection.connection.name
-      if (finalTrackTargets.enforcedConnectionNames.has(connectionName)) {
-        const targetTrack =
-          finalTrackTargets.byConnectionName.get(connectionName)!
-        const shift = Math.abs(targetTrack - route.track)
-        if (shift > 1e-9) {
-          const distributionStartOffset =
-            distributionStartOffsetByConnectionName.get(connectionName) ?? 0
-          if (distributionStartOffset > 1e-9) {
-            route.points.push(
-              makePoint(
-                getAxis(route.points.at(-1)!, direction) +
-                  sign * distributionStartOffset,
-                route.track,
-                direction,
-              ),
-            )
-          }
-          route.points.push(
-            makePoint(
-              getAxis(route.points.at(-1)!, direction) + sign * shift,
-              targetTrack,
-              direction,
-            ),
-          )
-          route.track = targetTrack
+      const intendedTargetTrack =
+        finalTrackTargets.byConnectionName.get(connectionName) ?? route.track
+      const startOffset =
+        distributionStartOffsetByConnectionName.get(connectionName) ?? 0
+      const previousPoint = route.points.at(-2)
+      const availableDepth = previousPoint
+        ? sign * (exitAxis - getAxis(previousPoint, direction))
+        : 0
+      const intendedSignedShift = intendedTargetTrack - route.track
+      const maximumRunwayShift = Math.min(
+        Math.abs(intendedSignedShift),
+        Math.max(0, availableDepth - startOffset),
+      )
+      const maximumShift = getMaximumObstacleClearDistributionShift({
+        route,
+        direction,
+        exitAxis,
+        signedShift: intendedSignedShift,
+        maximumShift: maximumRunwayShift,
+        obstacles: srj.obstacles,
+        requiredObstacleDistance,
+      })
+      const adjustedShift = Math.sign(intendedSignedShift) * maximumShift
+      finalTrackTargets.byConnectionName.set(
+        connectionName,
+        route.track + adjustedShift,
+      )
+    }
+    for (const connectionName of finalTrackTargets.enforcedConnectionNames) {
+      enforcedFinalTargets.set(
+        connectionName,
+        finalTrackTargets.byConnectionName.get(connectionName)!,
+      )
+    }
+
+    for (const route of orderedActiveRoutes) {
+      const connectionName = route.item.connection.connection.name
+      const targetTrack =
+        finalTrackTargets.byConnectionName.get(connectionName) ?? route.track
+      const shift = Math.abs(targetTrack - route.track)
+      const distributionStartOffset =
+        distributionStartOffsetByConnectionName.get(connectionName) ?? 0
+      const distributionDepth =
+        shift > 1e-9 ? distributionStartOffset + shift : 0
+      const distributionStartAxis = exitAxis - sign * distributionDepth
+      const lastPoint = route.points.at(-1)!
+      if (Math.abs(getAxis(lastPoint, direction) - exitAxis) > 1e-6) {
+        return null
+      }
+      const previousPoint = route.points.at(-2)
+      if (
+        previousPoint &&
+        (Math.abs(
+          getPerpendicularAxis(previousPoint, direction) - route.track,
+        ) > 1e-6 ||
+          sign * (distributionStartAxis - getAxis(previousPoint, direction)) <
+            -1e-6)
+      ) {
+        return null
+      }
+      const stagingPoint = makePoint(
+        distributionStartAxis,
+        route.track,
+        direction,
+      )
+      if (previousPoint && distance(previousPoint, stagingPoint) < 1e-9) {
+        route.points.pop()
+      } else {
+        route.points[route.points.length - 1] = stagingPoint
+      }
+    }
+
+    for (const route of orderedActiveRoutes) {
+      const connectionName = route.item.connection.connection.name
+      const targetTrack =
+        finalTrackTargets.byConnectionName.get(connectionName) ?? route.track
+      const shift = Math.abs(targetTrack - route.track)
+      const distributionStartOffset =
+        distributionStartOffsetByConnectionName.get(connectionName) ?? 0
+      if (shift > 1e-9 && distributionStartOffset > 1e-9) {
+        route.points.push(
+          makePoint(
+            getAxis(route.points.at(-1)!, direction) +
+              sign * distributionStartOffset,
+            route.track,
+            direction,
+          ),
+        )
+      }
+      if (shift > 1e-9) {
+        route.points.push(
+          makePoint(
+            getAxis(route.points.at(-1)!, direction) + sign * shift,
+            targetTrack,
+            direction,
+          ),
+        )
+        route.track = targetTrack
+      }
+      const boundaryPoint = makePoint(exitAxis, route.track, direction)
+      if (distance(route.points.at(-1)!, boundaryPoint) > 1e-9) {
+        if (
+          sign * (exitAxis - getAxis(route.points.at(-1)!, direction)) <
+          -1e-6
+        ) {
+          return null
         }
+        route.points.push(boundaryPoint)
       }
       recordsByConnectionName.set(connectionName, route)
     }
@@ -829,7 +966,6 @@ export function routeSingleLayerWithPushAndShove(
       obstacles: srj.obstacles,
       traceWidth,
       clearance,
-      breakoutMargin,
     })
   ) {
     return null

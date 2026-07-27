@@ -25,7 +25,6 @@ interface ResolvedFanoutConfig {
   viaDiameter: number
   viaHoleDiameter: number
   clearance: number
-  breakoutMargin: number
   compactBusTracks: boolean
   singleLayerPushAndShove: boolean
   borderDistribution: FanoutBorderDistribution
@@ -79,10 +78,6 @@ function resolveConfig(
       srj.defaultObstacleMargin ??
       srj.minTraceWidth,
   )
-  const breakoutMargin = resolvePositiveNumber(
-    "breakoutMargin",
-    options.breakoutMargin ?? Math.max(viaDiameter, traceWidth + clearance),
-  )
   const layerNames = getCopperLayerNames(srj.layerCount)
   const escapeLayers = options.escapeLayers ?? layerNames
   for (const layer of escapeLayers) {
@@ -107,7 +102,6 @@ function resolveConfig(
     viaDiameter,
     viaHoleDiameter,
     clearance,
-    breakoutMargin,
     compactBusTracks: options.compactBusTracks ?? false,
     singleLayerPushAndShove: options.singleLayerPushAndShove ?? false,
     borderDistribution,
@@ -368,7 +362,6 @@ export class FanoutSolver extends BaseSolver {
         buses: this.preparedBuses,
         traceWidth: this.config.traceWidth,
         clearance: this.config.clearance,
-        breakoutMargin: this.config.breakoutMargin,
         borderDistribution: this.config.borderDistribution,
       })
       if (pushShovePlans) {
@@ -405,7 +398,6 @@ export class FanoutSolver extends BaseSolver {
         viaDiameter: this.config.viaDiameter,
         viaHoleDiameter: this.config.viaHoleDiameter,
         clearance: this.config.clearance,
-        breakoutMargin: this.config.breakoutMargin,
         compactBusTracks: this.config.compactBusTracks,
       })
       if (!busPlans) {

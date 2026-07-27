@@ -87,20 +87,37 @@ const expectedSamples = [
   },
 ] as const
 
-function pointIsOutsideBoundary(
+function pointIsOnBoundary(
   point: Point2D,
   direction: FanoutDirection,
   boundary: (typeof fanoutDataset04)[number]["sharedBoundary"],
 ): boolean {
+  const epsilon = 1e-6
   switch (direction) {
     case "left":
-      return point.x < boundary.minX
+      return (
+        Math.abs(point.x - boundary.minX) <= epsilon &&
+        point.y >= boundary.minY - epsilon &&
+        point.y <= boundary.maxY + epsilon
+      )
     case "right":
-      return point.x > boundary.maxX
+      return (
+        Math.abs(point.x - boundary.maxX) <= epsilon &&
+        point.y >= boundary.minY - epsilon &&
+        point.y <= boundary.maxY + epsilon
+      )
     case "up":
-      return point.y > boundary.maxY
+      return (
+        Math.abs(point.y - boundary.maxY) <= epsilon &&
+        point.x >= boundary.minX - epsilon &&
+        point.x <= boundary.maxX + epsilon
+      )
     case "down":
-      return point.y < boundary.minY
+      return (
+        Math.abs(point.y - boundary.minY) <= epsilon &&
+        point.x >= boundary.minX - epsilon &&
+        point.x <= boundary.maxX + epsilon
+      )
   }
 }
 
@@ -190,6 +207,9 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
     ).toEqual(new Set(["left", "right", "up", "down"]))
 
     solver.solve()
+    if (solver.failed) {
+      throw new Error(`${sample.id}: ${solver.error ?? "fanout failed"}`)
+    }
     expect(solver.failed).toBe(false)
     const output = solver.getOutput()
     expect(output.attempts).toHaveLength(1)
@@ -238,12 +258,30 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
           throw new Error(`${trace.connection_name} does not end in a wire`)
         }
         expect(
-          pointIsOutsideBoundary(
-            finalPoint,
-            bus.direction,
-            sample.sharedBoundary,
-          ),
+          pointIsOnBoundary(finalPoint, bus.direction, sample.sharedBoundary),
         ).toBe(true)
+        for (const routePoint of trace.route) {
+          if (
+            routePoint.route_type !== "wire" &&
+            routePoint.route_type !== "via"
+          ) {
+            throw new Error(
+              `${trace.connection_name} contains unsupported route type "${routePoint.route_type}"`,
+            )
+          }
+          expect(routePoint.x).toBeGreaterThanOrEqual(
+            sample.sharedBoundary.minX - 1e-6,
+          )
+          expect(routePoint.x).toBeLessThanOrEqual(
+            sample.sharedBoundary.maxX + 1e-6,
+          )
+          expect(routePoint.y).toBeGreaterThanOrEqual(
+            sample.sharedBoundary.minY - 1e-6,
+          )
+          expect(routePoint.y).toBeLessThanOrEqual(
+            sample.sharedBoundary.maxY + 1e-6,
+          )
+        }
         busViaUse.push(
           trace.route.some((routePoint) => routePoint.route_type === "via"),
         )
@@ -314,7 +352,11 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
         const normalizedDot =
           (incoming.x * outgoing.x + incoming.y * outgoing.y) /
           (incomingLength * outgoingLength)
-        expect(Math.abs(normalizedDot)).toBeGreaterThan(1e-6)
+        if (Math.abs(normalizedDot) <= 1e-6) {
+          throw new Error(
+            `${sample.id}: ${trace.connection_name} has a 90-degree corner ${JSON.stringify({ start, corner, end })}`,
+          )
+        }
       }
     }
     expect(cornerCount).toBeGreaterThan(0)
