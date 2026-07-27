@@ -12,6 +12,15 @@
     "type": "git",
     "url": "https://github.com/tscircuit/fanout-solver.git"
   },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "exports": {
+    ".": {
+      "import": "./lib/index.ts",
+      "types": "./lib/index.ts"
+    }
+  },
   "scripts": {
     "start": "cosmos",
     "build:site": "cosmos-export",

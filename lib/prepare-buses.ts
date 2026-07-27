@@ -700,10 +700,7 @@ export function prepareFanoutBuses(
   const connectionIndexByName = new Map(
     srj.connections.map((connection, index) => [connection.name, index]),
   )
-  const buses: PreparedBus[] = []
-  const sharedBoundary = resolveSharedBoundary(componentGrids, options)
-
-  for (const busSpec of resolveBusSpecs(srj, options)) {
+  const resolvedBusInputs = resolveBusSpecs(srj, options).map((busSpec) => {
     const connections = busSpec.connectionNames.map((connectionName) => {
       const connectionIndex = connectionIndexByName.get(connectionName)
       if (connectionIndex === undefined) {
@@ -727,6 +724,24 @@ export function prepareFanoutBuses(
         termination: busSpec.termination ?? { type: "boundary" },
       }),
     )
+    return { busSpec, sourceGrid, preparedConnections }
+  })
+  const sourceGrids = [
+    ...new Map(
+      resolvedBusInputs.map(({ sourceGrid }) => [
+        sourceGrid.componentId,
+        sourceGrid,
+      ]),
+    ).values(),
+  ]
+  const sharedBoundary = resolveSharedBoundary(sourceGrids, options)
+  const buses: PreparedBus[] = []
+
+  for (const {
+    busSpec,
+    sourceGrid,
+    preparedConnections,
+  } of resolvedBusInputs) {
     buses.push({
       busId: busSpec.busId,
       direction: resolveBusDirection({

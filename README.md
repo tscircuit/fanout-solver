@@ -18,7 +18,8 @@ and treats each bus-layer decision atomically.
 - Handles multiple mixed footprints inside one shared breakout boundary.
 - Routes perimeter and inner-matrix pads; the benchmark connects every pad.
 - Uses `sharedBoundary` as the common exit rectangle. Without one, it infers a
-  shared rectangle around all detected component bounds and pad grids.
+  shared rectangle around the source footprints selected for the buses, without
+  expanding that boundary to include destination footprints.
 - Ends every fanout trace exactly on its selected `sharedBoundary` edge. Border
   distribution and lane spreading happen inside the rectangle, never after the
   trace has crossed the boundary.
