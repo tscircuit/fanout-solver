@@ -5,6 +5,7 @@ import {
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { buildOutputSimpleRouteJson } from "./build-output"
+import { distanceSegmentToObstacle } from "./geometry"
 import { getCopperLayerColor } from "./layer-colors"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import { prepareFanoutBuses } from "./prepare-buses"
@@ -186,11 +187,62 @@ function getBusDepthInRows(bus: PreparedBus): number {
   )
 }
 
+function sourceLayerEscapeIsBlocked(params: {
+  bus: PreparedBus
+  srj: SimpleRouteJson
+  traceWidth: number
+  clearance: number
+}): boolean {
+  const { bus, srj, traceWidth, clearance } = params
+  for (const connection of bus.connections) {
+    const source = {
+      x: connection.sourcePoint.x,
+      y: connection.sourcePoint.y,
+    }
+    const boundaryPoint = (() => {
+      switch (bus.direction) {
+        case "left":
+          return { x: bus.sharedBoundary.minX, y: source.y }
+        case "right":
+          return { x: bus.sharedBoundary.maxX, y: source.y }
+        case "up":
+          return { x: source.x, y: bus.sharedBoundary.maxY }
+        case "down":
+          return { x: source.x, y: bus.sharedBoundary.minY }
+      }
+    })()
+    const directEscapeSegment = {
+      start: source,
+      end: boundaryPoint,
+      width: traceWidth,
+      layer: connection.sourceLayer,
+    }
+    for (const obstacle of srj.obstacles) {
+      if (
+        obstacle === connection.sourceObstacle ||
+        !obstacle.layers.includes(connection.sourceLayer)
+      ) {
+        continue
+      }
+      if (
+        distanceSegmentToObstacle(directEscapeSegment, obstacle) <
+        traceWidth / 2 + clearance - 1e-9
+      ) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
 function createPreferredLayerAssignment(params: {
   buses: PreparedBus[]
   escapeLayers: string[]
+  srj: SimpleRouteJson
+  traceWidth: number
+  clearance: number
 }): Readonly<Record<string, string>> {
-  const { buses, escapeLayers } = params
+  const { buses, escapeLayers, srj, traceWidth, clearance } = params
   const assignment: Record<string, string> = {}
   const directionsByComponent = new Map<string, Set<PreparedBus["direction"]>>()
   let nextViaLayerIndex = 0
@@ -208,7 +260,13 @@ function createPreferredLayerAssignment(params: {
     const viaLayers = escapeLayers.filter((layer) => layer !== sourceLayer)
     if (
       escapeLayers.includes(sourceLayer) &&
-      busIsOnOutwardComponentEdge(bus)
+      busIsOnOutwardComponentEdge(bus) &&
+      !sourceLayerEscapeIsBlocked({
+        bus,
+        srj,
+        traceWidth,
+        clearance,
+      })
     ) {
       assignment[bus.busId] = sourceLayer
     } else if (viaLayers.length > 0) {
@@ -271,6 +329,9 @@ export class FanoutSolver extends BaseSolver {
       preferredAssignment: createPreferredLayerAssignment({
         buses: this.preparedBuses,
         escapeLayers: this.config.escapeLayers,
+        srj: inputSrj,
+        traceWidth: this.config.traceWidth,
+        clearance: this.config.clearance,
       }),
       generatedAssignments,
       maxAssignments: this.config.maxLayerCombinations,

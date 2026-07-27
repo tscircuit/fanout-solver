@@ -79,6 +79,7 @@ test("dataset03 fans out a rotated QFN50 and two oriented 0603s on two JLCPCB-ru
 
     expect(solver.failed).toBe(false)
     const output = solver.getOutput()
+    expect(output.attempts).toHaveLength(1)
     expect(output.fanoutTraces).toHaveLength(54)
     expect(new Set(Object.values(output.busLayerAssignments))).toEqual(
       new Set(["top", "bottom"]),
