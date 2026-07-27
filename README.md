@@ -186,6 +186,28 @@ standard 0.25/0.15 mm via constraints.
 | `sample003` |          3 |   54 |     8 |      2 |
 | `sample004` |          3 |   54 |     8 |      2 |
 
+## Dataset 04
+
+`datasets/dataset04.ts` is a single-layer shared-boundary breakout containing
+the exact circular-pad footprint
+`bga16_grid4x4_p0.8mm_pad0.3mm_circularpads`, four `res0603` footprints, and
+four `cap0603` footprints. The passives occupy all eight compass positions
+around the BGA in alternating orientations.
+
+Before the fanout result is accepted, the regression independently runs
+`AutoroutingPipelineSolver` from `tscircuit/tscircuit-autorouter` against the
+same 32-net `SimpleRouteJson` and requires 32 distinct top-layer routes. The
+fanout solver then produces its own via-free breakout and separately verifies
+JLCPCB's 0.10 mm trace width and 0.10 mm copper clearance rules.
+
+All sixteen BGA balls are connected, including the four inner balls. Grid-line
+buses escape atomically through all four package sides, all sixteen 0603 pads
+escape with them, and every route terminates outside the one shared boundary.
+
+| Sample      | Footprints | Pads | Buses | Vias | Layers |
+| ----------- | ---------: | ---: | ----: | ---: | -----: |
+| `sample001` |          9 |   32 |    24 |    0 |      1 |
+
 ## Development
 
 ```sh

@@ -476,13 +476,15 @@ function buildPlan(params: {
   const initialEscapeDistance =
     targetUsesVia && !busIsOnOutwardComponentEdge(bus)
       ? directionalPitch * 0.5
-      : Math.max(
-          directionalPitch * 0.5,
-          directionalPadSize / 2 +
-            (targetUsesVia ? viaDiameter : traceWidth) / 2 +
-            clearance +
-            1e-3,
-        )
+      : !targetUsesVia
+        ? directionalPadSize / 2 + traceWidth / 2 + clearance + 1e-3
+        : Math.max(
+            directionalPitch * 0.5,
+            directionalPadSize / 2 +
+              (targetUsesVia ? viaDiameter : traceWidth) / 2 +
+              clearance +
+              1e-3,
+          )
   const viaAxis =
     getAxis(sourcePoint, bus.direction) + sign * initialEscapeDistance
   const sourcePerpendicularAxis = getPerpendicularAxis(

@@ -4,8 +4,10 @@ import type { PcbSmtPad } from "circuit-json"
 import type { Bounds } from "lib/types"
 
 type RectPad = Extract<PcbSmtPad, { shape: "rect" }>
+type CirclePad = Extract<PcbSmtPad, { shape: "circle" }>
 type Rotation = 0 | 90 | 180 | 270
 type BreakoutDirection = "NORTH" | "EAST" | "SOUTH" | "WEST"
+type BusGrouping = "side" | "grid-line" | "individual"
 
 export interface MixedFootprintSpec {
   componentId: string
@@ -13,6 +15,8 @@ export interface MixedFootprintSpec {
   center: { x: number; y: number }
   rotation: Rotation
   breakoutMode: "four-side" | "outward"
+  breakoutDirection?: BreakoutDirection
+  busGrouping?: BusGrouping
 }
 
 export interface MixedFootprintBenchmarkParams {
@@ -23,10 +27,17 @@ export interface MixedFootprintBenchmarkParams {
   viaDiameter?: number
   viaHoleDiameter?: number
   clearance?: number
+  targetMargin?: number
+  targetLaneExtraClearance?: number
 }
 
 interface PositionedPad {
-  pad: RectPad
+  componentId: string
+  x: number
+  y: number
+  width: number
+  height: number
+  shape: "circle" | "rect"
   padIndex: number
 }
 
@@ -71,50 +82,70 @@ function getFootprintGeometry(
   const circuitJson = fp.string(footprint.footprinterString).circuitJson()
   const pads = circuitJson
     .filter(
-      (element): element is RectPad =>
-        element.type === "pcb_smtpad" && element.shape === "rect",
+      (element): element is CirclePad | RectPad =>
+        element.type === "pcb_smtpad" &&
+        (element.shape === "circle" || element.shape === "rect"),
     )
     .map((pad, padIndex) => {
       const rotatedCenter = rotatePoint(pad, footprint.rotation)
       const swapsDimensions =
         footprint.rotation === 90 || footprint.rotation === 270
+      const width =
+        pad.shape === "circle"
+          ? pad.radius * 2
+          : swapsDimensions
+            ? pad.height
+            : pad.width
+      const height =
+        pad.shape === "circle"
+          ? pad.radius * 2
+          : swapsDimensions
+            ? pad.width
+            : pad.height
       return {
-        pad: {
-          ...pad,
-          x: rotatedCenter.x + footprint.center.x,
-          y: rotatedCenter.y + footprint.center.y,
-          width: swapsDimensions ? pad.height : pad.width,
-          height: swapsDimensions ? pad.width : pad.height,
-        },
+        componentId: footprint.componentId,
+        x: rotatedCenter.x + footprint.center.x,
+        y: rotatedCenter.y + footprint.center.y,
+        width,
+        height,
+        shape: pad.shape,
         padIndex,
       }
     })
 
   if (pads.length === 0) {
     throw new Error(
-      `Mixed benchmark footprint "${footprint.footprinterString}" contains no rectangular SMT pads`,
+      `Mixed benchmark footprint "${footprint.footprinterString}" contains no supported SMT pads`,
     )
   }
 
   return {
     pads,
     bounds: {
-      minX: Math.min(...pads.map(({ pad }) => pad.x - pad.width / 2)),
-      maxX: Math.max(...pads.map(({ pad }) => pad.x + pad.width / 2)),
-      minY: Math.min(...pads.map(({ pad }) => pad.y - pad.height / 2)),
-      maxY: Math.max(...pads.map(({ pad }) => pad.y + pad.height / 2)),
+      minX: Math.min(...pads.map((pad) => pad.x - pad.width / 2)),
+      maxX: Math.max(...pads.map((pad) => pad.x + pad.width / 2)),
+      minY: Math.min(...pads.map((pad) => pad.y - pad.height / 2)),
+      maxY: Math.max(...pads.map((pad) => pad.y + pad.height / 2)),
     },
   }
 }
 
-function getPadSide(pad: RectPad, bounds: Bounds): BreakoutDirection {
+function getPadSide(
+  pad: PositionedPad,
+  bounds: Bounds,
+  tieIndex = pad.padIndex,
+): BreakoutDirection {
   const distances: Array<[BreakoutDirection, number]> = [
     ["WEST", Math.abs(pad.x - pad.width / 2 - bounds.minX)],
     ["EAST", Math.abs(bounds.maxX - (pad.x + pad.width / 2))],
     ["SOUTH", Math.abs(pad.y - pad.height / 2 - bounds.minY)],
     ["NORTH", Math.abs(bounds.maxY - (pad.y + pad.height / 2))],
   ]
-  return distances.toSorted((a, b) => a[1] - b[1])[0]![0]
+  const minimumDistance = Math.min(...distances.map((entry) => entry[1]))
+  const nearestDirections = distances.filter(
+    (entry) => Math.abs(entry[1] - minimumDistance) < 1e-6,
+  )
+  return nearestDirections[tieIndex % nearestDirections.length]![0]
 }
 
 function getOutwardDirection(
@@ -128,34 +159,34 @@ function getOutwardDirection(
 }
 
 function getTargetPoint(
-  pad: RectPad,
   direction: BreakoutDirection,
+  targetLane: number,
   sharedBoundary: Bounds,
   targetMargin: number,
 ): { x: number; y: number; layer: string } {
   switch (direction) {
     case "NORTH":
       return {
-        x: pad.x,
+        x: targetLane,
         y: sharedBoundary.maxY + targetMargin,
         layer: "top",
       }
     case "EAST":
       return {
         x: sharedBoundary.maxX + targetMargin,
-        y: pad.y,
+        y: targetLane,
         layer: "top",
       }
     case "SOUTH":
       return {
-        x: pad.x,
+        x: targetLane,
         y: sharedBoundary.minY - targetMargin,
         layer: "top",
       }
     case "WEST":
       return {
         x: sharedBoundary.minX - targetMargin,
-        y: pad.y,
+        y: targetLane,
         layer: "top",
       }
   }
@@ -201,6 +232,19 @@ export function createMixedFootprintBenchmarkProblem(
     "Mixed benchmark boundaryMargin",
     params.boundaryMargin ?? 2,
   )
+  const targetMargin = resolvePositiveNumber(
+    "Mixed benchmark targetMargin",
+    params.targetMargin ?? boundaryMargin,
+  )
+  const targetLaneExtraClearance = params.targetLaneExtraClearance ?? 0.01
+  if (
+    !Number.isFinite(targetLaneExtraClearance) ||
+    targetLaneExtraClearance < 0
+  ) {
+    throw new Error(
+      "Mixed benchmark targetLaneExtraClearance must be a non-negative number",
+    )
+  }
   if (viaHoleDiameter >= viaDiameter) {
     throw new Error(
       "Mixed benchmark viaHoleDiameter must be smaller than viaDiameter",
@@ -248,6 +292,7 @@ export function createMixedFootprintBenchmarkProblem(
   const connections: SimpleRouteJson["connections"] = []
   const buses: NonNullable<SimpleRouteJson["buses"]> = []
   const obstacles: SimpleRouteJson["obstacles"] = []
+  const directionByPad = new Map<PositionedPad, BreakoutDirection>()
 
   for (
     let footprintIndex = 0;
@@ -258,19 +303,104 @@ export function createMixedFootprintBenchmarkProblem(
     const geometry = geometries[footprintIndex]!
     const outwardDirection =
       footprint.breakoutMode === "outward"
-        ? getOutwardDirection(footprint.center, layoutCenter)
+        ? (footprint.breakoutDirection ??
+          getOutwardDirection(footprint.center, layoutCenter))
         : null
+    const yCoordinates = [...new Set(geometry.pads.map((pad) => pad.y))].sort(
+      (a, b) => a - b,
+    )
+    for (const pad of geometry.pads) {
+      const tieIndex =
+        footprint.busGrouping === "grid-line"
+          ? pad.padIndex + yCoordinates.indexOf(pad.y)
+          : pad.padIndex
+      directionByPad.set(
+        pad,
+        outwardDirection ?? getPadSide(pad, geometry.bounds, tieIndex),
+      )
+    }
+  }
+
+  const targetLaneByPad = new Map<PositionedPad, number>()
+  const targetLanePitch = traceWidth + clearance + targetLaneExtraClearance
+  for (const direction of [
+    "NORTH",
+    "EAST",
+    "SOUTH",
+    "WEST",
+  ] as const satisfies readonly BreakoutDirection[]) {
+    const directionPads = geometries
+      .flatMap((geometry) => geometry.pads)
+      .filter((pad) => directionByPad.get(pad) === direction)
+      .toSorted((a, b) => {
+        const aPerpendicular =
+          direction === "NORTH" || direction === "SOUTH" ? a.x : a.y
+        const bPerpendicular =
+          direction === "NORTH" || direction === "SOUTH" ? b.x : b.y
+        return (
+          aPerpendicular - bPerpendicular ||
+          a.componentId.localeCompare(b.componentId) ||
+          a.padIndex - b.padIndex
+        )
+      })
+    if (directionPads.length === 0) continue
+    const desiredLanes = directionPads.map((pad) =>
+      direction === "NORTH" || direction === "SOUTH" ? pad.x : pad.y,
+    )
+    const resolvedLanes: number[] = []
+    for (let index = 0; index < directionPads.length; index++) {
+      resolvedLanes.push(
+        index === 0
+          ? desiredLanes[index]!
+          : Math.max(
+              desiredLanes[index]!,
+              resolvedLanes[index - 1]! + targetLanePitch,
+            ),
+      )
+    }
+    const meanDesired =
+      desiredLanes.reduce((sum, lane) => sum + lane, 0) / desiredLanes.length
+    const meanResolved =
+      resolvedLanes.reduce((sum, lane) => sum + lane, 0) / resolvedLanes.length
+    for (let index = 0; index < directionPads.length; index++) {
+      targetLaneByPad.set(
+        directionPads[index]!,
+        resolvedLanes[index]! + meanDesired - meanResolved,
+      )
+    }
+  }
+
+  for (
+    let footprintIndex = 0;
+    footprintIndex < params.footprints.length;
+    footprintIndex++
+  ) {
+    const footprint = params.footprints[footprintIndex]!
+    const geometry = geometries[footprintIndex]!
+    const xCoordinates = [...new Set(geometry.pads.map((pad) => pad.x))].sort(
+      (a, b) => a - b,
+    )
+    const yCoordinates = [...new Set(geometry.pads.map((pad) => pad.y))].sort(
+      (a, b) => a - b,
+    )
+    const busGrouping =
+      footprint.busGrouping ??
+      (footprint.breakoutMode === "four-side" ? "side" : "individual")
     const padGroups = new Map<
       string,
       { direction: BreakoutDirection; pads: PositionedPad[] }
     >()
     for (const positionedPad of geometry.pads) {
-      const direction =
-        outwardDirection ?? getPadSide(positionedPad.pad, geometry.bounds)
-      const groupId =
-        footprint.breakoutMode === "four-side"
-          ? direction.toLowerCase()
-          : `${direction.toLowerCase()}:pad-${positionedPad.padIndex + 1}`
+      const direction = directionByPad.get(positionedPad)!
+      const groupId = (() => {
+        if (busGrouping === "side") return direction.toLowerCase()
+        if (busGrouping === "individual") {
+          return `${direction.toLowerCase()}:pad-${positionedPad.padIndex + 1}`
+        }
+        return direction === "NORTH" || direction === "SOUTH"
+          ? `${direction.toLowerCase()}:row-${yCoordinates.indexOf(positionedPad.y) + 1}`
+          : `${direction.toLowerCase()}:column-${xCoordinates.indexOf(positionedPad.x) + 1}`
+      })()
       const group = padGroups.get(groupId) ?? { direction, pads: [] }
       group.pads.push(positionedPad)
       padGroups.set(groupId, group)
@@ -280,7 +410,8 @@ export function createMixedFootprintBenchmarkProblem(
       const { direction } = group
       const busId = `${footprint.componentId}:${groupId}`
       const connectionNames: string[] = []
-      for (const { pad, padIndex } of group.pads) {
+      for (const pad of group.pads) {
+        const { padIndex } = pad
         const pinNumber = padIndex + 1
         const connectionName = `BUS_MIX_FP${String(footprintIndex + 1).padStart(
           2,
@@ -298,7 +429,12 @@ export function createMixedFootprintBenchmarkProblem(
               pointId,
               pcb_port_id: pointId,
             },
-            getTargetPoint(pad, direction, sharedBoundary, boundaryMargin),
+            getTargetPoint(
+              direction,
+              targetLaneByPad.get(pad)!,
+              sharedBoundary,
+              targetMargin,
+            ),
           ],
         })
         obstacles.push({
@@ -310,7 +446,8 @@ export function createMixedFootprintBenchmarkProblem(
           height: pad.height,
           layers: ["top"],
           connectedTo: [connectionName, pointId],
-        } satisfies Obstacle)
+          ...(pad.shape === "circle" ? { shape: "circle" as const } : {}),
+        } satisfies Obstacle & { shape?: "circle" })
       }
       buses.push({ busId, connectionNames })
     }

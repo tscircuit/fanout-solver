@@ -349,10 +349,14 @@ export class FanoutSolver extends BaseSolver {
   ): AssignmentAttempt {
     const plans: AssignmentAttempt["plans"] = []
     const failedBusIds: string[] = []
+    const isSingleLayerFanout = this.config.escapeLayers.length === 1
     const busesInRoutingOrder = [...this.preparedBuses].sort(
       (a, b) =>
-        b.connections.length - a.connections.length ||
-        getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b),
+        b.componentObstacles.length - a.componentObstacles.length ||
+        (isSingleLayerFanout
+          ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
+          : b.connections.length - a.connections.length ||
+            getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b)),
     )
 
     for (const bus of busesInRoutingOrder) {

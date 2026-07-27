@@ -2,6 +2,7 @@ import type { FanoutDataset } from "./dataset-types"
 import { fanoutDataset01 } from "./dataset01"
 import { fanoutDataset02 } from "./dataset02"
 import { fanoutDataset03 } from "./dataset03"
+import { fanoutDataset04 } from "./dataset04"
 
 export const fanoutDatasets: FanoutDataset[] = [
   {
@@ -24,6 +25,13 @@ export const fanoutDatasets: FanoutDataset[] = [
     description:
       "Two-layer mixed-footprint fanout samples with a 0.4 mm-pitch QFN50 closely surrounded by a two-pad 0603 resistor and capacitor in multiple package orientations.",
     samples: fanoutDataset03,
+  },
+  {
+    id: "dataset04",
+    name: "Single-layer BGA + 8×0603",
+    description:
+      "A one-layer BGA16 breakout surrounded on all eight compass positions by 0603 passives, with all 32 independent nets escaping one shared boundary without vias.",
+    samples: fanoutDataset04,
   },
 ]
 
