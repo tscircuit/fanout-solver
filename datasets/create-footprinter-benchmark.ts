@@ -20,6 +20,10 @@ export interface BenchmarkParams {
   pitch?: number
   padDiameter?: number
   boundaryMargin?: number
+  traceWidth?: number
+  viaDiameter?: number
+  viaHoleDiameter?: number
+  clearance?: number
 }
 
 interface ResolvedBenchmarkFootprint {
@@ -266,6 +270,27 @@ export function createFootprinterBenchmarkProblem(
   if (!Number.isInteger(layerCount) || layerCount < 1) {
     throw new Error("Benchmark layerCount must be a positive integer")
   }
+  const traceWidth = resolvePositiveNumber(
+    "Benchmark traceWidth",
+    params.traceWidth ?? 0.1,
+  )
+  const viaDiameter = resolvePositiveNumber(
+    "Benchmark viaDiameter",
+    params.viaDiameter ?? 0.2,
+  )
+  const viaHoleDiameter = resolvePositiveNumber(
+    "Benchmark viaHoleDiameter",
+    params.viaHoleDiameter ?? viaDiameter * 0.5,
+  )
+  const clearance = resolvePositiveNumber(
+    "Benchmark clearance",
+    params.clearance ?? 0.06,
+  )
+  if (viaHoleDiameter >= viaDiameter) {
+    throw new Error(
+      "Benchmark viaHoleDiameter must be smaller than viaDiameter",
+    )
+  }
 
   const footprints = resolveFootprints(params)
   const geometries = footprints.map((footprint) =>
@@ -417,13 +442,13 @@ export function createFootprinterBenchmarkProblem(
     sharedBoundary,
     simpleRouteJson: {
       layerCount,
-      minTraceWidth: 0.1,
-      nominalTraceWidth: 0.1,
-      minViaPadDiameter: 0.2,
-      minViaHoleDiameter: 0.1,
-      minTraceToPadEdgeClearance: 0.06,
-      minViaEdgeToPadEdgeClearance: 0.06,
-      defaultObstacleMargin: 0.06,
+      minTraceWidth: traceWidth,
+      nominalTraceWidth: traceWidth,
+      minViaPadDiameter: viaDiameter,
+      minViaHoleDiameter: viaHoleDiameter,
+      minTraceToPadEdgeClearance: clearance,
+      minViaEdgeToPadEdgeClearance: clearance,
+      defaultObstacleMargin: clearance,
       bounds: {
         minX: Math.min(...xExtents) - 1,
         maxX: Math.max(...xExtents) + 1,

@@ -1,7 +1,6 @@
 import {
   type BenchmarkFootprintParams,
   createFootprinterBenchmarkProblem,
-  type FootprinterBenchmarkProblem,
 } from "./create-footprinter-benchmark"
 import type { FanoutDatasetSample } from "./dataset-types"
 
@@ -9,177 +8,170 @@ interface StressSampleSpec {
   name: string
   description: string
   footprints: BenchmarkFootprintParams[]
-  addBlockedCorridor?: boolean
 }
+
+const PITCH = 1
+const PAD_DIAMETER = 0.6
+const VIA_DIAMETER = 0.4
+const VIA_HOLE_DIAMETER = 0.2
+const TRACE_WIDTH = 0.06
+const CLEARANCE = 0.03
+const BOUNDARY_MARGIN = 8
 
 const STRESS_SAMPLE_SPECS: StressSampleSpec[] = [
   {
-    name: "Dense BGA196",
+    name: "Two-layer interstitial BGA100",
     description:
-      "A 14×14 BGA at 0.70 mm pitch inside a boundary only 0.80 mm beyond its courtyard.",
+      "A 10×10 BGA whose 0.40 mm vias cannot fit between adjacent 0.60 mm pads and must use four-pad corner interstices.",
     footprints: [
       {
         componentId: "stress-bga-01",
         center: { x: 0, y: 0 },
-        gridSize: 14,
-        pitch: 0.7,
-        padDiameter: 0.26,
+        gridSize: 10,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
     ],
   },
   {
-    name: "Dual mixed BGA244",
+    name: "Opposed dual BGA200",
     description:
-      "A BGA144 and BGA100 with mixed pitches escaping opposite sides of one tight boundary.",
+      "Two dense BGA100 footprints escape in opposite directions on one bottom routing layer.",
     footprints: [
       {
         componentId: "stress-bga-01",
-        center: { x: -12, y: -1 },
-        gridSize: 12,
-        pitch: 0.75,
-        padDiameter: 0.28,
+        center: { x: -8, y: 0 },
+        gridSize: 10,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-02",
-        center: { x: 12, y: 1 },
+        center: { x: 8, y: 0 },
         gridSize: 10,
-        pitch: 0.7,
-        padDiameter: 0.26,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
     ],
   },
   {
-    name: "Three-way BGA344",
+    name: "Four-sided triple BGA228",
     description:
-      "A dense central BGA144 plus two BGA100 footprints sharing horizontal and vertical escape corridors.",
+      "Two side BGA64s and a central BGA100 share one boundary, forcing simultaneous left, right, north, and south spreading.",
     footprints: [
       {
         componentId: "stress-bga-01",
+        center: { x: -16, y: 0 },
+        gridSize: 8,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
+      },
+      {
+        componentId: "stress-bga-02",
         center: { x: 0, y: 0 },
-        gridSize: 12,
-        pitch: 0.8,
-        padDiameter: 0.3,
-      },
-      {
-        componentId: "stress-bga-02",
-        center: { x: 16, y: 7 },
         gridSize: 10,
-        pitch: 0.75,
-        padDiameter: 0.28,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-03",
-        center: { x: -16, y: -7 },
-        gridSize: 10,
-        pitch: 0.75,
-        padDiameter: 0.28,
+        center: { x: 16, y: 0 },
+        gridSize: 8,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
     ],
   },
   {
-    name: "Four-footprint BGA408",
+    name: "Quadrant BGA256",
     description:
-      "Four mixed BGA footprints and 408 pad fanouts packed around one six-layer shared boundary.",
+      "Four BGA64 footprints push 256 interstitial-via fanouts through the top and bottom edges of a shared two-layer boundary.",
     footprints: [
       {
         componentId: "stress-bga-01",
-        center: { x: 0, y: 0 },
-        gridSize: 12,
-        pitch: 0.8,
-        padDiameter: 0.3,
+        center: { x: -12, y: -16 },
+        gridSize: 8,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-02",
-        center: { x: 16, y: 7 },
-        gridSize: 10,
-        pitch: 0.75,
-        padDiameter: 0.28,
+        center: { x: 12, y: -16 },
+        gridSize: 8,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-03",
-        center: { x: -16, y: -7 },
-        gridSize: 10,
-        pitch: 0.75,
-        padDiameter: 0.28,
+        center: { x: -12, y: 16 },
+        gridSize: 8,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-04",
-        center: { x: -10, y: 16 },
+        center: { x: 12, y: 16 },
         gridSize: 8,
-        pitch: 0.7,
-        padDiameter: 0.26,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
     ],
   },
   {
-    name: "Blocked-corridor BGA472",
+    name: "Five-footprint two-layer BGA356",
     description:
-      "Five footprints, 472 pad fanouts, mixed pitches, and an inner1 barrier that forces a bus-layer reassignment.",
+      "A central BGA100 plus four BGA64s require 356 collision-free interstitial vias and heavily spread bottom-layer escapes.",
     footprints: [
       {
         componentId: "stress-bga-01",
         center: { x: 0, y: 0 },
-        gridSize: 12,
-        pitch: 0.8,
-        padDiameter: 0.3,
+        gridSize: 10,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-02",
-        center: { x: 16, y: 7 },
-        gridSize: 10,
-        pitch: 0.75,
-        padDiameter: 0.28,
+        center: { x: -16, y: -10 },
+        gridSize: 8,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-03",
-        center: { x: -16, y: -7 },
-        gridSize: 10,
-        pitch: 0.75,
-        padDiameter: 0.28,
+        center: { x: 16, y: -10 },
+        gridSize: 8,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-04",
-        center: { x: -10, y: 16 },
+        center: { x: -16, y: 10 },
         gridSize: 8,
-        pitch: 0.7,
-        padDiameter: 0.26,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-05",
-        center: { x: 10, y: -16 },
+        center: { x: 16, y: 10 },
         gridSize: 8,
-        pitch: 0.7,
-        padDiameter: 0.26,
+        pitch: PITCH,
+        padDiameter: PAD_DIAMETER,
       },
     ],
-    addBlockedCorridor: true,
   },
 ]
-
-function addBlockedNorthCorridor(problem: FootprinterBenchmarkProblem): void {
-  const componentBounds = problem.componentBounds["stress-bga-01"]!
-  problem.simpleRouteJson.obstacles.push({
-    obstacleId: "stress-inner1-north-corridor-barrier",
-    type: "rect",
-    center: {
-      x: (componentBounds.minX + componentBounds.maxX) / 2,
-      y: (componentBounds.maxY + problem.sharedBoundary.maxY) / 2,
-    },
-    width: componentBounds.maxX - componentBounds.minX,
-    height: 0.3,
-    layers: ["inner1"],
-    connectedTo: [],
-  })
-}
 
 export const fanoutDataset02: FanoutDatasetSample[] = STRESS_SAMPLE_SPECS.map(
   (spec, index) => {
     const problem = createFootprinterBenchmarkProblem({
-      boundaryMargin: 0.8,
+      boundaryMargin: BOUNDARY_MARGIN,
+      clearance: CLEARANCE,
       footprints: spec.footprints,
-      layerCount: 6,
+      layerCount: 2,
+      traceWidth: TRACE_WIDTH,
+      viaDiameter: VIA_DIAMETER,
+      viaHoleDiameter: VIA_HOLE_DIAMETER,
     })
-    if (spec.addBlockedCorridor) addBlockedNorthCorridor(problem)
 
     return {
       id: `sample${String(index + 1).padStart(3, "0")}`,

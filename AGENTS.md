@@ -14,6 +14,9 @@
 - A bus is atomic: all of its connections escape in one direction and onto one
   layer, or none of that bus is committed.
 - Never place a via on a BGA pad. Escape vias must clear every pad they span.
+- When a via cannot clear a pad-pair midpoint, move it diagonally to a
+  four-pad corner interstice and use nested side bands to spread two-layer
+  traces around already-routed outer buses.
 - Route every connected pad, including inner BGA rows and columns.
 - All footprints in one problem escape through the same shared boundary.
 - Keep the output compatible with `SimpleRouteJson`: committed fanout prefixes

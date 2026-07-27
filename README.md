@@ -4,8 +4,9 @@ BGA fanout preprocessor for
 [`SimpleRouteJson`](https://github.com/tscircuit/tscircuit-autorouter).
 
 `FanoutSolver` routes every connected BGA pad to one shared breakout boundary
-before the general-purpose autorouter runs. It can put an escape via in the gap
-between adjacent BGA pads, routes every member of a bus in the same direction,
+before the general-purpose autorouter runs. It can put a small escape via in a
+pad-to-pad channel or move an oversized via diagonally into the interstice
+between four pad corners. It routes every member of a bus in the same direction
 and treats each bus-layer decision atomically.
 
 ## Behavior
@@ -21,8 +22,10 @@ and treats each bus-layer decision atomically.
   explicit direction override.
 - Enumerates combinations of the copper layers implied by `layerCount`.
 - Moves an entire bus to one assigned layer. A partial bus is never committed.
-- Places the escape via halfway toward the neighboring BGA pad and verifies pad,
-  via, trace, and already-routed fanout clearance.
+- Uses a straight pad-pair escape when the via fits. Otherwise it uses a 45°
+  four-pad interstitial escape and nested side bands that spread deeper
+  two-layer buses around already-routed outer buses.
+- Verifies pad, via, trace, and already-routed fanout clearance.
 - Emits supplied fanout traces, via obstacles, and moved breakout endpoints in a
   new `SimpleRouteJson`. The returned problem is ready for a downstream
   autorouter to finish.
@@ -117,20 +120,23 @@ and component bounds come from each footprinter-generated
 
 ## Dataset 02
 
-`datasets/dataset02.ts` is the stress dataset. It uses six copper layers,
-mixed-pitch BGA64 through BGA196 footprints, and a shared boundary only 0.80 mm
-beyond the outer courtyards.
+`datasets/dataset02.ts` is the geometric stress dataset. Every sample has only
+top and bottom copper. Its 0.40 mm vias plus clearance cannot fit at the
+midpoint between adjacent 0.60 mm pads on 1.00 mm pitch, but do fit diagonally
+at the center of four pad corners. Inner buses must spread into nested side
+bands before crossing the shared boundary.
 
 | Sample | Footprints | Pads | Buses | Stress condition |
 | --- | ---: | ---: | ---: | --- |
-| `sample001` | 1 | 196 | 14 | 14×14 BGA at 0.70 mm pitch |
-| `sample002` | 2 | 244 | 22 | Mixed BGA144/BGA100 |
-| `sample003` | 3 | 344 | 32 | Shared horizontal and vertical corridors |
-| `sample004` | 4 | 408 | 40 | Four dense mixed-pitch footprints |
-| `sample005` | 5 | 472 | 48 | `inner1` barrier forces layer reassignment |
+| `sample001` | 1 | 100 | 10 | One BGA100, interstitial vias, north/south spreading |
+| `sample002` | 2 | 200 | 20 | Opposed BGA100 footprints on one bottom layer |
+| `sample003` | 3 | 228 | 26 | Simultaneous left/right/north/south bundles |
+| `sample004` | 4 | 256 | 32 | Four BGA64 footprints share top/bottom exits |
+| `sample005` | 5 | 356 | 42 | Central BGA100 plus four BGA64 footprints |
 
-Every pad is connected in every stress sample. The final sample deliberately
-rejects the initial balanced bus-layer map before finding a complete solution.
+Every pad is connected in every stress sample. More than 95% of their breakout
+tracks leave the perpendicular span of their source footprint, making the
+required outward spreading visible in both Cosmos and the verification PNGs.
 
 ## Development
 

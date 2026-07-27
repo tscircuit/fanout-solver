@@ -14,7 +14,7 @@ export const fanoutDatasets: FanoutDataset[] = [
     id: "dataset02",
     name: "Stress",
     description:
-      "Dense mixed-pitch BGAs, tight shared boundaries, six layers, and a blocked-corridor layer reassignment.",
+      "Two-layer BGA fanouts with oversized vias forced into four-pad corner interstices and nested outward-spreading trace bundles.",
     samples: fanoutDataset02,
   },
 ]
