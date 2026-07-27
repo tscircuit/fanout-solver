@@ -9,13 +9,27 @@ import type {
 
 export type FanoutDirection = "left" | "right" | "up" | "down"
 
+export type FanoutEdge = "left" | "right" | "top" | "bottom"
+
+export type FanoutCorner =
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right"
+
+export type FanoutBorderTarget = FanoutEdge | FanoutCorner
+
+export type FanoutBorderDistribution = "preserve" | "even"
+
 export interface FanoutBusSpec extends SimpleRouteBus {
   direction?: FanoutDirection
+  preferredExit?: FanoutBorderTarget
 }
 
 export interface FanoutSolverOptions {
   buses?: FanoutBusSpec[]
   busDirections?: Readonly<Record<string, FanoutDirection>>
+  busExitPreferences?: Readonly<Record<string, FanoutBorderTarget>>
   componentBounds?: Readonly<Record<string, Bounds>>
   sharedBoundary?: Bounds
   escapeLayers?: string[]
@@ -27,6 +41,7 @@ export interface FanoutSolverOptions {
   breakoutMargin?: number
   compactBusTracks?: boolean
   singleLayerPushAndShove?: boolean
+  borderDistribution?: FanoutBorderDistribution
 }
 
 export interface FanoutAttemptSummary {
@@ -71,6 +86,7 @@ export interface PreparedConnection {
 export interface PreparedBus {
   busId: string
   direction: FanoutDirection
+  preferredExit?: FanoutBorderTarget
   connections: PreparedConnection[]
   componentId: string
   componentObstacles: Obstacle[]

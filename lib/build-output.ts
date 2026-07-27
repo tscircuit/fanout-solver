@@ -56,9 +56,51 @@ export function buildOutputSimpleRouteJson(params: {
     const viaObstacle = createViaObstacle(plan, layerNames)
     if (viaObstacle) viaObstacles.push(viaObstacle)
   }
+  const coordinateRoutePoints = plans.flatMap((plan) =>
+    plan.trace.route.filter(
+      (
+        routePoint,
+      ): routePoint is Extract<typeof routePoint, { x: number; y: number }> =>
+        "x" in routePoint && "y" in routePoint,
+    ),
+  )
+  const boundsMargin = Math.max(
+    inputSrj.defaultObstacleMargin ?? 0,
+    inputSrj.minTraceWidth,
+  )
+  const outputBounds =
+    coordinateRoutePoints.length === 0
+      ? { ...inputSrj.bounds }
+      : {
+          minX: Math.min(
+            inputSrj.bounds.minX,
+            ...coordinateRoutePoints.map(
+              (routePoint) => routePoint.x - boundsMargin,
+            ),
+          ),
+          maxX: Math.max(
+            inputSrj.bounds.maxX,
+            ...coordinateRoutePoints.map(
+              (routePoint) => routePoint.x + boundsMargin,
+            ),
+          ),
+          minY: Math.min(
+            inputSrj.bounds.minY,
+            ...coordinateRoutePoints.map(
+              (routePoint) => routePoint.y - boundsMargin,
+            ),
+          ),
+          maxY: Math.max(
+            inputSrj.bounds.maxY,
+            ...coordinateRoutePoints.map(
+              (routePoint) => routePoint.y + boundsMargin,
+            ),
+          ),
+        }
 
   return {
     ...inputSrj,
+    bounds: outputBounds,
     connections: outputConnections,
     obstacles: [
       ...inputSrj.obstacles.map((obstacle) => ({

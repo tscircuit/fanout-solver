@@ -72,13 +72,16 @@ function createVerificationOverlay(
   }
 }
 
-function getVerificationViewbox(sharedBoundary: Bounds): Viewbox {
+function getVerificationViewbox(
+  sharedBoundary: Bounds,
+  outputBounds: Bounds,
+): Viewbox {
   const margin = 1.25
   return {
-    minX: sharedBoundary.minX - margin,
-    maxX: sharedBoundary.maxX + margin,
-    minY: sharedBoundary.minY - margin,
-    maxY: sharedBoundary.maxY + margin,
+    minX: Math.min(sharedBoundary.minX - margin, outputBounds.minX),
+    maxX: Math.max(sharedBoundary.maxX + margin, outputBounds.maxX),
+    minY: Math.min(sharedBoundary.minY - margin, outputBounds.minY),
+    maxY: Math.max(sharedBoundary.maxY + margin, outputBounds.maxY),
   }
 }
 
@@ -130,7 +133,10 @@ for (const dataset of fanoutDatasets) {
       padding: 24,
       pngHeight: 1400,
       pngWidth: 1400,
-      viewbox: getVerificationViewbox(sample.sharedBoundary),
+      viewbox: getVerificationViewbox(
+        sample.sharedBoundary,
+        output.simpleRouteJson.bounds,
+      ),
     })
     const outputPath = `${datasetDirectory}/${sample.id}.png`
     await writeFile(outputPath, png)

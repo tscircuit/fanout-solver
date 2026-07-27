@@ -3,13 +3,14 @@ import {
   type MixedFootprintSpec,
 } from "./create-mixed-footprint-benchmark"
 import type { FanoutDatasetSample } from "./dataset-types"
+import type { FanoutBorderTarget, FanoutBusSpec } from "lib/types"
 
 export const BGA16 = "bga16_grid4x4_p0.8mm_pad0.3mm_circularpads"
 export const BGA25 = "bga25_grid5x5_p1.75mm_pad0.3mm_circularpads"
 export const BGA36 = "bga36_grid6x6_p1.5mm_pad0.3mm_circularpads"
 export const BGA64 = "bga64_grid8x8_p1.5mm_pad0.3mm_circularpads"
 export const RP2040_CLASS_QFN =
-  "qfn56_w7_h7_p0.4mm_thermalpad3.2x3.2_startingpin(topside,rightpin)_ccw"
+  "qfn56_w7.8_h7.8_p0.4mm_pw0.23mm_pl0.8mm_thermalpad3.2x3.2_startingpin(topside,rightpin)_ccw"
 
 interface Dataset04SampleConfig {
   id: string
@@ -147,6 +148,15 @@ const capPlacements = [
   },
 ] as const
 
+const preferredCornerByComponentId: Readonly<
+  Record<string, FanoutBorderTarget>
+> = {
+  "capacitor-northwest": "top-left",
+  "capacitor-northeast": "top-right",
+  "capacitor-southeast": "bottom-right",
+  "capacitor-southwest": "bottom-left",
+}
+
 function createSample(config: Dataset04SampleConfig): FanoutDatasetSample {
   const footprints: MixedFootprintSpec[] = [
     {
@@ -219,6 +229,11 @@ function createSample(config: Dataset04SampleConfig): FanoutDatasetSample {
       (connectionName) => connectionName !== thermalConnectionName,
     )
   }
+  problem.simpleRouteJson.buses = problem.simpleRouteJson.buses?.map((bus) => {
+    const componentId = bus.busId.split(":")[0]!
+    const preferredExit = preferredCornerByComponentId[componentId]
+    return preferredExit ? { ...bus, preferredExit } : bus
+  }) as FanoutBusSpec[]
 
   return {
     id: config.id,
@@ -232,6 +247,7 @@ function createSample(config: Dataset04SampleConfig): FanoutDatasetSample {
       sharedBoundary: problem.sharedBoundary,
       escapeLayers: ["top"],
       singleLayerPushAndShove: true,
+      borderDistribution: "even",
     },
     componentBounds: problem.componentBounds,
     sharedBoundary: problem.sharedBoundary,

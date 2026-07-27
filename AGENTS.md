@@ -13,6 +13,11 @@
 
 - A bus is atomic: all of its connections escape in one direction and onto one
   layer, or none of that bus is committed.
+- A bus `preferredExit` is atomic too: edge/corner guidance applies to the
+  complete bus. Preserve trace order and reject a corner request that would
+  require same-layer crossings.
+- When `borderDistribution` is `even`, spread exits across the occupied border
+  interval without violating trace/clearance pitch or reordering buses.
 - Via use is bus-atomic: either every connection in a bus uses a via or none
   does. Prefer via-free source-layer escape for outward-edge buses.
 - Never place a via on a BGA pad. Escape vias must clear every pad they span.

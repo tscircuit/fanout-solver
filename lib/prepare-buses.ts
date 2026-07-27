@@ -7,12 +7,24 @@ import type {
 import { distance, pointIsInsideObstacle } from "./geometry"
 import type {
   Bounds,
+  FanoutBorderTarget,
   FanoutBusSpec,
   FanoutDirection,
   FanoutSolverOptions,
   PreparedBus,
   PreparedConnection,
 } from "./types"
+
+const FANOUT_BORDER_TARGETS = new Set<FanoutBorderTarget>([
+  "left",
+  "right",
+  "top",
+  "bottom",
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+])
 
 interface ComponentGrid {
   componentId: string
@@ -306,6 +318,19 @@ function inferBusId(connection: SimpleRouteConnection): string | null {
   return nameMatch?.[1] ?? null
 }
 
+function resolvePreferredExit(
+  busId: string,
+  value: FanoutBorderTarget | undefined,
+): FanoutBorderTarget | undefined {
+  if (value === undefined) return undefined
+  if (!FANOUT_BORDER_TARGETS.has(value)) {
+    throw new Error(
+      `FanoutSolver: bus "${busId}" has invalid preferredExit "${value}"`,
+    )
+  }
+  return value
+}
+
 function resolveBusSpecs(
   srj: SimpleRouteJson,
   options: FanoutSolverOptions,
@@ -339,6 +364,11 @@ function resolveBusSpecs(
       direction:
         options.busDirections?.[requestedBus.busId] ??
         (requestedBus as FanoutBusSpec).direction,
+      preferredExit: resolvePreferredExit(
+        requestedBus.busId,
+        options.busExitPreferences?.[requestedBus.busId] ??
+          (requestedBus as FanoutBusSpec).preferredExit,
+      ),
     })
   }
 
@@ -355,6 +385,11 @@ function resolveBusSpecs(
         ],
         direction:
           options.busDirections?.[inferredBusId] ?? existing?.direction,
+        preferredExit: resolvePreferredExit(
+          inferredBusId,
+          options.busExitPreferences?.[inferredBusId] ??
+            existing?.preferredExit,
+        ),
       })
     } else {
       const singletonBusId = `connection:${connection.name}`
@@ -362,6 +397,10 @@ function resolveBusSpecs(
         busId: singletonBusId,
         connectionNames: [connection.name],
         direction: options.busDirections?.[singletonBusId],
+        preferredExit: resolvePreferredExit(
+          singletonBusId,
+          options.busExitPreferences?.[singletonBusId],
+        ),
       })
     }
   }
@@ -494,6 +533,111 @@ function inferDirection(
   return dy >= 0 ? "up" : "down"
 }
 
+function getDirectionsForBorderTarget(
+  target: FanoutBorderTarget,
+): FanoutDirection[] {
+  switch (target) {
+    case "left":
+      return ["left"]
+    case "right":
+      return ["right"]
+    case "top":
+      return ["up"]
+    case "bottom":
+      return ["down"]
+    case "top-left":
+      return ["up", "left"]
+    case "top-right":
+      return ["up", "right"]
+    case "bottom-left":
+      return ["down", "left"]
+    case "bottom-right":
+      return ["down", "right"]
+  }
+}
+
+function getAverageSourcePoint(connections: PreparedConnection[]): {
+  x: number
+  y: number
+} {
+  return {
+    x:
+      connections.reduce(
+        (sum, connection) => sum + connection.sourcePoint.x,
+        0,
+      ) / connections.length,
+    y:
+      connections.reduce(
+        (sum, connection) => sum + connection.sourcePoint.y,
+        0,
+      ) / connections.length,
+  }
+}
+
+function getDistanceToBoundary(
+  source: { x: number; y: number },
+  direction: FanoutDirection,
+  boundary: Bounds,
+): number {
+  switch (direction) {
+    case "left":
+      return source.x - boundary.minX
+    case "right":
+      return boundary.maxX - source.x
+    case "up":
+      return boundary.maxY - source.y
+    case "down":
+      return source.y - boundary.minY
+  }
+}
+
+function resolveBusDirection(params: {
+  busId: string
+  explicitDirection?: FanoutDirection
+  preferredExit?: FanoutBorderTarget
+  connections: PreparedConnection[]
+  sharedBoundary: Bounds
+}): FanoutDirection {
+  const {
+    busId,
+    explicitDirection,
+    preferredExit,
+    connections,
+    sharedBoundary,
+  } = params
+  if (!preferredExit) {
+    return explicitDirection ?? inferDirection(busId, connections)
+  }
+
+  const compatibleDirections = getDirectionsForBorderTarget(preferredExit)
+  if (explicitDirection) {
+    if (!compatibleDirections.includes(explicitDirection)) {
+      throw new Error(
+        `FanoutSolver: bus "${busId}" direction "${explicitDirection}" is incompatible with preferredExit "${preferredExit}"`,
+      )
+    }
+    return explicitDirection
+  }
+  if (compatibleDirections.length === 1) return compatibleDirections[0]!
+
+  let inferredDirection: FanoutDirection | undefined
+  try {
+    inferredDirection = inferDirection(busId, connections)
+  } catch {
+    inferredDirection = undefined
+  }
+  if (inferredDirection && compatibleDirections.includes(inferredDirection)) {
+    return inferredDirection
+  }
+  const averageSource = getAverageSourcePoint(connections)
+  return compatibleDirections.toSorted(
+    (first, second) =>
+      getDistanceToBoundary(averageSource, first, sharedBoundary) -
+        getDistanceToBoundary(averageSource, second, sharedBoundary) ||
+      first.localeCompare(second),
+  )[0]!
+}
+
 export function prepareFanoutBuses(
   srj: SimpleRouteJson,
   options: FanoutSolverOptions,
@@ -535,10 +679,15 @@ export function prepareFanoutBuses(
     )
     buses.push({
       busId: busSpec.busId,
-      direction:
-        busSpec.direction ??
-        options.busDirections?.[busSpec.busId] ??
-        inferDirection(busSpec.busId, preparedConnections),
+      direction: resolveBusDirection({
+        busId: busSpec.busId,
+        explicitDirection:
+          busSpec.direction ?? options.busDirections?.[busSpec.busId],
+        preferredExit: busSpec.preferredExit,
+        connections: preparedConnections,
+        sharedBoundary,
+      }),
+      preferredExit: busSpec.preferredExit,
       connections: preparedConnections,
       componentId: sourceGrid.componentId,
       componentObstacles: sourceGrid.obstacles,

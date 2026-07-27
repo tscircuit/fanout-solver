@@ -9,6 +9,8 @@ import {
   distanceSegmentToSegment,
 } from "./geometry"
 import type {
+  FanoutBorderDistribution,
+  FanoutCorner,
   FanoutDirection,
   FanoutRoutePlan,
   Point2D,
@@ -23,6 +25,7 @@ interface PushShoveParams {
   traceWidth: number
   clearance: number
   breakoutMargin: number
+  borderDistribution: FanoutBorderDistribution
 }
 
 interface RoutingItem {
@@ -133,10 +136,12 @@ function getPathSegments(
  */
 function selectOrderedTracks(params: {
   requestedTracks: number[]
+  currentTracks: number[]
   candidateTracks: number[]
-  maximumShift: number
+  maximumShifts: number[]
 }): number[] | null {
-  const { requestedTracks, candidateTracks, maximumShift } = params
+  const { requestedTracks, currentTracks, candidateTracks, maximumShifts } =
+    params
   const rowCount = requestedTracks.length + 1
   const columnCount = candidateTracks.length + 1
   const costs = Array.from({ length: rowCount }, () =>
@@ -151,13 +156,16 @@ function selectOrderedTracks(params: {
   for (let row = 1; row < rowCount; row++) {
     for (let column = 1; column < columnCount; column++) {
       const skippedCost = costs[row]![column - 1]!
-      const shift = Math.abs(
+      const requestedShift = Math.abs(
         requestedTracks[row - 1]! - candidateTracks[column - 1]!,
       )
+      const currentShift = Math.abs(
+        currentTracks[row - 1]! - candidateTracks[column - 1]!,
+      )
       const selectedCost =
-        shift > maximumShift + 1e-9
+        currentShift > maximumShifts[row - 1]! + 1e-9
           ? Number.POSITIVE_INFINITY
-          : costs[row - 1]![column - 1]! + shift
+          : costs[row - 1]![column - 1]! + requestedShift
       if (selectedCost < skippedCost) {
         costs[row]![column] = selectedCost
         tookCandidate[row]![column] = 1
@@ -190,7 +198,8 @@ function getCandidateTracks(params: {
   boundaryMaximum: number
   traceWidth: number
   clearance: number
-  maximumShift: number
+  requestedTracks: number[]
+  maximumShifts: number[]
 }): number[] | null {
   const {
     direction,
@@ -200,7 +209,8 @@ function getCandidateTracks(params: {
     boundaryMaximum,
     traceWidth,
     clearance,
-    maximumShift,
+    requestedTracks,
+    maximumShifts,
   } = params
   const lanePitch = traceWidth + clearance
   const requiredObstacleDistance = traceWidth / 2 + clearance
@@ -237,13 +247,14 @@ function getCandidateTracks(params: {
     }
 
     const tracks = selectOrderedTracks({
-      requestedTracks: activeRoutes.map((route) => route.track),
+      requestedTracks,
+      currentTracks: activeRoutes.map((route) => route.track),
       candidateTracks: candidates,
-      maximumShift,
+      maximumShifts,
     })
     if (!tracks) continue
     const cost = tracks.reduce(
-      (sum, track, index) => sum + Math.abs(track - activeRoutes[index]!.track),
+      (sum, track, index) => sum + Math.abs(track - requestedTracks[index]!),
       0,
     )
     if (cost < selectedCost) {
@@ -252,6 +263,176 @@ function getCandidateTracks(params: {
     }
   }
   return selectedTracks
+}
+
+interface FinalTrackTargets {
+  byConnectionName: Map<string, number>
+  enforcedConnectionNames: Set<string>
+}
+
+function getCornerSide(
+  corner: FanoutCorner,
+  direction: FanoutDirection,
+): "minimum" | "maximum" | null {
+  switch (direction) {
+    case "up":
+      if (corner === "top-left") return "minimum"
+      if (corner === "top-right") return "maximum"
+      return null
+    case "down":
+      if (corner === "bottom-left") return "minimum"
+      if (corner === "bottom-right") return "maximum"
+      return null
+    case "left":
+      if (corner === "bottom-left") return "minimum"
+      if (corner === "top-left") return "maximum"
+      return null
+    case "right":
+      if (corner === "bottom-right") return "minimum"
+      if (corner === "top-right") return "maximum"
+      return null
+  }
+}
+
+function getFinalTrackTargets(params: {
+  items: RoutingItem[]
+  direction: FanoutDirection
+  boundaryMinimum: number
+  boundaryMaximum: number
+  traceWidth: number
+  clearance: number
+  borderDistribution: FanoutBorderDistribution
+  currentTrackByConnectionName: ReadonlyMap<string, number>
+}): FinalTrackTargets | null {
+  const {
+    items,
+    direction,
+    boundaryMinimum,
+    boundaryMaximum,
+    traceWidth,
+    clearance,
+    borderDistribution,
+    currentTrackByConnectionName,
+  } = params
+  const getCurrentTrack = (item: RoutingItem) =>
+    currentTrackByConnectionName.get(item.connection.connection.name) ??
+    getPerpendicularAxis(item.source, direction)
+  const orderedItems = [...items].toSorted(
+    (first, second) =>
+      getCurrentTrack(first) - getCurrentTrack(second) ||
+      first.connection.connection.name.localeCompare(
+        second.connection.connection.name,
+      ),
+  )
+  const lanePitch = traceWidth + clearance
+  const minimumLane = boundaryMinimum + traceWidth / 2
+  const maximumLane = boundaryMaximum - traceWidth / 2
+  const availableSpan = maximumLane - minimumLane
+  const requiredSpan = lanePitch * Math.max(orderedItems.length - 1, 0)
+  if (availableSpan < requiredSpan - 1e-9) return null
+
+  const sourceTracks = orderedItems.map(getCurrentTrack)
+  let targetTracks = [...sourceTracks]
+  let distributedPitch = lanePitch
+  const enforcedConnectionNames = new Set<string>()
+  if (borderDistribution === "even" && orderedItems.length > 1) {
+    const sourceMinimum = sourceTracks[0]!
+    const sourceMaximum = sourceTracks.at(-1)!
+    const desiredPitch = Math.max(
+      lanePitch,
+      (sourceMaximum - sourceMinimum) / (orderedItems.length - 1),
+    )
+    const buildOutwardTracks = (pitch: number): number[] => {
+      const tracks = [...sourceTracks]
+      const upperMiddle = Math.floor(orderedItems.length / 2)
+      const lowerMiddle =
+        orderedItems.length % 2 === 0 ? upperMiddle - 1 : upperMiddle
+      if (lowerMiddle !== upperMiddle) {
+        const middleGap = tracks[upperMiddle]! - tracks[lowerMiddle]!
+        if (middleGap < pitch) {
+          const shove = (pitch - middleGap) / 2
+          tracks[lowerMiddle] = tracks[lowerMiddle]! - shove
+          tracks[upperMiddle] = tracks[upperMiddle]! + shove
+        }
+      }
+      for (let index = lowerMiddle - 1; index >= 0; index--) {
+        tracks[index] = Math.min(tracks[index]!, tracks[index + 1]! - pitch)
+      }
+      for (let index = upperMiddle + 1; index < tracks.length; index++) {
+        tracks[index] = Math.max(tracks[index]!, tracks[index - 1]! + pitch)
+      }
+      return tracks
+    }
+    const tracksFitBoundary = (tracks: number[]) =>
+      tracks[0]! >= minimumLane - 1e-9 && tracks.at(-1)! <= maximumLane + 1e-9
+    targetTracks = buildOutwardTracks(desiredPitch)
+    if (tracksFitBoundary(targetTracks)) {
+      distributedPitch = desiredPitch
+    } else {
+      let lowerPitch = lanePitch
+      let upperPitch = desiredPitch
+      targetTracks = buildOutwardTracks(lowerPitch)
+      if (!tracksFitBoundary(targetTracks)) return null
+      for (let iteration = 0; iteration < 32; iteration++) {
+        const candidatePitch = (lowerPitch + upperPitch) / 2
+        const candidateTracks = buildOutwardTracks(candidatePitch)
+        if (tracksFitBoundary(candidateTracks)) {
+          lowerPitch = candidatePitch
+          targetTracks = candidateTracks
+        } else {
+          upperPitch = candidatePitch
+        }
+      }
+      distributedPitch = lowerPitch
+    }
+    for (const item of orderedItems) {
+      enforcedConnectionNames.add(item.connection.connection.name)
+    }
+  }
+
+  const minimumCornerIndexes: number[] = []
+  const maximumCornerIndexes: number[] = []
+  for (let index = 0; index < orderedItems.length; index++) {
+    const item = orderedItems[index]!
+    const preferredExit = item.bus.preferredExit
+    if (!preferredExit?.includes("-")) continue
+    const cornerSide = getCornerSide(preferredExit as FanoutCorner, direction)
+    if (!cornerSide) return null
+    enforcedConnectionNames.add(item.connection.connection.name)
+    if (cornerSide === "minimum") minimumCornerIndexes.push(index)
+    else maximumCornerIndexes.push(index)
+  }
+
+  if (
+    minimumCornerIndexes.some(
+      (index, expectedIndex) => index !== expectedIndex,
+    ) ||
+    maximumCornerIndexes.some(
+      (index, offset) =>
+        index !== orderedItems.length - maximumCornerIndexes.length + offset,
+    )
+  ) {
+    return null
+  }
+  for (let index = 0; index < minimumCornerIndexes.length; index++) {
+    targetTracks[index] = minimumLane + index * distributedPitch
+  }
+  for (let offset = 0; offset < maximumCornerIndexes.length; offset++) {
+    const index = orderedItems.length - maximumCornerIndexes.length + offset
+    targetTracks[index] =
+      maximumLane -
+      (maximumCornerIndexes.length - 1 - offset) * distributedPitch
+  }
+
+  return {
+    byConnectionName: new Map(
+      orderedItems.map((item, index) => [
+        item.connection.connection.name,
+        targetTracks[index]!,
+      ]),
+    ),
+    enforcedConnectionNames,
+  }
 }
 
 function buildPlan(path: RoutedPath): FanoutRoutePlan {
@@ -367,9 +548,17 @@ function routesAreClear(params: {
 export function routeSingleLayerWithPushAndShove(
   params: PushShoveParams,
 ): FanoutRoutePlan[] | null {
-  const { srj, buses, traceWidth, clearance, breakoutMargin } = params
+  const {
+    srj,
+    buses,
+    traceWidth,
+    clearance,
+    breakoutMargin,
+    borderDistribution,
+  } = params
   const requiredObstacleDistance = traceWidth / 2 + clearance
   const recordsByConnectionName = new Map<string, ActiveRoute>()
+  const enforcedFinalTargets = new Map<string, number>()
   const items = buses.flatMap((bus) =>
     bus.connections.map((connection) => {
       const source = {
@@ -394,6 +583,12 @@ export function routeSingleLayerWithPushAndShove(
     const sign = directionSign(direction)
     const directionItems = items.filter((item) => item.direction === direction)
     if (directionItems.length === 0) continue
+    const boundaryMinimum = isHorizontal(direction)
+      ? directionItems[0]!.bus.sharedBoundary.minY
+      : directionItems[0]!.bus.sharedBoundary.minX
+    const boundaryMaximum = isHorizontal(direction)
+      ? directionItems[0]!.bus.sharedBoundary.maxY
+      : directionItems[0]!.bus.sharedBoundary.maxX
     const rawExitAxis = getExitAxis(directionItems[0]!.bus, breakoutMargin)
     const exitAxis =
       sign > 0
@@ -475,16 +670,8 @@ export function routeSingleLayerWithPushAndShove(
       const lookaheadObstacles = eventAxes
         .slice(eventIndex + 1, eventIndex + 3)
         .flatMap((axis) => obstaclesByEventKey.get(axis.toFixed(6)) ?? [])
-      const boundaryMinimum = isHorizontal(direction)
-        ? directionItems[0]!.bus.sharedBoundary.minY
-        : directionItems[0]!.bus.sharedBoundary.minX
-      const boundaryMaximum = isHorizontal(direction)
-        ? directionItems[0]!.bus.sharedBoundary.maxY
-        : directionItems[0]!.bus.sharedBoundary.maxX
-      const maximumShift = Math.min(
-        ...orderedRoutes.map((route) =>
-          Math.abs(nextAxis - getAxis(route.points.at(-1)!, direction)),
-        ),
+      const maximumShifts = orderedRoutes.map((route) =>
+        Math.abs(nextAxis - getAxis(route.points.at(-1)!, direction)),
       )
       const selectedTracks = getCandidateTracks({
         direction,
@@ -494,7 +681,8 @@ export function routeSingleLayerWithPushAndShove(
         boundaryMaximum,
         traceWidth,
         clearance,
-        maximumShift,
+        requestedTracks: orderedRoutes.map((route) => route.track),
+        maximumShifts,
       })
       if (!selectedTracks) return null
 
@@ -519,12 +707,111 @@ export function routeSingleLayerWithPushAndShove(
       }
     }
 
-    for (const route of active.values()) {
-      recordsByConnectionName.set(route.item.connection.connection.name, route)
+    const finalTrackTargets = getFinalTrackTargets({
+      items: directionItems,
+      direction,
+      boundaryMinimum,
+      boundaryMaximum,
+      traceWidth,
+      clearance,
+      borderDistribution,
+      currentTrackByConnectionName: new Map(
+        [...active.values()].map((route) => [
+          route.item.connection.connection.name,
+          route.track,
+        ]),
+      ),
+    })
+    if (!finalTrackTargets) return null
+    for (const connectionName of finalTrackTargets.enforcedConnectionNames) {
+      enforcedFinalTargets.set(
+        connectionName,
+        finalTrackTargets.byConnectionName.get(connectionName)!,
+      )
+    }
+    const orderedActiveRoutes = [...active.values()].toSorted(
+      (first, second) =>
+        first.track - second.track ||
+        first.item.connection.connection.name.localeCompare(
+          second.item.connection.connection.name,
+        ),
+    )
+    const distributionStartOffsetByConnectionName = new Map<string, number>()
+    let nextMinimumStartOffset = 0
+    for (const route of orderedActiveRoutes) {
+      const connectionName = route.item.connection.connection.name
+      if (!finalTrackTargets.enforcedConnectionNames.has(connectionName)) {
+        continue
+      }
+      const targetTrack =
+        finalTrackTargets.byConnectionName.get(connectionName)!
+      const signedShift = targetTrack - route.track
+      if (signedShift >= -1e-9) continue
+      distributionStartOffsetByConnectionName.set(
+        connectionName,
+        nextMinimumStartOffset,
+      )
+      nextMinimumStartOffset += Math.abs(signedShift) + traceWidth + clearance
+    }
+    let nextMaximumStartOffset = 0
+    for (let index = orderedActiveRoutes.length - 1; index >= 0; index--) {
+      const route = orderedActiveRoutes[index]!
+      const connectionName = route.item.connection.connection.name
+      if (!finalTrackTargets.enforcedConnectionNames.has(connectionName)) {
+        continue
+      }
+      const targetTrack =
+        finalTrackTargets.byConnectionName.get(connectionName)!
+      const signedShift = targetTrack - route.track
+      if (signedShift <= 1e-9) continue
+      distributionStartOffsetByConnectionName.set(
+        connectionName,
+        nextMaximumStartOffset,
+      )
+      nextMaximumStartOffset += Math.abs(signedShift) + traceWidth + clearance
+    }
+
+    for (const route of orderedActiveRoutes) {
+      const connectionName = route.item.connection.connection.name
+      if (finalTrackTargets.enforcedConnectionNames.has(connectionName)) {
+        const targetTrack =
+          finalTrackTargets.byConnectionName.get(connectionName)!
+        const shift = Math.abs(targetTrack - route.track)
+        if (shift > 1e-9) {
+          const distributionStartOffset =
+            distributionStartOffsetByConnectionName.get(connectionName) ?? 0
+          if (distributionStartOffset > 1e-9) {
+            route.points.push(
+              makePoint(
+                getAxis(route.points.at(-1)!, direction) +
+                  sign * distributionStartOffset,
+                route.track,
+                direction,
+              ),
+            )
+          }
+          route.points.push(
+            makePoint(
+              getAxis(route.points.at(-1)!, direction) + sign * shift,
+              targetTrack,
+              direction,
+            ),
+          )
+          route.track = targetTrack
+        }
+      }
+      recordsByConnectionName.set(connectionName, route)
     }
   }
 
   if (recordsByConnectionName.size !== items.length) return null
+  const maximumTargetError = (traceWidth + clearance) / 2 + 1e-6
+  for (const [connectionName, targetTrack] of enforcedFinalTargets) {
+    const route = recordsByConnectionName.get(connectionName)
+    if (!route || Math.abs(route.track - targetTrack) > maximumTargetError) {
+      return null
+    }
+  }
   const paths = items.map((item) => {
     const activeRoute = recordsByConnectionName.get(
       item.connection.connection.name,

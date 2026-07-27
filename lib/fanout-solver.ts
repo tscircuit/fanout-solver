@@ -14,6 +14,7 @@ import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shov
 import type {
   AssignmentAttempt,
   FanoutAttemptSummary,
+  FanoutBorderDistribution,
   FanoutSolverOptions,
   FanoutSolverOutput,
   PreparedBus,
@@ -27,6 +28,7 @@ interface ResolvedFanoutConfig {
   breakoutMargin: number
   compactBusTracks: boolean
   singleLayerPushAndShove: boolean
+  borderDistribution: FanoutBorderDistribution
   layerNames: string[]
   escapeLayers: string[]
   maxLayerCombinations: number
@@ -93,6 +95,12 @@ function resolveConfig(
   if (new Set(escapeLayers).size !== escapeLayers.length) {
     throw new Error("FanoutSolver: escapeLayers contains duplicates")
   }
+  const borderDistribution = options.borderDistribution ?? "preserve"
+  if (borderDistribution !== "preserve" && borderDistribution !== "even") {
+    throw new Error(
+      `FanoutSolver: borderDistribution must be "preserve" or "even", received "${borderDistribution}"`,
+    )
+  }
 
   return {
     traceWidth,
@@ -102,6 +110,7 @@ function resolveConfig(
     breakoutMargin,
     compactBusTracks: options.compactBusTracks ?? false,
     singleLayerPushAndShove: options.singleLayerPushAndShove ?? false,
+    borderDistribution,
     layerNames,
     escapeLayers,
     maxLayerCombinations:
@@ -360,6 +369,7 @@ export class FanoutSolver extends BaseSolver {
         traceWidth: this.config.traceWidth,
         clearance: this.config.clearance,
         breakoutMargin: this.config.breakoutMargin,
+        borderDistribution: this.config.borderDistribution,
       })
       if (pushShovePlans) {
         plans.push(...pushShovePlans)

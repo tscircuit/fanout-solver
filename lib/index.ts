@@ -4,8 +4,12 @@ export { getCopperLayerNames } from "./layer-names"
 export type {
   Bounds,
   FanoutAttemptSummary,
+  FanoutBorderDistribution,
+  FanoutBorderTarget,
   FanoutBusSpec,
+  FanoutCorner,
   FanoutDirection,
+  FanoutEdge,
   FanoutSolverOptions,
   FanoutSolverOutput,
 } from "./types"

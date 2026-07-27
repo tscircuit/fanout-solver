@@ -21,6 +21,14 @@ and treats each bus-layer decision atomically.
   shared rectangle around all detected component bounds and pad grids.
 - Infers one outward direction per bus from the bus endpoints, or accepts an
   explicit direction override.
+- Accepts an additive `preferredExit` bus field for a particular edge
+  (`left`, `right`, `top`, or `bottom`) or corner (`top-left`, `top-right`,
+  `bottom-left`, or `bottom-right`). A corner chooses a compatible adjacent
+  edge and reserves the bus at that end of the border.
+- `borderDistribution: "even"` uses outward-only shoves to equalize
+  under-filled gaps across the occupied border interval while preserving bus
+  order, existing wider corridors, and trace/clearance pitch. The default
+  `"preserve"` mode stays source-aligned.
 - Supports balanced nearest-edge partitioning for package breakouts. Ties
   alternate instead of favoring one axis; square grids distribute equally
   across north, south, east, and west.
@@ -72,6 +80,10 @@ const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   busDirections: {
     ddr: "right",
   },
+  busExitPreferences: {
+    clocks: "top-right",
+  },
+  borderDistribution: "even",
   compactBusTracks: true,
 })
 fanoutSolver.solve()
@@ -94,14 +106,18 @@ The canonical bus input is the current `SimpleRouteJson` bus structure:
     {
       busId: "ddr",
       connectionNames: ["BUS_DDR_01", "BUS_DDR_02", "BUS_DDR_03"],
+      preferredExit: "right",
     },
   ],
 }
 ```
 
-All listed connections receive the same escape direction and target layer. If
-one connection cannot be routed cleanly, the solver rejects that bus for the
-current layer assignment and tries another combination.
+`preferredExit` is an optional fanout extension to `SimpleRouteBus`; omitting it
+leaves ordinary `SimpleRouteJson` behavior unchanged. All listed connections
+receive the same escape direction and target layer. If one connection cannot be
+routed cleanly, the solver rejects that bus for the current layer assignment and
+tries another combination. `busExitPreferences` provides the same override
+without modifying the input object.
 
 ## Output contract
 
@@ -192,7 +208,10 @@ standard 0.25/0.15 mm via constraints.
 stress cases. Every sample places exactly eight `cap0603` footprints at the
 cardinal and diagonal positions around one central package, then uses
 push-and-shove bends to move complete ordered bundles through one shared
-boundary. No Dataset 04 route contains a via or a non-top-layer wire.
+boundary. The `"even"` border-distribution option makes the exit lanes consume
+their available border interval consistently, and the four diagonal capacitor
+pairs explicitly request their matching corners. No Dataset 04 route contains
+a via or a non-top-layer wire.
 
 The BGA cases use the exact footprinter strings
 `bga16_grid4x4_p0.8mm_pad0.3mm_circularpads`,
@@ -203,7 +222,11 @@ grid-line buses remain atomic, and a sweep-line channel router pushes already
 allocated traces when a new pad row needs corridor capacity.
 
 The final sample uses the RP2040-class footprinter string
-`qfn56_w7_h7_p0.4mm_thermalpad3.2x3.2_startingpin(topside,rightpin)_ccw`.
+`qfn56_w7.8_h7.8_p0.4mm_pw0.23mm_pl0.8mm_thermalpad3.2x3.2_startingpin(topside,rightpin)_ccw`.
+Those compensated footprinter dimensions reproduce
+[Raspberry Pi's reference land pattern](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf)
+exactly: perimeter centers at ±3.4 mm, 0.4 mm pitch, 0.8×0.23 mm pads, and a
+3.2×3.2 mm exposed pad, with no overlapping copper.
 It routes all 56 perimeter pins and all 16 capacitor pads. The exposed pad
 remains as a real copper obstacle but is intentionally unconnected: the
 0.4 mm-pitch perimeter ring has only 0.15 mm pad gaps, so a 0.10 mm trace with

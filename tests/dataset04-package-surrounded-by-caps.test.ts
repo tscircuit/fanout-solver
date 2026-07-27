@@ -7,7 +7,12 @@ import {
   distanceSegmentToSegment,
 } from "lib/geometry"
 import { getCopperLayerNames } from "lib/layer-names"
-import type { FanoutDirection, Point2D, RoutedSegment } from "lib/types"
+import type {
+  FanoutBusSpec,
+  FanoutDirection,
+  Point2D,
+  RoutedSegment,
+} from "lib/types"
 import {
   BGA16,
   BGA25,
@@ -137,9 +142,17 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
     expect(srj.layerCount).toBe(expected.layerCount)
     expect(srj.minTraceWidth).toBe(0.1)
     expect(srj.minTraceToPadEdgeClearance).toBe(0.1)
+    expect(sample.solverOptions.borderDistribution).toBe("even")
     expect(srj.connections).toHaveLength(expectedConnectionCount)
     expect(srj.obstacles).toHaveLength(expected.centralPadCount + 16)
     expect(srj.buses).toHaveLength(expectedBusCount)
+    const preferredExits = (srj.buses as FanoutBusSpec[])
+      .map((bus) => bus.preferredExit)
+      .filter((preferredExit) => preferredExit !== undefined)
+    expect(preferredExits).toHaveLength(8)
+    expect(new Set(preferredExits)).toEqual(
+      new Set(["top-left", "top-right", "bottom-left", "bottom-right"]),
+    )
 
     const componentIds = new Set(
       srj.obstacles.map((obstacle) => obstacle.componentId),
@@ -195,6 +208,18 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
     expect(
       output.fanoutTraces.filter((trace) => trace.route.length >= 4).length,
     ).toBeGreaterThan(0)
+    expect(
+      output.fanoutTraces.every((trace) =>
+        trace.route.every(
+          (routePoint) =>
+            !("x" in routePoint) ||
+            (routePoint.x >= output.simpleRouteJson.bounds.minX - 1e-9 &&
+              routePoint.x <= output.simpleRouteJson.bounds.maxX + 1e-9 &&
+              routePoint.y >= output.simpleRouteJson.bounds.minY - 1e-9 &&
+              routePoint.y <= output.simpleRouteJson.bounds.maxY + 1e-9),
+        ),
+      ),
+    ).toBe(true)
 
     const layerNames = getCopperLayerNames(srj.layerCount)
     const segments: NamedSegment[] = []
@@ -437,6 +462,47 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
           trace.connectsTo?.includes(thermalPad!.obstacleId!),
         ),
       ).toBe(false)
+
+      const perimeterPads = centralObstacles.filter(
+        (obstacle) => obstacle !== thermalPad,
+      )
+      expect(perimeterPads).toHaveLength(56)
+      expect(
+        Math.max(
+          ...perimeterPads.flatMap((obstacle) => [
+            Math.abs(obstacle.center.x),
+            Math.abs(obstacle.center.y),
+          ]),
+        ),
+      ).toBe(3.4)
+      expect(
+        new Set(
+          perimeterPads.map(
+            (obstacle) =>
+              `${obstacle.width.toFixed(2)}x${obstacle.height.toFixed(2)}`,
+          ),
+        ),
+      ).toEqual(new Set(["0.80x0.23", "0.23x0.80"]))
+      for (
+        let firstIndex = 0;
+        firstIndex < centralObstacles.length;
+        firstIndex++
+      ) {
+        const first = centralObstacles[firstIndex]!
+        for (
+          let secondIndex = firstIndex + 1;
+          secondIndex < centralObstacles.length;
+          secondIndex++
+        ) {
+          const second = centralObstacles[secondIndex]!
+          const overlaps =
+            Math.abs(first.center.x - second.center.x) <
+              (first.width + second.width) / 2 - 1e-9 &&
+            Math.abs(first.center.y - second.center.y) <
+              (first.height + second.height) / 2 - 1e-9
+          expect(overlaps).toBe(false)
+        }
+      }
     }
   }
 }, 30_000)
