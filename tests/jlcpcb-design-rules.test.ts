@@ -7,6 +7,7 @@ import {
   distanceSegmentToSegment,
   pointIsInsideObstacle,
 } from "lib/geometry"
+import { getCopperLayerNames, getLayerSpan } from "lib/layer-names"
 import type { Point2D, RoutedSegment } from "lib/types"
 import { fanoutDataset02 } from "../datasets/dataset02"
 
@@ -19,15 +20,17 @@ interface NamedVia {
   center: Point2D
   diameter: number
   holeDiameter: number
+  spanLayers: string[]
 }
 
-test("the hardest sample clears JLCPCB copper spacing with explicit HDI microvias", () => {
+test("the BGA400 breakout clears JLCPCB copper spacing with explicit HDI microvias", () => {
   const sample = fanoutDataset02.at(-1)!
   const solver = new FanoutSolver(sample.simpleRouteJson, sample.solverOptions)
   solver.solve()
   const output = solver.getOutput()
   const segments: NamedSegment[] = []
   const vias: NamedVia[] = []
+  const layerNames = getCopperLayerNames(sample.simpleRouteJson.layerCount)
 
   for (const trace of output.fanoutTraces) {
     let previousWire:
@@ -40,6 +43,11 @@ test("the hardest sample clears JLCPCB copper spacing with explicit HDI microvia
           center: { x: routePoint.x, y: routePoint.y },
           diameter: routePoint.via_diameter!,
           holeDiameter: routePoint.via_hole_diameter!,
+          spanLayers: getLayerSpan(
+            routePoint.from_layer,
+            routePoint.to_layer,
+            layerNames,
+          ),
         })
         previousWire = undefined
         continue
@@ -127,7 +135,12 @@ test("the hardest sample clears JLCPCB copper spacing with explicit HDI microvia
       )
     }
     for (const segment of segments) {
-      if (segment.connectionName === via.connectionName) continue
+      if (
+        segment.connectionName === via.connectionName ||
+        !via.spanLayers.includes(segment.layer)
+      ) {
+        continue
+      }
       minimumViaCopperToTrace = Math.min(
         minimumViaCopperToTrace,
         distancePointToSegment(via.center, segment.start, segment.end) -
@@ -178,8 +191,8 @@ test("the hardest sample clears JLCPCB copper spacing with explicit HDI microvia
   const microviaToPadEdgeGap =
     cornerDistance - padDiameter / 2 - configuredMicroviaDiameter / 2
 
-  expect(segments.length).toBeGreaterThan(500)
-  expect(vias).toHaveLength(100)
+  expect(segments.length).toBeGreaterThan(1_000)
+  expect(vias).toHaveLength(360)
   expect(standardViaToPadEdgeGap).toBeLessThan(0.1)
   expect(microviaToPadEdgeGap).toBeGreaterThanOrEqual(0.1)
   expect(vias.every((via) => via.diameter === 0.15)).toBe(true)

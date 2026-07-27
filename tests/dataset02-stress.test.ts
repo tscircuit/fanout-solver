@@ -20,139 +20,126 @@ function pointIsOutsideInDirection(
   }
 }
 
-test("Dataset 02 fully routes close 0.4 mm pitch two-layer samples", () => {
-  const expectedConnectionCounts = [40, 80, 120, 160, 200]
-  const expectedBusCounts = [4, 8, 12, 16, 20]
-  const expectedViaCounts = [20, 40, 60, 80, 100]
-  const expectedTopBusCounts = [2, 4, 6, 8, 10]
-  const footprinterString = "bga40_grid10x4_p0.4mm_pad0.2mm_circularpads"
-  expect(fanoutDataset02).toHaveLength(5)
+test("Dataset 02 completely breaks out a 0.4 mm-pitch BGA400", () => {
+  expect(fanoutDataset02).toHaveLength(1)
+  const sample = fanoutDataset02[0]!
+  const srj = sample.simpleRouteJson
+  const padObstacles = srj.obstacles.filter((obstacle) => obstacle.componentId)
+  const footprinterString = "bga400_grid20x20_p0.4mm_pad0.2mm_circularpads"
 
-  for (let index = 0; index < fanoutDataset02.length; index++) {
-    const sample = fanoutDataset02[index]!
-    const srj = sample.simpleRouteJson
-    const padObstacles = srj.obstacles.filter(
-      (obstacle) => obstacle.componentId,
-    )
-    expect(sample.footprintCount).toBe(index + 1)
-    expect(srj.layerCount).toBe(2)
-    expect(srj.nominalTraceWidth).toBe(0.1)
-    expect(srj.minTraceToPadEdgeClearance).toBe(0.1)
-    expect(srj.minViaEdgeToPadEdgeClearance).toBe(0.1)
-    expect(srj.minViaPadDiameter).toBe(0.15)
-    expect(srj.minViaHoleDiameter).toBe(0.1)
-    expect(sample.footprinterStrings).toEqual(
-      Array.from({ length: index + 1 }, () => footprinterString),
-    )
-    expect(srj.connections).toHaveLength(expectedConnectionCounts[index])
-    expect(srj.buses).toHaveLength(expectedBusCounts[index])
-    expect(padObstacles).toHaveLength(expectedConnectionCounts[index])
-    const componentBounds = Object.values(sample.componentBounds)
-    expect(sample.sharedBoundary.minX).toBeCloseTo(
-      Math.min(...componentBounds.map((bounds) => bounds.minX)) - 4,
-    )
-    expect(sample.sharedBoundary.maxX).toBeCloseTo(
-      Math.max(...componentBounds.map((bounds) => bounds.maxX)) + 4,
-    )
-    expect(sample.sharedBoundary.minY).toBeCloseTo(
-      Math.min(...componentBounds.map((bounds) => bounds.minY)) - 4,
-    )
-    expect(sample.sharedBoundary.maxY).toBeCloseTo(
-      Math.max(...componentBounds.map((bounds) => bounds.maxY)) + 4,
-    )
-    if (componentBounds.length > 1) {
-      const leftToRight = componentBounds.toSorted((a, b) => a.minX - b.minX)
-      for (
-        let footprintIndex = 1;
-        footprintIndex < leftToRight.length;
-        footprintIndex++
-      ) {
+  expect(sample.footprintCount).toBe(1)
+  expect(sample.footprinterStrings).toEqual([footprinterString])
+  expect(srj.layerCount).toBe(10)
+  expect(srj.nominalTraceWidth).toBe(0.1)
+  expect(srj.minTraceToPadEdgeClearance).toBe(0.1)
+  expect(srj.minViaEdgeToPadEdgeClearance).toBe(0.1)
+  expect(srj.minViaPadDiameter).toBe(0.15)
+  expect(srj.minViaHoleDiameter).toBe(0.1)
+  expect(srj.connections).toHaveLength(400)
+  expect(srj.buses).toHaveLength(20)
+  expect(padObstacles).toHaveLength(400)
+
+  const componentBounds = Object.values(sample.componentBounds)
+  expect(componentBounds).toHaveLength(1)
+  expect(sample.sharedBoundary.minX).toBeCloseTo(componentBounds[0]!.minX - 4)
+  expect(sample.sharedBoundary.maxX).toBeCloseTo(componentBounds[0]!.maxX + 4)
+  expect(sample.sharedBoundary.minY).toBeCloseTo(componentBounds[0]!.minY - 4)
+  expect(sample.sharedBoundary.maxY).toBeCloseTo(componentBounds[0]!.maxY + 4)
+
+  const solver = new FanoutSolver(srj, sample.solverOptions)
+  solver.solve()
+  expect(solver.failed).toBe(false)
+
+  const output = solver.getOutput()
+  expect(output.attempts).toHaveLength(1)
+  expect(output.fanoutTraces).toHaveLength(400)
+  const nonTopGraphicsLines =
+    solver
+      .visualize()
+      .lines?.filter(
+        (line) => line.layer !== "z0" && /^z\d+$/.test(line.layer ?? ""),
+      ) ?? []
+  expect(nonTopGraphicsLines.length).toBeGreaterThan(0)
+  expect(
+    nonTopGraphicsLines.every(
+      (line) => line.strokeColor === "blue" && line.strokeDash === undefined,
+    ),
+  ).toBe(true)
+  expect(
+    Object.values(output.busLayerAssignments).filter(
+      (layer) => layer === "top",
+    ),
+  ).toHaveLength(2)
+
+  const expectedLayersByDepth = [
+    "top",
+    "inner1",
+    "inner2",
+    "inner3",
+    "inner4",
+    "inner5",
+    "inner6",
+    "inner7",
+    "inner8",
+    "bottom",
+  ]
+  let viaCount = 0
+  for (const bus of solver.preparedBuses) {
+    const rowNumber = Number(bus.busId.match(/row-(\d+)/)?.[1])
+    const depth = bus.direction === "down" ? rowNumber - 1 : 20 - rowNumber
+    const expectedLayer = expectedLayersByDepth[depth]!
+    expect(output.busLayerAssignments[bus.busId]).toBe(expectedLayer)
+    expect(bus.connections).toHaveLength(20)
+
+    const busViaUse: boolean[] = []
+    const sourceTrackSpan =
+      Math.max(...bus.xCoordinates) - Math.min(...bus.xCoordinates)
+    const exitTracks: number[] = []
+
+    for (const connection of bus.connections) {
+      const trace = output.fanoutTraces.find(
+        (candidate) => candidate.connection_name === connection.connection.name,
+      )!
+      const viaIndex = trace.route.findIndex(
+        (routePoint) => routePoint.route_type === "via",
+      )
+      const via = trace.route[viaIndex]
+      const usesVia = via?.route_type === "via"
+      busViaUse.push(usesVia)
+      const exit = trace.route.at(-1)!
+
+      if (via?.route_type === "via") {
+        viaCount++
+        expect(via.to_layer).toBe(expectedLayer)
+        expect(Math.abs(via.x - connection.sourcePoint.x)).toBeCloseTo(0.2)
+        expect(Math.abs(via.y - connection.sourcePoint.y)).toBeCloseTo(0.2)
         expect(
-          leftToRight[footprintIndex]!.minX -
-            leftToRight[footprintIndex - 1]!.maxX,
-        ).toBeCloseTo(0.6)
-      }
-    }
-
-    const solver = new FanoutSolver(srj, sample.solverOptions)
-    solver.solve()
-    expect(solver.failed).toBe(false)
-
-    const output = solver.getOutput()
-    expect(output.fanoutTraces).toHaveLength(expectedConnectionCounts[index])
-    expect(
-      Object.values(output.busLayerAssignments).filter(
-        (layer) => layer === "top",
-      ),
-    ).toHaveLength(expectedTopBusCounts[index])
-
-    let viaCount = 0
-    for (const bus of solver.preparedBuses) {
-      const expectedLayer = output.busLayerAssignments[bus.busId]
-      const busViaUse: boolean[] = []
-      const perpendicularCoordinates =
-        bus.direction === "left" || bus.direction === "right"
-          ? bus.yCoordinates
-          : bus.xCoordinates
-      const sourceTrackSpan =
-        Math.max(...perpendicularCoordinates) -
-        Math.min(...perpendicularCoordinates)
-      const exitTracks: number[] = []
-
-      for (const connection of bus.connections) {
-        const trace = output.fanoutTraces.find(
-          (candidate) =>
-            candidate.connection_name === connection.connection.name,
-        )!
-        const viaIndex = trace.route.findIndex(
-          (routePoint) => routePoint.route_type === "via",
-        )
-        const via = trace.route[viaIndex]
-        const usesVia = via?.route_type === "via"
-        busViaUse.push(usesVia)
-        const exit = trace.route.at(-1)!
-        if (via?.route_type === "via") {
-          viaCount++
-          expect(via.to_layer).toBe(expectedLayer)
-          expect(Math.abs(via.x - connection.sourcePoint.x)).toBeCloseTo(0.2)
-          expect(Math.abs(via.y - connection.sourcePoint.y)).toBeCloseTo(0.2)
-          expect(
-            trace.route
-              .slice(viaIndex + 1)
-              .every(
-                (routePoint) =>
-                  routePoint.route_type !== "wire" ||
-                  routePoint.layer === "bottom",
-              ),
-          ).toBe(true)
-        }
-        expect(exit.route_type).toBe("wire")
-        if (exit.route_type === "wire") {
-          expect(
-            pointIsOutsideInDirection(
-              exit,
-              sample.sharedBoundary,
-              bus.direction,
+          trace.route
+            .slice(viaIndex + 1)
+            .every(
+              (routePoint) =>
+                routePoint.route_type !== "wire" ||
+                routePoint.layer === expectedLayer,
             ),
-          ).toBe(true)
-          const exitTrack =
-            bus.direction === "left" || bus.direction === "right"
-              ? exit.y
-              : exit.x
-          exitTracks.push(exitTrack)
-        }
+        ).toBe(true)
       }
 
-      expect(new Set(busViaUse).size).toBe(1)
-      expect(busViaUse[0]).toBe(expectedLayer !== "top")
-      expect(Math.max(...exitTracks) - Math.min(...exitTracks)).toBeCloseTo(
-        (bus.connections.length - 1) * 0.2,
-      )
-      expect(Math.max(...exitTracks) - Math.min(...exitTracks)).toBeLessThan(
-        sourceTrackSpan,
-      )
+      expect(exit.route_type).toBe("wire")
+      if (exit.route_type === "wire") {
+        expect(
+          pointIsOutsideInDirection(exit, sample.sharedBoundary, bus.direction),
+        ).toBe(true)
+        exitTracks.push(exit.x)
+      }
     }
 
-    expect(viaCount).toBe(expectedViaCounts[index])
+    expect(new Set(busViaUse).size).toBe(1)
+    expect(busViaUse[0]).toBe(expectedLayer !== "top")
+    expect(Math.max(...exitTracks) - Math.min(...exitTracks)).toBeCloseTo(3.8)
+    expect(Math.max(...exitTracks) - Math.min(...exitTracks)).toBeLessThan(
+      sourceTrackSpan,
+    )
   }
+
+  expect(viaCount).toBe(360)
 })

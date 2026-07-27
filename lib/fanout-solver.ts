@@ -162,13 +162,42 @@ function busIsOnOutwardComponentEdge(bus: PreparedBus): boolean {
   return Math.abs(averageSource - outwardCoordinate) < 1e-6
 }
 
+function getBusDepthInRows(bus: PreparedBus): number {
+  const isHorizontal = bus.direction === "left" || bus.direction === "right"
+  const directionalCoordinates = isHorizontal
+    ? bus.xCoordinates
+    : bus.yCoordinates
+  const averageSource =
+    bus.connections.reduce(
+      (sum, connection) =>
+        sum +
+        (isHorizontal ? connection.sourcePoint.x : connection.sourcePoint.y),
+      0,
+    ) / bus.connections.length
+  const outwardCoordinate =
+    bus.direction === "right" || bus.direction === "up"
+      ? Math.max(...directionalCoordinates)
+      : Math.min(...directionalCoordinates)
+  const directionalPitch = isHorizontal ? bus.pitchX : bus.pitchY
+
+  return Math.round(
+    Math.abs(averageSource - outwardCoordinate) / directionalPitch,
+  )
+}
+
 function createPreferredLayerAssignment(params: {
   buses: PreparedBus[]
   escapeLayers: string[]
 }): Readonly<Record<string, string>> {
   const { buses, escapeLayers } = params
   const assignment: Record<string, string> = {}
+  const directionsByComponent = new Map<string, Set<PreparedBus["direction"]>>()
   let nextViaLayerIndex = 0
+  for (const bus of buses) {
+    const directions = directionsByComponent.get(bus.componentId) ?? new Set()
+    directions.add(bus.direction)
+    directionsByComponent.set(bus.componentId, directions)
+  }
 
   for (const bus of buses) {
     const sourceLayer = bus.connections[0]?.sourceLayer
@@ -182,8 +211,20 @@ function createPreferredLayerAssignment(params: {
     ) {
       assignment[bus.busId] = sourceLayer
     } else if (viaLayers.length > 0) {
-      assignment[bus.busId] = viaLayers[nextViaLayerIndex % viaLayers.length]!
-      nextViaLayerIndex++
+      const componentDirections = directionsByComponent.get(bus.componentId)!
+      const hasOpposingDirection =
+        (componentDirections.has("left") && componentDirections.has("right")) ||
+        (componentDirections.has("up") && componentDirections.has("down"))
+      if (hasOpposingDirection) {
+        const depthInRows = getBusDepthInRows(bus)
+        assignment[bus.busId] =
+          viaLayers[
+            Math.min(Math.max(depthInRows - 1, 0), viaLayers.length - 1)
+          ]!
+      } else {
+        assignment[bus.busId] = viaLayers[nextViaLayerIndex % viaLayers.length]!
+        nextViaLayerIndex++
+      }
     } else {
       assignment[bus.busId] = sourceLayer
     }
@@ -420,7 +461,9 @@ export class FanoutSolver extends BaseSolver {
       rects,
       circles: [...(graphics.circles ?? []), ...circularPadGraphics],
       lines: graphics.lines?.map((line) => {
-        if (line.layer !== "z1") return line
+        if (line.layer === "z0" || !/^z\d+$/.test(line.layer ?? "")) {
+          return line
+        }
         const { strokeDash: _strokeDash, ...solidLine } = line
         return {
           ...solidLine,

@@ -56,5 +56,5 @@ test("oversized vias use four-pad corner interstices instead of pair gaps", () =
     }
   }
 
-  expect(interiorViaCount).toBe(18)
+  expect(interiorViaCount).toBe(342)
 })

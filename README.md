@@ -21,6 +21,10 @@ and treats each bus-layer decision atomically.
 - Infers one outward direction per bus from the bus endpoints, or accepts an
   explicit direction override.
 - Enumerates combinations of the copper layers implied by `layerCount`.
+- Prefers depth-ordered layer assignments: matching north/south (or east/west)
+  bus depths share a layer, and progressively deeper buses move progressively
+  deeper into the stack. This prevents deep through-vias from fencing in a
+  shallower bus.
 - Keeps outward-edge buses on their source layer when possible. If a bus needs
   a via, every connection in that bus receives one and moves to the same
   assigned layer; mixed via use within a bus is never committed.
@@ -128,11 +132,12 @@ extents.
 
 ## Dataset 02
 
-`datasets/dataset02.ts` is the geometric stress dataset. Every sample uses
-[JLCPCB's published 1 oz, two-layer 0.10/0.10 mm trace and spacing capability](https://jlcpcb.com/capabilities/pcb-capabilities/),
-and 0.10 mm pad/copper clearance. It uses the exact footprinter string
-`bga40_grid10x4_p0.4mm_pad0.2mm_circularpads`; the debugger includes that
-string in both the visible sample heading and browser title.
+`datasets/dataset02.ts` is the BGA400 stress benchmark. It routes every ball in
+the exact footprinter string
+`bga400_grid20x20_p0.4mm_pad0.2mm_circularpads`; the debugger includes that
+string in both the visible sample heading and browser title. The sample uses
+[JLCPCB's published 0.10/0.10 mm trace and spacing capability](https://jlcpcb.com/capabilities/pcb-capabilities/)
+and 0.10 mm pad/copper clearance.
 
 At 0.4 mm pitch, a 0.15 mm algorithmic HDI microvia has 0.108 mm clearance
 from each 0.20 mm circular pad at a four-pad corner, but only 0.025 mm at a
@@ -140,21 +145,21 @@ pair midpoint. That forces the intended corner-interstitial strategy. These
 0.15/0.10 mm microvias are intentionally smaller than JLCPCB's published
 standard two-layer 0.25/0.15 mm mechanical via minimum: the standard via would
 have only 0.058 mm corner clearance and cannot satisfy the same 0.10 mm rule.
-The dataset is therefore a two-routing-layer solver stress case, not a claim
-that its microvia stackup is a standard JLCPCB two-layer order.
+The BGA400 uses ten copper layers. Two perimeter buses (40 balls) stay
+via-free on top. The remaining eighteen 20-trace buses use 360 bus-atomic
+layer-spanning vias, and matching north/south bus depths share each progressively
+deeper layer. A two-layer version cannot break out all twenty dense rows while
+preserving 0.10 mm clearance: the first via row would form a copper fence in
+front of every deeper bus.
 
-| Sample      | Footprints | Pads | Buses | Stress condition                                  |
-| ----------- | ---------: | ---: | ----: | ------------------------------------------------- |
-| `sample001` |          1 |   40 |     4 | 20 vias; two 10-trace perimeter buses stay on top |
-| `sample002` |          2 |   80 |     8 | 0.6 mm between adjacent footprint pad fields      |
-| `sample003` |          3 |  120 |    12 | staggered close placement and compact bend-ins    |
-| `sample004` |          4 |  160 |    16 | shared top/bottom corridors for 40-pin BGAs       |
-| `sample005` |          5 |  200 |    20 | 100 bus-atomic vias on two routing layers         |
+| Sample      | Footprints | Pads | Buses | Vias | Layers |
+| ----------- | ---------: | ---: | ----: | ---: | -----: |
+| `sample001` |          1 |  400 |    20 |  360 |     10 |
 
-Every pad is connected in every stress sample. Via use is atomic per bus, every
-10-trace bus bends from a 3.6 mm pad span into a 1.8 mm routing envelope, and
-all emitted corners are straight or 45°. Bottom-layer traces render as solid
-blue in both Cosmos and the verification PNGs.
+Every 20-trace bus bends from the 7.6 mm pad-row span into a 3.8 mm routing
+envelope, exits the shared component boundary, and uses only straight or 45°
+segments. Non-top-layer traces render as solid blue in both Cosmos and the
+verification PNG.
 
 ## Development
 
