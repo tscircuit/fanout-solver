@@ -23,8 +23,15 @@ function formatFootprinterStrings(strings: string[]): string {
     .join(" + ")
 }
 
+const DEFAULT_DATASET_INDEX = Math.max(
+  0,
+  fanoutDatasets.findIndex((dataset) => dataset.id === "dataset02"),
+)
+
 export default function FanoutSolverPage() {
-  const [selectedDatasetIndex, setSelectedDatasetIndex] = useState(0)
+  const [selectedDatasetIndex, setSelectedDatasetIndex] = useState(
+    DEFAULT_DATASET_INDEX,
+  )
   const [selectedIndex, setSelectedIndex] = useState(0)
   const selectedDataset = fanoutDatasets[selectedDatasetIndex]!
   const selectedSample = selectedDataset.samples[selectedIndex]!
@@ -37,7 +44,8 @@ export default function FanoutSolverPage() {
     const requestedDatasetIndex = fanoutDatasets.findIndex(
       (dataset) => dataset.id === params.get("dataset"),
     )
-    const datasetIndex = requestedDatasetIndex >= 0 ? requestedDatasetIndex : 0
+    const datasetIndex =
+      requestedDatasetIndex >= 0 ? requestedDatasetIndex : DEFAULT_DATASET_INDEX
     const requestedSampleIndex = fanoutDatasets[
       datasetIndex
     ]!.samples.findIndex((sample) => sample.id === params.get("sample"))
