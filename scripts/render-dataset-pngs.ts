@@ -82,6 +82,16 @@ function getVerificationViewbox(sharedBoundary: Bounds): Viewbox {
   }
 }
 
+function formatFootprinterStrings(strings: string[]): string {
+  const counts = new Map<string, number>()
+  for (const value of strings) {
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  return [...counts]
+    .map(([value, count]) => (count === 1 ? value : `${value} × ${count}`))
+    .join(" + ")
+}
+
 const outputDirectory = process.argv[2] ?? "verification-pngs"
 await mkdir(outputDirectory, { recursive: true })
 
@@ -106,7 +116,7 @@ for (const dataset of fanoutDatasets) {
     const graphics = mergeGraphics(
       {
         ...solver.visualize(),
-        title: `${dataset.id}/${sample.id}: ${sample.name}`,
+        title: `${dataset.id}/${sample.id}: ${sample.name} · ${formatFootprinterStrings(sample.footprinterStrings)}`,
       },
       createVerificationOverlay(
         output.simpleRouteJson,

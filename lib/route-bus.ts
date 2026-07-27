@@ -31,11 +31,12 @@ interface RouteBusParams {
   viaHoleDiameter: number
   clearance: number
   breakoutMargin: number
+  compactBusTracks: boolean
 }
 
 interface TrackCandidate {
   value: number
-  kind: "corridor" | "gap" | "margin"
+  kind: "corridor" | "gap" | "margin" | "preferred"
 }
 
 type ViaHandedness = -1 | 0 | 1
@@ -189,6 +190,7 @@ function getTrackCandidates(params: {
   const ladderMinimum = boundaryMinimum
   const ladderMaximum = boundaryMaximum
   const tracks: TrackCandidate[] = [
+    { value: preferredTrack, kind: "preferred" },
     ...getTracksInSpan(
       ladderMinimum,
       coordinates[0]! - obstacleHalfSize,
@@ -228,6 +230,12 @@ function getTrackCandidates(params: {
   const componentCenter = (coordinates[0]! + coordinates.at(-1)!) / 2
   return tracks
     .filter((track) => Math.abs(track.value - sourceTrack) <= maximumJog + 1e-9)
+    .filter(
+      (track, index, candidates) =>
+        candidates.findIndex(
+          (candidate) => Math.abs(candidate.value - track.value) < 1e-9,
+        ) === index,
+    )
     .sort(
       (a, b) =>
         Math.abs(a.value - preferredTrack) -
@@ -241,7 +249,9 @@ function getTrackCandidates(params: {
 function getPreferredTrack(params: {
   bus: PreparedBus
   connection: PreparedConnection
+  targetUsesVia: boolean
   interstitialEscape: boolean
+  compactBusTracks: boolean
   traceWidth: number
   viaDiameter: number
   clearance: number
@@ -249,7 +259,9 @@ function getPreferredTrack(params: {
   const {
     bus,
     connection,
+    targetUsesVia,
     interstitialEscape,
+    compactBusTracks,
     traceWidth,
     viaDiameter,
     clearance,
@@ -261,6 +273,16 @@ function getPreferredTrack(params: {
     connection.sourcePoint,
     bus.direction,
   )
+  if (!targetUsesVia || compactBusTracks) {
+    const connectionRank = getConnectionRank(bus, connection)
+    const componentCenter =
+      (perpendicularCoordinates[0]! + perpendicularCoordinates.at(-1)!) / 2
+    return (
+      componentCenter +
+      (connectionRank - (bus.connections.length - 1) / 2) *
+        (traceWidth + clearance)
+    )
+  }
   if (!interstitialEscape) return sourceTrack
 
   const depthInRows = getDepthInRows(bus)
@@ -430,8 +452,18 @@ function buildPlan(params: {
   const sign = directionSign(bus.direction)
   const directionalPitch = getDirectionalPitch(bus)
   const perpendicularPitch = getPerpendicularPitch(bus)
+  const targetUsesVia = targetLayer !== preparedConnection.sourceLayer
+  const directionalPadSize = isHorizontal(bus.direction)
+    ? preparedConnection.sourceObstacle.width
+    : preparedConnection.sourceObstacle.height
+  const initialEscapeDistance = targetUsesVia
+    ? directionalPitch * 0.5
+    : Math.max(
+        directionalPitch * 0.5,
+        directionalPadSize / 2 + traceWidth / 2 + clearance + 1e-3,
+      )
   const viaAxis =
-    getAxis(sourcePoint, bus.direction) + sign * directionalPitch * 0.5
+    getAxis(sourcePoint, bus.direction) + sign * initialEscapeDistance
   const sourcePerpendicularAxis = getPerpendicularAxis(
     sourcePoint,
     bus.direction,
@@ -439,13 +471,15 @@ function buildPlan(params: {
   const viaPerpendicularAxis =
     sourcePerpendicularAxis + viaHandedness * perpendicularPitch * 0.5
   const viaPoint = makePoint(viaAxis, viaPerpendicularAxis, bus.direction)
-  const useNestedSpread = interstitialEscape
   const spreadLaneDistance =
     viaDiameter / 2 +
     traceWidth / 2 +
     clearance +
     1e-3 +
     spreadLaneIndex * (traceWidth + clearance)
+  const useNestedSpread =
+    interstitialEscape &&
+    directionalPitch >= spreadLaneDistance + viaDiameter / 2 + clearance
   const spreadPoint = useNestedSpread
     ? makePoint(
         viaAxis + sign * spreadLaneDistance,
@@ -702,6 +736,7 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
     viaHoleDiameter,
     clearance,
     breakoutMargin,
+    compactBusTracks,
   } = params
   const exitAxis = getExitAxis(bus, breakoutMargin)
   const sourceObstacle = bus.connections[0]?.sourceObstacle
@@ -733,7 +768,9 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
           preferredTrack: getPreferredTrack({
             bus,
             connection: preparedConnection,
+            targetUsesVia,
             interstitialEscape,
+            compactBusTracks,
             traceWidth,
             viaDiameter,
             clearance,

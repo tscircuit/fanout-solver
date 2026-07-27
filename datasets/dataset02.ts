@@ -10,151 +10,153 @@ interface StressSampleSpec {
   footprints: BenchmarkFootprintParams[]
 }
 
-const PITCH = 1.52
-const PAD_DIAMETER = 1
-const VIA_DIAMETER = 0.4
-const VIA_HOLE_DIAMETER = 0.2
+const PITCH = 0.4
+const PAD_DIAMETER = 0.2
+const VIA_DIAMETER = 0.15
+const VIA_HOLE_DIAMETER = 0.1
 const TRACE_WIDTH = 0.1
 const CLEARANCE = 0.1
-const BOUNDARY_MARGIN = 20
+const BOUNDARY_MARGIN = 4
+const ROW_COUNT = 4
+const COLUMN_COUNT = 10
 const MAX_CONNECTIONS_PER_BUS = 10
 
 const STRESS_SAMPLE_SPECS: StressSampleSpec[] = [
   {
-    name: "JLCPCB two-layer interstitial BGA100",
+    name: "0.4 mm pitch two-layer BGA40",
     description:
-      "A 10×10 BGA using JLCPCB 4/4 mil rules; inner buses use four-pad interstitial vias while the outer bus on each side remains via-free.",
+      "A 10×4 BGA with JLCPCB 0.10 mm trace/space rules. Twenty inner pads use corner-interstitial HDI microvias; outer buses remain via-free.",
     footprints: [
       {
         componentId: "stress-bga-01",
         center: { x: 0, y: 0 },
-        gridSize: 10,
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
     ],
   },
   {
-    name: "Opposed dual BGA200",
+    name: "Close dual 0.4 mm BGA40",
     description:
-      "Two dense BGA100 footprints escape in opposite directions on one bottom routing layer.",
+      "Two BGA40 footprints sit only 0.6 mm pad-edge to pad-edge and escape through one shared two-layer boundary.",
     footprints: [
       {
         componentId: "stress-bga-01",
-        center: { x: -20, y: 0 },
-        gridSize: 10,
+        center: { x: -2.2, y: -0.3 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-02",
-        center: { x: 20, y: 0 },
-        gridSize: 10,
+        center: { x: 2.2, y: 0.3 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
     ],
   },
   {
-    name: "Four-sided triple BGA228",
+    name: "Staggered triple 0.4 mm BGA40",
     description:
-      "Two side BGA64s and a central BGA100 share one boundary, forcing simultaneous left, right, north, and south spreading.",
+      "Three closely staggered BGA40 footprints compact every 10-trace bus into the same 1.8 mm routing envelope before leaving a shared boundary.",
     footprints: [
       {
         componentId: "stress-bga-01",
-        center: { x: -40, y: 0 },
-        gridSize: 8,
+        center: { x: -4.4, y: -0.4 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-02",
-        center: { x: 0, y: 0 },
-        gridSize: 10,
+        center: { x: 0, y: 0.4 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-03",
-        center: { x: 40, y: 0 },
-        gridSize: 8,
+        center: { x: 4.4, y: -0.4 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
     ],
   },
   {
-    name: "Quadrant BGA256",
+    name: "Close four-footprint 0.4 mm BGA40 corridor",
     description:
-      "Four BGA64 footprints push 256 interstitial-via fanouts through the top and bottom edges of a shared two-layer boundary.",
+      "Four BGA40s alternate vertically while remaining 0.6 mm apart horizontally, stressing shared top and bottom breakout corridors.",
     footprints: [
       {
         componentId: "stress-bga-01",
-        center: { x: -20, y: -38 },
-        gridSize: 8,
+        center: { x: -6.6, y: -0.55 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-02",
-        center: { x: 20, y: -38 },
-        gridSize: 8,
+        center: { x: -2.2, y: 0.55 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-03",
-        center: { x: -20, y: 38 },
-        gridSize: 8,
+        center: { x: 2.2, y: -0.55 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-04",
-        center: { x: 20, y: 38 },
-        gridSize: 8,
+        center: { x: 6.6, y: 0.55 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
     ],
   },
   {
-    name: "Five-footprint two-layer BGA356",
+    name: "Five close 0.4 mm BGA40s",
     description:
-      "A central BGA100 plus four BGA64s use JLCPCB-safe geometry, sparse bus-atomic vias, and heavily spread bottom-layer escapes.",
+      "Five tightly staggered BGA40 footprints route 200 pads on two copper layers with bus-atomic microvias and compact 45-degree bend-ins.",
     footprints: [
       {
         componentId: "stress-bga-01",
-        center: { x: 0, y: 0 },
-        gridSize: 10,
+        center: { x: -8.8, y: -0.55 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-02",
-        center: { x: -40, y: -22 },
-        gridSize: 8,
+        center: { x: -4.4, y: 0.55 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-03",
-        center: { x: 40, y: -22 },
-        gridSize: 8,
+        center: { x: 0, y: -0.55 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-04",
-        center: { x: -40, y: 22 },
-        gridSize: 8,
+        center: { x: 4.4, y: 0.55 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
       {
         componentId: "stress-bga-05",
-        center: { x: 40, y: 22 },
-        gridSize: 8,
+        center: { x: 8.8, y: -0.55 },
+        gridSize: 4,
         pitch: PITCH,
         padDiameter: PAD_DIAMETER,
       },
@@ -167,8 +169,13 @@ export const fanoutDataset02: FanoutDatasetSample[] = STRESS_SAMPLE_SPECS.map(
     const problem = createFootprinterBenchmarkProblem({
       boundaryMargin: BOUNDARY_MARGIN,
       clearance: CLEARANCE,
-      footprints: spec.footprints,
+      footprints: spec.footprints.map((footprint) => ({
+        ...footprint,
+        rowCount: ROW_COUNT,
+        columnCount: COLUMN_COUNT,
+      })),
       layerCount: 2,
+      busDirectionMode: "vertical-split",
       maxConnectionsPerBus: MAX_CONNECTIONS_PER_BUS,
       traceWidth: TRACE_WIDTH,
       viaDiameter: VIA_DIAMETER,
@@ -180,8 +187,10 @@ export const fanoutDataset02: FanoutDatasetSample[] = STRESS_SAMPLE_SPECS.map(
       name: spec.name,
       description: spec.description,
       footprintCount: spec.footprints.length,
+      footprinterStrings: problem.footprinterStrings,
       simpleRouteJson: problem.simpleRouteJson,
       solverOptions: {
+        compactBusTracks: true,
         componentBounds: problem.componentBounds,
         sharedBoundary: problem.sharedBoundary,
       },

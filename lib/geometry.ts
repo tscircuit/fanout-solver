@@ -3,6 +3,12 @@ import type { Point2D, RoutedSegment } from "./types"
 
 const EPSILON = 1e-9
 
+type ShapeAwareObstacle = Obstacle & { shape?: "circle" }
+
+function obstacleIsCircular(obstacle: Obstacle): boolean {
+  return (obstacle as ShapeAwareObstacle).shape === "circle"
+}
+
 export function distance(a: Point2D, b: Point2D): number {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
@@ -67,6 +73,9 @@ export function pointIsInsideObstacle(
   obstacle: Obstacle,
   tolerance = EPSILON,
 ): boolean {
+  if (obstacleIsCircular(obstacle)) {
+    return distance(point, obstacle.center) <= obstacle.width / 2 + tolerance
+  }
   return (
     Math.abs(point.x - obstacle.center.x) <= obstacle.width / 2 + tolerance &&
     Math.abs(point.y - obstacle.center.y) <= obstacle.height / 2 + tolerance
@@ -77,6 +86,9 @@ export function distancePointToObstacle(
   point: Point2D,
   obstacle: Obstacle,
 ): number {
+  if (obstacleIsCircular(obstacle)) {
+    return Math.max(0, distance(point, obstacle.center) - obstacle.width / 2)
+  }
   const dx = Math.max(
     Math.abs(point.x - obstacle.center.x) - obstacle.width / 2,
     0,
@@ -92,6 +104,13 @@ export function distanceSegmentToObstacle(
   segment: RoutedSegment,
   obstacle: Obstacle,
 ): number {
+  if (obstacleIsCircular(obstacle)) {
+    return Math.max(
+      0,
+      distancePointToSegment(obstacle.center, segment.start, segment.end) -
+        obstacle.width / 2,
+    )
+  }
   if (
     pointIsInsideObstacle(segment.start, obstacle) ||
     pointIsInsideObstacle(segment.end, obstacle)

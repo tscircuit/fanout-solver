@@ -37,6 +37,7 @@ export const fanoutDataset01: FanoutDatasetSample[] = Array.from(
         footprintCount === 1 ? "" : "s"
       } to one shared breakout boundary.`,
       footprintCount,
+      footprinterStrings: problem.footprinterStrings,
       simpleRouteJson: problem.simpleRouteJson,
       solverOptions: {
         componentBounds: problem.componentBounds,

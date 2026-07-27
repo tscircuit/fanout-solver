@@ -6,6 +6,7 @@ export interface FanoutDatasetSample {
   name: string
   description: string
   footprintCount: number
+  footprinterStrings: string[]
   simpleRouteJson: SimpleRouteJson
   solverOptions: FanoutSolverOptions
   componentBounds: Readonly<Record<string, Bounds>>

@@ -19,6 +19,10 @@
 - When a via cannot clear a pad-pair midpoint, move it diagonally to a
   four-pad corner interstice and use nested side bands to spread two-layer
   traces around already-routed outer buses.
+- When `compactBusTracks` is enabled, bend every bus into the same
+  trace-width-plus-clearance-pitch envelope before the shared-boundary run.
+- Preserve circular-pad geometry metadata from footprinter when validating
+  corner-interstitial clearance; do not replace circles with square corners.
 - Emit only straight or 45-degree fanout corners; chamfer orthogonal routing
   corners before clearance validation.
 - Route every connected pad, including inner BGA rows and columns.

@@ -25,6 +25,7 @@ export interface FanoutSolverOptions {
   viaHoleDiameter?: number
   clearance?: number
   breakoutMargin?: number
+  compactBusTracks?: boolean
 }
 
 export interface FanoutAttemptSummary {

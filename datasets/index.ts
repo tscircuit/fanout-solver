@@ -14,7 +14,7 @@ export const fanoutDatasets: FanoutDataset[] = [
     id: "dataset02",
     name: "Stress",
     description:
-      "JLCPCB 4/4 mil two-layer BGA fanouts with sparse bus-atomic vias, four-pad corner interstices, and 45-degree nested spreading.",
+      "Close 0.4 mm-pitch BGA40 fanouts on two routing layers with 4/4 mil copper rules, bus-atomic HDI microvias, four-pad corner interstices, and compact 45-degree bend-ins.",
     samples: fanoutDataset02,
   },
 ]

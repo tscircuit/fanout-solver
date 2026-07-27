@@ -22,6 +22,7 @@ interface ResolvedFanoutConfig {
   viaHoleDiameter: number
   clearance: number
   breakoutMargin: number
+  compactBusTracks: boolean
   layerNames: string[]
   escapeLayers: string[]
   maxLayerCombinations: number
@@ -95,6 +96,7 @@ function resolveConfig(
     viaHoleDiameter,
     clearance,
     breakoutMargin,
+    compactBusTracks: options.compactBusTracks ?? false,
     layerNames,
     escapeLayers,
     maxLayerCombinations:
@@ -270,6 +272,7 @@ export class FanoutSolver extends BaseSolver {
         viaHoleDiameter: this.config.viaHoleDiameter,
         clearance: this.config.clearance,
         breakoutMargin: this.config.breakoutMargin,
+        compactBusTracks: this.config.compactBusTracks,
       })
       if (!busPlans) {
         failedBusIds.push(bus.busId)
@@ -384,8 +387,46 @@ export class FanoutSolver extends BaseSolver {
   }
 
   override visualize(): GraphicsObject {
-    return convertSrjToGraphicsObject(
-      this.bestAttempt?.outputSrj ?? this.inputSrj,
+    const visualizedSrj = this.bestAttempt?.outputSrj ?? this.inputSrj
+    const graphics = convertSrjToGraphicsObject(visualizedSrj)
+    const circularPadKeys = new Set(
+      visualizedSrj.obstacles
+        .filter(
+          (obstacle) =>
+            (obstacle as typeof obstacle & { shape?: string }).shape ===
+            "circle",
+        )
+        .map(
+          (obstacle) =>
+            `${obstacle.center.x}:${obstacle.center.y}:${obstacle.width}:${obstacle.height}`,
+        ),
     )
+    const circularPadGraphics: NonNullable<GraphicsObject["circles"]> = []
+    const rects = graphics.rects?.filter((rect) => {
+      const key = `${rect.center.x}:${rect.center.y}:${rect.width}:${rect.height}`
+      if (!circularPadKeys.has(key)) return true
+      circularPadGraphics.push({
+        center: rect.center,
+        radius: Math.min(rect.width, rect.height) / 2,
+        fill: rect.fill,
+        stroke: rect.stroke,
+        layer: rect.layer,
+        label: rect.label,
+      })
+      return false
+    })
+    return {
+      ...graphics,
+      rects,
+      circles: [...(graphics.circles ?? []), ...circularPadGraphics],
+      lines: graphics.lines?.map((line) => {
+        if (line.layer !== "z1") return line
+        const { strokeDash: _strokeDash, ...solidLine } = line
+        return {
+          ...solidLine,
+          strokeColor: "blue",
+        }
+      }),
+    }
   }
 }

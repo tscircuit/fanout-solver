@@ -1,6 +1,6 @@
-import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import type { Obstacle, SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { fp } from "@tscircuit/footprinter"
-import type { PcbCourtyardOutline, PcbSmtPad } from "circuit-json"
+import type { PcbSmtPad } from "circuit-json"
 import type { Bounds } from "lib/types"
 
 type BenchmarkPad = Extract<PcbSmtPad, { shape: "circle" }>
@@ -9,6 +9,8 @@ export interface BenchmarkFootprintParams {
   componentId: string
   center: { x: number; y: number }
   gridSize?: number
+  rowCount?: number
+  columnCount?: number
   pitch?: number
   padDiameter?: number
 }
@@ -17,6 +19,7 @@ export interface BenchmarkParams {
   footprints?: BenchmarkFootprintParams[]
   gridSize?: number
   layerCount?: number
+  busDirectionMode?: "layout-aware" | "vertical-split"
   pitch?: number
   padDiameter?: number
   boundaryMargin?: number
@@ -30,9 +33,11 @@ export interface BenchmarkParams {
 interface ResolvedBenchmarkFootprint {
   componentId: string
   center: { x: number; y: number }
-  gridSize: number
+  rowCount: number
+  columnCount: number
   pitch: number
   padDiameter: number
+  footprinterString: string
 }
 
 interface SelectedPad {
@@ -43,13 +48,14 @@ interface SelectedPad {
 
 interface FootprintGeometry {
   pads: SelectedPad[]
-  courtyardBounds: Bounds
+  footprintBounds: Bounds
 }
 
 export interface FootprinterBenchmarkProblem {
   simpleRouteJson: SimpleRouteJson
   componentBounds: Readonly<Record<string, Bounds>>
   sharedBoundary: Bounds
+  footprinterStrings: string[]
 }
 
 const DIRECTIONS = ["NORTH", "EAST", "SOUTH", "WEST"] as const
@@ -81,7 +87,9 @@ function resolveFootprints(
 
   const componentIds = new Set<string>()
   return requestedFootprints.map((footprint) => {
-    const gridSize = footprint.gridSize ?? defaultGridSize
+    const rowCount = footprint.rowCount ?? footprint.gridSize ?? defaultGridSize
+    const columnCount =
+      footprint.columnCount ?? footprint.gridSize ?? defaultGridSize
     const pitch = resolvePositiveNumber(
       `Benchmark ${footprint.componentId} pitch`,
       footprint.pitch ?? defaultPitch,
@@ -100,9 +108,14 @@ function resolveFootprints(
       )
     }
     componentIds.add(footprint.componentId)
-    if (!Number.isInteger(gridSize) || gridSize < 6) {
+    if (
+      !Number.isInteger(rowCount) ||
+      rowCount < 4 ||
+      !Number.isInteger(columnCount) ||
+      columnCount < 4
+    ) {
       throw new Error(
-        `Benchmark ${footprint.componentId} gridSize must be an integer of at least 6`,
+        `Benchmark ${footprint.componentId} rowCount and columnCount must be integers of at least 4`,
       )
     }
     if (
@@ -122,9 +135,11 @@ function resolveFootprints(
     return {
       componentId: footprint.componentId,
       center: { ...footprint.center },
-      gridSize,
+      rowCount,
+      columnCount,
       pitch,
       padDiameter,
+      footprinterString: `bga${rowCount * columnCount}_grid${columnCount}x${rowCount}_p${pitch}mm_pad${padDiameter}mm_circularpads`,
     }
   })
 }
@@ -132,23 +147,8 @@ function resolveFootprints(
 function getFootprintGeometry(
   footprint: ResolvedBenchmarkFootprint,
 ): FootprintGeometry {
-  const { center, gridSize, pitch, padDiameter } = footprint
-  const circuitJson = fp()
-    .bga(gridSize * gridSize)
-    .grid(`${gridSize}x${gridSize}`)
-    .p(pitch)
-    .pad(padDiameter)
-    .circularpads(true)
-    .soup()
-  const courtyard = circuitJson.find(
-    (element): element is PcbCourtyardOutline =>
-      element.type === "pcb_courtyard_outline",
-  )
-  if (!courtyard) {
-    throw new Error(
-      `Benchmark ${footprint.componentId} did not produce a courtyard outline`,
-    )
-  }
+  const { center, columnCount, footprinterString } = footprint
+  const circuitJson = fp.string(footprinterString).circuitJson()
   const pads = circuitJson
     .filter(
       (element): element is BenchmarkPad =>
@@ -163,14 +163,14 @@ function getFootprintGeometry(
         x: pad.x + center.x,
         y: pad.y + center.y,
       },
-      row: Math.floor(index / gridSize),
-      column: index % gridSize,
+      row: Math.floor(index / columnCount),
+      column: index % columnCount,
     })),
-    courtyardBounds: {
-      minX: Math.min(...courtyard.outline.map((point) => point.x)) + center.x,
-      maxX: Math.max(...courtyard.outline.map((point) => point.x)) + center.x,
-      minY: Math.min(...courtyard.outline.map((point) => point.y)) + center.y,
-      maxY: Math.max(...courtyard.outline.map((point) => point.y)) + center.y,
+    footprintBounds: {
+      minX: Math.min(...pads.map((pad) => pad.x - pad.radius)) + center.x,
+      maxX: Math.max(...pads.map((pad) => pad.x + pad.radius)) + center.x,
+      minY: Math.min(...pads.map((pad) => pad.y - pad.radius)) + center.y,
+      maxY: Math.max(...pads.map((pad) => pad.y + pad.radius)) + center.y,
     },
   }
 }
@@ -232,6 +232,7 @@ function createBenchmarkBuses(params: {
   pads: SelectedPad[]
   layoutCenter: { x: number; y: number }
   maxConnectionsPerBus: number
+  busDirectionMode: "layout-aware" | "vertical-split"
 }): BenchmarkBus[] {
   const {
     footprint,
@@ -239,9 +240,13 @@ function createBenchmarkBuses(params: {
     pads,
     layoutCenter,
     maxConnectionsPerBus,
+    busDirectionMode,
   } = params
   const connectionPrefix = `FP${String(footprintIndex + 1).padStart(2, "0")}`
-  const primaryDirection = getPrimaryDirection(footprint, layoutCenter)
+  const primaryDirection =
+    busDirectionMode === "vertical-split"
+      ? null
+      : getPrimaryDirection(footprint, layoutCenter)
   const buses: BenchmarkBus[] = []
 
   function addSplitBuses(params: {
@@ -267,7 +272,7 @@ function createBenchmarkBuses(params: {
   }
 
   if (primaryDirection === "EAST" || primaryDirection === "WEST") {
-    for (let column = 0; column < footprint.gridSize; column++) {
+    for (let column = 0; column < footprint.columnCount; column++) {
       addSplitBuses({
         baseBusId: `${footprint.componentId}:${primaryDirection.toLowerCase()}:column-${String(column + 1).padStart(2, "0")}`,
         direction: primaryDirection,
@@ -277,9 +282,9 @@ function createBenchmarkBuses(params: {
     return buses
   }
 
-  for (let row = 0; row < footprint.gridSize; row++) {
+  for (let row = 0; row < footprint.rowCount; row++) {
     const direction =
-      primaryDirection ?? (row < footprint.gridSize / 2 ? "SOUTH" : "NORTH")
+      primaryDirection ?? (row < footprint.rowCount / 2 ? "SOUTH" : "NORTH")
     addSplitBuses({
       baseBusId: `${footprint.componentId}:${direction.toLowerCase()}:row-${String(row + 1).padStart(2, "0")}`,
       direction,
@@ -336,7 +341,7 @@ export function createFootprinterBenchmarkProblem(
   const componentBounds = Object.fromEntries(
     footprints.map((footprint, index) => [
       footprint.componentId,
-      geometries[index]!.courtyardBounds,
+      geometries[index]!.footprintBounds,
     ]),
   )
   const boundaryMargin =
@@ -387,6 +392,7 @@ export function createFootprinterBenchmarkProblem(
       pads,
       layoutCenter,
       maxConnectionsPerBus,
+      busDirectionMode: params.busDirectionMode ?? "layout-aware",
     })) {
       const connectionNames: string[] = []
       for (const selectedPad of benchmarkBus.pads) {
@@ -431,12 +437,13 @@ export function createFootprinterBenchmarkProblem(
           obstacleId: `${footprint.componentId}-pad:${row}:${column}`,
           componentId: footprint.componentId,
           type: "rect" as const,
+          shape: "circle" as const,
           center: { x: pad.x, y: pad.y },
           width,
           height,
           layers: ["top"],
           connectedTo: connectionName ? [connectionName, pointId] : [pointId],
-        }
+        } satisfies Obstacle & { shape: "circle" }
       }),
     )
   }
@@ -475,6 +482,9 @@ export function createFootprinterBenchmarkProblem(
   return {
     componentBounds,
     sharedBoundary,
+    footprinterStrings: footprints.map(
+      (footprint) => footprint.footprinterString,
+    ),
     simpleRouteJson: {
       layerCount,
       minTraceWidth: traceWidth,

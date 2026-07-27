@@ -16,8 +16,8 @@ test("oversized vias use four-pad corner interstices instead of pair gaps", () =
     ),
   ].sort((a, b) => a - b)
   const pitch = xCoordinates[1]! - xCoordinates[0]!
-  const pairGapClearance = (pitch - pad.width) / 2
-  const cornerClearance = Math.hypot(pairGapClearance, pairGapClearance)
+  const pairGapClearance = pitch / 2 - pad.width / 2
+  const cornerClearance = Math.hypot(pitch / 2, pitch / 2) - pad.width / 2
   const requiredViaClearance = viaDiameter / 2 + clearance
 
   expect(pairGapClearance).toBeLessThan(requiredViaClearance)
@@ -56,5 +56,5 @@ test("oversized vias use four-pad corner interstices instead of pair gaps", () =
     }
   }
 
-  expect(interiorViaCount).toBe(72)
+  expect(interiorViaCount).toBe(18)
 })

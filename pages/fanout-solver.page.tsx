@@ -13,11 +13,24 @@ const buttonStyle: React.CSSProperties = {
   padding: "8px 12px",
 }
 
+function formatFootprinterStrings(strings: string[]): string {
+  const counts = new Map<string, number>()
+  for (const value of strings) {
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  return [...counts]
+    .map(([value, count]) => (count === 1 ? value : `${value} × ${count}`))
+    .join(" + ")
+}
+
 export default function FanoutSolverPage() {
   const [selectedDatasetIndex, setSelectedDatasetIndex] = useState(0)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const selectedDataset = fanoutDatasets[selectedDatasetIndex]!
   const selectedSample = selectedDataset.samples[selectedIndex]!
+  const footprinterTitle = formatFootprinterStrings(
+    selectedSample.footprinterStrings,
+  )
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -41,7 +54,13 @@ export default function FanoutSolverPage() {
       "",
       `${window.location.pathname}?${params.toString()}`,
     )
-  }, [selectedDataset.id, selectedSample.id])
+    document.title = `${selectedSample.name} · ${footprinterTitle} · Fanout Solver`
+  }, [
+    footprinterTitle,
+    selectedDataset.id,
+    selectedSample.id,
+    selectedSample.name,
+  ])
 
   const selectDataset = (index: number) => {
     if (index < 0 || index >= fanoutDatasets.length) return
@@ -90,6 +109,17 @@ export default function FanoutSolverPage() {
               {selectedSample.simpleRouteJson.connections.length} connections ·{" "}
               {selectedSample.simpleRouteJson.buses?.length ?? 0} buses
             </div>
+            <code
+              style={{
+                color: "#0f766e",
+                display: "block",
+                fontSize: 12,
+                marginTop: 6,
+                overflowWrap: "anywhere",
+              }}
+            >
+              {footprinterTitle}
+            </code>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button

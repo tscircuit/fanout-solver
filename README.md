@@ -27,6 +27,9 @@ and treats each bus-layer decision atomically.
 - Uses a straight pad-pair escape when the via fits. Otherwise it uses a 45°
   four-pad interstitial escape and nested side bands that spread deeper
   two-layer buses around already-routed outer buses.
+- `compactBusTracks` bends each bus into a trace/clearance-pitch routing
+  envelope, so a wide pad row does not consume a disproportionately wide
+  breakout corridor.
 - Chamfers orthogonal routing corners into 45° segments before validating and
   emitting the fanout.
 - Verifies pad, via, trace, and already-routed fanout clearance.
@@ -45,8 +48,8 @@ bun add https://github.com/tscircuit/fanout-solver
 ## Usage
 
 ```ts
-import { CapacityMeshSolver } from "@tscircuit/capacity-autorouter"
-import { FanoutSolver } from "@tscircuit/fanout-solver"
+import { CapacityMeshSolver } from "@tscircuit/capacity-autorouter";
+import { FanoutSolver } from "@tscircuit/fanout-solver";
 
 const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   maxLayerCombinations: 256,
@@ -62,17 +65,18 @@ const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   busDirections: {
     ddr: "right",
   },
-})
-fanoutSolver.solve()
+  compactBusTracks: true,
+});
+fanoutSolver.solve();
 
 if (fanoutSolver.failed) {
-  throw new Error(fanoutSolver.error ?? "Fanout failed")
+  throw new Error(fanoutSolver.error ?? "Fanout failed");
 }
 
 const autorouter = new CapacityMeshSolver(
   fanoutSolver.getOutputSimpleRouteJson(),
-)
-autorouter.solve()
+);
+autorouter.solve();
 ```
 
 The canonical bus input is the current `SimpleRouteJson` bus structure:
@@ -108,43 +112,49 @@ current layer assignment and tries another combination.
 samples contain exactly one through five BGA footprints, and every sample is
 solved as one `SimpleRouteJson`.
 
-| Sample | Footprints | Pads | Connections |
-| --- | ---: | ---: | ---: |
-| `sample001` | 1 | 64 | 64 |
-| `sample002` | 2 | 100 | 100 |
-| `sample003` | 3 | 136 | 136 |
-| `sample004` | 4 | 200 | 200 |
-| `sample005` | 5 | 236 | 236 |
+| Sample      | Footprints | Pads | Connections |
+| ----------- | ---------: | ---: | ----------: |
+| `sample001` |          1 |   64 |          64 |
+| `sample002` |          2 |  100 |         100 |
+| `sample003` |          3 |  136 |         136 |
+| `sample004` |          4 |  200 |         200 |
+| `sample005` |          5 |  236 |         236 |
 
 The Cosmos debugger provides Previous/Next controls and direct sample tabs. It
 also stores the selected dataset and sample in the `dataset` and `sample` URL
 parameters. Each sample has one shared boundary around all of its footprints,
-and component bounds come from each footprinter-generated
-`pcb_courtyard_outline`.
+and component bounds come from the exact footprinter-generated copper pad
+extents.
 
 ## Dataset 02
 
 `datasets/dataset02.ts` is the geometric stress dataset. Every sample uses
 [JLCPCB's published 1 oz, two-layer 0.10/0.10 mm trace and spacing capability](https://jlcpcb.com/capabilities/pcb-capabilities/),
-0.10 mm pad/copper clearance, and 0.40/0.20 mm vias. The 1.00 mm pads on
-1.52 mm pitch provide only 0.26 mm at a pad-pair midpoint—less than the
-0.30 mm required by a via and clearance—but provide 0.368 mm at a four-corner
-interstice. Inner buses spread into nested side bands while outward-edge buses
-remain via-free on top copper.
+and 0.10 mm pad/copper clearance. It uses the exact footprinter string
+`bga40_grid10x4_p0.4mm_pad0.2mm_circularpads`; the debugger includes that
+string in both the visible sample heading and browser title.
 
-| Sample | Footprints | Pads | Buses | Stress condition |
-| --- | ---: | ---: | ---: | --- |
-| `sample001` | 1 | 100 | 10 | 80 vias; two perimeter buses stay on top |
-| `sample002` | 2 | 200 | 20 | 180 vias; opposed perimeter buses stay on top |
-| `sample003` | 3 | 228 | 26 | 192 vias; four-sided top/bottom spreading |
-| `sample004` | 4 | 256 | 32 | 224 vias; four perimeter buses stay on top |
-| `sample005` | 5 | 356 | 42 | 304 vias; six perimeter buses stay on top |
+At 0.4 mm pitch, a 0.15 mm algorithmic HDI microvia has 0.108 mm clearance
+from each 0.20 mm circular pad at a four-pad corner, but only 0.025 mm at a
+pair midpoint. That forces the intended corner-interstitial strategy. These
+0.15/0.10 mm microvias are intentionally smaller than JLCPCB's published
+standard two-layer 0.25/0.15 mm mechanical via minimum: the standard via would
+have only 0.058 mm corner clearance and cannot satisfy the same 0.10 mm rule.
+The dataset is therefore a two-routing-layer solver stress case, not a claim
+that its microvia stackup is a standard JLCPCB two-layer order.
 
-Every pad is connected in every stress sample. Via use is atomic per bus and
-all emitted corners are straight or 45°. More than 95% of the via-bearing
-breakout tracks leave the perpendicular span of their source footprint, making
-the required outward spreading visible in both Cosmos and the verification
-PNGs.
+| Sample      | Footprints | Pads | Buses | Stress condition                                  |
+| ----------- | ---------: | ---: | ----: | ------------------------------------------------- |
+| `sample001` |          1 |   40 |     4 | 20 vias; two 10-trace perimeter buses stay on top |
+| `sample002` |          2 |   80 |     8 | 0.6 mm between adjacent footprint pad fields      |
+| `sample003` |          3 |  120 |    12 | staggered close placement and compact bend-ins    |
+| `sample004` |          4 |  160 |    16 | shared top/bottom corridors for 40-pin BGAs       |
+| `sample005` |          5 |  200 |    20 | 100 bus-atomic vias on two routing layers         |
+
+Every pad is connected in every stress sample. Via use is atomic per bus, every
+10-trace bus bends from a 3.6 mm pad span into a 1.8 mm routing envelope, and
+all emitted corners are straight or 45°. Bottom-layer traces render as solid
+blue in both Cosmos and the verification PNGs.
 
 ## Development
 
