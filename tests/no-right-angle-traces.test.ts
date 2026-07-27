@@ -43,5 +43,5 @@ test("post-processing chamfers every same-layer corner away from 90 degrees", ()
     }
   }
 
-  expect(cornerCount).toBeGreaterThan(200)
+  expect(cornerCount).toBeGreaterThan(100)
 })

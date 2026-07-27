@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
+import { getCopperLayerColor } from "lib/layer-colors"
 import type { Bounds, FanoutDirection, Point2D } from "lib/types"
 import { fanoutDataset02 } from "../datasets/dataset02"
 
@@ -36,7 +37,7 @@ test("Dataset 02 completely breaks out a four-layer BGA400", () => {
   expect(srj.minViaPadDiameter).toBe(0.25)
   expect(srj.minViaHoleDiameter).toBe(0.15)
   expect(srj.connections).toHaveLength(400)
-  expect(srj.buses).toHaveLength(20)
+  expect(srj.buses).toHaveLength(40)
   expect(padObstacles).toHaveLength(400)
 
   const componentBounds = Object.values(sample.componentBounds)
@@ -53,23 +54,31 @@ test("Dataset 02 completely breaks out a four-layer BGA400", () => {
   const output = solver.getOutput()
   expect(output.attempts).toHaveLength(1)
   expect(output.fanoutTraces).toHaveLength(400)
-  const nonTopGraphicsLines =
+  const layerGraphicsLines =
     solver
       .visualize()
-      .lines?.filter(
-        (line) => line.layer !== "z0" && /^z\d+$/.test(line.layer ?? ""),
-      ) ?? []
-  expect(nonTopGraphicsLines.length).toBeGreaterThan(0)
-  expect(
-    nonTopGraphicsLines.every(
-      (line) => line.strokeColor === "blue" && line.strokeDash === undefined,
-    ),
-  ).toBe(true)
+      .lines?.filter((line) => /^z\d+$/.test(line.layer ?? "")) ?? []
+  const visualizedLayerColors = new Set<string>()
+  for (let layerIndex = 0; layerIndex < srj.layerCount; layerIndex++) {
+    const layerLines = layerGraphicsLines.filter(
+      (line) => line.layer === `z${layerIndex}`,
+    )
+    const expectedColor = getCopperLayerColor(layerIndex)
+    expect(layerLines.length).toBeGreaterThan(0)
+    expect(
+      layerLines.every(
+        (line) =>
+          line.strokeColor === expectedColor && line.strokeDash === undefined,
+      ),
+    ).toBe(true)
+    visualizedLayerColors.add(expectedColor)
+  }
+  expect(visualizedLayerColors.size).toBe(4)
   expect(
     Object.values(output.busLayerAssignments).filter(
       (layer) => layer === "top",
     ),
-  ).toHaveLength(2)
+  ).toHaveLength(4)
   expect(
     Object.values(output.busLayerAssignments).reduce<Record<string, number>>(
       (counts, layer) => ({
@@ -79,11 +88,29 @@ test("Dataset 02 completely breaks out a four-layer BGA400", () => {
       {},
     ),
   ).toEqual({
-    top: 2,
-    inner1: 6,
-    inner2: 6,
-    bottom: 6,
+    top: 4,
+    inner1: 12,
+    inner2: 12,
+    bottom: 12,
   })
+  expect(
+    solver.preparedBuses.reduce<Record<FanoutDirection, number>>(
+      (counts, bus) => ({
+        ...counts,
+        [bus.direction]: counts[bus.direction] + 1,
+      }),
+      { left: 0, right: 0, up: 0, down: 0 },
+    ),
+  ).toEqual({ left: 10, right: 10, up: 10, down: 10 })
+  expect(
+    solver.preparedBuses.reduce<Record<FanoutDirection, number>>(
+      (counts, bus) => ({
+        ...counts,
+        [bus.direction]: counts[bus.direction] + bus.connections.length,
+      }),
+      { left: 0, right: 0, up: 0, down: 0 },
+    ),
+  ).toEqual({ left: 100, right: 100, up: 100, down: 100 })
 
   const expectedLayersByDepth = [
     "top",
@@ -99,15 +126,34 @@ test("Dataset 02 completely breaks out a four-layer BGA400", () => {
   ]
   let viaCount = 0
   for (const bus of solver.preparedBuses) {
-    const rowNumber = Number(bus.busId.match(/row-(\d+)/)?.[1])
-    const depth = bus.direction === "down" ? rowNumber - 1 : 20 - rowNumber
+    const horizontal = bus.direction === "left" || bus.direction === "right"
+    const directionalCoordinates = horizontal
+      ? bus.xCoordinates
+      : bus.yCoordinates
+    const directionalPitch = horizontal ? bus.pitchX : bus.pitchY
+    const averageDirectionalSource =
+      bus.connections.reduce(
+        (sum, connection) =>
+          sum +
+          (horizontal ? connection.sourcePoint.x : connection.sourcePoint.y),
+        0,
+      ) / bus.connections.length
+    const outwardCoordinate =
+      bus.direction === "right" || bus.direction === "up"
+        ? Math.max(...directionalCoordinates)
+        : Math.min(...directionalCoordinates)
+    const depth = Math.round(
+      Math.abs(averageDirectionalSource - outwardCoordinate) / directionalPitch,
+    )
     const expectedLayer = expectedLayersByDepth[depth]!
     expect(output.busLayerAssignments[bus.busId]).toBe(expectedLayer)
-    expect(bus.connections).toHaveLength(20)
 
     const busViaUse: boolean[] = []
+    const sourceTracks = bus.connections.map((connection) =>
+      horizontal ? connection.sourcePoint.y : connection.sourcePoint.x,
+    )
     const sourceTrackSpan =
-      Math.max(...bus.xCoordinates) - Math.min(...bus.xCoordinates)
+      Math.max(...sourceTracks) - Math.min(...sourceTracks)
     const exitTracks: number[] = []
 
     for (const connection of bus.connections) {
@@ -125,8 +171,12 @@ test("Dataset 02 completely breaks out a four-layer BGA400", () => {
       if (via?.route_type === "via") {
         viaCount++
         expect(via.to_layer).toBe(expectedLayer)
-        expect(Math.abs(via.x - connection.sourcePoint.x)).toBeCloseTo(0)
-        expect(Math.abs(via.y - connection.sourcePoint.y)).toBeCloseTo(0.4)
+        expect(Math.abs(via.x - connection.sourcePoint.x)).toBeCloseTo(
+          horizontal ? 0.4 : 0,
+        )
+        expect(Math.abs(via.y - connection.sourcePoint.y)).toBeCloseTo(
+          horizontal ? 0 : 0.4,
+        )
         expect(
           trace.route
             .slice(viaIndex + 1)
@@ -143,17 +193,15 @@ test("Dataset 02 completely breaks out a four-layer BGA400", () => {
         expect(
           pointIsOutsideInDirection(exit, sample.sharedBoundary, bus.direction),
         ).toBe(true)
-        exitTracks.push(exit.x)
+        exitTracks.push(horizontal ? exit.y : exit.x)
       }
     }
 
     expect(new Set(busViaUse).size).toBe(1)
     expect(busViaUse[0]).toBe(expectedLayer !== "top")
     const exitTrackSpan = Math.max(...exitTracks) - Math.min(...exitTracks)
-    expect(exitTrackSpan).toBeGreaterThanOrEqual(14.5)
-    expect(exitTrackSpan).toBeLessThanOrEqual(16)
     expect(Math.abs(exitTrackSpan - sourceTrackSpan)).toBeLessThanOrEqual(0.8)
   }
 
-  expect(viaCount).toBe(360)
+  expect(viaCount).toBe(324)
 })

@@ -28,7 +28,7 @@ const problem = createFootprinterBenchmarkProblem({
     },
   ],
   layerCount: LAYER_COUNT,
-  busDirectionMode: "vertical-split",
+  busDirectionMode: "four-side",
   maxConnectionsPerBus: MAX_CONNECTIONS_PER_BUS,
   traceWidth: TRACE_WIDTH,
   viaDiameter: VIA_DIAMETER,
@@ -40,7 +40,7 @@ export const fanoutDataset02: FanoutDatasetSample[] = [
     id: "sample001",
     name: "Complete 20×20 BGA400 breakout",
     description:
-      "Routes all 400 balls as twenty atomic 20-trace row buses on four copper layers. The perimeter pair stays on top; deeper north/south bus pairs cycle through inner1, inner2, and bottom while clearing earlier via rows.",
+      "Routes exactly 100 balls toward each package edge on four copper layers. Forty nearest-edge buses cycle through top, inner1, inner2, and bottom while clearing earlier via rows and columns.",
     footprintCount: 1,
     footprinterStrings: problem.footprinterStrings,
     simpleRouteJson: problem.simpleRouteJson,

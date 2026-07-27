@@ -19,7 +19,7 @@ export interface BenchmarkParams {
   footprints?: BenchmarkFootprintParams[]
   gridSize?: number
   layerCount?: number
-  busDirectionMode?: "layout-aware" | "vertical-split"
+  busDirectionMode?: "four-side" | "layout-aware" | "vertical-split"
   pitch?: number
   padDiameter?: number
   boundaryMargin?: number
@@ -232,7 +232,7 @@ function createBenchmarkBuses(params: {
   pads: SelectedPad[]
   layoutCenter: { x: number; y: number }
   maxConnectionsPerBus: number
-  busDirectionMode: "layout-aware" | "vertical-split"
+  busDirectionMode: "four-side" | "layout-aware" | "vertical-split"
 }): BenchmarkBus[] {
   const {
     footprint,
@@ -244,9 +244,9 @@ function createBenchmarkBuses(params: {
   } = params
   const connectionPrefix = `FP${String(footprintIndex + 1).padStart(2, "0")}`
   const primaryDirection =
-    busDirectionMode === "vertical-split"
-      ? null
-      : getPrimaryDirection(footprint, layoutCenter)
+    busDirectionMode === "layout-aware"
+      ? getPrimaryDirection(footprint, layoutCenter)
+      : null
   const buses: BenchmarkBus[] = []
 
   function addSplitBuses(params: {
@@ -269,6 +269,56 @@ function createBenchmarkBuses(params: {
         ),
       })
     }
+  }
+
+  if (busDirectionMode === "four-side") {
+    const groups = new Map<
+      string,
+      {
+        direction: BenchmarkDirection
+        pads: SelectedPad[]
+      }
+    >()
+    const directionOrder = [
+      "SOUTH",
+      "NORTH",
+      "WEST",
+      "EAST",
+    ] as const satisfies readonly BenchmarkDirection[]
+
+    for (const selectedPad of pads) {
+      const distanceByDirection: Record<BenchmarkDirection, number> = {
+        SOUTH: selectedPad.row,
+        NORTH: footprint.rowCount - selectedPad.row - 1,
+        WEST: selectedPad.column,
+        EAST: footprint.columnCount - selectedPad.column - 1,
+      }
+      const minimumDistance = Math.min(...Object.values(distanceByDirection))
+      const nearestDirections = directionOrder.filter(
+        (direction) => distanceByDirection[direction] === minimumDistance,
+      )
+      const direction =
+        nearestDirections[
+          (selectedPad.row + selectedPad.column) % nearestDirections.length
+        ]!
+      const axis =
+        direction === "SOUTH" || direction === "NORTH"
+          ? `row-${String(selectedPad.row + 1).padStart(2, "0")}`
+          : `column-${String(selectedPad.column + 1).padStart(2, "0")}`
+      const groupId = `${direction}:${axis}`
+      const group = groups.get(groupId) ?? { direction, pads: [] }
+      group.pads.push(selectedPad)
+      groups.set(groupId, group)
+    }
+
+    for (const [groupId, group] of groups) {
+      addSplitBuses({
+        baseBusId: `${footprint.componentId}:${groupId.toLowerCase()}`,
+        direction: group.direction,
+        selectedPads: group.pads,
+      })
+    }
+    return buses
   }
 
   if (primaryDirection === "EAST" || primaryDirection === "WEST") {

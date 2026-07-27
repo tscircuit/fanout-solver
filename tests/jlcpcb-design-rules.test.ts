@@ -187,8 +187,8 @@ test("the four-layer BGA400 clears JLCPCB copper and standard-via rules", () => 
   const pairViaToPadEdgeGap =
     pitch / 2 - padDiameter / 2 - jlcStandardViaDiameter / 2
 
-  expect(segments.length).toBeGreaterThan(1_000)
-  expect(vias).toHaveLength(360)
+  expect(segments.length).toBeGreaterThan(900)
+  expect(vias).toHaveLength(324)
   expect(pairViaToPadEdgeGap).toBeGreaterThanOrEqual(0.1)
   expect(vias.every((via) => via.diameter === 0.25)).toBe(true)
   expect(vias.every((via) => via.holeDiameter === 0.15)).toBe(true)

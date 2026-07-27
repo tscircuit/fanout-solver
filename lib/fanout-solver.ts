@@ -5,6 +5,7 @@ import {
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { buildOutputSimpleRouteJson } from "./build-output"
+import { getCopperLayerColor } from "./layer-colors"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import { prepareFanoutBuses } from "./prepare-buses"
 import { routeBus } from "./route-bus"
@@ -459,13 +460,12 @@ export class FanoutSolver extends BaseSolver {
       rects,
       circles: [...(graphics.circles ?? []), ...circularPadGraphics],
       lines: graphics.lines?.map((line) => {
-        if (line.layer === "z0" || !/^z\d+$/.test(line.layer ?? "")) {
-          return line
-        }
+        const layerMatch = /^z(\d+)$/.exec(line.layer ?? "")
+        if (!layerMatch) return line
         const { strokeDash: _strokeDash, ...solidLine } = line
         return {
           ...solidLine,
-          strokeColor: "blue",
+          strokeColor: getCopperLayerColor(Number(layerMatch[1])),
         }
       }),
     }

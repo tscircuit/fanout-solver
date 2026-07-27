@@ -1,5 +1,7 @@
 import { GenericSolverDebugger } from "@tscircuit/solver-utils/react"
 import { FanoutSolver } from "lib/fanout-solver"
+import { getCopperLayerColor } from "lib/layer-colors"
+import { getCopperLayerNames } from "lib/layer-names"
 import { useEffect, useState } from "react"
 import { fanoutDatasets } from "../datasets"
 
@@ -37,6 +39,9 @@ export default function FanoutSolverPage() {
   const selectedSample = selectedDataset.samples[selectedIndex]!
   const footprinterTitle = formatFootprinterStrings(
     selectedSample.footprinterStrings,
+  )
+  const layerNames = getCopperLayerNames(
+    selectedSample.simpleRouteJson.layerCount,
   )
 
   useEffect(() => {
@@ -221,6 +226,35 @@ export default function FanoutSolverPage() {
 
         <div style={{ color: "#475569", fontSize: 13 }}>
           {selectedSample.description}
+        </div>
+
+        <div
+          aria-label="Copper layer colors"
+          style={{ display: "flex", flexWrap: "wrap", gap: 12 }}
+        >
+          {layerNames.map((layerName, index) => (
+            <span
+              key={layerName}
+              style={{
+                alignItems: "center",
+                display: "inline-flex",
+                fontSize: 12,
+                gap: 6,
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  background: getCopperLayerColor(index),
+                  borderRadius: "999px",
+                  display: "inline-block",
+                  height: 10,
+                  width: 10,
+                }}
+              />
+              {layerName}
+            </span>
+          ))}
         </div>
       </header>
 

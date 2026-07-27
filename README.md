@@ -20,6 +20,9 @@ and treats each bus-layer decision atomically.
   shared rectangle around all detected component bounds and pad grids.
 - Infers one outward direction per bus from the bus endpoints, or accepts an
   explicit direction override.
+- Supports balanced nearest-edge partitioning for package breakouts. Ties
+  alternate instead of favoring one axis; square grids distribute equally
+  across north, south, east, and west.
 - Enumerates combinations of the copper layers implied by `layerCount`.
 - Prefers depth-cycled layer assignments: matching north/south (or east/west)
   bus depths share a layer, and deeper pairs cycle through every available
@@ -138,10 +141,11 @@ string in both the visible sample heading and browser title. The sample uses
 [JLCPCB's published 0.10/0.10 mm trace and spacing capability](https://jlcpcb.com/capabilities/pcb-capabilities/),
 0.10 mm pad/copper clearance, and standard 0.25/0.15 mm vias.
 
-The two perimeter buses (40 balls) stay via-free on top. The remaining
-eighteen 20-trace buses use 360 bus-atomic vias. Matching north/south depths
-cycle through `inner1`, `inner2`, and `bottom`, so every escape layer carries
-three nested depth bands in each direction instead of receiving one easy bus.
+Exactly 100 balls and ten buses escape through each package edge. The four
+perimeter buses (76 balls) stay via-free on top. The remaining 36 buses use 324
+bus-atomic vias. Matching opposite-edge depths cycle through `inner1`,
+`inner2`, and `bottom`, so every escape layer carries twelve buses instead of
+receiving one easy depth band.
 
 The earlier 0.4 mm corner-interstitial case remains a dedicated regression
 test. It cannot honestly route the full BGA400 on four layers with the retained
@@ -153,11 +157,11 @@ solution.
 
 | Sample      | Footprints | Pads | Buses | Vias | Layers |
 | ----------- | ---------: | ---: | ----: | ---: | -----: |
-| `sample001` |          1 |  400 |    20 |  360 |      4 |
+| `sample001` |          1 |  400 |    40 |  324 |      4 |
 
-Every 20-trace bus exits the shared component boundary and uses only straight
-or 45° segments. Non-top-layer traces render as solid blue in both Cosmos and
-the verification PNG.
+Every bus exits the shared component boundary and uses only straight or 45°
+segments. Top, inner1, inner2, and bottom traces use distinct red, blue, green,
+and purple colors in Cosmos and the verification PNG.
 
 ## Development
 
