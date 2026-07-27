@@ -32,6 +32,7 @@ interface RoutingItem {
   connection: PreparedConnection
   direction: FanoutDirection
   source: Point2D
+  cornerChannelPrefixes?: Point2D[][]
 }
 
 interface RoutedPath {
@@ -126,6 +127,234 @@ function getPathSegments(
     })
   }
   return segments
+}
+
+/**
+ * Finds a same-layer 45-degree channel for a pad enclosed by its own package.
+ * The diagonal advances equally along the directional and perpendicular axes,
+ * clears every other obstacle, and leaves enough runway for a straight segment
+ * before any completion dogleg.
+ */
+function getCornerChannelPrefixes(params: {
+  srj: SimpleRouteJson
+  bus: PreparedBus
+  connection: PreparedConnection
+  traceWidth: number
+  clearance: number
+}): Point2D[][] | null {
+  const { srj, bus, connection, traceWidth, clearance } = params
+  const direction = bus.direction
+  const sign = directionSign(direction)
+  const source = {
+    x: connection.sourcePoint.x,
+    y: connection.sourcePoint.y,
+  }
+  const sourceAxis = getAxis(source, direction)
+  const sourceTrack = getPerpendicularAxis(source, direction)
+  const requiredObstacleDistance = traceWidth / 2 + clearance
+  const componentExitAxis = (() => {
+    switch (direction) {
+      case "right":
+        return bus.componentBounds.maxX + requiredObstacleDistance
+      case "left":
+        return bus.componentBounds.minX - requiredObstacleDistance
+      case "up":
+        return bus.componentBounds.maxY + requiredObstacleDistance
+      case "down":
+        return bus.componentBounds.minY - requiredObstacleDistance
+    }
+  })()
+  const obstacleDistanceForSegment = (segment: RoutedSegment): number =>
+    Math.min(
+      ...srj.obstacles
+        .filter(
+          (obstacle) =>
+            obstacle !== connection.sourceObstacle &&
+            obstacle.layers.includes("top"),
+        )
+        .map((obstacle) => distanceSegmentToObstacle(segment, obstacle)),
+    )
+  const directSegment: RoutedSegment = {
+    start: source,
+    end: makePoint(componentExitAxis, sourceTrack, direction),
+    width: traceWidth,
+    layer: "top",
+  }
+  if (
+    obstacleDistanceForSegment(directSegment) >=
+    requiredObstacleDistance - 1e-9
+  ) {
+    return null
+  }
+
+  const perpendicularBounds = isHorizontal(direction)
+    ? {
+        minimum: bus.componentBounds.minY,
+        maximum: bus.componentBounds.maxY,
+      }
+    : {
+        minimum: bus.componentBounds.minX,
+        maximum: bus.componentBounds.maxX,
+      }
+  const directionalDistance = sign * (componentExitAxis - sourceAxis)
+  const targetTrack = getPerpendicularAxis(connection.targetPoint, direction)
+  const lanePitch = traceWidth + clearance
+  const exitAxis = getExitAxis(bus)
+  const candidates = ([-1, 1] as const)
+    .map((perpendicularSign) => {
+      const perpendicularExit =
+        perpendicularSign < 0
+          ? perpendicularBounds.minimum - requiredObstacleDistance
+          : perpendicularBounds.maximum + requiredObstacleDistance
+      const perpendicularDistance =
+        perpendicularSign * (perpendicularExit - sourceTrack)
+      const diagonalDistance = Math.max(
+        directionalDistance,
+        perpendicularDistance,
+      )
+      const diagonalEnd = makePoint(
+        sourceAxis + sign * diagonalDistance,
+        sourceTrack + perpendicularSign * diagonalDistance,
+        direction,
+      )
+      if (
+        sign * (exitAxis - getAxis(diagonalEnd, direction)) <
+        lanePitch - 1e-9
+      ) {
+        return null
+      }
+      const points = [source, diagonalEnd]
+      const withinBoundary = points.every(
+        (point) =>
+          point.x >= bus.sharedBoundary.minX - 1e-9 &&
+          point.x <= bus.sharedBoundary.maxX + 1e-9 &&
+          point.y >= bus.sharedBoundary.minY - 1e-9 &&
+          point.y <= bus.sharedBoundary.maxY + 1e-9,
+      )
+      if (!withinBoundary) return null
+      const obstacleDistance = Math.min(
+        ...getPathSegments(points, traceWidth).map(obstacleDistanceForSegment),
+      )
+      if (obstacleDistance < requiredObstacleDistance - 1e-9) return null
+      return {
+        points,
+        obstacleDistance,
+        targetDistance: Math.abs(
+          getPerpendicularAxis(diagonalEnd, direction) - targetTrack,
+        ),
+      }
+    })
+    .filter((candidate) => candidate !== null)
+    .toSorted(
+      (first, second) =>
+        second.obstacleDistance - first.obstacleDistance ||
+        first.targetDistance - second.targetDistance,
+    )
+
+  return candidates.length > 0
+    ? candidates.map((candidate) => candidate.points)
+    : null
+}
+
+function completeCornerChannelRoute(params: {
+  item: RoutingItem
+  srj: SimpleRouteJson
+  acceptedSegments: RoutedSegment[]
+  traceWidth: number
+  clearance: number
+}): ActiveRoute | null {
+  const { item, srj, acceptedSegments, traceWidth, clearance } = params
+  const prefixes = item.cornerChannelPrefixes
+  if (!prefixes) return null
+  const direction = item.direction
+  const sign = directionSign(direction)
+  const exitAxis = getExitAxis(item.bus)
+  const lanePitch = traceWidth + clearance
+  const requiredObstacleDistance = traceWidth / 2 + clearance
+  const boundaryMinimum = isHorizontal(direction)
+    ? item.bus.sharedBoundary.minY
+    : item.bus.sharedBoundary.minX
+  const boundaryMaximum = isHorizontal(direction)
+    ? item.bus.sharedBoundary.maxY
+    : item.bus.sharedBoundary.maxX
+  const minimumTrack = boundaryMinimum + traceWidth / 2
+  const maximumTrack = boundaryMaximum - traceWidth / 2
+  const targetTrack = getPerpendicularAxis(
+    item.connection.targetPoint,
+    direction,
+  )
+  const trackStep = lanePitch / 2
+  const trackCandidates = new Set<number>([
+    Math.max(minimumTrack, Math.min(maximumTrack, targetTrack)),
+  ])
+  for (
+    let track = Math.ceil(minimumTrack / trackStep) * trackStep;
+    track <= maximumTrack + 1e-9;
+    track += trackStep
+  ) {
+    trackCandidates.add(Number(track.toFixed(9)))
+  }
+  const orderedTracks = [...trackCandidates].toSorted(
+    (first, second) =>
+      Math.abs(first - targetTrack) - Math.abs(second - targetTrack),
+  )
+
+  for (const prefix of prefixes) {
+    const diagonalEnd = prefix.at(-1)!
+    const diagonalTrack = getPerpendicularAxis(diagonalEnd, direction)
+    for (const track of orderedTracks) {
+      const shift = Math.abs(track - diagonalTrack)
+      const straightEnd = makePoint(
+        getAxis(diagonalEnd, direction) + sign * lanePitch,
+        diagonalTrack,
+        direction,
+      )
+      const doglegEnd = makePoint(
+        getAxis(straightEnd, direction) + sign * shift,
+        track,
+        direction,
+      )
+      if (sign * (exitAxis - getAxis(doglegEnd, direction)) < -1e-9) {
+        continue
+      }
+      const boundaryPoint = makePoint(exitAxis, track, direction)
+      const completionPoints = [
+        ...prefix,
+        straightEnd,
+        ...(shift > 1e-9 ? [doglegEnd] : []),
+      ]
+      if (distance(completionPoints.at(-1)!, boundaryPoint) > 1e-9) {
+        completionPoints.push(boundaryPoint)
+      }
+      const points = compressPath(completionPoints)
+      const segments = getPathSegments(points, traceWidth)
+      const clearsObstacles = segments.every((segment) =>
+        srj.obstacles.every(
+          (obstacle) =>
+            obstacle === item.connection.sourceObstacle ||
+            !obstacle.layers.includes("top") ||
+            distanceSegmentToObstacle(segment, obstacle) >=
+              requiredObstacleDistance - 1e-9,
+        ),
+      )
+      if (!clearsObstacles) continue
+      const clearsRoutes = segments.every((segment) =>
+        acceptedSegments.every(
+          (acceptedSegment) =>
+            distanceSegmentToSegment(
+              segment.start,
+              segment.end,
+              acceptedSegment.start,
+              acceptedSegment.end,
+            ) >=
+            traceWidth + clearance - 1e-9,
+        ),
+      )
+      if (!clearsRoutes) continue
+      return { item, points, track }
+    }
+  }
+  return null
 }
 
 function getMaximumObstacleClearDistributionShift(params: {
@@ -629,11 +858,19 @@ export function routeSingleLayerWithPushAndShove(
         x: connection.sourcePoint.x,
         y: connection.sourcePoint.y,
       }
+      const cornerChannelPrefixes = getCornerChannelPrefixes({
+        srj,
+        bus,
+        connection,
+        traceWidth,
+        clearance,
+      })
       return {
         bus,
         connection,
         direction: bus.direction,
         source,
+        ...(cornerChannelPrefixes ? { cornerChannelPrefixes } : {}),
       } satisfies RoutingItem
     }),
   )
@@ -645,7 +882,9 @@ export function routeSingleLayerWithPushAndShove(
     "down",
   ] as const satisfies readonly FanoutDirection[]) {
     const sign = directionSign(direction)
-    const directionItems = items.filter((item) => item.direction === direction)
+    const directionItems = items.filter(
+      (item) => item.direction === direction && !item.cornerChannelPrefixes,
+    )
     if (directionItems.length === 0) continue
     const boundaryMinimum = isHorizontal(direction)
       ? directionItems[0]!.bus.sharedBoundary.minY
@@ -939,6 +1178,25 @@ export function routeSingleLayerWithPushAndShove(
       }
       recordsByConnectionName.set(connectionName, route)
     }
+  }
+
+  const acceptedSegments = [...recordsByConnectionName.values()].flatMap(
+    (route) => getPathSegments(compressPath(route.points), traceWidth),
+  )
+  for (const item of items) {
+    if (!item.cornerChannelPrefixes) continue
+    const route = completeCornerChannelRoute({
+      item,
+      srj,
+      acceptedSegments,
+      traceWidth,
+      clearance,
+    })
+    if (!route) return null
+    recordsByConnectionName.set(item.connection.connection.name, route)
+    acceptedSegments.push(
+      ...getPathSegments(compressPath(route.points), traceWidth),
+    )
   }
 
   if (recordsByConnectionName.size !== items.length) return null

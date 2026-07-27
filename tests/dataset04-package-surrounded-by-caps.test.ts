@@ -80,9 +80,9 @@ const expectedSamples = [
     centralComponentId: "rp2040-qfn56",
     centralFootprinterString: RP2040_CLASS_QFN,
     centralPadCount: 57,
-    centralRoutedPadCount: 56,
-    centralBusCount: 56,
-    innerPadCount: 0,
+    centralRoutedPadCount: 57,
+    centralBusCount: 57,
+    innerPadCount: 1,
     layerCount: 1,
   },
 ] as const
@@ -498,12 +498,12 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
       const thermalConnectionName = thermalPad!.connectedTo.find(
         (connectionName) => connectionName.startsWith("BUS_"),
       )
-      expect(thermalConnectionName).toBeUndefined()
-      expect(
-        output.fanoutTraces.some((trace) =>
-          trace.connectsTo?.includes(thermalPad!.obstacleId!),
-        ),
-      ).toBe(false)
+      expect(thermalConnectionName).toBeDefined()
+      const thermalTrace = output.fanoutTraces.find(
+        (trace) => trace.connection_name === thermalConnectionName,
+      )
+      expect(thermalTrace).toBeDefined()
+      expect(thermalTrace!.connectsTo).toContain(thermalPad!.obstacleId!)
 
       const perimeterPads = centralObstacles.filter(
         (obstacle) => obstacle !== thermalPad,
@@ -525,6 +525,54 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
           ),
         ),
       ).toEqual(new Set(["0.80x0.23", "0.23x0.80"]))
+      const thermalWirePoints = thermalTrace!.route.filter(
+        (routePoint) => routePoint.route_type === "wire",
+      )
+      expect(thermalWirePoints.length).toBeGreaterThanOrEqual(4)
+      const thermalSource = thermalWirePoints[0]!
+      const packageCornerExit = thermalWirePoints[1]!
+      const cornerDx = packageCornerExit.x - thermalSource.x
+      const cornerDy = packageCornerExit.y - thermalSource.y
+      expect(Math.abs(cornerDx)).toBeGreaterThan(3.8)
+      expect(Math.abs(cornerDx)).toBeCloseTo(Math.abs(cornerDy), 9)
+      const xSign = Math.sign(cornerDx)
+      const ySign = Math.sign(cornerDy)
+      const adjacentSidePad = perimeterPads.find(
+        (obstacle) =>
+          Math.abs(obstacle.center.x - xSign * 3.4) < 1e-6 &&
+          Math.abs(obstacle.center.y - ySign * 2.6) < 1e-6,
+      )
+      const adjacentTopOrBottomPad = perimeterPads.find(
+        (obstacle) =>
+          Math.abs(obstacle.center.x - xSign * 2.6) < 1e-6 &&
+          Math.abs(obstacle.center.y - ySign * 3.4) < 1e-6,
+      )
+      expect(adjacentSidePad).toBeDefined()
+      expect(adjacentTopOrBottomPad).toBeDefined()
+      const thermalDiagonal: RoutedSegment = {
+        start: thermalSource,
+        end: packageCornerExit,
+        width: thermalSource.width,
+        layer: thermalSource.layer,
+      }
+      const sidePadCenterlineClearance = distanceSegmentToObstacle(
+        thermalDiagonal,
+        adjacentSidePad!,
+      )
+      const topOrBottomPadCenterlineClearance = distanceSegmentToObstacle(
+        thermalDiagonal,
+        adjacentTopOrBottomPad!,
+      )
+      expect(sidePadCenterlineClearance).toBeCloseTo(
+        topOrBottomPadCenterlineClearance,
+        9,
+      )
+      expect(
+        sidePadCenterlineClearance - thermalDiagonal.width / 2,
+      ).toBeGreaterThanOrEqual(0.1 - 1e-6)
+      expect(
+        topOrBottomPadCenterlineClearance - thermalDiagonal.width / 2,
+      ).toBeGreaterThanOrEqual(0.1 - 1e-6)
       for (
         let firstIndex = 0;
         firstIndex < centralObstacles.length;

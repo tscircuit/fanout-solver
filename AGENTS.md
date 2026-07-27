@@ -31,6 +31,9 @@
 - Emit only straight or 45-degree fanout corners; chamfer orthogonal routing
   corners before clearance validation.
 - Route every connected pad, including inner BGA rows and columns.
+- An enclosed same-layer source pad may escape diagonally through a package
+  corner only when the 45-degree centerline clears both adjacent perimeter pads
+  and every other obstacle under the configured trace/clearance rules.
 - All footprints in one problem escape through the same shared boundary.
 - Keep the output compatible with `SimpleRouteJson`: committed fanout prefixes
   become supplied traces and the remaining connection endpoint moves to the

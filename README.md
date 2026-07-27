@@ -230,10 +230,11 @@ Those compensated footprinter dimensions reproduce
 [Raspberry Pi's reference land pattern](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf)
 exactly: perimeter centers at ±3.4 mm, 0.4 mm pitch, 0.8×0.23 mm pads, and a
 3.2×3.2 mm exposed pad, with no overlapping copper.
-It routes all 56 perimeter pins and all 16 capacitor pads. The exposed pad
-remains as a real copper obstacle but is intentionally unconnected: the
-0.4 mm-pitch perimeter ring has only 0.15 mm pad gaps, so a 0.10 mm trace with
-0.10 mm edge clearance cannot escape it on the same copper layer.
+It routes all 56 perimeter pins, the exposed thermal pad, and all 16 capacitor
+pads. The thermal-pad trace leaves on a 45° diagonal through a package corner,
+centered between the outermost pads on its two adjacent edges. That diagonal
+channel clears both rectangular pad corners under the same 0.10 mm trace and
+0.10 mm edge-clearance rules.
 
 All five regressions independently verify JLCPCB's 0.10 mm trace width and
 0.10 mm copper-clearance rules, top-only routing, shared-boundary exits, inner
@@ -245,7 +246,7 @@ BGA pad coverage, ordered push-and-shove bends, and the absence of 90° corners.
 | `sample002` |          9 |          41 |    25 |    0 |      1 |
 | `sample003` |          9 |          52 |    28 |    0 |      1 |
 | `sample004` |          9 |          80 |    32 |    0 |      1 |
-| `sample005` |          9 |          72 |    72 |    0 |      1 |
+| `sample005` |          9 |          73 |    73 |    0 |      1 |
 
 ## Development
 

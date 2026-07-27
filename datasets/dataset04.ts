@@ -22,7 +22,6 @@ interface Dataset04SampleConfig {
   layerCount: number
   cardinalCapDistance: number
   diagonalCapDistance: number
-  leaveThermalPadUnconnected?: boolean
 }
 
 const sampleConfigs: Dataset04SampleConfig[] = [
@@ -78,14 +77,13 @@ const sampleConfigs: Dataset04SampleConfig[] = [
     id: "sample005",
     name: "RP2040-class QFN56 thermal pad with eight capacitors",
     description:
-      "Fans out all fifty-six 0.4 mm-pitch perimeter pins and eight surrounding 0603 capacitors on top copper; the enclosed thermal pad remains a copper obstacle.",
+      "Fans out all fifty-six 0.4 mm-pitch perimeter pins, the enclosed thermal pad, and eight surrounding 0603 capacitors on top copper. The thermal-pad trace uses a 45-degree package-corner channel between the two outer perimeter pads.",
     centralComponentId: "rp2040-qfn56",
     centralFootprinterString: RP2040_CLASS_QFN,
     centralBusGrouping: "individual",
     layerCount: 1,
     cardinalCapDistance: 5.7,
     diagonalCapDistance: 7.7,
-    leaveThermalPadUnconnected: true,
   },
 ]
 
@@ -196,39 +194,6 @@ function createSample(config: Dataset04SampleConfig): FanoutDatasetSample {
     targetMargin: 1,
     targetLaneExtraClearance: 0.05,
   })
-  if (config.leaveThermalPadUnconnected) {
-    const thermalPad = problem.simpleRouteJson.obstacles.find(
-      (obstacle) =>
-        obstacle.componentId === config.centralComponentId &&
-        Math.abs(obstacle.center.x) < 1e-9 &&
-        Math.abs(obstacle.center.y) < 1e-9 &&
-        Math.abs(obstacle.width - 3.2) < 1e-9 &&
-        Math.abs(obstacle.height - 3.2) < 1e-9,
-    )
-    const thermalConnectionName = thermalPad?.connectedTo.find(
-      (connectionName) => connectionName.startsWith("BUS_"),
-    )
-    if (!thermalPad || !thermalConnectionName) {
-      throw new Error(
-        `${config.id}: expected an exposed thermal pad connection`,
-      )
-    }
-    problem.simpleRouteJson.connections =
-      problem.simpleRouteJson.connections.filter(
-        (connection) => connection.name !== thermalConnectionName,
-      )
-    problem.simpleRouteJson.buses = problem.simpleRouteJson.buses
-      ?.map((bus) => ({
-        ...bus,
-        connectionNames: bus.connectionNames.filter(
-          (connectionName) => connectionName !== thermalConnectionName,
-        ),
-      }))
-      .filter((bus) => bus.connectionNames.length > 0)
-    thermalPad.connectedTo = thermalPad.connectedTo.filter(
-      (connectionName) => connectionName !== thermalConnectionName,
-    )
-  }
   problem.simpleRouteJson.buses = problem.simpleRouteJson.buses?.map((bus) => {
     const componentId = bus.busId.split(":")[0]!
     const preferredExit = preferredCornerByComponentId[componentId]
