@@ -188,32 +188,38 @@ standard 0.25/0.15 mm via constraints.
 
 ## Dataset 04
 
-`datasets/dataset04.ts` contains five package-plus-decoupling stress cases.
-Every sample places exactly eight `cap0603` footprints at the cardinal and
-diagonal positions around one central package, then breaks every connected pad
-out of one shared boundary.
+`datasets/dataset04.ts` contains five top-copper-only package-plus-decoupling
+stress cases. Every sample places exactly eight `cap0603` footprints at the
+cardinal and diagonal positions around one central package, then uses
+push-and-shove bends to move complete ordered bundles through one shared
+boundary. No Dataset 04 route contains a via or a non-top-layer wire.
 
-The BGA cases scale from 16 to 64 balls while the stackup scales from one to
-four layers. Every inner ball is connected and grid-line buses remain atomic.
-The final sample is an RP2040-class package using the exact footprinter string
+The BGA cases use the exact footprinter strings
+`bga16_grid4x4_p0.8mm_pad0.3mm_circularpads`,
+`bga25_grid5x5_p1.75mm_pad0.3mm_circularpads`,
+`bga36_grid6x6_p1.5mm_pad0.3mm_circularpads`, and
+`bga64_grid8x8_p1.5mm_pad0.3mm_circularpads`. Every inner ball is connected,
+grid-line buses remain atomic, and a sweep-line channel router pushes already
+allocated traces when a new pad row needs corridor capacity.
+
+The final sample uses the RP2040-class footprinter string
 `qfn56_w7_h7_p0.4mm_thermalpad3.2x3.2_startingpin(topside,rightpin)_ccw`.
-It routes all 56 perimeter pins, the exposed pad, and all 16 capacitor pads on
-two layers. The thermal-pad via is placed beyond the 3.2 mm pad edge with full
-copper clearance.
+It routes all 56 perimeter pins and all 16 capacitor pads. The exposed pad
+remains as a real copper obstacle but is intentionally unconnected: the
+0.4 mm-pitch perimeter ring has only 0.15 mm pad gaps, so a 0.10 mm trace with
+0.10 mm edge clearance cannot escape it on the same copper layer.
 
-The one-layer BGA16 regression also runs `AutoroutingPipelineSolver` from
-`tscircuit/tscircuit-autorouter` as an independent feasibility check. All five
-fanout results separately verify JLCPCB's 0.10 mm trace width and 0.10 mm copper
-clearance rules, standard 0.25/0.15 mm via constraints, shared-boundary exits,
-bus-atomic via use, and the absence of 90° corners.
+All five regressions independently verify JLCPCB's 0.10 mm trace width and
+0.10 mm copper-clearance rules, top-only routing, shared-boundary exits, inner
+BGA pad coverage, ordered push-and-shove bends, and the absence of 90° corners.
 
-| Sample      | Footprints | Pads | Buses | Vias | Layers |
-| ----------- | ---------: | ---: | ----: | ---: | -----: |
-| `sample001` |          9 |   32 |    24 |    0 |      1 |
-| `sample002` |          9 |   41 |    25 |   29 |      2 |
-| `sample003` |          9 |   52 |    28 |   40 |      3 |
-| `sample004` |          9 |   80 |    32 |   68 |      4 |
-| `sample005` |          9 |   73 |    73 |   21 |      2 |
+| Sample      | Footprints | Routed pads | Buses | Vias | Layers |
+| ----------- | ---------: | ----------: | ----: | ---: | -----: |
+| `sample001` |          9 |          32 |    24 |    0 |      1 |
+| `sample002` |          9 |          41 |    25 |    0 |      1 |
+| `sample003` |          9 |          52 |    28 |    0 |      1 |
+| `sample004` |          9 |          80 |    32 |    0 |      1 |
+| `sample005` |          9 |          72 |    72 |    0 |      1 |
 
 ## Development
 

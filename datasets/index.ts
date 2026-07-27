@@ -28,9 +28,9 @@ export const fanoutDatasets: FanoutDataset[] = [
   },
   {
     id: "dataset04",
-    name: "Larger packages + 8×caps",
+    name: "Single-layer push-and-shove + 8×caps",
     description:
-      "BGA16 through BGA64 and an RP2040-class QFN56 thermal-pad package, each surrounded at all eight compass positions by cap0603 footprints and routed through one shared boundary.",
+      "Larger BGAs and an RP2040-class QFN56 package, each surrounded at all eight compass positions by cap0603 footprints and escaped through one shared boundary using top-copper push-and-shove bends.",
     samples: fanoutDataset04,
   },
 ]

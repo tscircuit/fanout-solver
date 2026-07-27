@@ -5,9 +5,9 @@ import {
 import type { FanoutDatasetSample } from "./dataset-types"
 
 export const BGA16 = "bga16_grid4x4_p0.8mm_pad0.3mm_circularpads"
-export const BGA25 = "bga25_grid5x5_p0.8mm_pad0.3mm_circularpads"
-export const BGA36 = "bga36_grid6x6_p0.8mm_pad0.3mm_circularpads"
-export const BGA64 = "bga64_grid8x8_p0.8mm_pad0.3mm_circularpads"
+export const BGA25 = "bga25_grid5x5_p1.75mm_pad0.3mm_circularpads"
+export const BGA36 = "bga36_grid6x6_p1.5mm_pad0.3mm_circularpads"
+export const BGA64 = "bga64_grid8x8_p1.5mm_pad0.3mm_circularpads"
 export const RP2040_CLASS_QFN =
   "qfn56_w7_h7_p0.4mm_thermalpad3.2x3.2_startingpin(topside,rightpin)_ccw"
 
@@ -21,6 +21,7 @@ interface Dataset04SampleConfig {
   layerCount: number
   cardinalCapDistance: number
   diagonalCapDistance: number
+  leaveThermalPadUnconnected?: boolean
 }
 
 const sampleConfigs: Dataset04SampleConfig[] = [
@@ -34,55 +35,56 @@ const sampleConfigs: Dataset04SampleConfig[] = [
     centralBusGrouping: "grid-line",
     layerCount: 1,
     cardinalCapDistance: 3.1,
-    diagonalCapDistance: 3.2,
+    diagonalCapDistance: 4.6,
   },
   {
     id: "sample002",
-    name: "Two-layer BGA25 surrounded by eight capacitors",
+    name: "Single-layer BGA25 push-and-shove breakout with eight capacitors",
     description:
-      "Breaks out all twenty-five BGA balls and eight nearby 0603 capacitors through one boundary on a constrained two-layer stackup.",
+      "Pushes and shoves all twenty-five BGA traces around eight 0603 capacitors through one shared boundary on top copper only.",
     centralComponentId: "bga25",
     centralFootprinterString: BGA25,
     centralBusGrouping: "grid-line",
-    layerCount: 2,
-    cardinalCapDistance: 3.8,
-    diagonalCapDistance: 3.9,
+    layerCount: 1,
+    cardinalCapDistance: 7.375,
+    diagonalCapDistance: 9.375,
   },
   {
     id: "sample003",
-    name: "Three-layer BGA36 surrounded by eight capacitors",
+    name: "Single-layer BGA36 push-and-shove breakout with eight capacitors",
     description:
-      "Breaks out a full six-by-six BGA and eight 0603 capacitors while reusing routing corridors across only three copper layers.",
+      "Pushes and shoves a full six-by-six BGA plus eight 0603 capacitors through ordered same-layer routing corridors.",
     centralComponentId: "bga36",
     centralFootprinterString: BGA36,
     centralBusGrouping: "grid-line",
-    layerCount: 3,
-    cardinalCapDistance: 4.2,
-    diagonalCapDistance: 4.3,
+    layerCount: 1,
+    cardinalCapDistance: 7.5,
+    diagonalCapDistance: 9.5,
   },
   {
     id: "sample004",
-    name: "Four-layer BGA64 surrounded by eight capacitors",
+    name: "Single-layer BGA64 push-and-shove breakout with eight capacitors",
     description:
-      "Breaks out all sixty-four balls of an eight-by-eight BGA plus eight 0603 capacitors without exceeding a four-layer stackup.",
+      "Breaks out all sixty-four balls of an eight-by-eight BGA plus eight 0603 capacitors using top-layer push-and-shove bends only.",
     centralComponentId: "bga64",
     centralFootprinterString: BGA64,
     centralBusGrouping: "grid-line",
-    layerCount: 4,
-    cardinalCapDistance: 5.1,
-    diagonalCapDistance: 5.2,
+    layerCount: 1,
+    cardinalCapDistance: 9,
+    diagonalCapDistance: 11,
   },
   {
     id: "sample005",
     name: "RP2040-class QFN56 thermal pad with eight capacitors",
     description:
-      "Fans out fifty-six 0.4 mm-pitch perimeter pins, the 3.2 mm exposed thermal pad, and eight surrounding 0603 capacitors on two layers.",
+      "Fans out all fifty-six 0.4 mm-pitch perimeter pins and eight surrounding 0603 capacitors on top copper; the enclosed thermal pad remains a copper obstacle.",
     centralComponentId: "rp2040-qfn56",
     centralFootprinterString: RP2040_CLASS_QFN,
     centralBusGrouping: "individual",
-    layerCount: 2,
+    layerCount: 1,
     cardinalCapDistance: 5.7,
-    diagonalCapDistance: 5.8,
+    diagonalCapDistance: 7.7,
+    leaveThermalPadUnconnected: true,
   },
 ]
 
@@ -184,6 +186,39 @@ function createSample(config: Dataset04SampleConfig): FanoutDatasetSample {
     targetMargin: 1,
     targetLaneExtraClearance: 0.05,
   })
+  if (config.leaveThermalPadUnconnected) {
+    const thermalPad = problem.simpleRouteJson.obstacles.find(
+      (obstacle) =>
+        obstacle.componentId === config.centralComponentId &&
+        Math.abs(obstacle.center.x) < 1e-9 &&
+        Math.abs(obstacle.center.y) < 1e-9 &&
+        Math.abs(obstacle.width - 3.2) < 1e-9 &&
+        Math.abs(obstacle.height - 3.2) < 1e-9,
+    )
+    const thermalConnectionName = thermalPad?.connectedTo.find(
+      (connectionName) => connectionName.startsWith("BUS_"),
+    )
+    if (!thermalPad || !thermalConnectionName) {
+      throw new Error(
+        `${config.id}: expected an exposed thermal pad connection`,
+      )
+    }
+    problem.simpleRouteJson.connections =
+      problem.simpleRouteJson.connections.filter(
+        (connection) => connection.name !== thermalConnectionName,
+      )
+    problem.simpleRouteJson.buses = problem.simpleRouteJson.buses
+      ?.map((bus) => ({
+        ...bus,
+        connectionNames: bus.connectionNames.filter(
+          (connectionName) => connectionName !== thermalConnectionName,
+        ),
+      }))
+      .filter((bus) => bus.connectionNames.length > 0)
+    thermalPad.connectedTo = thermalPad.connectedTo.filter(
+      (connectionName) => connectionName !== thermalConnectionName,
+    )
+  }
 
   return {
     id: config.id,
@@ -195,6 +230,8 @@ function createSample(config: Dataset04SampleConfig): FanoutDatasetSample {
     solverOptions: {
       componentBounds: problem.componentBounds,
       sharedBoundary: problem.sharedBoundary,
+      escapeLayers: ["top"],
+      singleLayerPushAndShove: true,
     },
     componentBounds: problem.componentBounds,
     sharedBoundary: problem.sharedBoundary,

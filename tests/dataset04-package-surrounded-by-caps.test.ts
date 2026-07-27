@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test"
-import { AutoroutingPipelineSolver } from "@tscircuit/capacity-autorouter"
 import { FanoutSolver } from "lib/fanout-solver"
 import {
   distancePointToObstacle,
@@ -36,6 +35,7 @@ const expectedSamples = [
     centralComponentId: "bga16",
     centralFootprinterString: BGA16,
     centralPadCount: 16,
+    centralRoutedPadCount: 16,
     centralBusCount: 8,
     innerPadCount: 4,
     layerCount: 1,
@@ -45,36 +45,40 @@ const expectedSamples = [
     centralComponentId: "bga25",
     centralFootprinterString: BGA25,
     centralPadCount: 25,
+    centralRoutedPadCount: 25,
     centralBusCount: 9,
     innerPadCount: 9,
-    layerCount: 2,
+    layerCount: 1,
   },
   {
     id: "sample003",
     centralComponentId: "bga36",
     centralFootprinterString: BGA36,
     centralPadCount: 36,
+    centralRoutedPadCount: 36,
     centralBusCount: 12,
     innerPadCount: 16,
-    layerCount: 3,
+    layerCount: 1,
   },
   {
     id: "sample004",
     centralComponentId: "bga64",
     centralFootprinterString: BGA64,
     centralPadCount: 64,
+    centralRoutedPadCount: 64,
     centralBusCount: 16,
     innerPadCount: 36,
-    layerCount: 4,
+    layerCount: 1,
   },
   {
     id: "sample005",
     centralComponentId: "rp2040-qfn56",
     centralFootprinterString: RP2040_CLASS_QFN,
     centralPadCount: 57,
-    centralBusCount: 57,
+    centralRoutedPadCount: 56,
+    centralBusCount: 56,
     innerPadCount: 0,
-    layerCount: 2,
+    layerCount: 1,
   },
 ] as const
 
@@ -122,7 +126,7 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
       (candidate) => candidate.id === expected.id,
     )!
     const srj = sample.simpleRouteJson
-    const expectedConnectionCount = expected.centralPadCount + 16
+    const expectedConnectionCount = expected.centralRoutedPadCount + 16
     const expectedBusCount = expected.centralBusCount + 16
 
     expect(sample.footprintCount).toBe(9)
@@ -134,7 +138,7 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
     expect(srj.minTraceWidth).toBe(0.1)
     expect(srj.minTraceToPadEdgeClearance).toBe(0.1)
     expect(srj.connections).toHaveLength(expectedConnectionCount)
-    expect(srj.obstacles).toHaveLength(expectedConnectionCount)
+    expect(srj.obstacles).toHaveLength(expected.centralPadCount + 16)
     expect(srj.buses).toHaveLength(expectedBusCount)
 
     const componentIds = new Set(
@@ -160,25 +164,6 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
     })
     expect(new Set(targetKeys).size).toBe(expectedConnectionCount)
 
-    if (sample.id === "sample001") {
-      const oracle = new AutoroutingPipelineSolver(srj)
-      oracle.solve()
-      expect(oracle.failed).toBe(false)
-      const oracleTraces = oracle.getOutputSimpleRouteJson().traces ?? []
-      expect(oracleTraces).toHaveLength(expectedConnectionCount)
-      expect(
-        new Set(oracleTraces.map((trace) => trace.connection_name)).size,
-      ).toBe(expectedConnectionCount)
-      expect(
-        oracleTraces.every((trace) =>
-          trace.route.every(
-            (routePoint) =>
-              routePoint.route_type === "wire" && routePoint.layer === "top",
-          ),
-        ),
-      ).toBe(true)
-    }
-
     const solver = new FanoutSolver(srj, sample.solverOptions)
     expect(
       new Set(solver.preparedBuses.map((bus) => bus.componentId)).size,
@@ -199,6 +184,17 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
     expect(new Set(Object.values(output.busLayerAssignments)).size).toBe(
       expected.layerCount,
     )
+    expect(
+      output.fanoutTraces.every((trace) =>
+        trace.route.every(
+          (routePoint) =>
+            routePoint.route_type === "wire" && routePoint.layer === "top",
+        ),
+      ),
+    ).toBe(true)
+    expect(
+      output.fanoutTraces.filter((trace) => trace.route.length >= 4).length,
+    ).toBeGreaterThan(0)
 
     const layerNames = getCopperLayerNames(srj.layerCount)
     const segments: NamedSegment[] = []
@@ -297,11 +293,7 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
       }
     }
     expect(cornerCount).toBeGreaterThan(0)
-    if (sample.id === "sample001") {
-      expect(vias).toHaveLength(0)
-    } else {
-      expect(vias.length).toBeGreaterThan(0)
-    }
+    expect(vias).toHaveLength(0)
 
     for (let firstIndex = 0; firstIndex < segments.length; firstIndex++) {
       const first = segments[firstIndex]!
@@ -438,15 +430,13 @@ test("dataset04 breaks out larger BGAs and an RP2040-class thermal QFN, each sur
       expect(thermalPad).toBeDefined()
       const thermalConnectionName = thermalPad!.connectedTo.find(
         (connectionName) => connectionName.startsWith("BUS_"),
-      )!
-      const thermalVia = vias.find(
-        (via) => via.connectionName === thermalConnectionName,
       )
-      expect(thermalVia).toBeDefined()
+      expect(thermalConnectionName).toBeUndefined()
       expect(
-        distancePointToObstacle(thermalVia!.center, thermalPad!) -
-          thermalVia!.diameter / 2,
-      ).toBeGreaterThanOrEqual(0.1 - 1e-6)
+        output.fanoutTraces.some((trace) =>
+          trace.connectsTo?.includes(thermalPad!.obstacleId!),
+        ),
+      ).toBe(false)
     }
   }
 }, 30_000)

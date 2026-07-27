@@ -26,6 +26,7 @@ export interface FanoutSolverOptions {
   clearance?: number
   breakoutMargin?: number
   compactBusTracks?: boolean
+  singleLayerPushAndShove?: boolean
 }
 
 export interface FanoutAttemptSummary {

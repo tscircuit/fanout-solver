@@ -10,6 +10,7 @@ import { getCopperLayerColor } from "./layer-colors"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import { prepareFanoutBuses } from "./prepare-buses"
 import { routeBus } from "./route-bus"
+import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
 import type {
   AssignmentAttempt,
   FanoutAttemptSummary,
@@ -25,6 +26,7 @@ interface ResolvedFanoutConfig {
   clearance: number
   breakoutMargin: number
   compactBusTracks: boolean
+  singleLayerPushAndShove: boolean
   layerNames: string[]
   escapeLayers: string[]
   maxLayerCombinations: number
@@ -99,6 +101,7 @@ function resolveConfig(
     clearance,
     breakoutMargin,
     compactBusTracks: options.compactBusTracks ?? false,
+    singleLayerPushAndShove: options.singleLayerPushAndShove ?? false,
     layerNames,
     escapeLayers,
     maxLayerCombinations:
@@ -350,6 +353,20 @@ export class FanoutSolver extends BaseSolver {
     const plans: AssignmentAttempt["plans"] = []
     const failedBusIds: string[] = []
     const isSingleLayerFanout = this.config.escapeLayers.length === 1
+    if (isSingleLayerFanout && this.config.singleLayerPushAndShove) {
+      const pushShovePlans = routeSingleLayerWithPushAndShove({
+        srj: this.inputSrj,
+        buses: this.preparedBuses,
+        traceWidth: this.config.traceWidth,
+        clearance: this.config.clearance,
+        breakoutMargin: this.config.breakoutMargin,
+      })
+      if (pushShovePlans) {
+        plans.push(...pushShovePlans)
+      } else {
+        failedBusIds.push(...this.preparedBuses.map((bus) => bus.busId))
+      }
+    }
     const busesInRoutingOrder = [...this.preparedBuses].sort(
       (a, b) =>
         b.componentObstacles.length - a.componentObstacles.length ||
@@ -359,7 +376,9 @@ export class FanoutSolver extends BaseSolver {
             getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b)),
     )
 
-    for (const bus of busesInRoutingOrder) {
+    for (const bus of isSingleLayerFanout && this.config.singleLayerPushAndShove
+      ? []
+      : busesInRoutingOrder) {
       const targetLayer = busLayerAssignments[bus.busId]
       if (!targetLayer) {
         throw new Error(
