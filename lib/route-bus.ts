@@ -111,6 +111,22 @@ function getDepthInRows(bus: PreparedBus): number {
   )
 }
 
+function busIsOnOutwardComponentEdge(bus: PreparedBus): boolean {
+  const directionalCoordinates = isHorizontal(bus.direction)
+    ? bus.xCoordinates
+    : bus.yCoordinates
+  const averageDirectionalSource =
+    bus.connections.reduce(
+      (sum, connection) => sum + getAxis(connection.sourcePoint, bus.direction),
+      0,
+    ) / bus.connections.length
+  const outwardCoordinate =
+    directionSign(bus.direction) > 0
+      ? Math.max(...directionalCoordinates)
+      : Math.min(...directionalCoordinates)
+  return Math.abs(averageDirectionalSource - outwardCoordinate) < 1e-6
+}
+
 function getConnectionRank(
   bus: PreparedBus,
   connection: PreparedConnection,
@@ -457,12 +473,16 @@ function buildPlan(params: {
   const directionalPadSize = isHorizontal(bus.direction)
     ? preparedConnection.sourceObstacle.width
     : preparedConnection.sourceObstacle.height
-  const initialEscapeDistance = targetUsesVia
-    ? directionalPitch * 0.5
-    : Math.max(
-        directionalPitch * 0.5,
-        directionalPadSize / 2 + traceWidth / 2 + clearance + 1e-3,
-      )
+  const initialEscapeDistance =
+    targetUsesVia && !busIsOnOutwardComponentEdge(bus)
+      ? directionalPitch * 0.5
+      : Math.max(
+          directionalPitch * 0.5,
+          directionalPadSize / 2 +
+            (targetUsesVia ? viaDiameter : traceWidth) / 2 +
+            clearance +
+            1e-3,
+        )
   const viaAxis =
     getAxis(sourcePoint, bus.direction) + sign * initialEscapeDistance
   const sourcePerpendicularAxis = getPerpendicularAxis(
@@ -747,12 +767,14 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
     : sourceObstacle.height
   const sourceLayer = bus.connections[0]!.sourceLayer
   const targetUsesVia = targetLayer !== sourceLayer
+  const outwardEdgeBus = busIsOnOutwardComponentEdge(bus)
   const pairChannelFitsVia =
     getDirectionalPitch(bus) / 2 - directionalPadSize / 2 >=
     viaDiameter / 2 + clearance - 1e-9
-  const interstitialEscape = targetUsesVia && !pairChannelFitsVia
+  const interstitialEscape =
+    targetUsesVia && !outwardEdgeBus && !pairChannelFitsVia
   const viaHandednesses: readonly ViaHandedness[] = targetUsesVia
-    ? pairChannelFitsVia
+    ? pairChannelFitsVia || outwardEdgeBus
       ? [0]
       : [1, -1]
     : [0]

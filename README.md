@@ -3,7 +3,7 @@
 BGA fanout preprocessor for
 [`SimpleRouteJson`](https://github.com/tscircuit/tscircuit-autorouter).
 
-`FanoutSolver` routes every connected BGA pad to one shared breakout boundary
+`FanoutSolver` routes every connected package pad to one shared breakout boundary
 before the general-purpose autorouter runs. It can put a small escape via in a
 pad-to-pad channel or move an oversized via diagonally into the interstice
 between four pad corners. It routes every member of a bus in the same direction
@@ -13,8 +13,9 @@ and treats each bus-layer decision atomically.
 
 - Uses `SimpleRouteJson.buses` when present. It also understands a point
   `busId` and names such as `BUS_DDR_01`.
-- Detects rectangular BGA pad grids through obstacle `componentId` metadata.
-- Handles multiple BGA footprints inside one shared breakout boundary.
+- Detects rectangular pad footprints through obstacle `componentId` metadata,
+  including perimeter packages and two-pad passives.
+- Handles multiple mixed footprints inside one shared breakout boundary.
 - Routes perimeter and inner-matrix pads; the benchmark connects every pad.
 - Uses `sharedBoundary` as the common exit rectangle. Without one, it infers a
   shared rectangle around all detected component bounds and pad grids.
@@ -163,6 +164,28 @@ Every bus exits the shared component boundary and uses only straight or 45°
 segments. Top, inner1, inner2, and bottom traces use distinct red, blue, green,
 and purple colors in Cosmos and the verification PNG.
 
+## Dataset 03
+
+`datasets/dataset03.ts` contains four two-layer mixed-footprint samples. Every
+sample uses the exact footprinter strings `qfn50_p0.4mm`, `res0603`, and
+`cap0603`, for 54 routed pads across three footprints and one shared boundary.
+The QFN rotates through 0°, 90°, 180°, and 270° while the two 0603 packages
+alternate between tangential and radial placement.
+
+The close tangential samples deliberately block two opposite top-layer QFN
+escape corridors. The solver moves each obstructed QFN side as one atomic bus
+to bottom while keeping the surrounding 0603 terminals independently routable.
+The radial samples offset the passives toward package corners to create
+asymmetric channels without relaxing JLCPCB's 0.10 mm copper clearance or
+standard 0.25/0.15 mm via constraints.
+
+| Sample      | Footprints | Pads | Buses | Layers |
+| ----------- | ---------: | ---: | ----: | -----: |
+| `sample001` |          3 |   54 |     8 |      2 |
+| `sample002` |          3 |   54 |     8 |      2 |
+| `sample003` |          3 |   54 |     8 |      2 |
+| `sample004` |          3 |   54 |     8 |      2 |
+
 ## Development
 
 ```sh
@@ -174,7 +197,7 @@ bun run render:dataset
 bun run start
 ```
 
-The benchmark runs every sample in both datasets and reports footprint, pad,
+The benchmark runs every sample in all datasets and reports footprint, pad,
 connection, routing, and layer-assignment metrics. `bun run start` opens the
 datasets in the standard tscircuit solver debugger. `bun run
 render:dataset` writes `graphics-debug` PNGs under one subdirectory per dataset,

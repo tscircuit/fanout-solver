@@ -47,6 +47,31 @@ function getPitch(coordinates: number[]): number {
   return pitch
 }
 
+function getAlignedPitch(obstacles: Obstacle[], axis: "x" | "y"): number {
+  const perpendicularAxis = axis === "x" ? "y" : "x"
+  let pitch = Number.POSITIVE_INFINITY
+  for (let firstIndex = 0; firstIndex < obstacles.length; firstIndex++) {
+    const first = obstacles[firstIndex]!
+    for (
+      let secondIndex = firstIndex + 1;
+      secondIndex < obstacles.length;
+      secondIndex++
+    ) {
+      const second = obstacles[secondIndex]!
+      if (
+        Math.abs(
+          first.center[perpendicularAxis] - second.center[perpendicularAxis],
+        ) > 1e-6
+      ) {
+        continue
+      }
+      const separation = Math.abs(first.center[axis] - second.center[axis])
+      if (separation > 1e-6) pitch = Math.min(pitch, separation)
+    }
+  }
+  return pitch
+}
+
 function getComponentBounds(obstacles: Obstacle[]): Bounds {
   return {
     minX: Math.min(
@@ -184,17 +209,43 @@ function findComponentGrids(obstacles: Obstacle[]): ComponentGrid[] {
 
   const grids: ComponentGrid[] = []
   for (const [componentId, componentObstacles] of obstaclesByComponent) {
-    if (componentObstacles.length < 4) continue
     const xCoordinates = uniqueSorted(
       componentObstacles.map((obstacle) => obstacle.center.x),
     )
     const yCoordinates = uniqueSorted(
       componentObstacles.map((obstacle) => obstacle.center.y),
     )
-    if (xCoordinates.length < 2 || yCoordinates.length < 2) continue
-    const pitchX = getPitch(xCoordinates)
-    const pitchY = getPitch(yCoordinates)
-    if (!Number.isFinite(pitchX) || !Number.isFinite(pitchY)) continue
+    const alignedPitchX = getAlignedPitch(componentObstacles, "x")
+    const alignedPitchY = getAlignedPitch(componentObstacles, "y")
+    const coordinatePitchX = getPitch(xCoordinates)
+    const coordinatePitchY = getPitch(yCoordinates)
+    const fallbackPitch = Math.min(
+      ...[
+        alignedPitchX,
+        alignedPitchY,
+        coordinatePitchX,
+        coordinatePitchY,
+      ].filter(Number.isFinite),
+    )
+    const padSizeFallback = Math.max(
+      ...componentObstacles.flatMap((obstacle) => [
+        obstacle.width,
+        obstacle.height,
+      ]),
+    )
+    const resolvedFallback = Number.isFinite(fallbackPitch)
+      ? fallbackPitch
+      : padSizeFallback
+    const pitchX = Number.isFinite(alignedPitchX)
+      ? alignedPitchX
+      : Number.isFinite(coordinatePitchX)
+        ? coordinatePitchX
+        : resolvedFallback
+    const pitchY = Number.isFinite(alignedPitchY)
+      ? alignedPitchY
+      : Number.isFinite(coordinatePitchY)
+        ? coordinatePitchY
+        : resolvedFallback
     grids.push({
       componentId,
       obstacles: componentObstacles,
@@ -357,7 +408,7 @@ function chooseSourceGrid(params: {
     : 0
   if (!selectedGrid || selectedMatchCount !== connections.length) {
     throw new Error(
-      `FanoutSolver: bus "${busSpec.busId}" does not have one BGA component endpoint on every connection`,
+      `FanoutSolver: bus "${busSpec.busId}" does not have one component endpoint on every connection`,
     )
   }
   return selectedGrid
@@ -420,7 +471,7 @@ function prepareConnection(params: {
     }
   }
   throw new Error(
-    `FanoutSolver: connection "${connection.name}" does not touch BGA component "${sourceGrid.componentId}"`,
+    `FanoutSolver: connection "${connection.name}" does not touch component "${sourceGrid.componentId}"`,
   )
 }
 
@@ -450,7 +501,7 @@ export function prepareFanoutBuses(
   const componentGrids = findComponentGrids(srj.obstacles)
   if (componentGrids.length === 0 && srj.connections.length > 0) {
     throw new Error(
-      "FanoutSolver: no componentId-tagged rectangular BGA pad grid was found",
+      "FanoutSolver: no componentId-tagged pad footprint was found",
     )
   }
   const connectionIndexByName = new Map(
