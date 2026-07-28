@@ -10,6 +10,7 @@ import { getCopperLayerColor } from "./layer-colors"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import { prepareFanoutBuses } from "./prepare-buses"
 import { routeBus } from "./route-bus"
+import { routeSingleLayerWithAdaptiveExits } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
 import type {
   AssignmentAttempt,
@@ -27,6 +28,7 @@ interface ResolvedFanoutConfig {
   clearance: number
   compactBusTracks: boolean
   singleLayerPushAndShove: boolean
+  singleLayerAdaptiveExits: boolean
   borderDistribution: FanoutBorderDistribution
   layerNames: string[]
   escapeLayers: string[]
@@ -104,6 +106,7 @@ function resolveConfig(
     clearance,
     compactBusTracks: options.compactBusTracks ?? false,
     singleLayerPushAndShove: options.singleLayerPushAndShove ?? false,
+    singleLayerAdaptiveExits: options.singleLayerAdaptiveExits ?? false,
     borderDistribution,
     layerNames,
     escapeLayers,
@@ -392,15 +395,20 @@ export class FanoutSolver extends BaseSolver {
     const failedBusIds: string[] = []
     const isSingleLayerFanout = this.config.escapeLayers.length === 1
     if (isSingleLayerFanout && this.config.singleLayerPushAndShove) {
-      const pushShovePlans = routeSingleLayerWithPushAndShove({
+      const singleLayerParams = {
         srj: this.inputSrj,
         buses: this.preparedBuses,
         traceWidth: this.config.traceWidth,
         clearance: this.config.clearance,
         borderDistribution: this.config.borderDistribution,
-      })
-      if (pushShovePlans) {
-        plans.push(...pushShovePlans)
+      }
+      const singleLayerPlans =
+        routeSingleLayerWithPushAndShove(singleLayerParams) ??
+        (this.config.singleLayerAdaptiveExits
+          ? routeSingleLayerWithAdaptiveExits(singleLayerParams)
+          : null)
+      if (singleLayerPlans) {
+        plans.push(...singleLayerPlans)
       } else {
         failedBusIds.push(...this.preparedBuses.map((bus) => bus.busId))
       }
