@@ -2,10 +2,11 @@ import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
 import { fanoutDataset06 } from "../datasets/dataset06"
 
-test("dataset06 routes the clad1 RP2040 fanout on one layer", () => {
+test("dataset06 routes the spaced 0603 clad1 RP2040 fanout on one layer", () => {
   const sample = fanoutDataset06[0]!
 
   expect(sample.simpleRouteJson.layerCount).toBe(1)
+  expect(sample.simpleRouteJson.minTraceWidth).toBe(0.1)
   expect(sample.simpleRouteJson.connections).toHaveLength(132)
   expect(sample.simpleRouteJson.obstacles).toHaveLength(265)
   expect(sample.simpleRouteJson.buses).toHaveLength(132)
@@ -17,6 +18,34 @@ test("dataset06 routes the clad1 RP2040 fanout on one layer", () => {
     borderDistribution: "preserve",
     maxLayerCombinations: 1,
   })
+  expect(
+    sample.simpleRouteJson.obstacles
+      .filter((obstacle) => obstacle.componentId === "fanout:pcb_component_12")
+      .map((obstacle) => ({
+        center: obstacle.center,
+        width: obstacle.width,
+        height: obstacle.height,
+      })),
+  ).toEqual([
+    {
+      center: { x: 15, y: 9.175 },
+      width: 0.95,
+      height: 0.8,
+    },
+    {
+      center: { x: 15, y: 10.825 },
+      width: 0.95,
+      height: 0.8,
+    },
+  ])
+  const typeCObstacles = sample.simpleRouteJson.obstacles.filter(
+    (obstacle) => obstacle.componentId === "fanout:pcb_component_13",
+  )
+  expect(typeCObstacles).toHaveLength(18)
+  expect(typeCObstacles[0]!.center.x).toBeCloseTo(-38.875)
+  expect(Math.min(...typeCObstacles.map(({ center }) => center.x))).toBeCloseTo(
+    -43.625,
+  )
   const originalDirectionByConnectionName = new Map(
     sample.solverOptions.buses!.map((bus) => [
       bus.connectionNames[0]!,
