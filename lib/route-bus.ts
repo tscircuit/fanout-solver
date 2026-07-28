@@ -646,6 +646,7 @@ function segmentIsClearOfObstacles(params: {
   const { segment, plan, segmentIndex, obstacles, clearance } = params
   for (const obstacle of obstacles) {
     if (!obstacle.layers.includes(segment.layer)) continue
+    if (obstacle.connectedTo.includes(plan.connectionName)) continue
     if (
       segmentIndex === 0 &&
       obstacle === plan.sourceObstacle &&
