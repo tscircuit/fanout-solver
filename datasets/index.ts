@@ -4,6 +4,7 @@ import { fanoutDataset02 } from "./dataset02"
 import { fanoutDataset03 } from "./dataset03"
 import { fanoutDataset04 } from "./dataset04"
 import { fanoutDataset05 } from "./dataset05"
+import { fanoutDataset06 } from "./dataset06"
 
 export const fanoutDatasets: FanoutDataset[] = [
   {
@@ -40,6 +41,13 @@ export const fanoutDatasets: FanoutDataset[] = [
     description:
       "An exact 1,088-ball RK3588 FCBGA map with local ground and power plane terminations plus a four-routing-layer shared-boundary signal breakout.",
     samples: fanoutDataset05,
+  },
+  {
+    id: "dataset06",
+    name: "clad1 RP2040 reproduction",
+    description:
+      "The exact 132-connection, single-layer mixed-footprint shared-boundary fanout from the clad1 RP2040 board.",
+    samples: fanoutDataset06,
   },
 ]
 
