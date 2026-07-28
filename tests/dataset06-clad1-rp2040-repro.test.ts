@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
 import { fanoutDataset06 } from "../datasets/dataset06"
 
-test("dataset06 records the remaining clad1 RP2040 fanout gap", () => {
+test("dataset06 routes the clad1 RP2040 fanout on one layer", () => {
   const sample = fanoutDataset06[0]!
 
   expect(sample.simpleRouteJson.layerCount).toBe(1)
@@ -11,22 +11,98 @@ test("dataset06 records the remaining clad1 RP2040 fanout gap", () => {
   expect(sample.simpleRouteJson.buses).toHaveLength(132)
   expect(sample.solverOptions).toMatchObject({
     escapeLayers: ["top"],
-    singleLayerPushAndShove: false,
+    singleLayerPushAndShove: true,
+    singleLayerAdaptiveExits: true,
     compactBusTracks: true,
-    borderDistribution: "even",
+    borderDistribution: "preserve",
     maxLayerCombinations: 1,
   })
+  const originalDirectionByConnectionName = new Map(
+    sample.solverOptions.buses!.map((bus) => [
+      bus.connectionNames[0]!,
+      bus.direction,
+    ]),
+  )
 
   const solver = new FanoutSolver(sample.simpleRouteJson, sample.solverOptions)
   solver.solve()
 
-  expect(solver.failed).toBe(true)
-  expect(solver.error).toBe(
-    "FanoutSolver: best layer assignment routed 37/132 connections",
-  )
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
   expect(solver.attempts).toHaveLength(1)
   expect(solver.attempts[0]).toMatchObject({
-    routedConnectionCount: 37,
-    routedBusCount: 37,
+    routedConnectionCount: 132,
+    routedBusCount: 132,
   })
+  const output = solver.getOutput()
+  expect(output.fanoutTraces).toHaveLength(132)
+  expect(
+    output.fanoutTraces.every((trace) =>
+      trace.route.every(
+        (routePoint) =>
+          routePoint.route_type === "wire" && routePoint.layer === "top",
+      ),
+    ),
+  ).toBe(true)
+  expect(
+    output.fanoutTraces.every((trace) =>
+      trace.route.slice(1).every((routePoint, index) => {
+        const previous = trace.route[index]!
+        if (
+          routePoint.route_type !== "wire" ||
+          previous.route_type !== "wire"
+        ) {
+          return false
+        }
+        const deltaX = Math.abs(routePoint.x - previous.x)
+        const deltaY = Math.abs(routePoint.y - previous.y)
+        return (
+          deltaX < 1e-6 || deltaY < 1e-6 || Math.abs(deltaX - deltaY) < 1e-6
+        )
+      }),
+    ),
+  ).toBe(true)
+  const traceByConnectionName = new Map(
+    output.fanoutTraces.map((trace) => [trace.connection_name, trace]),
+  )
+  for (const bus of solver.preparedBuses) {
+    const trace = traceByConnectionName.get(
+      bus.connections[0]!.connection.name,
+    )!
+    const exit = trace.route.at(-1)!
+    expect(exit.route_type).toBe("wire")
+    if (exit.route_type !== "wire") continue
+    switch (bus.direction) {
+      case "left":
+        expect(exit.x).toBeCloseTo(sample.sharedBoundary.minX)
+        break
+      case "right":
+        expect(exit.x).toBeCloseTo(sample.sharedBoundary.maxX)
+        break
+      case "up":
+        expect(exit.y).toBeCloseTo(sample.sharedBoundary.maxY)
+        break
+      case "down":
+        expect(exit.y).toBeCloseTo(sample.sharedBoundary.minY)
+        break
+    }
+  }
+  expect(
+    solver.preparedBuses.filter(
+      (bus) =>
+        originalDirectionByConnectionName.get(
+          bus.connections[0]!.connection.name,
+        ) !== bus.direction,
+    ).length,
+  ).toBeGreaterThan(0)
+  const centerPadTrace = traceByConnectionName.get("source_net_0::fanout:12")!
+  expect(centerPadTrace.connectsTo).toContain("connectivity_net376")
+  expect(
+    centerPadTrace.route.some(
+      (routePoint) =>
+        routePoint.route_type === "wire" &&
+        Math.abs(routePoint.x - 2.92505) < 1e-5 &&
+        Math.abs(routePoint.y + 1.00025) < 1e-5,
+    ),
+  ).toBe(true)
 }, 60_000)

@@ -20,7 +20,7 @@ export const fanoutDataset06: FanoutDatasetSample[] = [
     id: "sample001",
     name: "clad1 RP2040 shared-boundary reproduction",
     description:
-      "Exact serialized single-layer fanout input from the clad1 RP2040 assembly. Same-connection copper awareness raises the partial route from 35 to 37 of 132 connections; completing the fixture still requires non-monotone escapes and electrically connected multi-terminal merging.",
+      "Serialized single-layer fanout input from the clad1 RP2040 assembly. The adaptive exit pass reserves short pad escapes, keys copper by canonical connectivity nets, and merges the enclosed thermal pad into its local ground route.",
     footprintCount: componentIds.size,
     footprinterStrings: ["clad1 RP2040 assembly (serialized SRJ)"],
     simpleRouteJson: fixture.simpleRouteJson,

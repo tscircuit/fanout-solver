@@ -64,6 +64,12 @@ export interface FanoutSolverOptions {
   clearance?: number
   compactBusTracks?: boolean
   singleLayerPushAndShove?: boolean
+  /**
+   * When preferred single-layer exits cannot coexist, allow a global
+   * same-net-aware pass to choose alternate shared-boundary sides. This
+   * fallback currently applies to singleton buses only.
+   */
+  singleLayerAdaptiveExits?: boolean
   borderDistribution?: FanoutBorderDistribution
 }
 

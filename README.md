@@ -300,19 +300,28 @@ and clearance values as the JLCPCB regressions.
 
 ## Dataset 06
 
-`datasets/dataset06.ts` preserves the exact 132-connection, 265-obstacle,
-single-layer mixed-footprint input from the clad1 RP2040 board. The checked-in
-snapshot is intentionally labeled with its routed count:
+`datasets/dataset06.ts` preserves the 132-connection, 265-obstacle,
+single-layer mixed-footprint input from the clad1 RP2040 board:
 
 ![clad1 RP2040 fanout reproduction](docs/images/dataset06/sample001.png)
 
-Same-connection copper awareness improves the deterministic result from 35 to
-37 routed connections. The remaining repro is not presented as solved: it
-contains escapes that must first move away from their requested boundary before
-turning around the RP2040 pad field and large exposed pad. Completing it
-requires a non-monotone single-layer search. Treating repeated terminals of one
-electrical net as a mergeable multi-terminal tree would also remove artificial
-same-net congestion.
+The original reproduction failed for three independent reasons:
+
+- several serialized `source_trace_*` names belong to the same canonical
+  `connectivity_net…`, so treating those names as foreign nets creates false
+  clearance conflicts;
+- the RP2040 exposed pad is enclosed and must merge into a same-net perimeter
+  pad before following that pad's escape;
+- all 132 outward-facing exit preferences cannot coexist without crossings on
+  one layer.
+
+Dataset 06 enables `singleLayerAdaptiveExits`. After the preferred
+push-and-shove attempt fails, this pass reserves short pad-escape stubs, routes
+the remaining physical terminals together, locally merges the few
+multi-terminal pads that do not need independent channels, and chooses
+alternate sides of the same shared boundary. The result routes all 132
+connections on top copper with the configured 0.1 mm trace width and 0.1 mm
+clearance.
 
 ## Development
 

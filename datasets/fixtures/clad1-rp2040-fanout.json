@@ -18543,9 +18543,10 @@
     "clearance": 0.1,
     "viaDiameter": 0.3,
     "viaHoleDiameter": 0.2,
-    "singleLayerPushAndShove": false,
+    "singleLayerPushAndShove": true,
+    "singleLayerAdaptiveExits": true,
     "compactBusTracks": true,
-    "borderDistribution": "even",
+    "borderDistribution": "preserve",
     "maxLayerCombinations": 1
   }
 }
