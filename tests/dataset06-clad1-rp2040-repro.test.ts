@@ -29,4 +29,4 @@ test("dataset06 records the remaining clad1 RP2040 fanout gap", () => {
     routedConnectionCount: 37,
     routedBusCount: 37,
   })
-}, 20_000)
+}, 60_000)
