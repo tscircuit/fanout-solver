@@ -31,6 +31,7 @@ function createVerificationOverlay(
   srj: SimpleRouteJson,
   componentBounds: ComponentBounds[],
   sharedBoundary: Bounds,
+  statusLabel?: string,
 ): GraphicsObject {
   return {
     rects: [
@@ -55,6 +56,21 @@ function createVerificationOverlay(
         fill: "#ef444408",
         stroke: "#dc2626",
       },
+      ...(statusLabel
+        ? [
+            {
+              center: {
+                x: (sharedBoundary.minX + sharedBoundary.maxX) / 2,
+                y: sharedBoundary.maxY + 0.65,
+              },
+              width: 20,
+              height: 0.8,
+              fill: "#ffffff",
+              stroke: "#dc2626",
+              label: statusLabel,
+            },
+          ]
+        : []),
     ],
     points: srj.connections.flatMap((connection) =>
       connection.pointsToConnect.flatMap((point) =>
@@ -96,9 +112,12 @@ function formatFootprinterStrings(strings: string[]): string {
 }
 
 const outputDirectory = process.argv[2] ?? "verification-pngs"
+const requestedDatasetId = process.argv[3]
 await mkdir(outputDirectory, { recursive: true })
 
-for (const dataset of fanoutDatasets) {
+for (const dataset of fanoutDatasets.filter(
+  (candidate) => !requestedDatasetId || candidate.id === requestedDatasetId,
+)) {
   const datasetDirectory = `${outputDirectory}/${dataset.id}`
   await mkdir(datasetDirectory, { recursive: true })
 
@@ -108,23 +127,26 @@ for (const dataset of fanoutDatasets) {
       sample.solverOptions,
     )
     solver.solve()
-    if (solver.failed) {
-      throw new Error(
-        `${dataset.id}/${sample.id} failed: ${solver.error ?? "unknown solver error"}`,
-      )
-    }
 
-    const output = solver.getOutput()
+    const visualizedSrj = solver.solved
+      ? solver.getOutput().simpleRouteJson
+      : sample.simpleRouteJson
     const componentBounds = getComponentBounds(sample.componentBounds)
+    const routeStatus = solver.failed
+      ? ` · incomplete: ${solver.attempts[0]?.routedConnectionCount ?? 0}/${sample.simpleRouteJson.connections.length}`
+      : ""
     const graphics = mergeGraphics(
       {
         ...solver.visualize(),
-        title: `${dataset.id}/${sample.id}: ${sample.name} · ${formatFootprinterStrings(sample.footprinterStrings)}`,
+        title: `${dataset.id}/${sample.id}: ${sample.name} · ${formatFootprinterStrings(sample.footprinterStrings)}${routeStatus}`,
       },
       createVerificationOverlay(
-        output.simpleRouteJson,
+        visualizedSrj,
         componentBounds,
         sample.sharedBoundary,
+        solver.failed
+          ? `INCOMPLETE ${solver.attempts[0]?.routedConnectionCount ?? 0}/${sample.simpleRouteJson.connections.length}`
+          : undefined,
       ),
     )
     const png = await getPngBufferFromGraphicsObject(graphics, {
@@ -135,7 +157,7 @@ for (const dataset of fanoutDatasets) {
       pngWidth: 1400,
       viewbox: getVerificationViewbox(
         sample.sharedBoundary,
-        output.simpleRouteJson.bounds,
+        visualizedSrj.bounds,
       ),
     })
     const outputPath = `${datasetDirectory}/${sample.id}.png`
