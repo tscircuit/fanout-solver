@@ -57,6 +57,8 @@ and treats each bus-layer decision atomically.
 - Chamfers orthogonal routing corners into 45° segments before validating and
   emitting the fanout.
 - Verifies pad, via, trace, and already-routed fanout clearance.
+- Treats an obstacle whose `connectedTo` list contains the connection name as
+  electrically connected copper rather than a foreign keepout.
 - Emits supplied fanout traces, via obstacles, and moved breakout endpoints in a
   new `SimpleRouteJson`. The returned problem is ready for a downstream
   autorouter to finish.
@@ -296,6 +298,22 @@ and clearance values as the JLCPCB regressions.
 | ----------- | ------------ | ----: | -----------------: | ---------------: | -----: |
 | `sample001` | FCBGA1088L   |  1088 |                589 |              499 |      6 |
 
+## Dataset 06
+
+`datasets/dataset06.ts` preserves the exact 132-connection, 265-obstacle,
+single-layer mixed-footprint input from the clad1 RP2040 board. The checked-in
+snapshot is intentionally labeled with its routed count:
+
+![clad1 RP2040 fanout reproduction](docs/images/dataset06/sample001.png)
+
+Same-connection copper awareness improves the deterministic result from 35 to
+37 routed connections. The remaining repro is not presented as solved: it
+contains escapes that must first move away from their requested boundary before
+turning around the RP2040 pad field and large exposed pad. Completing it
+requires a non-monotone single-layer search. Treating repeated terminals of one
+electrical net as a mergeable multi-terminal tree would also remove artificial
+same-net congestion.
+
 ## Development
 
 ```sh
@@ -312,7 +330,10 @@ connection, routing, and layer-assignment metrics. `bun run start` opens the
 datasets in the standard tscircuit solver debugger. `bun run
 render:dataset` writes `graphics-debug` PNGs under one subdirectory per dataset,
 with a red shared boundary, gray component courtyards, and green fanout-exit
-markers.
+markers. Pass an output directory and dataset id to render one dataset, for
+example `bun scripts/render-dataset-pngs.ts docs/images dataset06`. Failed
+regressions render their best partial attempt with a visible `INCOMPLETE`
+label.
 
 ## Scope
 
