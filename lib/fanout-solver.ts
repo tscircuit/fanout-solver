@@ -8,7 +8,10 @@ import { buildOutputSimpleRouteJson } from "./build-output"
 import { distanceSegmentToObstacle } from "./geometry"
 import { getCopperLayerColor } from "./layer-colors"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
-import { prepareFanoutBuses } from "./prepare-buses"
+import {
+  prepareFanoutBuses,
+  resolveAvailableBoundaryRegions,
+} from "./prepare-buses"
 import { routeBus } from "./route-bus"
 import { routeSingleLayerWithAdaptiveExits } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
@@ -404,9 +407,13 @@ export class FanoutSolver extends BaseSolver {
       }
       const singleLayerPlans =
         routeSingleLayerWithPushAndShove(singleLayerParams) ??
-        (this.config.singleLayerAdaptiveExits &&
-        this.options.availableCornersAndSides === undefined
-          ? routeSingleLayerWithAdaptiveExits(singleLayerParams)
+        (this.config.singleLayerAdaptiveExits
+          ? routeSingleLayerWithAdaptiveExits({
+              ...singleLayerParams,
+              availableBoundaryRegions: resolveAvailableBoundaryRegions(
+                this.options.availableCornersAndSides,
+              ),
+            })
           : null)
       if (singleLayerPlans) {
         plans.push(...singleLayerPlans)

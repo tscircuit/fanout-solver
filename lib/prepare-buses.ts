@@ -17,7 +17,7 @@ import type {
   PreparedConnection,
 } from "./types"
 
-interface AvailableBoundaryRegion {
+export interface AvailableBoundaryRegion {
   direction: FanoutDirection
   preferredExit: FanoutBorderTarget
 }
@@ -407,7 +407,7 @@ function resolvePreferredExit(
   return value
 }
 
-function resolveAvailableBoundaryRegions(
+export function resolveAvailableBoundaryRegions(
   value: readonly FanoutAvailableCornerAndSideInput[] | undefined,
 ): AvailableBoundaryRegion[] | undefined {
   if (value === undefined) return undefined
@@ -768,7 +768,7 @@ function getDistanceToBoundary(
   }
 }
 
-function getRegionAnchor(
+export function getRegionAnchor(
   region: AvailableBoundaryRegion,
   boundary: Bounds,
 ): number {

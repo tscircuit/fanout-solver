@@ -9,6 +9,7 @@ import {
   distanceSegmentToObstacle,
   distanceSegmentToSegment,
 } from "./geometry"
+import { type AvailableBoundaryRegion, getRegionAnchor } from "./prepare-buses"
 import type {
   FanoutDirection,
   FanoutRoutePlan,
@@ -23,6 +24,7 @@ interface FlowRoutingParams {
   buses: PreparedBus[]
   traceWidth: number
   clearance: number
+  availableBoundaryRegions?: AvailableBoundaryRegion[]
 }
 
 interface FlowItem {
@@ -449,6 +451,7 @@ function createFlowGrid(params: {
 
 function routeDirectionGroup(params: {
   direction: FanoutDirection | "any"
+  availableDirections?: ReadonlySet<FanoutDirection>
   items: FlowItem[]
   grid: FlowGrid
   obstacles: Obstacle[]
@@ -460,6 +463,7 @@ function routeDirectionGroup(params: {
 }): DirectionGroupResult | null {
   const {
     direction,
+    availableDirections,
     items,
     grid,
     obstacles,
@@ -695,10 +699,14 @@ function routeDirectionGroup(params: {
     }
     const isTarget =
       (direction === "any" &&
-        (column === 0 ||
-          column === columnCount - 1 ||
-          row === 0 ||
-          row === rowCount - 1)) ||
+        (((!availableDirections || availableDirections.has("left")) &&
+          column === 0) ||
+          ((!availableDirections || availableDirections.has("right")) &&
+            column === columnCount - 1) ||
+          ((!availableDirections || availableDirections.has("down")) &&
+            row === 0) ||
+          ((!availableDirections || availableDirections.has("up")) &&
+            row === rowCount - 1))) ||
       (direction === "left" && column === 0) ||
       (direction === "right" && column === columnCount - 1) ||
       (direction === "down" && row === 0) ||
@@ -965,8 +973,19 @@ function routeWithAdaptiveExits(params: {
   obstacles: Obstacle[]
   traceWidth: number
   clearance: number
+  availableBoundaryRegions?: AvailableBoundaryRegion[]
 }): FanoutRoutePlan[] | null {
-  const { items, grid, obstacles, traceWidth, clearance } = params
+  const {
+    items,
+    grid,
+    obstacles,
+    traceWidth,
+    clearance,
+    availableBoundaryRegions,
+  } = params
+  const availableDirections = availableBoundaryRegions
+    ? new Set(availableBoundaryRegions.map((region) => region.direction))
+    : undefined
   const mergeItems = new Set(
     items.filter(
       (item) =>
@@ -985,6 +1004,7 @@ function routeWithAdaptiveExits(params: {
     ) {
       const result = routeDirectionGroup({
         direction: "any",
+        availableDirections,
         items: directlyRoutedItems,
         grid,
         obstacles,
@@ -1115,14 +1135,31 @@ function routeWithAdaptiveExits(params: {
       plan.exitPoint,
       grid.boundary,
     )
-    if (!direction) return null
+    if (
+      !direction ||
+      (availableDirections && !availableDirections.has(direction))
+    ) {
+      return null
+    }
     const item = items.find(
       (candidate) =>
         candidate.connection.connection.name === plan.connectionName,
     )!
     item.bus.direction = direction
+    const compatibleRegions = availableBoundaryRegions?.filter(
+      (region) => region.direction === direction,
+    )
+    const exitCoordinate =
+      direction === "up" || direction === "down"
+        ? plan.exitPoint.x
+        : plan.exitPoint.y
     item.bus.preferredExit =
-      direction === "up" ? "top" : direction === "down" ? "bottom" : direction
+      compatibleRegions?.toSorted(
+        (first, second) =>
+          Math.abs(exitCoordinate - getRegionAnchor(first, grid.boundary)) -
+          Math.abs(exitCoordinate - getRegionAnchor(second, grid.boundary)),
+      )[0]?.preferredExit ??
+      (direction === "up" ? "top" : direction === "down" ? "bottom" : direction)
     plan.direction = direction
   }
   const planByConnectionName = new Map(
@@ -1136,7 +1173,7 @@ function routeWithAdaptiveExits(params: {
 export function routeSingleLayerWithAdaptiveExits(
   params: FlowRoutingParams,
 ): FanoutRoutePlan[] | null {
-  const { srj, buses, traceWidth, clearance } = params
+  const { srj, buses, traceWidth, clearance, availableBoundaryRegions } = params
   if (buses.some((bus) => bus.connections.length !== 1)) return null
   const items = buses.flatMap((bus) =>
     bus.connections.map(
@@ -1173,6 +1210,7 @@ export function routeSingleLayerWithAdaptiveExits(
     obstacles: topObstacles,
     traceWidth,
     clearance,
+    availableBoundaryRegions,
   })
   if (adaptivePlans) return adaptivePlans
   return null
