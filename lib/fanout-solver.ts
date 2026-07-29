@@ -404,7 +404,8 @@ export class FanoutSolver extends BaseSolver {
       }
       const singleLayerPlans =
         routeSingleLayerWithPushAndShove(singleLayerParams) ??
-        (this.config.singleLayerAdaptiveExits
+        (this.config.singleLayerAdaptiveExits &&
+        this.options.availableCornersAndSides === undefined
           ? routeSingleLayerWithAdaptiveExits(singleLayerParams)
           : null)
       if (singleLayerPlans) {

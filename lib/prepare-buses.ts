@@ -7,6 +7,7 @@ import type {
 import { distance, pointIsInsideObstacle } from "./geometry"
 import type {
   Bounds,
+  FanoutAvailableCornerAndSideInput,
   FanoutBorderTarget,
   FanoutBusSpec,
   FanoutBusTermination,
@@ -15,6 +16,11 @@ import type {
   PreparedBus,
   PreparedConnection,
 } from "./types"
+
+interface AvailableBoundaryRegion {
+  direction: FanoutDirection
+  preferredExit: FanoutBorderTarget
+}
 
 const FANOUT_BORDER_TARGETS = new Set<FanoutBorderTarget>([
   "left",
@@ -26,6 +32,75 @@ const FANOUT_BORDER_TARGETS = new Set<FanoutBorderTarget>([
   "bottom-left",
   "bottom-right",
 ])
+
+const AVAILABLE_BOUNDARY_REGIONS: Readonly<
+  Record<FanoutAvailableCornerAndSideInput, AvailableBoundaryRegion>
+> = {
+  top_left: {
+    direction: "up",
+    preferredExit: "top-left",
+  },
+  top_middle: {
+    direction: "up",
+    preferredExit: "top",
+  },
+  top_right: {
+    direction: "up",
+    preferredExit: "top-right",
+  },
+  right_top: {
+    direction: "right",
+    preferredExit: "top-right",
+  },
+  right_middle: {
+    direction: "right",
+    preferredExit: "right",
+  },
+  right_bottom: {
+    direction: "right",
+    preferredExit: "bottom-right",
+  },
+  bottom_right: {
+    direction: "down",
+    preferredExit: "bottom-right",
+  },
+  bottom_middle: {
+    direction: "down",
+    preferredExit: "bottom",
+  },
+  bottom_left: {
+    direction: "down",
+    preferredExit: "bottom-left",
+  },
+  left_bottom: {
+    direction: "left",
+    preferredExit: "bottom-left",
+  },
+  left_middle: {
+    direction: "left",
+    preferredExit: "left",
+  },
+  left_top: {
+    direction: "left",
+    preferredExit: "top-left",
+  },
+  top: {
+    direction: "up",
+    preferredExit: "top",
+  },
+  right: {
+    direction: "right",
+    preferredExit: "right",
+  },
+  bottom: {
+    direction: "down",
+    preferredExit: "bottom",
+  },
+  left: {
+    direction: "left",
+    preferredExit: "left",
+  },
+}
 
 interface ComponentGrid {
   componentId: string
@@ -330,6 +405,33 @@ function resolvePreferredExit(
     )
   }
   return value
+}
+
+function resolveAvailableBoundaryRegions(
+  value: readonly FanoutAvailableCornerAndSideInput[] | undefined,
+): AvailableBoundaryRegion[] | undefined {
+  if (value === undefined) return undefined
+  if (value.length === 0) {
+    throw new Error(
+      "FanoutSolver: availableCornersAndSides must contain at least one boundary region",
+    )
+  }
+
+  const regions: AvailableBoundaryRegion[] = []
+  const seen = new Set<string>()
+  for (const input of value) {
+    const region = AVAILABLE_BOUNDARY_REGIONS[input]
+    if (!region) {
+      throw new Error(
+        `FanoutSolver: invalid availableCornersAndSides value "${input}"`,
+      )
+    }
+    const key = `${region.direction}:${region.preferredExit}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    regions.push(region)
+  }
+  return regions
 }
 
 function resolveTermination(
@@ -666,22 +768,129 @@ function getDistanceToBoundary(
   }
 }
 
-function resolveBusDirection(params: {
+function getRegionAnchor(
+  region: AvailableBoundaryRegion,
+  boundary: Bounds,
+): number {
+  if (region.direction === "up" || region.direction === "down") {
+    if (region.preferredExit.endsWith("left")) return boundary.minX
+    if (region.preferredExit.endsWith("right")) return boundary.maxX
+    return (boundary.minX + boundary.maxX) / 2
+  }
+  if (region.preferredExit.startsWith("top")) return boundary.maxY
+  if (region.preferredExit.startsWith("bottom")) return boundary.minY
+  return (boundary.minY + boundary.maxY) / 2
+}
+
+function getRegionSourceCoordinate(
+  source: { x: number; y: number },
+  direction: FanoutDirection,
+): number {
+  return direction === "up" || direction === "down" ? source.x : source.y
+}
+
+function tryInferDirection(
+  busId: string,
+  connections: PreparedConnection[],
+): FanoutDirection | undefined {
+  try {
+    return inferDirection(busId, connections)
+  } catch {
+    return undefined
+  }
+}
+
+function resolveAvailableBusExit(params: {
   busId: string
   explicitDirection?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   connections: PreparedConnection[]
   sharedBoundary: Bounds
-}): FanoutDirection {
+  availableRegions: AvailableBoundaryRegion[]
+}): { direction: FanoutDirection; preferredExit: FanoutBorderTarget } {
   const {
     busId,
     explicitDirection,
     preferredExit,
     connections,
     sharedBoundary,
+    availableRegions,
   } = params
+  const compatibleRegions = availableRegions.filter(
+    (region) =>
+      (explicitDirection === undefined ||
+        region.direction === explicitDirection) &&
+      (preferredExit === undefined || region.preferredExit === preferredExit),
+  )
+  if (compatibleRegions.length === 0) {
+    throw new Error(
+      `FanoutSolver: bus "${busId}" cannot use its requested exit with availableCornersAndSides`,
+    )
+  }
+
+  const inferredDirection = explicitDirection
+    ? undefined
+    : tryInferDirection(busId, connections)
+  const preferredDirectionRegions = inferredDirection
+    ? compatibleRegions.filter(
+        (region) => region.direction === inferredDirection,
+      )
+    : []
+  const candidates =
+    preferredDirectionRegions.length > 0
+      ? preferredDirectionRegions
+      : compatibleRegions
+  const averageSource = getAverageSourcePoint(connections)
+  return [...candidates].toSorted(
+    (first, second) =>
+      getDistanceToBoundary(averageSource, first.direction, sharedBoundary) -
+        getDistanceToBoundary(
+          averageSource,
+          second.direction,
+          sharedBoundary,
+        ) ||
+      Math.abs(
+        getRegionSourceCoordinate(averageSource, first.direction) -
+          getRegionAnchor(first, sharedBoundary),
+      ) -
+        Math.abs(
+          getRegionSourceCoordinate(averageSource, second.direction) -
+            getRegionAnchor(second, sharedBoundary),
+        ) ||
+      first.preferredExit.localeCompare(second.preferredExit),
+  )[0]!
+}
+
+function resolveBusDirection(params: {
+  busId: string
+  explicitDirection?: FanoutDirection
+  preferredExit?: FanoutBorderTarget
+  connections: PreparedConnection[]
+  sharedBoundary: Bounds
+  availableRegions?: AvailableBoundaryRegion[]
+}): { direction: FanoutDirection; preferredExit?: FanoutBorderTarget } {
+  const {
+    busId,
+    explicitDirection,
+    preferredExit,
+    connections,
+    sharedBoundary,
+    availableRegions,
+  } = params
+  if (availableRegions) {
+    return resolveAvailableBusExit({
+      busId,
+      explicitDirection,
+      preferredExit,
+      connections,
+      sharedBoundary,
+      availableRegions,
+    })
+  }
   if (!preferredExit) {
-    return explicitDirection ?? inferDirection(busId, connections)
+    return {
+      direction: explicitDirection ?? inferDirection(busId, connections),
+    }
   }
 
   const compatibleDirections = getDirectionsForBorderTarget(preferredExit)
@@ -691,9 +900,11 @@ function resolveBusDirection(params: {
         `FanoutSolver: bus "${busId}" direction "${explicitDirection}" is incompatible with preferredExit "${preferredExit}"`,
       )
     }
-    return explicitDirection
+    return { direction: explicitDirection, preferredExit }
   }
-  if (compatibleDirections.length === 1) return compatibleDirections[0]!
+  if (compatibleDirections.length === 1) {
+    return { direction: compatibleDirections[0]!, preferredExit }
+  }
 
   let inferredDirection: FanoutDirection | undefined
   try {
@@ -702,15 +913,18 @@ function resolveBusDirection(params: {
     inferredDirection = undefined
   }
   if (inferredDirection && compatibleDirections.includes(inferredDirection)) {
-    return inferredDirection
+    return { direction: inferredDirection, preferredExit }
   }
   const averageSource = getAverageSourcePoint(connections)
-  return compatibleDirections.toSorted(
-    (first, second) =>
-      getDistanceToBoundary(averageSource, first, sharedBoundary) -
-        getDistanceToBoundary(averageSource, second, sharedBoundary) ||
-      first.localeCompare(second),
-  )[0]!
+  return {
+    direction: compatibleDirections.toSorted(
+      (first, second) =>
+        getDistanceToBoundary(averageSource, first, sharedBoundary) -
+          getDistanceToBoundary(averageSource, second, sharedBoundary) ||
+        first.localeCompare(second),
+    )[0]!,
+    preferredExit,
+  }
 }
 
 export function prepareFanoutBuses(
@@ -761,6 +975,9 @@ export function prepareFanoutBuses(
     ).values(),
   ]
   const sharedBoundary = resolveSharedBoundary(sourceGrids, options)
+  const availableRegions = resolveAvailableBoundaryRegions(
+    options.availableCornersAndSides,
+  )
   const buses: PreparedBus[] = []
 
   for (const {
@@ -768,17 +985,20 @@ export function prepareFanoutBuses(
     sourceGrid,
     preparedConnections,
   } of resolvedBusInputs) {
+    const resolvedExit = resolveBusDirection({
+      busId: busSpec.busId,
+      explicitDirection:
+        busSpec.direction ?? options.busDirections?.[busSpec.busId],
+      preferredExit: busSpec.preferredExit,
+      connections: preparedConnections,
+      sharedBoundary,
+      availableRegions:
+        busSpec.termination?.type === "plane" ? undefined : availableRegions,
+    })
     buses.push({
       busId: busSpec.busId,
-      direction: resolveBusDirection({
-        busId: busSpec.busId,
-        explicitDirection:
-          busSpec.direction ?? options.busDirections?.[busSpec.busId],
-        preferredExit: busSpec.preferredExit,
-        connections: preparedConnections,
-        sharedBoundary,
-      }),
-      preferredExit: busSpec.preferredExit,
+      direction: resolvedExit.direction,
+      preferredExit: resolvedExit.preferredExit,
       termination: busSpec.termination ?? { type: "boundary" },
       connections: preparedConnections,
       componentId: sourceGrid.componentId,

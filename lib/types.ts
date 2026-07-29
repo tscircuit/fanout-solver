@@ -19,6 +19,32 @@ export type FanoutCorner =
 
 export type FanoutBorderTarget = FanoutEdge | FanoutCorner
 
+/**
+ * A directed region of the shared fanout boundary. Corner regions are named
+ * after the edge they belong to, so `top_left` exits through the top edge and
+ * `left_top` exits through the left edge.
+ */
+export type FanoutAvailableCornerAndSide =
+  | "top_left"
+  | "top_middle"
+  | "top_right"
+  | "right_top"
+  | "right_middle"
+  | "right_bottom"
+  | "bottom_right"
+  | "bottom_middle"
+  | "bottom_left"
+  | "left_bottom"
+  | "left_middle"
+  | "left_top"
+
+/** Convenient aliases for the middle region of each boundary edge. */
+export type FanoutAvailableCornerAndSideAlias = FanoutEdge
+
+export type FanoutAvailableCornerAndSideInput =
+  | FanoutAvailableCornerAndSide
+  | FanoutAvailableCornerAndSideAlias
+
 export type FanoutBorderDistribution = "preserve" | "even"
 
 export type FanoutBusTermination =
@@ -52,6 +78,15 @@ export interface FanoutSolverOptions {
   defaultDirection?: FanoutDirection
   /** Default boundary target for every bus in this fanout operation. */
   defaultPreferredExit?: FanoutBorderTarget
+  /**
+   * Restricts boundary-terminated buses to these directed boundary regions.
+   *
+   * For example, `["top_left", "top", "top_right"]` permits exits only
+   * through the top edge. `top`, `right`, `bottom`, and `left` are aliases for
+   * their respective `*_middle` regions. Omit this option to leave every edge
+   * available.
+   */
+  availableCornersAndSides?: readonly FanoutAvailableCornerAndSideInput[]
   busDirections?: Readonly<Record<string, FanoutDirection>>
   busExitPreferences?: Readonly<Record<string, FanoutBorderTarget>>
   componentBounds?: Readonly<Record<string, Bounds>>
