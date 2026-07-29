@@ -29,6 +29,11 @@ and treats each bus-layer decision atomically.
   (`left`, `right`, `top`, or `bottom`) or corner (`top-left`, `top-right`,
   `bottom-left`, or `bottom-right`). A corner chooses a compatible adjacent
   edge and reserves the bus at that end of the border.
+- `availableCornersAndSides` can restrict every boundary-terminated bus to
+  named regions of the shared boundary. For example,
+  `['top_left', 'top_middle', 'top_right']` allows only top-edge exits;
+  `top` is an alias for `top_middle` (with matching aliases for the other
+  edges).
 - `borderDistribution: "even"` uses outward-only shoves to equalize
   under-filled gaps across the occupied border interval while preserving bus
   order, existing wider corridors, and trace/clearance pitch. The default
@@ -94,6 +99,7 @@ const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   busExitPreferences: {
     clocks: "top-right",
   },
+  availableCornersAndSides: ["top_left", "top", "top_right"],
   borderDistribution: "even",
   compactBusTracks: true,
   buses: [
@@ -137,6 +143,15 @@ receive the same escape direction and target layer. If one connection cannot be
 routed cleanly, the solver rejects that bus for the current layer assignment and
 tries another combination. `busExitPreferences` provides the same override
 without modifying the input object.
+
+`availableCornersAndSides` is a solver-wide hard constraint. Its directed
+corner names distinguish the two edges meeting at a corner: `top_left` exits
+through the top edge, while `left_top` exits through the left edge. The complete
+set is `top_left`, `top_middle`, `top_right`, `right_top`, `right_middle`,
+`right_bottom`, `bottom_right`, `bottom_middle`, `bottom_left`, `left_bottom`,
+`left_middle`, and `left_top`. `top`, `right`, `bottom`, and `left` alias the
+corresponding middle region. An empty list is invalid; omit the option to allow
+all edges.
 
 `termination` is another additive extension:
 
