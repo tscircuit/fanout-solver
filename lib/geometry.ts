@@ -6,13 +6,7 @@ const EPSILON = 1e-9
 type ShapeAwareObstacle = Obstacle & { shape?: "circle" }
 
 function obstacleIsCircular(obstacle: Obstacle): boolean {
-  if ((obstacle as ShapeAwareObstacle).shape === "circle") return true
-  return (
-    obstacle.componentId === undefined &&
-    obstacle.layers.length > 1 &&
-    Math.abs(obstacle.width - obstacle.height) < EPSILON &&
-    obstacle.connectedTo.some((id) => id.startsWith("pcb_via_"))
-  )
+  return (obstacle as ShapeAwareObstacle).shape === "circle"
 }
 
 export function distance(a: Point2D, b: Point2D): number {
