@@ -43,6 +43,7 @@
     "@types/bun": "1.3.14",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "bun-match-svg": "^0.0.15",
     "circuit-json": "0.0.455",
     "react": "19.2.8",
     "react-cosmos": "7.3.0",

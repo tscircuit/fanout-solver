@@ -23,17 +23,18 @@ const buttonStyle: React.CSSProperties = {
 
 const variants = [
   { grownBy: 0, label: "As resolved by core", routed: "13/23" },
-  { grownBy: 0.3, label: "+0.3mm", routed: "0/23" },
-  { grownBy: 0.6, label: "+0.6mm", routed: "0/23" },
-  { grownBy: 1.2, label: "+1.2mm", routed: "0/23" },
-  { grownBy: 3, label: "+3mm", routed: "0/23" },
+  { grownBy: 0.3, label: "+0.3mm", routed: "17/23" },
+  { grownBy: 0.6, label: "+0.6mm", routed: "18/23" },
+  { grownBy: 1.2, label: "+1.2mm", routed: "19/23" },
+  { grownBy: 3, label: "+3mm", routed: "19/23" },
 ]
 
 /**
- * Repro 01 — a wider shared boundary routes fewer connections.
+ * Repro 01 — shared boundary size vs routed connections.
  *
- * Same RP2350A breakout problem in every tab. The only thing that changes is
- * how much room the escapes are given, and more room does strictly worse.
+ * Same RP2350A breakout problem in every tab; only the room given to the
+ * escapes changes. Kept as a visual regression guard for the containment bug
+ * that made more room route strictly fewer connections.
  */
 export default function Repro01WiderBoundaryRoutesFewerPage() {
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -60,7 +61,7 @@ export default function Repro01WiderBoundaryRoutesFewerPage() {
         }}
       >
         <div>
-          <strong>Repro 01 · A wider boundary routes fewer connections</strong>
+          <strong>Repro 01 · Shared boundary size vs routed connections</strong>
           <div style={{ color: "#475569", fontSize: 13, marginTop: 4 }}>
             RP2350A QFN60 plus its decoupling ring ·{" "}
             {simpleRouteJson.connections.length} connections ·{" "}
@@ -69,8 +70,8 @@ export default function Repro01WiderBoundaryRoutesFewerPage() {
           </div>
           <div style={{ color: "#b91c1c", fontSize: 13, marginTop: 6 }}>
             Every tab is the same problem with only the shared boundary changed.
-            Widening it should never route fewer connections, but it drops from
-            13/23 to 0/23 and stays there.
+            Widening it used to drop the result from 13/23 to 0/23; it now
+            improves with room, as it should. Reaching 23/23 is still open.
           </div>
         </div>
 

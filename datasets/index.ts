@@ -52,9 +52,9 @@ export const fanoutDatasets: FanoutDataset[] = [
   },
   {
     id: "dataset07",
-    name: "Wider boundary routes fewer connections",
+    name: "Breakout boundary size sweep",
     description:
-      "An RP2350A breakout with its decoupling ring, solved at three shared-boundary sizes. More room routes strictly fewer connections.",
+      "An RP2350A breakout with its decoupling ring, solved at three shared-boundary sizes. Regression guard for exits being rejected outside srj.bounds.",
     samples: fanoutDataset07,
   },
 ]
