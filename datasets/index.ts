@@ -5,6 +5,7 @@ import { fanoutDataset03 } from "./dataset03"
 import { fanoutDataset04 } from "./dataset04"
 import { fanoutDataset05 } from "./dataset05"
 import { fanoutDataset06 } from "./dataset06"
+import { fanoutDataset07 } from "./dataset07"
 
 export const fanoutDatasets: FanoutDataset[] = [
   {
@@ -48,6 +49,13 @@ export const fanoutDatasets: FanoutDataset[] = [
     description:
       "The exact 132-connection, single-layer mixed-footprint shared-boundary fanout from the clad1 RP2040 board.",
     samples: fanoutDataset06,
+  },
+  {
+    id: "dataset07",
+    name: "Wider boundary routes fewer connections",
+    description:
+      "An RP2350A breakout with its decoupling ring, solved at three shared-boundary sizes. More room routes strictly fewer connections.",
+    samples: fanoutDataset07,
   },
 ]
 
