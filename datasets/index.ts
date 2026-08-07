@@ -54,7 +54,7 @@ export const fanoutDatasets: FanoutDataset[] = [
     id: "dataset07",
     name: "RP2350A QFN60 breakout reproduction",
     description:
-      "The 27-connection, four-layer shared-boundary fanout captured from a dual-RP2350 handheld. Currently routes none of its escapes.",
+      "The 27-connection, four-layer shared-boundary fanout captured from a dual-RP2350 handheld. The breakout region is no larger than the footprint itself.",
     samples: fanoutDataset07,
   },
 ]

@@ -11,14 +11,15 @@ import type { FanoutDatasetSample } from "./dataset-types"
  * Only 27 of its 61 pads are connected -- the rest are power, ground or unused
  * -- and every one of those 27 has to cross the breakout boundary.
  *
- * The solver currently routes none of them. Narrowing done so far:
+ * This capture originally routed 0/27 and pinned two solver bugs:
  *
- * - dropping the 134 obstacles that belong to neighbouring parts (decouplers,
- *   flash, crystal) and keeping only the package's own 61 pads does not help
- * - supplying componentBounds plus a sharedBoundary at 0.6mm, 1.0mm or 2.0mm
- *   does not help, so it is not the missing boundary alone
- * - the synthetic RP2040-class QFN56 in dataset04 sample005 fans out all 64
- *   connections, so 0.4mm pitch by itself is not the blocker
+ * - `srj.bounds` is exactly the pad extent (core allots the breakout region no
+ *   larger than the footprint), but the inferred shared boundary added a
+ *   pitch-derived margin, so every exit point fell outside `srj.bounds` and
+ *   every plan was rejected
+ * - fourteen of the captured breakout targets are a placeholder at the package
+ *   centre `(0, 0)`, so displacement-based direction inference sent those
+ *   buses across the package instead of out of their own edge
  *
  * Note that core supplies neither `sharedBoundary` nor `componentBounds` here;
  * its options are only `{ borderDistribution, compactBusTracks }`.
@@ -54,17 +55,14 @@ export const fanoutDataset07: FanoutDatasetSample[] = [
     id: "sample001",
     name: "RP2350A QFN60 breakout reproduction",
     description:
-      "Serialized four-layer fanout input from a dual-RP2350 handheld. Twenty-seven of the QFN60's sixty-one pads cross the breakout boundary and none of them are currently routed.",
+      "Serialized four-layer fanout input from a dual-RP2350 handheld. Twenty-seven of the QFN60's sixty-one pads cross a breakout boundary that is no larger than the footprint itself.",
     footprintCount: componentIds.size,
     footprinterStrings: ["RP2350A QFN60 breakout (serialized SRJ)"],
     simpleRouteJson: fixture.simpleRouteJson,
     solverOptions: fixture.solverOptions,
     componentBounds: {},
-    sharedBoundary: {
-      minX: RP2350A_PACKAGE_BOUNDS.minX - 0.6,
-      maxX: RP2350A_PACKAGE_BOUNDS.maxX + 0.6,
-      minY: RP2350A_PACKAGE_BOUNDS.minY - 0.6,
-      maxY: RP2350A_PACKAGE_BOUNDS.maxY + 0.6,
-    },
+    // The routable area is the breakout region itself, so the boundary the
+    // solver infers (and exits on) is srj.bounds.
+    sharedBoundary: { ...fixture.simpleRouteJson.bounds },
   },
 ]

@@ -252,6 +252,7 @@ function validateSharedBoundary(
 }
 
 function resolveSharedBoundary(
+  srj: SimpleRouteJson,
   componentGrids: ComponentGrid[],
   options: FanoutSolverOptions,
 ): Bounds {
@@ -266,20 +267,32 @@ function resolveSharedBoundary(
     ...componentGrids.flatMap((grid) => [grid.pitchX, grid.pitchY]),
   )
   const inferredMargin = maximumPitch * 2.25
+  // The routable area can be tighter than the pitch-derived margin — core's
+  // breakout regions may allot no more than the footprint itself — and exits
+  // outside srj.bounds can never route, so the inferred boundary must not
+  // extend past it.
   return validateSharedBoundary(
     {
-      minX:
+      minX: Math.max(
         Math.min(...componentBounds.map((bounds) => bounds.minX)) -
-        inferredMargin,
-      maxX:
+          inferredMargin,
+        srj.bounds.minX,
+      ),
+      maxX: Math.min(
         Math.max(...componentBounds.map((bounds) => bounds.maxX)) +
-        inferredMargin,
-      minY:
+          inferredMargin,
+        srj.bounds.maxX,
+      ),
+      minY: Math.max(
         Math.min(...componentBounds.map((bounds) => bounds.minY)) -
-        inferredMargin,
-      maxY:
+          inferredMargin,
+        srj.bounds.minY,
+      ),
+      maxY: Math.min(
         Math.max(...componentBounds.map((bounds) => bounds.maxY)) +
-        inferredMargin,
+          inferredMargin,
+        srj.bounds.maxY,
+      ),
     },
     componentGrids,
   )
@@ -691,15 +704,69 @@ function prepareConnection(params: {
   )
 }
 
+function getEdgeDistances(
+  point: { x: number; y: number },
+  boundary: Bounds,
+): Array<{ direction: FanoutDirection; distance: number }> {
+  return [
+    { direction: "left", distance: point.x - boundary.minX },
+    { direction: "right", distance: boundary.maxX - point.x },
+    { direction: "down", distance: point.y - boundary.minY },
+    { direction: "up", distance: boundary.maxY - point.y },
+  ]
+}
+
 function inferDirection(
   busId: string,
   connections: PreparedConnection[],
+  sharedBoundary: Bounds,
 ): FanoutDirection {
   let dx = 0
   let dy = 0
   for (const preparedConnection of connections) {
     dx += preparedConnection.targetPoint.x - preparedConnection.sourcePoint.x
     dy += preparedConnection.targetPoint.y - preparedConnection.sourcePoint.y
+  }
+  const averageTarget = {
+    x:
+      connections.reduce(
+        (sum, connection) => sum + connection.targetPoint.x,
+        0,
+      ) / connections.length,
+    y:
+      connections.reduce(
+        (sum, connection) => sum + connection.targetPoint.y,
+        0,
+      ) / connections.length,
+  }
+  const targetIsOutsideBoundary =
+    averageTarget.x < sharedBoundary.minX - 1e-6 ||
+    averageTarget.x > sharedBoundary.maxX + 1e-6 ||
+    averageTarget.y < sharedBoundary.minY - 1e-6 ||
+    averageTarget.y > sharedBoundary.maxY + 1e-6
+  if (!targetIsOutsideBoundary) {
+    // A breakout-style target sits on (or inside) the shared boundary, so the
+    // source-to-target displacement does not encode an escape: exit through
+    // the edge the target sits on, and when the target is too central to
+    // discriminate (e.g. a placeholder at the package center), escape through
+    // the edge nearest the source pads instead of crossing the package.
+    const targetEdges = getEdgeDistances(averageTarget, sharedBoundary)
+    const nearestTargetDistance = Math.min(
+      ...targetEdges.map((edge) => edge.distance),
+    )
+    const candidates = new Set(
+      targetEdges
+        .filter((edge) => edge.distance <= nearestTargetDistance + 1e-3)
+        .map((edge) => edge.direction),
+    )
+    const averageSource = getAverageSourcePoint(connections)
+    return getEdgeDistances(averageSource, sharedBoundary)
+      .filter((edge) => candidates.has(edge.direction))
+      .toSorted(
+        (first, second) =>
+          first.distance - second.distance ||
+          first.direction.localeCompare(second.direction),
+      )[0]!.direction
   }
   if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) {
     throw new Error(
@@ -792,9 +859,10 @@ function getRegionSourceCoordinate(
 function tryInferDirection(
   busId: string,
   connections: PreparedConnection[],
+  sharedBoundary: Bounds,
 ): FanoutDirection | undefined {
   try {
-    return inferDirection(busId, connections)
+    return inferDirection(busId, connections, sharedBoundary)
   } catch {
     return undefined
   }
@@ -830,7 +898,7 @@ function resolveAvailableBusExit(params: {
 
   const inferredDirection = explicitDirection
     ? undefined
-    : tryInferDirection(busId, connections)
+    : tryInferDirection(busId, connections, sharedBoundary)
   const preferredDirectionRegions = inferredDirection
     ? compatibleRegions.filter(
         (region) => region.direction === inferredDirection,
@@ -889,7 +957,8 @@ function resolveBusDirection(params: {
   }
   if (!preferredExit) {
     return {
-      direction: explicitDirection ?? inferDirection(busId, connections),
+      direction:
+        explicitDirection ?? inferDirection(busId, connections, sharedBoundary),
     }
   }
 
@@ -908,7 +977,7 @@ function resolveBusDirection(params: {
 
   let inferredDirection: FanoutDirection | undefined
   try {
-    inferredDirection = inferDirection(busId, connections)
+    inferredDirection = inferDirection(busId, connections, sharedBoundary)
   } catch {
     inferredDirection = undefined
   }
@@ -974,7 +1043,7 @@ export function prepareFanoutBuses(
       ]),
     ).values(),
   ]
-  const sharedBoundary = resolveSharedBoundary(sourceGrids, options)
+  const sharedBoundary = resolveSharedBoundary(srj, sourceGrids, options)
   const availableRegions = resolveAvailableBoundaryRegions(
     options.availableCornersAndSides,
   )

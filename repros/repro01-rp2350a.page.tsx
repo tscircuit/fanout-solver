@@ -80,9 +80,9 @@ const variants: ReproVariant[] = [
  * Repro 01 — RP2350A QFN60 breakout.
  *
  * Serialized fanout input from @tscircuit/core's <breakout> around an RP2350A
- * on a four-layer handheld. 27 of the QFN60's 61 pads cross the boundary and
- * the solver routes none of them. Each tab is one of the variations that were
- * tried while narrowing it down.
+ * on a four-layer handheld. 27 of the QFN60's 61 pads cross a breakout
+ * boundary that is no larger than the footprint. Originally routed 0/27; each
+ * tab is one of the variations that were tried while narrowing it down.
  */
 export default function Repro01Rp2350aPage() {
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0)
@@ -115,10 +115,9 @@ export default function Repro01Rp2350aPage() {
             {simpleRouteJson.layerCount} layers · QFN60, 0.4mm pitch, 7x7mm
             body, 3.4mm thermal pad
           </div>
-          <div style={{ color: "#b91c1c", fontSize: 13, marginTop: 6 }}>
-            Expected: all {simpleRouteJson.connections.length} escapes route.
-            Actual: FanoutSolver: best layer assignment routed 0/
-            {simpleRouteJson.connections.length} connections.
+          <div style={{ color: "#475569", fontSize: 13, marginTop: 6 }}>
+            Expected: all {simpleRouteJson.connections.length} escapes route
+            inside the footprint-sized breakout region.
           </div>
         </div>
 

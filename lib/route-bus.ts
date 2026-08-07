@@ -488,8 +488,18 @@ function buildPlan(params: {
               clearance +
               1e-3,
           )
-  const viaAxis =
-    getAxis(sourcePoint, bus.direction) + sign * initialEscapeDistance
+  // A boundary-terminated escape must stay inside the shared boundary: when
+  // the boundary sits right at the pad ring (a footprint-sized breakout
+  // region), the escape stub would otherwise overshoot the exit edge.
+  const clampAxisToExit = (axis: number): number =>
+    terminateAtVia
+      ? axis
+      : sign > 0
+        ? Math.min(axis, exitAxis)
+        : Math.max(axis, exitAxis)
+  const viaAxis = clampAxisToExit(
+    getAxis(sourcePoint, bus.direction) + sign * initialEscapeDistance,
+  )
   const sourcePerpendicularAxis = getPerpendicularAxis(
     sourcePoint,
     bus.direction,
@@ -508,7 +518,7 @@ function buildPlan(params: {
     directionalPitch >= spreadLaneDistance + viaDiameter / 2 + clearance
   const spreadPoint = useNestedSpread
     ? makePoint(
-        viaAxis + sign * spreadLaneDistance,
+        clampAxisToExit(viaAxis + sign * spreadLaneDistance),
         viaPerpendicularAxis,
         bus.direction,
       )
