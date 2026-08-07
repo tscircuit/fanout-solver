@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { getSvgFromGraphicsObject } from "graphics-debug"
 import { FanoutSolver } from "lib/fanout-solver"
 import {
   growBounds,
@@ -16,26 +17,26 @@ const connectionCount = simpleRouteJson.connections.length
  * Memoized because each solve takes a few seconds and the assertions below
  * share sizes.
  */
-const routedCache = new Map<number, number>()
-const routedConnectionCountWithBoundaryGrownBy = (by: number): number => {
-  const cached = routedCache.get(by)
-  if (cached !== undefined) return cached
+const solverCache = new Map<number, FanoutSolver>()
+const solveWithBoundaryGrownBy = (by: number): FanoutSolver => {
+  const cached = solverCache.get(by)
+  if (cached) return cached
 
   const solver = new FanoutSolver(simpleRouteJson, {
     ...solverOptions,
     sharedBoundary: growBounds(RP2350A_BREAKOUT_BOUNDARY, by),
   })
   solver.solve()
-  let routed: number
-  if (!solver.failed) {
-    routed = connectionCount
-  } else {
-    const match = solver.error?.match(/routed (\d+)\/(\d+) connections/)
-    if (!match) throw new Error(`unexpected solver error: ${solver.error}`)
-    routed = Number(match[1])
-  }
-  routedCache.set(by, routed)
-  return routed
+  solverCache.set(by, solver)
+  return solver
+}
+
+const routedConnectionCountWithBoundaryGrownBy = (by: number): number => {
+  const solver = solveWithBoundaryGrownBy(by)
+  if (!solver.failed) return connectionCount
+  const match = solver.error?.match(/routed (\d+)\/(\d+) connections/)
+  if (!match) throw new Error(`unexpected solver error: ${solver.error}`)
+  return Number(match[1])
 }
 
 const GROWN_SIZES = [0.3, 0.6, 1.2, 3] as const
@@ -68,4 +69,18 @@ test("Dataset 07 routes strictly more once the boundary clears srj.bounds", () =
   expect(routedConnectionCountWithBoundaryGrownBy(0.6)).toBeGreaterThan(
     routedConnectionCountWithBoundaryGrownBy(0),
   )
+}, 300_000)
+
+// Visual guard: the bug rejected every plan before its geometry mattered, so
+// the widened-boundary snapshots showed bare pads with no escapes at all.
+test("Dataset 07 fanout at the boundary core resolves", async () => {
+  await expect(
+    getSvgFromGraphicsObject(solveWithBoundaryGrownBy(0).visualize()),
+  ).toMatchSvgSnapshot(import.meta.path, "dataset07-boundary-grown-0mm")
+}, 300_000)
+
+test("Dataset 07 fanout with the boundary widened past srj.bounds", async () => {
+  await expect(
+    getSvgFromGraphicsObject(solveWithBoundaryGrownBy(1.2).visualize()),
+  ).toMatchSvgSnapshot(import.meta.path, "dataset07-boundary-grown-1.2mm")
 }, 300_000)
