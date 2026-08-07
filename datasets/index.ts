@@ -5,7 +5,6 @@ import { fanoutDataset03 } from "./dataset03"
 import { fanoutDataset04 } from "./dataset04"
 import { fanoutDataset05 } from "./dataset05"
 import { fanoutDataset06 } from "./dataset06"
-import { fanoutDataset07 } from "./dataset07"
 
 export const fanoutDatasets: FanoutDataset[] = [
   {
@@ -49,13 +48,6 @@ export const fanoutDatasets: FanoutDataset[] = [
     description:
       "The exact 132-connection, single-layer mixed-footprint shared-boundary fanout from the clad1 RP2040 board.",
     samples: fanoutDataset06,
-  },
-  {
-    id: "dataset07",
-    name: "RP2350A QFN60 breakout reproduction",
-    description:
-      "The 27-connection, four-layer shared-boundary fanout captured from a dual-RP2350 handheld. Currently routes none of its escapes.",
-    samples: fanoutDataset07,
   },
 ]
 
