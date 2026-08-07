@@ -12,6 +12,7 @@ import {
 } from "./geometry"
 import { getLayerSpan } from "./layer-names"
 import type {
+  Bounds,
   FanoutDirection,
   FanoutRoutePlan,
   Point2D,
@@ -145,6 +146,23 @@ function getConnectionRank(
     )
   }
   return connectionRank
+}
+
+function getRoutableBounds(
+  srjBounds: SimpleRouteJson["bounds"],
+  sharedBoundary: Bounds,
+): SimpleRouteJson["bounds"] {
+  // Fanout routes must reach the shared boundary and terminate exactly on it.
+  // When that boundary sits outside srj.bounds -- which is what
+  // fanoutBoundaryPadding does, since it pads the boundary without widening
+  // the routing area -- containment has to follow the boundary, or every plan
+  // is rejected before its geometry is ever considered.
+  return {
+    minX: Math.min(srjBounds.minX, sharedBoundary.minX),
+    maxX: Math.max(srjBounds.maxX, sharedBoundary.maxX),
+    minY: Math.min(srjBounds.minY, sharedBoundary.minY),
+    maxY: Math.max(srjBounds.maxY, sharedBoundary.maxY),
+  }
 }
 
 function pointIsInsideBounds(
@@ -668,15 +686,17 @@ function planIsClear(params: {
   plan: FanoutRoutePlan
   otherPlans: FanoutRoutePlan[]
   srj: SimpleRouteJson
+  sharedBoundary: Bounds
   clearance: number
 }): boolean {
-  const { plan, otherPlans, srj, clearance } = params
+  const { plan, otherPlans, srj, sharedBoundary, clearance } = params
+  const routableBounds = getRoutableBounds(srj.bounds, sharedBoundary)
   if (
-    !pointIsInsideBounds(plan.exitPoint, srj.bounds) ||
+    !pointIsInsideBounds(plan.exitPoint, routableBounds) ||
     plan.segments.some(
       (segment) =>
-        !pointIsInsideBounds(segment.start, srj.bounds) ||
-        !pointIsInsideBounds(segment.end, srj.bounds),
+        !pointIsInsideBounds(segment.start, routableBounds) ||
+        !pointIsInsideBounds(segment.end, routableBounds),
     )
   ) {
     return false
@@ -814,6 +834,7 @@ function routePlaneTerminatedBus(
             plan,
             otherPlans: [...acceptedPlans, ...candidatePlans],
             srj,
+            sharedBoundary: bus.sharedBoundary,
             clearance,
           })
         ) {
@@ -913,6 +934,7 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
               plan,
               otherPlans: [...acceptedPlans, ...candidatePlans],
               srj,
+              sharedBoundary: bus.sharedBoundary,
               clearance,
             })
           ) {
