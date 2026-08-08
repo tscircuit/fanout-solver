@@ -209,13 +209,14 @@ two-layer fanout problems with opposite-layer passive overlays.
 Run the full benchmark with:
 
 ```sh
-bun run benchmark:srj19
+./benchmark.sh
 ```
 
 Use `--sample sample001`, `--limit 10`, or
 `--max-layer-combinations 16` for shorter runs. Partial solutions are reported
 as benchmark results instead of failing the command, making current completion
-rates a baseline for solver improvements.
+rates a baseline for solver improvements. `bun run benchmark:srj19` is an alias
+for the same command.
 
 Run `bun run start` and open the `datasets/srj19` Cosmos fixture to step the
 selected sample through `GenericSolverDebugger`. The page has Previous/Next,

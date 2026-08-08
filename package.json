@@ -28,7 +28,7 @@
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
     "benchmark": "bun benchmarks/run-benchmark.ts",
-    "benchmark:srj19": "bun benchmarks/run-srj19-benchmark.ts",
+    "benchmark:srj19": "./benchmark.sh",
     "render:dataset": "bun scripts/render-dataset-pngs.ts",
     "format": "biome format --write .",
     "format:check": "biome format ."
