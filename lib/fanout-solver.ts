@@ -250,11 +250,19 @@ function sourceLayerEscapeIsBlocked(params: {
 function createPreferredLayerAssignment(params: {
   buses: PreparedBus[]
   escapeLayers: string[]
+  escapeLayersByBusId: Readonly<Record<string, readonly string[]>>
   srj: SimpleRouteJson
   traceWidth: number
   clearance: number
 }): Readonly<Record<string, string>> {
-  const { buses, escapeLayers, srj, traceWidth, clearance } = params
+  const {
+    buses,
+    escapeLayers,
+    escapeLayersByBusId,
+    srj,
+    traceWidth,
+    clearance,
+  } = params
   const assignment: Record<string, string> = {}
   const directionsByComponent = new Map<string, Set<PreparedBus["direction"]>>()
   let nextViaLayerIndex = 0
@@ -273,9 +281,12 @@ function createPreferredLayerAssignment(params: {
       assignment[bus.busId] = bus.termination.layer
       continue
     }
-    const viaLayers = escapeLayers.filter((layer) => layer !== sourceLayer)
+    const routableEscapeLayers = escapeLayersByBusId[bus.busId] ?? escapeLayers
+    const viaLayers = routableEscapeLayers.filter(
+      (layer) => layer !== sourceLayer,
+    )
     if (
-      escapeLayers.includes(sourceLayer) &&
+      routableEscapeLayers.includes(sourceLayer) &&
       busIsOnOutwardComponentEdge(bus) &&
       !sourceLayerEscapeIsBlocked({
         bus,
@@ -321,6 +332,37 @@ function prioritizeLayerAssignment(params: {
   ].slice(0, maxAssignments)
 }
 
+function getCandidateEscapeLayersForBus(params: {
+  bus: PreparedBus
+  srj: SimpleRouteJson
+  config: ResolvedFanoutConfig
+}): string[] {
+  const { bus, srj, config } = params
+  const individuallyRoutableLayers = config.escapeLayers.filter(
+    (targetLayer) =>
+      routeBus({
+        srj,
+        bus,
+        targetLayer,
+        acceptedPlans: [],
+        layerNames: config.layerNames,
+        traceWidth: config.traceWidth,
+        viaDiameter: config.viaDiameter,
+        viaHoleDiameter: config.viaHoleDiameter,
+        clearance: config.clearance,
+        compactBusTracks: config.compactBusTracks,
+      }) !== null,
+  )
+
+  // Existing plans only add clearance constraints, so a layer that cannot
+  // route this bus by itself cannot become viable later in an assignment.
+  // Preserve the original candidates when none route so impossible problems
+  // still produce the usual failed-solver result instead of throwing here.
+  return individuallyRoutableLayers.length > 0
+    ? individuallyRoutableLayers
+    : config.escapeLayers
+}
+
 export class FanoutSolver extends BaseSolver {
   readonly preparedBuses: PreparedBus[]
   readonly attempts: FanoutAttemptSummary[] = []
@@ -364,9 +406,25 @@ export class FanoutSolver extends BaseSolver {
           : [],
       ),
     )
+    const escapeLayersByBusId = Object.fromEntries(
+      this.preparedBuses.flatMap((bus) => {
+        if (bus.termination.type === "plane") return []
+        return [
+          [
+            bus.busId,
+            getCandidateEscapeLayersForBus({
+              bus,
+              srj: inputSrj,
+              config: this.config,
+            }),
+          ] as const,
+        ]
+      }),
+    )
     const generatedAssignments = generateLayerAssignments({
       busIds: boundaryBusIds,
       layers: this.config.escapeLayers,
+      layersByBusId: escapeLayersByBusId,
       maxAssignments: this.config.maxLayerCombinations,
     }).map((assignment) => ({
       ...assignment,
@@ -376,6 +434,7 @@ export class FanoutSolver extends BaseSolver {
       preferredAssignment: createPreferredLayerAssignment({
         buses: this.preparedBuses,
         escapeLayers: this.config.escapeLayers,
+        escapeLayersByBusId,
         srj: inputSrj,
         traceWidth: this.config.traceWidth,
         clearance: this.config.clearance,
