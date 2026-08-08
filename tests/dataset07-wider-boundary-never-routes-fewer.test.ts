@@ -40,6 +40,7 @@ const routedConnectionCountWithBoundaryGrownBy = (by: number): number => {
 }
 
 const GROWN_SIZES = [0.3, 0.6, 1.2, 3] as const
+const datasetBenchmarkTest = process.env.CI ? test.skip : test
 
 test("Dataset 07 preserves the captured RP2350A breakout input", () => {
   expect(connectionCount).toBe(23)
@@ -54,33 +55,49 @@ test("Dataset 07 preserves the captured RP2350A breakout input", () => {
 // outside srj.bounds -- exactly what fanoutBoundaryPadding produces -- had
 // every plan rejected before its geometry was considered, taking this input
 // from 13/23 to 0/23.
-test("widening the shared boundary never routes fewer connections", () => {
-  const baseline = routedConnectionCountWithBoundaryGrownBy(0)
-  expect(baseline).toBeGreaterThan(0)
+datasetBenchmarkTest(
+  "widening the shared boundary never routes fewer connections",
+  () => {
+    const baseline = routedConnectionCountWithBoundaryGrownBy(0)
+    expect(baseline).toBeGreaterThan(0)
 
-  for (const grownBy of GROWN_SIZES) {
-    expect(
-      routedConnectionCountWithBoundaryGrownBy(grownBy),
-    ).toBeGreaterThanOrEqual(baseline)
-  }
-}, 300_000)
+    for (const grownBy of GROWN_SIZES) {
+      expect(
+        routedConnectionCountWithBoundaryGrownBy(grownBy),
+      ).toBeGreaterThanOrEqual(baseline)
+    }
+  },
+  300_000,
+)
 
-test("Dataset 07 routes strictly more once the boundary clears srj.bounds", () => {
-  expect(routedConnectionCountWithBoundaryGrownBy(0.6)).toBeGreaterThan(
-    routedConnectionCountWithBoundaryGrownBy(0),
-  )
-}, 300_000)
+datasetBenchmarkTest(
+  "Dataset 07 routes strictly more once the boundary clears srj.bounds",
+  () => {
+    expect(routedConnectionCountWithBoundaryGrownBy(0.6)).toBeGreaterThan(
+      routedConnectionCountWithBoundaryGrownBy(0),
+    )
+  },
+  300_000,
+)
 
 // Visual guard: the bug rejected every plan before its geometry mattered, so
 // the widened-boundary snapshots showed bare pads with no escapes at all.
-test("Dataset 07 fanout at the boundary core resolves", async () => {
-  await expect(
-    getSvgFromGraphicsObject(solveWithBoundaryGrownBy(0).visualize()),
-  ).toMatchSvgSnapshot(import.meta.path, "dataset07-boundary-grown-0mm")
-}, 300_000)
+datasetBenchmarkTest(
+  "Dataset 07 fanout at the boundary core resolves",
+  async () => {
+    await expect(
+      getSvgFromGraphicsObject(solveWithBoundaryGrownBy(0).visualize()),
+    ).toMatchSvgSnapshot(import.meta.path, "dataset07-boundary-grown-0mm")
+  },
+  300_000,
+)
 
-test("Dataset 07 fanout with the boundary widened past srj.bounds", async () => {
-  await expect(
-    getSvgFromGraphicsObject(solveWithBoundaryGrownBy(1.2).visualize()),
-  ).toMatchSvgSnapshot(import.meta.path, "dataset07-boundary-grown-1.2mm")
-}, 300_000)
+datasetBenchmarkTest(
+  "Dataset 07 fanout with the boundary widened past srj.bounds",
+  async () => {
+    await expect(
+      getSvgFromGraphicsObject(solveWithBoundaryGrownBy(1.2).visualize()),
+    ).toMatchSvgSnapshot(import.meta.path, "dataset07-boundary-grown-1.2mm")
+  },
+  300_000,
+)

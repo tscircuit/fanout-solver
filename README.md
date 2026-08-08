@@ -198,6 +198,31 @@ parameters. Each sample has one shared boundary around all of its footprints,
 and component bounds come from the exact footprinter-generated copper pad
 extents.
 
+## SRJ19 benchmark
+
+The repository also loads all 200 samples from
+[`tscircuit/dataset-srj19`](https://github.com/tscircuit/dataset-srj19) as a
+pinned development dependency. The adapter keeps the complete obstacle field
+but selects only connections that touch the BGA, producing progressively larger
+two-layer fanout problems with opposite-layer passive overlays.
+
+Run the full benchmark with:
+
+```sh
+./benchmark.sh
+```
+
+Use `--sample sample001`, `--limit 10`, or
+`--max-layer-combinations 16` for shorter runs. Partial solutions are reported
+as benchmark results instead of failing the command, making current completion
+rates a baseline for solver improvements. `bun run benchmark:srj19` is an alias
+for the same command.
+
+Run `bun run start` and open the `datasets/srj19` Cosmos fixture to step the
+selected sample through `GenericSolverDebugger`. The page has Previous/Next,
+sample dropdown, and range controls and stores the selection in the `sample`
+URL parameter.
+
 ## Dataset 02
 
 `datasets/dataset02.ts` is the four-layer BGA400 stress benchmark. It routes
