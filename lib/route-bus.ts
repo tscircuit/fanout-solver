@@ -8,6 +8,7 @@ import {
   distancePointToObstacle,
   distancePointToSegment,
   distanceSegmentToObstacle,
+  distanceSegmentToSegment,
   segmentsAreClear,
 } from "./geometry"
 import { getLayerSpan } from "./layer-names"
@@ -776,6 +777,30 @@ function planIsClear(params: {
   return true
 }
 
+function getPlanClearanceToPlans(
+  plan: FanoutRoutePlan,
+  otherPlans: FanoutRoutePlan[],
+): number {
+  let minimumClearance = Number.POSITIVE_INFINITY
+  for (const otherPlan of otherPlans) {
+    for (const segment of plan.segments) {
+      for (const otherSegment of otherPlan.segments) {
+        if (segment.layer !== otherSegment.layer) continue
+        minimumClearance = Math.min(
+          minimumClearance,
+          distanceSegmentToSegment(
+            segment.start,
+            segment.end,
+            otherSegment.start,
+            otherSegment.end,
+          ),
+        )
+      }
+    }
+  }
+  return minimumClearance
+}
+
 function routePlaneTerminatedBus(
   params: RouteBusParams,
 ): FanoutRoutePlan[] | null {
@@ -892,6 +917,7 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
       let orderIsClear = true
       for (const preparedConnection of connectionOrder) {
         let acceptedPlan: FanoutRoutePlan | null = null
+        let acceptedPlanClearance = Number.NEGATIVE_INFINITY
         for (const track of getTrackCandidates({
           bus,
           connection: preparedConnection,
@@ -938,8 +964,17 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
               clearance,
             })
           ) {
-            acceptedPlan = plan
-            break
+            const planClearance = getPlanClearanceToPlans(plan, [
+              ...acceptedPlans,
+              ...candidatePlans,
+            ])
+            if (
+              acceptedPlan === null ||
+              planClearance > acceptedPlanClearance + 1e-9
+            ) {
+              acceptedPlan = plan
+              acceptedPlanClearance = planClearance
+            }
           }
         }
         if (!acceptedPlan) {
