@@ -601,9 +601,13 @@ export class FanoutSolver extends BaseSolver {
    */
   private evaluateGroupedBeam(
     assignmentIndex: number,
+    groupByDirection = false,
   ): EvaluatedAssignment | null {
     if (this.config.escapeLayers.length < 2) return null
     if (this.preparedBuses.length > 56) return null
+    if (this.preparedBuses.some((bus) => bus.connections.length !== 1)) {
+      return null
+    }
 
     const busesInSearchOrder = [...this.preparedBuses].sort((a, b) => {
       const aLayerCount =
@@ -619,6 +623,7 @@ export class FanoutSolver extends BaseSolver {
       return (
         Number(a.termination.type === "plane") -
           Number(b.termination.type === "plane") ||
+        (groupByDirection ? a.direction.localeCompare(b.direction) : 0) ||
         aLayerCount - bLayerCount ||
         b.componentObstacles.length - a.componentObstacles.length ||
         b.connections.length - a.connections.length ||
@@ -831,7 +836,10 @@ export class FanoutSolver extends BaseSolver {
   override _step(): void {
     if (!this.groupedBeamEvaluated) {
       this.groupedBeamEvaluated = true
-      const beamAttempt = this.evaluateGroupedBeam(-1)
+      let beamAttempt = this.evaluateGroupedBeam(-1)
+      if (!beamAttempt) {
+        beamAttempt = this.evaluateGroupedBeam(-1, true)
+      }
       if (beamAttempt) {
         this.attempts.push(beamAttempt.summary)
         this.bestAttempt = beamAttempt
