@@ -37,9 +37,10 @@ export function getLayerSpan(
 export function generateLayerAssignments(params: {
   busIds: string[]
   layers: string[]
+  layersByBusId?: Readonly<Record<string, readonly string[]>>
   maxAssignments: number
 }): Array<Readonly<Record<string, string>>> {
-  const { busIds, layers, maxAssignments } = params
+  const { busIds, layers, layersByBusId, maxAssignments } = params
   if (layers.length === 0) {
     throw new Error("FanoutSolver: no escape layers are available")
   }
@@ -49,7 +50,22 @@ export function generateLayerAssignments(params: {
     )
   }
 
-  const rawCombinationCount = layers.length ** busIds.length
+  const availableLayersByBus = busIds.map(
+    (busId) => layersByBusId?.[busId] ?? layers,
+  )
+  const busWithoutLayersIndex = availableLayersByBus.findIndex(
+    (availableLayers) => availableLayers.length === 0,
+  )
+  if (busWithoutLayersIndex >= 0) {
+    throw new Error(
+      `FanoutSolver: no escape layers are available for bus "${busIds[busWithoutLayersIndex]}"`,
+    )
+  }
+
+  const rawCombinationCount = availableLayersByBus.reduce(
+    (count, availableLayers) => count * availableLayers.length,
+    1,
+  )
   const combinationCount = Math.min(
     maxAssignments,
     Number.isFinite(rawCombinationCount) ? rawCombinationCount : maxAssignments,
@@ -60,7 +76,8 @@ export function generateLayerAssignments(params: {
   function addAssignment(layerIndexes: number[]): void {
     const assignment: Record<string, string> = {}
     for (let busIndex = 0; busIndex < busIds.length; busIndex++) {
-      assignment[busIds[busIndex]!] = layers[layerIndexes[busIndex]!]!
+      assignment[busIds[busIndex]!] =
+        availableLayersByBus[busIndex]![layerIndexes[busIndex]!]!
     }
     const key = JSON.stringify(assignment)
     if (seenAssignments.has(key)) return
@@ -73,9 +90,10 @@ export function generateLayerAssignments(params: {
       const layerIndexes: number[] = []
       let remaining = ordinal
       for (let busIndex = 0; busIndex < busIds.length; busIndex++) {
-        const digit = remaining % layers.length
-        remaining = Math.floor(remaining / layers.length)
-        layerIndexes.push((digit + busIndex) % layers.length)
+        const layerCount = availableLayersByBus[busIndex]!.length
+        const digit = remaining % layerCount
+        remaining = Math.floor(remaining / layerCount)
+        layerIndexes.push((digit + busIndex) % layerCount)
       }
       addAssignment(layerIndexes)
     }
@@ -90,17 +108,22 @@ export function generateLayerAssignments(params: {
   }
 
   const balancedLayerIndexes = busIds.map(
-    (_, busIndex) => busIndex % layers.length,
+    (_, busIndex) => busIndex % availableLayersByBus[busIndex]!.length,
   )
   addAssignment(balancedLayerIndexes)
+  const maximumAvailableLayerCount = Math.max(
+    ...availableLayersByBus.map((availableLayers) => availableLayers.length),
+  )
   for (
     let globalShift = 1;
-    globalShift < layers.length && assignments.length < combinationCount;
+    globalShift < maximumAvailableLayerCount &&
+    assignments.length < combinationCount;
     globalShift++
   ) {
     addAssignment(
       balancedLayerIndexes.map(
-        (layerIndex) => (layerIndex + globalShift) % layers.length,
+        (layerIndex, busIndex) =>
+          (layerIndex + globalShift) % availableLayersByBus[busIndex]!.length,
       ),
     )
   }
@@ -111,12 +134,14 @@ export function generateLayerAssignments(params: {
   ) {
     for (
       let shift = 1;
-      shift < layers.length && assignments.length < combinationCount;
+      shift < availableLayersByBus[busIndex]!.length &&
+      assignments.length < combinationCount;
       shift++
     ) {
       const layerIndexes = [...balancedLayerIndexes]
       layerIndexes[busIndex] =
-        (balancedLayerIndexes[busIndex]! + shift) % layers.length
+        (balancedLayerIndexes[busIndex]! + shift) %
+        availableLayersByBus[busIndex]!.length
       addAssignment(layerIndexes)
     }
   }
@@ -128,7 +153,8 @@ export function generateLayerAssignments(params: {
     addAssignment(
       busIds.map(
         (_, busIndex) =>
-          mix32(seed * 0x9e3779b1 + busIndex * 0x85ebca6b) % layers.length,
+          mix32(seed * 0x9e3779b1 + busIndex * 0x85ebca6b) %
+          availableLayersByBus[busIndex]!.length,
       ),
     )
   }

@@ -5,20 +5,24 @@ import {
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { buildOutputSimpleRouteJson } from "./build-output"
-import { distanceSegmentToObstacle } from "./geometry"
 import { getCopperLayerColor } from "./layer-colors"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import {
   prepareFanoutBuses,
   resolveAvailableBoundaryRegions,
 } from "./prepare-buses"
-import { routeBus } from "./route-bus"
+import {
+  routeBus,
+  routeBusAlternatives,
+  type RouteBusStaticClearanceCache,
+} from "./route-bus"
 import { routeSingleLayerWithAdaptiveExits } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
 import type {
   AssignmentAttempt,
   FanoutAttemptSummary,
   FanoutBorderDistribution,
+  FanoutRoutePlan,
   FanoutSolverOptions,
   FanoutSolverOutput,
   PreparedBus,
@@ -37,6 +41,17 @@ interface ResolvedFanoutConfig {
   escapeLayers: string[]
   maxLayerCombinations: number
 }
+
+interface EvaluatedAssignment extends AssignmentAttempt {
+  blockingBusIds: string[]
+}
+
+interface GroupedBeamState {
+  assignment: Readonly<Record<string, string>>
+  plans: FanoutRoutePlan[]
+}
+
+type RoutingStrategy = "default" | "group-by-layer" | "deep-first"
 
 function resolvePositiveNumber(label: string, value: number): number {
   if (!Number.isFinite(value) || value <= 0) {
@@ -199,62 +214,12 @@ function getBusDepthInRows(bus: PreparedBus): number {
   )
 }
 
-function sourceLayerEscapeIsBlocked(params: {
-  bus: PreparedBus
-  srj: SimpleRouteJson
-  traceWidth: number
-  clearance: number
-}): boolean {
-  const { bus, srj, traceWidth, clearance } = params
-  for (const connection of bus.connections) {
-    const source = {
-      x: connection.sourcePoint.x,
-      y: connection.sourcePoint.y,
-    }
-    const boundaryPoint = (() => {
-      switch (bus.direction) {
-        case "left":
-          return { x: bus.sharedBoundary.minX, y: source.y }
-        case "right":
-          return { x: bus.sharedBoundary.maxX, y: source.y }
-        case "up":
-          return { x: source.x, y: bus.sharedBoundary.maxY }
-        case "down":
-          return { x: source.x, y: bus.sharedBoundary.minY }
-      }
-    })()
-    const directEscapeSegment = {
-      start: source,
-      end: boundaryPoint,
-      width: traceWidth,
-      layer: connection.sourceLayer,
-    }
-    for (const obstacle of srj.obstacles) {
-      if (
-        obstacle === connection.sourceObstacle ||
-        !obstacle.layers.includes(connection.sourceLayer)
-      ) {
-        continue
-      }
-      if (
-        distanceSegmentToObstacle(directEscapeSegment, obstacle) <
-        traceWidth / 2 + clearance - 1e-9
-      ) {
-        return true
-      }
-    }
-  }
-  return false
-}
-
 function createPreferredLayerAssignment(params: {
   buses: PreparedBus[]
   escapeLayers: string[]
-  srj: SimpleRouteJson
-  traceWidth: number
-  clearance: number
+  escapeLayersByBusId: Readonly<Record<string, readonly string[]>>
 }): Readonly<Record<string, string>> {
-  const { buses, escapeLayers, srj, traceWidth, clearance } = params
+  const { buses, escapeLayers, escapeLayersByBusId } = params
   const assignment: Record<string, string> = {}
   const directionsByComponent = new Map<string, Set<PreparedBus["direction"]>>()
   let nextViaLayerIndex = 0
@@ -273,16 +238,13 @@ function createPreferredLayerAssignment(params: {
       assignment[bus.busId] = bus.termination.layer
       continue
     }
-    const viaLayers = escapeLayers.filter((layer) => layer !== sourceLayer)
+    const routableEscapeLayers = escapeLayersByBusId[bus.busId] ?? escapeLayers
+    const viaLayers = routableEscapeLayers.filter(
+      (layer) => layer !== sourceLayer,
+    )
     if (
-      escapeLayers.includes(sourceLayer) &&
-      busIsOnOutwardComponentEdge(bus) &&
-      !sourceLayerEscapeIsBlocked({
-        bus,
-        srj,
-        traceWidth,
-        clearance,
-      })
+      routableEscapeLayers.includes(sourceLayer) &&
+      busIsOnOutwardComponentEdge(bus)
     ) {
       assignment[bus.busId] = sourceLayer
     } else if (viaLayers.length > 0) {
@@ -321,12 +283,66 @@ function prioritizeLayerAssignment(params: {
   ].slice(0, maxAssignments)
 }
 
+function getCandidateEscapeLayersForBus(params: {
+  bus: PreparedBus
+  srj: SimpleRouteJson
+  config: ResolvedFanoutConfig
+  staticClearanceCache: RouteBusStaticClearanceCache
+}): string[] {
+  const { bus, srj, config, staticClearanceCache } = params
+  const individuallyRoutableLayers = config.escapeLayers.filter(
+    (targetLayer) =>
+      routeBus({
+        srj,
+        bus,
+        targetLayer,
+        acceptedPlans: [],
+        layerNames: config.layerNames,
+        traceWidth: config.traceWidth,
+        viaDiameter: config.viaDiameter,
+        viaHoleDiameter: config.viaHoleDiameter,
+        clearance: config.clearance,
+        compactBusTracks: config.compactBusTracks,
+        staticClearanceCache,
+      }) !== null,
+  )
+
+  // Existing plans only add clearance constraints, so a layer that cannot
+  // route this bus by itself cannot become viable later in an assignment.
+  // Preserve the original candidates when none route so impossible problems
+  // still produce the usual failed-solver result instead of throwing here.
+  return individuallyRoutableLayers.length > 0
+    ? individuallyRoutableLayers
+    : config.escapeLayers
+}
+
 export class FanoutSolver extends BaseSolver {
   readonly preparedBuses: PreparedBus[]
   readonly attempts: FanoutAttemptSummary[] = []
   readonly layerAssignments: Array<Readonly<Record<string, string>>>
   readonly config: ResolvedFanoutConfig
+  private readonly escapeLayersByBusId: Readonly<
+    Record<string, readonly string[]>
+  >
+  private readonly evaluatedAssignmentKeys = new Set<string>()
+  private readonly queuedAssignmentKeys = new Set<string>()
+  private readonly assignmentRepairDepthByKey = new Map<string, number>()
+  private readonly pendingRepairAssignments: Array<
+    Readonly<Record<string, string>>
+  > = []
+  private readonly routeStaticClearanceCache: RouteBusStaticClearanceCache =
+    new Map()
+  private readonly routingPrefixCache = new Map<
+    string,
+    {
+      plans: AssignmentAttempt["plans"]
+      failedBusIds: string[]
+      blockingBusCounts: Map<string, number>
+    }
+  >()
+  private groupedBeamEvaluated = false
   private nextAssignmentIndex = 0
+  private nextGeneratedAssignmentIndex = 0
   private bestAttempt: AssignmentAttempt | null = null
 
   constructor(
@@ -364,9 +380,27 @@ export class FanoutSolver extends BaseSolver {
           : [],
       ),
     )
+    const escapeLayersByBusId = Object.fromEntries(
+      this.preparedBuses.flatMap((bus) => {
+        if (bus.termination.type === "plane") return []
+        return [
+          [
+            bus.busId,
+            getCandidateEscapeLayersForBus({
+              bus,
+              srj: inputSrj,
+              config: this.config,
+              staticClearanceCache: this.routeStaticClearanceCache,
+            }),
+          ] as const,
+        ]
+      }),
+    )
+    this.escapeLayersByBusId = escapeLayersByBusId
     const generatedAssignments = generateLayerAssignments({
       busIds: boundaryBusIds,
       layers: this.config.escapeLayers,
+      layersByBusId: escapeLayersByBusId,
       maxAssignments: this.config.maxLayerCombinations,
     }).map((assignment) => ({
       ...assignment,
@@ -376,26 +410,26 @@ export class FanoutSolver extends BaseSolver {
       preferredAssignment: createPreferredLayerAssignment({
         buses: this.preparedBuses,
         escapeLayers: this.config.escapeLayers,
-        srj: inputSrj,
-        traceWidth: this.config.traceWidth,
-        clearance: this.config.clearance,
+        escapeLayersByBusId,
       }),
       generatedAssignments,
       maxAssignments: this.config.maxLayerCombinations,
     })
-    this.MAX_ITERATIONS = this.layerAssignments.length + 2
+    this.MAX_ITERATIONS = this.config.maxLayerCombinations + 2
   }
 
   override getSolverName(): string {
     return "FanoutSolver"
   }
 
-  private evaluateAssignment(
+  private evaluateAssignmentWithStrategy(
     assignmentIndex: number,
     busLayerAssignments: Readonly<Record<string, string>>,
-  ): AssignmentAttempt {
-    const plans: AssignmentAttempt["plans"] = []
-    const failedBusIds: string[] = []
+    routingStrategy: RoutingStrategy,
+  ): EvaluatedAssignment {
+    let plans: AssignmentAttempt["plans"] = []
+    let failedBusIds: string[] = []
+    let blockingBusCounts = new Map<string, number>()
     const isSingleLayerFanout = this.config.escapeLayers.length === 1
     if (isSingleLayerFanout && this.config.singleLayerPushAndShove) {
       const singleLayerParams = {
@@ -425,13 +459,21 @@ export class FanoutSolver extends BaseSolver {
       (a, b) =>
         Number(a.termination.type === "plane") -
           Number(b.termination.type === "plane") ||
+        (routingStrategy === "group-by-layer"
+          ? (busLayerAssignments[a.busId] ?? "").localeCompare(
+              busLayerAssignments[b.busId] ?? "",
+            )
+          : 0) ||
         b.componentObstacles.length - a.componentObstacles.length ||
         (isSingleLayerFanout
           ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
           : b.connections.length - a.connections.length ||
-            getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b)),
+            (routingStrategy === "deep-first"
+              ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
+              : getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b))),
     )
 
+    let routingPrefixKey = `${routingStrategy}|`
     for (const bus of isSingleLayerFanout && this.config.singleLayerPushAndShove
       ? []
       : busesInRoutingOrder) {
@@ -441,6 +483,15 @@ export class FanoutSolver extends BaseSolver {
           `FanoutSolver: assignment ${assignmentIndex} has no layer for bus "${bus.busId}"`,
         )
       }
+      routingPrefixKey += `${targetLayer.length}:${targetLayer};`
+      const cachedPrefix = this.routingPrefixCache.get(routingPrefixKey)
+      if (cachedPrefix) {
+        plans = [...cachedPrefix.plans]
+        failedBusIds = [...cachedPrefix.failedBusIds]
+        blockingBusCounts = new Map(cachedPrefix.blockingBusCounts)
+        continue
+      }
+      const currentBusBlockingCounts = new Map<string, number>()
       const busPlans = routeBus({
         srj: this.inputSrj,
         bus,
@@ -452,12 +503,25 @@ export class FanoutSolver extends BaseSolver {
         viaHoleDiameter: this.config.viaHoleDiameter,
         clearance: this.config.clearance,
         compactBusTracks: this.config.compactBusTracks,
+        staticClearanceCache: this.routeStaticClearanceCache,
+        blockingBusCounts: currentBusBlockingCounts,
       })
       if (!busPlans) {
         failedBusIds.push(bus.busId)
-        continue
+        for (const [blockingBusId, count] of currentBusBlockingCounts) {
+          blockingBusCounts.set(
+            blockingBusId,
+            (blockingBusCounts.get(blockingBusId) ?? 0) + count,
+          )
+        }
+      } else {
+        plans.push(...busPlans)
       }
-      plans.push(...busPlans)
+      this.routingPrefixCache.set(routingPrefixKey, {
+        plans: [...plans],
+        failedBusIds: [...failedBusIds],
+        blockingBusCounts: new Map(blockingBusCounts),
+      })
     }
 
     const routedBusCount = this.preparedBuses.length - failedBusIds.length
@@ -482,6 +546,9 @@ export class FanoutSolver extends BaseSolver {
     return {
       summary,
       plans,
+      blockingBusIds: [...blockingBusCounts.entries()]
+        .toSorted(([, firstCount], [, secondCount]) => secondCount - firstCount)
+        .map(([busId]) => busId),
       outputSrj: buildOutputSimpleRouteJson({
         inputSrj: this.inputSrj,
         plans,
@@ -490,8 +557,337 @@ export class FanoutSolver extends BaseSolver {
     }
   }
 
+  private evaluateAssignment(
+    assignmentIndex: number,
+    busLayerAssignments: Readonly<Record<string, string>>,
+  ): EvaluatedAssignment {
+    let bestAttempt = this.evaluateAssignmentWithStrategy(
+      assignmentIndex,
+      busLayerAssignments,
+      "default",
+    )
+    if (
+      bestAttempt.summary.routedConnectionCount ===
+      this.inputSrj.connections.length
+    ) {
+      return bestAttempt
+    }
+
+    for (const routingStrategy of ["group-by-layer", "deep-first"] as const) {
+      const attempt = this.evaluateAssignmentWithStrategy(
+        assignmentIndex,
+        busLayerAssignments,
+        routingStrategy,
+      )
+      if (attempt.summary.score < bestAttempt.summary.score) {
+        bestAttempt = attempt
+      }
+      if (
+        bestAttempt.summary.routedConnectionCount ===
+        this.inputSrj.connections.length
+      ) {
+        return bestAttempt
+      }
+    }
+    return bestAttempt
+  }
+
+  /**
+   * Search layer assignments and track alternatives together. The regular
+   * assignment loop commits to one route per bus before the next bus is
+   * considered, so a locally-valid track can still starve a later bus. A
+   * bounded beam keeps several grouped-layer route prefixes alive and is
+   * especially useful for the many singleton buses in the SRJ19 samples.
+   */
+  private evaluateGroupedBeam(
+    assignmentIndex: number,
+    groupByDirection = false,
+  ): EvaluatedAssignment | null {
+    if (this.config.escapeLayers.length < 2) return null
+    if (this.preparedBuses.length > 56) return null
+    if (this.preparedBuses.some((bus) => bus.connections.length !== 1)) {
+      return null
+    }
+    if (new Set(this.preparedBuses.map((bus) => bus.componentId)).size !== 1) {
+      return null
+    }
+
+    const busesInSearchOrder = [...this.preparedBuses].sort((a, b) => {
+      const aLayerCount =
+        a.termination.type === "plane"
+          ? 1
+          : (this.escapeLayersByBusId[a.busId]?.length ??
+            this.config.escapeLayers.length)
+      const bLayerCount =
+        b.termination.type === "plane"
+          ? 1
+          : (this.escapeLayersByBusId[b.busId]?.length ??
+            this.config.escapeLayers.length)
+      return (
+        Number(a.termination.type === "plane") -
+          Number(b.termination.type === "plane") ||
+        (groupByDirection ? a.direction.localeCompare(b.direction) : 0) ||
+        aLayerCount - bLayerCount ||
+        b.componentObstacles.length - a.componentObstacles.length ||
+        b.connections.length - a.connections.length ||
+        getBusDepthInRows(b) - getBusDepthInRows(a) ||
+        a.busId.localeCompare(b.busId)
+      )
+    })
+
+    const beamWidth = 128
+    const alternativesPerLayer = 4
+    let states: GroupedBeamState[] = [{ assignment: {}, plans: [] }]
+
+    const getStateScore = (state: GroupedBeamState): number => {
+      const routeLength = state.plans.reduce(
+        (total, plan) => total + plan.length,
+        0,
+      )
+      const viaCount = state.plans.filter((plan) => plan.via).length
+      return (
+        routeLength +
+        viaCount * 0.1 +
+        assignmentLoadPenalty(state.assignment) * 0.01
+      )
+    }
+
+    for (const bus of busesInSearchOrder) {
+      const nextStates: GroupedBeamState[] = []
+      for (const state of states) {
+        const candidateLayers =
+          bus.termination.type === "plane"
+            ? [bus.termination.layer]
+            : (this.escapeLayersByBusId[bus.busId] ?? this.config.escapeLayers)
+        const layerLoads = new Map<string, number>()
+        for (const layer of Object.values(state.assignment)) {
+          layerLoads.set(layer, (layerLoads.get(layer) ?? 0) + 1)
+        }
+        const sourceLayer = bus.connections[0]?.sourceLayer
+        const orderedLayers = candidateLayers.toSorted(
+          (first, second) =>
+            (layerLoads.get(first) ?? 0) - (layerLoads.get(second) ?? 0) ||
+            Number(first === sourceLayer) - Number(second === sourceLayer) ||
+            first.localeCompare(second),
+        )
+
+        for (const targetLayer of orderedLayers) {
+          const busAlternatives = routeBusAlternatives(
+            {
+              srj: this.inputSrj,
+              bus,
+              targetLayer,
+              acceptedPlans: state.plans,
+              layerNames: this.config.layerNames,
+              traceWidth: this.config.traceWidth,
+              viaDiameter: this.config.viaDiameter,
+              viaHoleDiameter: this.config.viaHoleDiameter,
+              clearance: this.config.clearance,
+              compactBusTracks: this.config.compactBusTracks,
+              staticClearanceCache: this.routeStaticClearanceCache,
+            },
+            alternativesPerLayer,
+          )
+          for (const busPlans of busAlternatives) {
+            nextStates.push({
+              assignment: {
+                ...state.assignment,
+                [bus.busId]: targetLayer,
+              },
+              plans: [...state.plans, ...busPlans],
+            })
+          }
+        }
+      }
+
+      if (nextStates.length === 0) return null
+      nextStates.sort((first, second) => {
+        const scoreDifference = getStateScore(first) - getStateScore(second)
+        if (Math.abs(scoreDifference) > 1e-9) return scoreDifference
+        return JSON.stringify(first.assignment).localeCompare(
+          JSON.stringify(second.assignment),
+        )
+      })
+      const statesByAssignment = new Map<string, number>()
+      states = []
+      for (const state of nextStates) {
+        const key = JSON.stringify(state.assignment)
+        const sameAssignmentCount = statesByAssignment.get(key) ?? 0
+        if (sameAssignmentCount >= 2) continue
+        statesByAssignment.set(key, sameAssignmentCount + 1)
+        states.push(state)
+        if (states.length >= beamWidth) break
+      }
+    }
+
+    const bestState = states[0]
+    if (!bestState) return null
+    const score =
+      bestState.plans.length === this.inputSrj.connections.length
+        ? bestState.plans.reduce((total, plan) => total + plan.length, 0) +
+          bestState.plans.filter((plan) => plan.via).length * 0.1 +
+          assignmentLoadPenalty(bestState.assignment) * 0.01
+        : Number.POSITIVE_INFINITY
+    if (!Number.isFinite(score)) return null
+
+    const summary: FanoutAttemptSummary = {
+      assignmentIndex,
+      busLayerAssignments: bestState.assignment,
+      routedBusCount: this.preparedBuses.length,
+      routedConnectionCount: bestState.plans.length,
+      failedBusIds: [],
+      score,
+    }
+    return {
+      summary,
+      plans: bestState.plans,
+      blockingBusIds: [],
+      outputSrj: buildOutputSimpleRouteJson({
+        inputSrj: this.inputSrj,
+        plans: bestState.plans,
+        layerNames: this.config.layerNames,
+      }),
+    }
+  }
+
+  private prioritizeFailedBusRepairs(
+    assignment: Readonly<Record<string, string>>,
+    failedBusIds: readonly string[],
+    blockingBusIds: readonly string[],
+  ): void {
+    const assignmentKey = JSON.stringify(assignment)
+    const repairDepth = this.assignmentRepairDepthByKey.get(assignmentKey) ?? 0
+    if (repairDepth >= 2) return
+
+    const maximumRepairs = 8
+    const repairs: Array<Readonly<Record<string, string>>> = []
+    const repairKeys = new Set<string>()
+    const addRepair = (repair: Readonly<Record<string, string>>): void => {
+      const key = JSON.stringify(repair)
+      if (
+        repairKeys.has(key) ||
+        this.evaluatedAssignmentKeys.has(key) ||
+        this.queuedAssignmentKeys.has(key)
+      ) {
+        return
+      }
+      repairKeys.add(key)
+      this.queuedAssignmentKeys.add(key)
+      this.assignmentRepairDepthByKey.set(key, repairDepth + 1)
+      repairs.push(repair)
+    }
+    const repairBusIds: string[] = []
+    for (
+      let index = 0;
+      index < Math.max(failedBusIds.length, blockingBusIds.length);
+      index++
+    ) {
+      const failedBusId = failedBusIds[index]
+      const blockingBusId = blockingBusIds[index]
+      if (failedBusId && !repairBusIds.includes(failedBusId)) {
+        repairBusIds.push(failedBusId)
+      }
+      if (blockingBusId && !repairBusIds.includes(blockingBusId)) {
+        repairBusIds.push(blockingBusId)
+      }
+    }
+
+    for (const failedBusId of failedBusIds) {
+      const failedLayer = assignment[failedBusId]
+      const failedCandidateLayers = this.escapeLayersByBusId[failedBusId]
+      if (!failedLayer || !failedCandidateLayers) continue
+      for (const blockingBusId of blockingBusIds.slice(0, 4)) {
+        const blockingLayer = assignment[blockingBusId]
+        const blockingCandidateLayers = this.escapeLayersByBusId[blockingBusId]
+        if (
+          !blockingLayer ||
+          !blockingCandidateLayers ||
+          !failedCandidateLayers.includes(blockingLayer) ||
+          !blockingCandidateLayers.includes(failedLayer)
+        ) {
+          continue
+        }
+        addRepair({
+          ...assignment,
+          [failedBusId]: blockingLayer,
+          [blockingBusId]: failedLayer,
+        })
+        if (repairs.length >= maximumRepairs) break
+      }
+      if (repairs.length >= maximumRepairs) break
+    }
+
+    for (const busId of repairBusIds) {
+      const currentLayer = assignment[busId]
+      const candidateLayers = this.escapeLayersByBusId[busId]
+      if (!currentLayer || !candidateLayers) continue
+      const currentLayerIndex = candidateLayers.indexOf(currentLayer)
+      for (let shift = 1; shift < candidateLayers.length; shift++) {
+        const candidateLayer =
+          candidateLayers[
+            (Math.max(currentLayerIndex, 0) + shift) % candidateLayers.length
+          ]!
+        if (candidateLayer === currentLayer) continue
+        addRepair({ ...assignment, [busId]: candidateLayer })
+        if (repairs.length >= maximumRepairs) break
+      }
+      if (repairs.length >= maximumRepairs) break
+    }
+    this.pendingRepairAssignments.push(...repairs)
+  }
+
   override _step(): void {
-    const assignment = this.layerAssignments[this.nextAssignmentIndex]
+    if (!this.groupedBeamEvaluated) {
+      this.groupedBeamEvaluated = true
+      let beamAttempt = this.evaluateGroupedBeam(-1)
+      if (!beamAttempt) {
+        beamAttempt = this.evaluateGroupedBeam(-1, true)
+      }
+      if (beamAttempt) {
+        this.attempts.push(beamAttempt.summary)
+        this.bestAttempt = beamAttempt
+        this.stats = {
+          assignment: 0,
+          assignmentCount: this.config.maxLayerCombinations,
+          routedBuses: `${beamAttempt.summary.routedBusCount}/${this.preparedBuses.length}`,
+          routedConnections: `${beamAttempt.summary.routedConnectionCount}/${this.inputSrj.connections.length}`,
+          failedBuses: "none",
+          bestScore: beamAttempt.summary.score,
+        }
+        this.solved = true
+        return
+      }
+    }
+
+    let assignment: Readonly<Record<string, string>> | undefined
+    while (
+      !assignment &&
+      this.nextAssignmentIndex < this.config.maxLayerCombinations
+    ) {
+      const preferGeneratedAssignment = this.nextAssignmentIndex % 3 === 0
+      let candidate: Readonly<Record<string, string>> | undefined
+      let candidateCameFromRepairQueue = false
+      if (preferGeneratedAssignment) {
+        candidate = this.layerAssignments[this.nextGeneratedAssignmentIndex++]
+      } else {
+        candidate = this.pendingRepairAssignments.pop()
+        candidateCameFromRepairQueue = candidate !== undefined
+      }
+      if (!candidate) {
+        candidate = preferGeneratedAssignment
+          ? this.pendingRepairAssignments.pop()
+          : this.layerAssignments[this.nextGeneratedAssignmentIndex++]
+        candidateCameFromRepairQueue =
+          preferGeneratedAssignment && candidate !== undefined
+      }
+      if (!candidate) break
+      const candidateKey = JSON.stringify(candidate)
+      if (candidateCameFromRepairQueue) {
+        this.queuedAssignmentKeys.delete(candidateKey)
+      }
+      if (this.evaluatedAssignmentKeys.has(candidateKey)) continue
+      assignment = candidate
+    }
     if (!assignment) {
       if (
         this.bestAttempt &&
@@ -513,6 +909,18 @@ export class FanoutSolver extends BaseSolver {
       assignment,
     )
     this.nextAssignmentIndex++
+    this.evaluatedAssignmentKeys.add(JSON.stringify(assignment))
+    if (
+      !this.bestAttempt ||
+      attempt.summary.routedConnectionCount >=
+        this.bestAttempt.summary.routedConnectionCount
+    ) {
+      this.prioritizeFailedBusRepairs(
+        assignment,
+        attempt.summary.failedBusIds,
+        attempt.blockingBusIds,
+      )
+    }
     this.attempts.push(attempt.summary)
     if (
       !this.bestAttempt ||
@@ -522,7 +930,7 @@ export class FanoutSolver extends BaseSolver {
     }
     this.stats = {
       assignment: attempt.summary.assignmentIndex + 1,
-      assignmentCount: this.layerAssignments.length,
+      assignmentCount: this.config.maxLayerCombinations,
       routedBuses: `${attempt.summary.routedBusCount}/${this.preparedBuses.length}`,
       routedConnections: `${attempt.summary.routedConnectionCount}/${this.inputSrj.connections.length}`,
       failedBuses: attempt.summary.failedBusIds.join(", ") || "none",
@@ -537,7 +945,7 @@ export class FanoutSolver extends BaseSolver {
 
   computeProgress(): number {
     if (this.solved || this.failed) return 1
-    return this.nextAssignmentIndex / this.layerAssignments.length
+    return this.nextAssignmentIndex / this.config.maxLayerCombinations
   }
 
   override getConstructorParams(): [SimpleRouteJson, FanoutSolverOptions] {
