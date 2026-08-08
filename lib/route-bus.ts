@@ -1066,6 +1066,7 @@ export function routeBusAlternatives(
         [...candidatePlans, plan],
       )
       if (alternatives.length >= maxAlternatives) return
+      if (maxAlternatives === 1) return
     }
   }
 

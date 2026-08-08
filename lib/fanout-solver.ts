@@ -608,6 +608,9 @@ export class FanoutSolver extends BaseSolver {
     if (this.preparedBuses.some((bus) => bus.connections.length !== 1)) {
       return null
     }
+    if (new Set(this.preparedBuses.map((bus) => bus.componentId)).size !== 1) {
+      return null
+    }
 
     const busesInSearchOrder = [...this.preparedBuses].sort((a, b) => {
       const aLayerCount =
