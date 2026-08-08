@@ -368,6 +368,10 @@ export class FanoutSolver extends BaseSolver {
   readonly attempts: FanoutAttemptSummary[] = []
   readonly layerAssignments: Array<Readonly<Record<string, string>>>
   readonly config: ResolvedFanoutConfig
+  private readonly escapeLayersByBusId: Readonly<
+    Record<string, readonly string[]>
+  >
+  private readonly evaluatedAssignmentKeys = new Set<string>()
   private nextAssignmentIndex = 0
   private bestAttempt: AssignmentAttempt | null = null
 
@@ -421,6 +425,7 @@ export class FanoutSolver extends BaseSolver {
         ]
       }),
     )
+    this.escapeLayersByBusId = escapeLayersByBusId
     const generatedAssignments = generateLayerAssignments({
       busIds: boundaryBusIds,
       layers: this.config.escapeLayers,
@@ -488,7 +493,7 @@ export class FanoutSolver extends BaseSolver {
         (isSingleLayerFanout
           ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
           : b.connections.length - a.connections.length ||
-            getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)),
+            getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b)),
     )
 
     for (const bus of isSingleLayerFanout && this.config.singleLayerPushAndShove
@@ -549,6 +554,52 @@ export class FanoutSolver extends BaseSolver {
     }
   }
 
+  private prioritizeFailedBusRepairs(
+    assignment: Readonly<Record<string, string>>,
+    failedBusIds: readonly string[],
+  ): void {
+    if (this.nextAssignmentIndex >= this.config.maxLayerCombinations) return
+
+    const repairs: Array<Readonly<Record<string, string>>> = []
+    const repairKeys = new Set<string>()
+    for (const busId of failedBusIds) {
+      const currentLayer = assignment[busId]
+      if (!currentLayer) continue
+      const candidateLayers =
+        this.escapeLayersByBusId[busId] ?? this.config.escapeLayers
+      for (const candidateLayer of candidateLayers) {
+        if (candidateLayer === currentLayer) continue
+        const repair = { ...assignment, [busId]: candidateLayer }
+        const key = JSON.stringify(repair)
+        if (
+          repairKeys.has(key) ||
+          this.evaluatedAssignmentKeys.has(key)
+        ) {
+          continue
+        }
+        repairKeys.add(key)
+        repairs.push(repair)
+        if (repairs.length >= 8) break
+      }
+      if (repairs.length >= 8) break
+    }
+    if (repairs.length === 0) return
+
+    for (const repair of repairs) {
+      const key = JSON.stringify(repair)
+      const existingIndex = this.layerAssignments.findIndex(
+        (candidate, index) =>
+          index >= this.nextAssignmentIndex &&
+          JSON.stringify(candidate) === key,
+      )
+      if (existingIndex >= 0) this.layerAssignments.splice(existingIndex, 1)
+    }
+    this.layerAssignments.splice(this.nextAssignmentIndex, 0, ...repairs)
+    if (this.layerAssignments.length > this.config.maxLayerCombinations) {
+      this.layerAssignments.splice(this.config.maxLayerCombinations)
+    }
+  }
+
   override _step(): void {
     const assignment = this.layerAssignments[this.nextAssignmentIndex]
     if (!assignment) {
@@ -572,6 +623,11 @@ export class FanoutSolver extends BaseSolver {
       assignment,
     )
     this.nextAssignmentIndex++
+    this.evaluatedAssignmentKeys.add(JSON.stringify(assignment))
+    this.prioritizeFailedBusRepairs(
+      assignment,
+      attempt.summary.failedBusIds,
+    )
     this.attempts.push(attempt.summary)
     if (
       !this.bestAttempt ||
