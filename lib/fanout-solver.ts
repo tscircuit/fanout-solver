@@ -489,6 +489,9 @@ export class FanoutSolver extends BaseSolver {
       (a, b) =>
         Number(a.termination.type === "plane") -
           Number(b.termination.type === "plane") ||
+        (busLayerAssignments[a.busId] ?? "").localeCompare(
+          busLayerAssignments[b.busId] ?? "",
+        ) ||
         b.componentObstacles.length - a.componentObstacles.length ||
         (isSingleLayerFanout
           ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
