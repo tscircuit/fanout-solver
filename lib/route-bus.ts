@@ -23,7 +23,7 @@ import type {
 
 export type RouteBusStaticClearanceCache = Map<string, boolean>
 
-interface RouteBusParams {
+export interface RouteBusParams {
   srj: SimpleRouteJson
   bus: PreparedBus
   targetLayer: string
@@ -928,7 +928,10 @@ function routePlaneTerminatedBus(
   return null
 }
 
-export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
+export function routeBusAlternatives(
+  params: RouteBusParams,
+  maxAlternatives = 1,
+): FanoutRoutePlan[][] {
   const {
     srj,
     bus,
@@ -943,12 +946,18 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
     staticClearanceCache,
     blockingBusCounts,
   } = params
+  if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
+    throw new Error(
+      `FanoutSolver: maxAlternatives must be a positive integer, received ${maxAlternatives}`,
+    )
+  }
   if (bus.termination.type === "plane") {
-    return routePlaneTerminatedBus(params)
+    const plan = routePlaneTerminatedBus(params)
+    return plan ? [plan] : []
   }
   const exitAxis = getExitAxis(bus)
   const sourceObstacle = bus.connections[0]?.sourceObstacle
-  if (!sourceObstacle) return []
+  if (!sourceObstacle) return [[]]
   const directionalPadSize = isHorizontal(bus.direction)
     ? sourceObstacle.width
     : sourceObstacle.height
@@ -966,80 +975,110 @@ export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
       : [1, -1]
     : [0]
 
-  for (const viaHandedness of viaHandednesses) {
-    for (const connectionOrder of getConnectionOrders(bus)) {
-      const candidatePlans: FanoutRoutePlan[] = []
-      let orderIsClear = true
-      for (const preparedConnection of connectionOrder) {
-        let acceptedPlan: FanoutRoutePlan | null = null
-        const trackCandidates = getTrackCandidates({
-          bus,
-          connection: preparedConnection,
-          preferredTrack: getPreferredTrack({
-            bus,
-            connection: preparedConnection,
-            targetUsesVia,
-            interstitialEscape,
-            compactBusTracks,
-            traceWidth,
-            viaDiameter,
-            clearance,
-          }),
-          traceWidth,
+  const alternatives: FanoutRoutePlan[][] = []
+  const seenAlternativeKeys = new Set<string>()
+
+  const addAlternative = (plans: FanoutRoutePlan[]): void => {
+    const key = plans
+      .map(
+        (plan) =>
+          `${plan.connectionIndex}:${plan.targetLayer}:${plan.exitPoint.x}:${plan.exitPoint.y}:${plan.segments.map((segment) => `${segment.start.x},${segment.start.y},${segment.end.x},${segment.end.y},${segment.layer}`).join(";")}`,
+      )
+      .join("|")
+    if (seenAlternativeKeys.has(key)) return
+    seenAlternativeKeys.add(key)
+    alternatives.push(plans)
+  }
+
+  const searchConnectionOrder = (
+    connectionOrder: PreparedConnection[],
+    viaHandedness: ViaHandedness,
+    connectionIndex: number,
+    candidatePlans: FanoutRoutePlan[],
+  ): void => {
+    if (alternatives.length >= maxAlternatives) return
+    if (connectionIndex >= connectionOrder.length) {
+      addAlternative(candidatePlans)
+      return
+    }
+
+    const preparedConnection = connectionOrder[connectionIndex]!
+    const connectionRank = getConnectionRank(bus, preparedConnection)
+    const trackCandidates = getTrackCandidates({
+      bus,
+      connection: preparedConnection,
+      preferredTrack: getPreferredTrack({
+        bus,
+        connection: preparedConnection,
+        targetUsesVia,
+        interstitialEscape,
+        compactBusTracks,
+        traceWidth,
+        viaDiameter,
+        clearance,
+      }),
+      traceWidth,
+      clearance,
+    })
+    for (
+      let trackIndex = 0;
+      trackIndex < trackCandidates.length;
+      trackIndex++
+    ) {
+      const track = trackCandidates[trackIndex]!
+      const plan = buildPlan({
+        preparedConnection,
+        bus,
+        targetLayer,
+        track: track.value,
+        exitAxis,
+        layerNames,
+        traceWidth,
+        viaDiameter,
+        viaHoleDiameter,
+        viaHandedness,
+        interstitialEscape,
+        spreadLaneIndex: Math.min(
+          connectionRank,
+          bus.connections.length - connectionRank - 1,
+        ),
+        clearance,
+        terminateAtVia: false,
+      })
+      if (
+        !planIsClear({
+          plan,
+          otherPlans: [...acceptedPlans, ...candidatePlans],
+          staticClearanceCache,
+          blockingBusCounts,
+          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}`,
+          srj,
+          sharedBoundary: bus.sharedBoundary,
           clearance,
         })
-        for (
-          let trackIndex = 0;
-          trackIndex < trackCandidates.length;
-          trackIndex++
-        ) {
-          const track = trackCandidates[trackIndex]!
-          const plan = buildPlan({
-            preparedConnection,
-            bus,
-            targetLayer,
-            track: track.value,
-            exitAxis,
-            layerNames,
-            traceWidth,
-            viaDiameter,
-            viaHoleDiameter,
-            viaHandedness,
-            interstitialEscape,
-            spreadLaneIndex: Math.min(
-              getConnectionRank(bus, preparedConnection),
-              bus.connections.length -
-                getConnectionRank(bus, preparedConnection) -
-                1,
-            ),
-            clearance,
-            terminateAtVia: false,
-          })
-          if (
-            planIsClear({
-              plan,
-              otherPlans: [...acceptedPlans, ...candidatePlans],
-              staticClearanceCache,
-              blockingBusCounts,
-              cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}`,
-              srj,
-              sharedBoundary: bus.sharedBoundary,
-              clearance,
-            })
-          ) {
-            acceptedPlan = plan
-            break
-          }
-        }
-        if (!acceptedPlan) {
-          orderIsClear = false
-          break
-        }
-        candidatePlans.push(acceptedPlan)
+      ) {
+        continue
       }
-      if (orderIsClear) return candidatePlans
+      searchConnectionOrder(
+        connectionOrder,
+        viaHandedness,
+        connectionIndex + 1,
+        [...candidatePlans, plan],
+      )
+      if (alternatives.length >= maxAlternatives) return
     }
   }
 
-  return null
+  for (const viaHandedness of viaHandednesses) {
+    for (const connectionOrder of getConnectionOrders(bus)) {
+      searchConnectionOrder(connectionOrder, viaHandedness, 0, [])
+      if (alternatives.length >= maxAlternatives) return alternatives
+    }
+  }
+
+  return alternatives
+}
+
+export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {
+  return routeBusAlternatives(params, 1)[0] ?? null
 }
