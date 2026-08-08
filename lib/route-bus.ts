@@ -849,6 +849,43 @@ function planIsClear(params: {
   )
 }
 
+/**
+ * Validate a complete set of fanout plans against the source SRJ and against
+ * one another. This is intentionally separate from route search so every
+ * route-producing strategy can share the same final safety invariant.
+ */
+export function fanoutPlansAreClear(params: {
+  plans: readonly FanoutRoutePlan[]
+  srj: SimpleRouteJson
+  sharedBoundary: Bounds
+  clearance: number
+}): boolean {
+  const { plans, srj, sharedBoundary, clearance } = params
+  for (let index = 0; index < plans.length; index++) {
+    const plan = plans[index]!
+    if (
+      !planIsStaticallyClear({
+        plan,
+        srj,
+        sharedBoundary,
+        clearance,
+      })
+    ) {
+      return false
+    }
+    if (
+      !planIsClearOfPlans({
+        plan,
+        otherPlans: plans.filter((_, otherIndex) => otherIndex !== index),
+        clearance,
+      })
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
 function routePlaneTerminatedBus(
   params: RouteBusParams,
 ): FanoutRoutePlan[] | null {

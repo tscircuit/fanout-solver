@@ -12,6 +12,7 @@ import {
   resolveAvailableBoundaryRegions,
 } from "./prepare-buses"
 import {
+  fanoutPlansAreClear,
   routeBus,
   routeBusAlternatives,
   type RouteBusStaticClearanceCache,
@@ -20,6 +21,7 @@ import { routeSingleLayerWithAdaptiveExits } from "./route-single-layer-adaptive
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
 import type {
   AssignmentAttempt,
+  Bounds,
   FanoutAttemptSummary,
   FanoutBorderDistribution,
   FanoutRoutePlan,
@@ -422,6 +424,28 @@ export class FanoutSolver extends BaseSolver {
     return "FanoutSolver"
   }
 
+  private getValidationBoundary(): Bounds {
+    if (this.options.sharedBoundary) return this.options.sharedBoundary
+    return this.preparedBuses.reduce<Bounds>(
+      (boundary, bus) => ({
+        minX: Math.min(boundary.minX, bus.sharedBoundary.minX),
+        maxX: Math.max(boundary.maxX, bus.sharedBoundary.maxX),
+        minY: Math.min(boundary.minY, bus.sharedBoundary.minY),
+        maxY: Math.max(boundary.maxY, bus.sharedBoundary.maxY),
+      }),
+      this.inputSrj.bounds,
+    )
+  }
+
+  private plansAreClear(plans: readonly FanoutRoutePlan[]): boolean {
+    return fanoutPlansAreClear({
+      plans,
+      srj: this.inputSrj,
+      sharedBoundary: this.getValidationBoundary(),
+      clearance: this.config.clearance,
+    })
+  }
+
   private evaluateAssignmentWithStrategy(
     assignmentIndex: number,
     busLayerAssignments: Readonly<Record<string, string>>,
@@ -522,6 +546,17 @@ export class FanoutSolver extends BaseSolver {
         failedBusIds: [...failedBusIds],
         blockingBusCounts: new Map(blockingBusCounts),
       })
+    }
+
+    if (
+      plans.length === this.inputSrj.connections.length &&
+      !this.plansAreClear(plans)
+    ) {
+      // A complete-looking result from any routing strategy must not be able
+      // to bypass the same via/obstacle and inter-plan checks used by routeBus.
+      plans = []
+      failedBusIds = this.preparedBuses.map((bus) => bus.busId)
+      blockingBusCounts.clear()
     }
 
     const routedBusCount = this.preparedBuses.length - failedBusIds.length
@@ -722,6 +757,12 @@ export class FanoutSolver extends BaseSolver {
 
     const bestState = states[0]
     if (!bestState) return null
+    if (
+      bestState.plans.length === this.inputSrj.connections.length &&
+      !this.plansAreClear(bestState.plans)
+    ) {
+      return null
+    }
     const score =
       bestState.plans.length === this.inputSrj.connections.length
         ? bestState.plans.reduce((total, plan) => total + plan.length, 0) +
