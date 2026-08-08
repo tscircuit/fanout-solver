@@ -11,6 +11,7 @@ import {
 import type { Bounds, FanoutSolverOptions } from "lib/types"
 
 const BGA_COMPONENT_ID = "bga_component"
+export const SRJ19_FANOUT_LAYER_COUNT = 6
 
 interface Srj19SourceSample {
   sampleName: string
@@ -115,6 +116,7 @@ export function createSrj19FanoutInput(
   const { buses: _sourceBuses, ...sourceWithoutBuses } = sourceSrj
   return {
     ...sourceWithoutBuses,
+    layerCount: SRJ19_FANOUT_LAYER_COUNT,
     connections,
   }
 }

@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
-import { createSrj19FanoutInput, srj19FanoutSamples } from "../datasets/srj19"
+import {
+  createSrj19FanoutInput,
+  SRJ19_FANOUT_LAYER_COUNT,
+  srj19FanoutSamples,
+} from "../datasets/srj19"
 
 test("SRJ19 adapts a representative sample into a BGA fanout problem", () => {
   expect(srj19FanoutSamples).toHaveLength(200)
@@ -14,6 +18,8 @@ test("SRJ19 adapts a representative sample into a BGA fanout problem", () => {
   )
   expect(sample.simpleRouteJson.obstacles).toHaveLength(sample.obstacleCount)
   expect(sample.simpleRouteJson.buses).toBeUndefined()
+  expect(sample.simpleRouteJson.layerCount).toBe(SRJ19_FANOUT_LAYER_COUNT)
+  expect(SRJ19_FANOUT_LAYER_COUNT).toBe(6)
   expect(sample.solverOptions.sourceComponentId).toBe("bga_component")
   expect(sample.solverOptions.sharedBoundary).toEqual(
     sample.simpleRouteJson.bounds,
