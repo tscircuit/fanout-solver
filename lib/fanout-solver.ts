@@ -488,7 +488,7 @@ export class FanoutSolver extends BaseSolver {
         (isSingleLayerFanout
           ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
           : b.connections.length - a.connections.length ||
-            getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b)),
+            getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)),
     )
 
     for (const bus of isSingleLayerFanout && this.config.singleLayerPushAndShove
