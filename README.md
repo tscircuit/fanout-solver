@@ -204,7 +204,9 @@ The repository also loads all 200 samples from
 [`tscircuit/dataset-srj19`](https://github.com/tscircuit/dataset-srj19) as a
 pinned development dependency. The adapter keeps the complete obstacle field
 but selects only connections that touch the BGA, producing progressively larger
-two-layer fanout problems with opposite-layer passive overlays.
+fanout problems with opposite-side passive overlays. Every adapted problem uses
+the same six-layer stackup (`top`, `inner1` through `inner4`, and `bottom`) so
+benchmark improvements are directly comparable.
 
 Run the full benchmark with:
 
@@ -213,10 +215,21 @@ Run the full benchmark with:
 ```
 
 Use `--sample sample001`, `--limit 10`, or
-`--max-layer-combinations 16` for shorter runs. Partial solutions are reported
-as benchmark results instead of failing the command, making current completion
-rates a baseline for solver improvements. `bun run benchmark:srj19` is an alias
-for the same command.
+`--max-layer-combinations 16` for shorter runs. Samples run one at a time by
+default and print progress as they finish. `--concurrency 8` runs isolated
+samples in parallel, and `--sample-timeout-seconds 600` prevents a difficult
+sample from blocking the remaining work. Each run writes the full ordered
+results to `benchmark-results/srj19.json` and
+`benchmark-results/srj19.md`. Partial solutions are reported as benchmark
+results instead of failing the command, making current completion rates a
+baseline for solver improvements. `bun run benchmark:srj19` is an alias for the
+same command.
+
+The `SRJ19 Benchmark` GitHub Actions workflow runs the complete dataset on a
+Blacksmith 32-vCPU ARM runner with 32 sample processes by default. It can be
+started manually with an optional sample id, or for a pull request by adding
+`[BENCHMARK TEST]` to its title. The workflow publishes the Markdown summary and
+uploads both reports as an artifact.
 
 Run `bun run start` and open the `datasets/srj19` Cosmos fixture to step the
 selected sample through `GenericSolverDebugger`. The page has Previous/Next,

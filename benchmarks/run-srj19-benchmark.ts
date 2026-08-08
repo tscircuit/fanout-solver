@@ -1,11 +1,67 @@
+import { mkdir } from "node:fs/promises"
+import { join } from "node:path"
 import { FanoutSolver } from "lib/fanout-solver"
-import { srj19FanoutSamples } from "../datasets/srj19"
+import {
+  SRJ19_FANOUT_LAYER_COUNT,
+  type Srj19FanoutSample,
+  srj19DatasetName,
+  srj19FanoutSamples,
+} from "../datasets/srj19"
 
 interface BenchmarkOptions {
   sample?: string
   limit?: number
   maxLayerCombinations?: number
+  concurrency: number
+  sampleTimeoutSeconds?: number
+  outputDirectory: string
+  worker: boolean
+  help: boolean
 }
+
+type BenchmarkStatus = "solved" | "partial" | "error" | "timeout"
+
+interface BenchmarkRow {
+  sample: string
+  status: BenchmarkStatus
+  bgaPads: number
+  components: number
+  obstacles: number
+  connections: number
+  routed: number
+  completionPercent: number
+  attempts: number
+  vias: number | null
+  milliseconds: number
+  error?: string
+}
+
+interface BenchmarkReport {
+  version: 1
+  datasetName: string
+  layerCount: number
+  generatedAt: string
+  configuration: {
+    maxLayerCombinations: number
+    concurrency: number
+    sampleTimeoutSeconds: number | null
+  }
+  summary: {
+    samples: number
+    solved: number
+    partial: number
+    errors: number
+    timeouts: number
+    routedConnections: number
+    totalConnections: number
+    completionPercent: number
+    solverMilliseconds: number
+    wallClockMilliseconds: number
+  }
+  rows: BenchmarkRow[]
+}
+
+const DEFAULT_MAX_LAYER_COMBINATIONS = 256
 
 function readPositiveInteger(flag: string, value: string | undefined): number {
   const parsed = Number(value)
@@ -16,21 +72,47 @@ function readPositiveInteger(flag: string, value: string | undefined): number {
 }
 
 function parseOptions(args: string[]): BenchmarkOptions {
-  const options: BenchmarkOptions = {}
+  const options: BenchmarkOptions = {
+    concurrency: 1,
+    outputDirectory: "benchmark-results",
+    worker: false,
+    help: false,
+  }
   for (let index = 0; index < args.length; index++) {
     const argument = args[index]!
     const [flag, inlineValue] = argument.split("=", 2)
-    const value = inlineValue ?? args[++index]
+    const readValue = () => inlineValue ?? args[++index]
     switch (flag) {
-      case "--sample":
+      case "--sample": {
+        const value = readValue()
         if (!value) throw new Error("--sample requires a sample id")
         options.sample = value
         break
+      }
       case "--limit":
-        options.limit = readPositiveInteger("--limit", value)
+        options.limit = readPositiveInteger(flag, readValue())
         break
       case "--max-layer-combinations":
-        options.maxLayerCombinations = readPositiveInteger(flag, value)
+        options.maxLayerCombinations = readPositiveInteger(flag, readValue())
+        break
+      case "--concurrency":
+        options.concurrency = readPositiveInteger(flag, readValue())
+        break
+      case "--sample-timeout-seconds":
+        options.sampleTimeoutSeconds = readPositiveInteger(flag, readValue())
+        break
+      case "--output-directory": {
+        const value = readValue()
+        if (!value) throw new Error("--output-directory requires a path")
+        options.outputDirectory = value
+        break
+      }
+      case "--worker":
+        options.worker = true
+        break
+      case "--help":
+      case "-h":
+        options.help = true
         break
       default:
         throw new Error(`Unknown argument: ${argument}`)
@@ -39,32 +121,76 @@ function parseOptions(args: string[]): BenchmarkOptions {
   return options
 }
 
-const options = parseOptions(Bun.argv.slice(2))
-let selectedSamples = srj19FanoutSamples
-if (options.sample) {
-  selectedSamples = selectedSamples.filter(
-    (sample) => sample.id === options.sample,
-  )
-  if (selectedSamples.length === 0) {
-    throw new Error(`Unknown SRJ19 sample: ${options.sample}`)
+function printHelp(): void {
+  console.log(`Usage: ./benchmark.sh [options]
+
+Runs the six-layer SRJ19 fanout benchmark. Local runs process one sample at a
+time by default; use --concurrency on a multi-core benchmark runner.
+
+Options:
+  --sample <sample001>             Run one sample
+  --limit <count>                  Run the first count selected samples
+  --max-layer-combinations <count> Maximum assignments per sample (default: 256)
+  --concurrency <count>            Isolated sample processes to run in parallel
+  --sample-timeout-seconds <count> Stop an individual sample after this duration
+  --output-directory <path>        Report directory (default: benchmark-results)
+  --help                           Show this help`)
+}
+
+function selectSamples(options: BenchmarkOptions): Srj19FanoutSample[] {
+  let selectedSamples = srj19FanoutSamples
+  if (options.sample) {
+    selectedSamples = selectedSamples.filter(
+      (sample) => sample.id === options.sample,
+    )
+    if (selectedSamples.length === 0) {
+      throw new Error(`Unknown SRJ19 sample: ${options.sample}`)
+    }
+  }
+  if (options.limit) selectedSamples = selectedSamples.slice(0, options.limit)
+  return selectedSamples
+}
+
+function round(value: number): number {
+  return Number(value.toFixed(2))
+}
+
+function completionPercent(routed: number, connections: number): number {
+  return connections === 0 ? 0 : round((routed / connections) * 100)
+}
+
+function createFailureRow(params: {
+  sample: Srj19FanoutSample
+  status: "error" | "timeout"
+  milliseconds: number
+  error: string
+}): BenchmarkRow {
+  const { sample, status, milliseconds, error } = params
+  return {
+    sample: sample.id,
+    status,
+    bgaPads: sample.bgaPadCount,
+    components: sample.componentCount,
+    obstacles: sample.obstacleCount,
+    connections: sample.fanoutConnectionCount,
+    routed: 0,
+    completionPercent: 0,
+    attempts: 0,
+    vias: null,
+    milliseconds: round(milliseconds),
+    error,
   }
 }
-if (options.limit) selectedSamples = selectedSamples.slice(0, options.limit)
 
-const rows: Array<Record<string, string | number>> = []
-let solvedCount = 0
-let totalRoutedConnections = 0
-let totalFanoutConnections = 0
-let totalMilliseconds = 0
-
-for (const sample of selectedSamples) {
+function runSample(
+  sample: Srj19FanoutSample,
+  maxLayerCombinations: number,
+): BenchmarkRow {
   const startTime = performance.now()
   try {
     const solver = new FanoutSolver(sample.simpleRouteJson, {
       ...sample.solverOptions,
-      ...(options.maxLayerCombinations
-        ? { maxLayerCombinations: options.maxLayerCombinations }
-        : {}),
+      maxLayerCombinations,
     })
     solver.solve()
     const elapsedMilliseconds = performance.now() - startTime
@@ -78,13 +204,9 @@ for (const sample of selectedSamples) {
           .fanoutTraces.filter((trace) =>
             trace.route.some((point) => point.route_type === "via"),
           ).length
-      : "-"
+      : null
 
-    if (solver.solved) solvedCount++
-    totalRoutedConnections += routedConnections
-    totalFanoutConnections += sample.fanoutConnectionCount
-    totalMilliseconds += elapsedMilliseconds
-    rows.push({
+    return {
       sample: sample.id,
       status: solver.solved ? "solved" : "partial",
       bgaPads: sample.bgaPadCount,
@@ -92,40 +214,269 @@ for (const sample of selectedSamples) {
       obstacles: sample.obstacleCount,
       connections: sample.fanoutConnectionCount,
       routed: routedConnections,
-      completion: `${((routedConnections / sample.fanoutConnectionCount) * 100).toFixed(1)}%`,
+      completionPercent: completionPercent(
+        routedConnections,
+        sample.fanoutConnectionCount,
+      ),
       attempts: solver.attempts.length,
       vias: viaCount,
-      milliseconds: Number(elapsedMilliseconds.toFixed(2)),
-    })
+      milliseconds: round(elapsedMilliseconds),
+    }
   } catch (error) {
-    const elapsedMilliseconds = performance.now() - startTime
-    totalFanoutConnections += sample.fanoutConnectionCount
-    totalMilliseconds += elapsedMilliseconds
-    rows.push({
-      sample: sample.id,
+    return createFailureRow({
+      sample,
       status: "error",
-      bgaPads: sample.bgaPadCount,
-      components: sample.componentCount,
-      obstacles: sample.obstacleCount,
-      connections: sample.fanoutConnectionCount,
-      routed: 0,
-      completion: "0.0%",
-      attempts: 0,
-      vias: "-",
-      milliseconds: Number(elapsedMilliseconds.toFixed(2)),
+      milliseconds: performance.now() - startTime,
       error: error instanceof Error ? error.message : String(error),
     })
   }
 }
 
-console.table(rows)
-console.log({
-  samples: selectedSamples.length,
-  solved: solvedCount,
-  routedConnections: `${totalRoutedConnections}/${totalFanoutConnections}`,
-  completion:
-    totalFanoutConnections === 0
-      ? "0.0%"
-      : `${((totalRoutedConnections / totalFanoutConnections) * 100).toFixed(1)}%`,
-  milliseconds: Number(totalMilliseconds.toFixed(2)),
+async function runSampleProcess(params: {
+  sample: Srj19FanoutSample
+  maxLayerCombinations: number
+  sampleTimeoutSeconds?: number
+}): Promise<BenchmarkRow> {
+  const { sample, maxLayerCombinations, sampleTimeoutSeconds } = params
+  const startTime = performance.now()
+  const child = Bun.spawn({
+    cmd: [
+      process.execPath,
+      import.meta.path,
+      "--worker",
+      "--sample",
+      sample.id,
+      "--max-layer-combinations",
+      String(maxLayerCombinations),
+    ],
+    cwd: process.cwd(),
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  let timedOut = false
+  const timeout = sampleTimeoutSeconds
+    ? setTimeout(() => {
+        timedOut = true
+        child.kill()
+      }, sampleTimeoutSeconds * 1_000)
+    : undefined
+  const stdoutPromise = new Response(child.stdout).text()
+  const stderrPromise = new Response(child.stderr).text()
+  const exitCode = await child.exited
+  if (timeout) clearTimeout(timeout)
+  const stdout = await stdoutPromise
+  const stderr = await stderrPromise
+  const elapsedMilliseconds = performance.now() - startTime
+
+  if (timedOut) {
+    return createFailureRow({
+      sample,
+      status: "timeout",
+      milliseconds: elapsedMilliseconds,
+      error: `Exceeded ${sampleTimeoutSeconds} seconds`,
+    })
+  }
+  if (exitCode !== 0) {
+    return createFailureRow({
+      sample,
+      status: "error",
+      milliseconds: elapsedMilliseconds,
+      error: stderr.trim() || `Worker exited with code ${exitCode}`,
+    })
+  }
+  try {
+    return JSON.parse(stdout) as BenchmarkRow
+  } catch (error) {
+    return createFailureRow({
+      sample,
+      status: "error",
+      milliseconds: elapsedMilliseconds,
+      error: `Could not parse worker result: ${error instanceof Error ? error.message : String(error)}`,
+    })
+  }
+}
+
+function printProgress(
+  row: BenchmarkRow,
+  completed: number,
+  total: number,
+): void {
+  const duration = `${(row.milliseconds / 1_000).toFixed(2)}s`
+  const attempts = `${row.attempts} attempt${row.attempts === 1 ? "" : "s"}`
+  console.log(
+    `[${String(completed).padStart(String(total).length)}/${total}] ${row.sample} ${row.status}: ${row.routed}/${row.connections} (${row.completionPercent.toFixed(1)}%), ${attempts}, ${duration}`,
+  )
+  if (row.error) console.log(`  ${row.error}`)
+}
+
+async function runSamples(params: {
+  samples: Srj19FanoutSample[]
+  concurrency: number
+  maxLayerCombinations: number
+  sampleTimeoutSeconds?: number
+}): Promise<BenchmarkRow[]> {
+  const { samples, concurrency, maxLayerCombinations, sampleTimeoutSeconds } =
+    params
+  const rows = new Array<BenchmarkRow>(samples.length)
+  let nextIndex = 0
+  let completed = 0
+  const workerCount = Math.min(concurrency, samples.length)
+
+  const runNext = async (): Promise<void> => {
+    while (nextIndex < samples.length) {
+      const sampleIndex = nextIndex++
+      const sample = samples[sampleIndex]!
+      const row = await runSampleProcess({
+        sample,
+        maxLayerCombinations,
+        sampleTimeoutSeconds,
+      })
+      rows[sampleIndex] = row
+      completed++
+      printProgress(row, completed, samples.length)
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => runNext()))
+  return rows
+}
+
+function buildReport(params: {
+  rows: BenchmarkRow[]
+  maxLayerCombinations: number
+  concurrency: number
+  sampleTimeoutSeconds?: number
+  wallClockMilliseconds: number
+}): BenchmarkReport {
+  const {
+    rows,
+    maxLayerCombinations,
+    concurrency,
+    sampleTimeoutSeconds,
+    wallClockMilliseconds,
+  } = params
+  const routedConnections = rows.reduce((sum, row) => sum + row.routed, 0)
+  const totalConnections = rows.reduce((sum, row) => sum + row.connections, 0)
+  return {
+    version: 1,
+    datasetName: srj19DatasetName,
+    layerCount: SRJ19_FANOUT_LAYER_COUNT,
+    generatedAt: new Date().toISOString(),
+    configuration: {
+      maxLayerCombinations,
+      concurrency,
+      sampleTimeoutSeconds: sampleTimeoutSeconds ?? null,
+    },
+    summary: {
+      samples: rows.length,
+      solved: rows.filter((row) => row.status === "solved").length,
+      partial: rows.filter((row) => row.status === "partial").length,
+      errors: rows.filter((row) => row.status === "error").length,
+      timeouts: rows.filter((row) => row.status === "timeout").length,
+      routedConnections,
+      totalConnections,
+      completionPercent: completionPercent(routedConnections, totalConnections),
+      solverMilliseconds: round(
+        rows.reduce((sum, row) => sum + row.milliseconds, 0),
+      ),
+      wallClockMilliseconds: round(wallClockMilliseconds),
+    },
+    rows,
+  }
+}
+
+function renderMarkdown(report: BenchmarkReport): string {
+  const { configuration, summary } = report
+  const lines = [
+    "# SRJ19 Fanout Benchmark",
+    "",
+    `- Layers: ${report.layerCount}`,
+    `- Solved: ${summary.solved}/${summary.samples}`,
+    `- Routed connections: ${summary.routedConnections}/${summary.totalConnections} (${summary.completionPercent.toFixed(1)}%)`,
+    `- Partial/errors/timeouts: ${summary.partial}/${summary.errors}/${summary.timeouts}`,
+    `- Assignment budget: ${configuration.maxLayerCombinations} per sample`,
+    `- Concurrency: ${configuration.concurrency}`,
+    `- Wall time: ${(summary.wallClockMilliseconds / 1_000).toFixed(2)}s`,
+    `- Aggregate solver time: ${(summary.solverMilliseconds / 1_000).toFixed(2)}s`,
+    "",
+    "| Sample | Status | Routed | Completion | Attempts | Vias | Time |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+  ]
+  for (const row of report.rows) {
+    lines.push(
+      `| ${row.sample} | ${row.status} | ${row.routed}/${row.connections} | ${row.completionPercent.toFixed(1)}% | ${row.attempts} | ${row.vias ?? "-"} | ${(row.milliseconds / 1_000).toFixed(2)}s |`,
+    )
+  }
+  return `${lines.join("\n")}\n`
+}
+
+function renderConsoleSummary(report: BenchmarkReport): string {
+  const { configuration, summary } = report
+  return [
+    `Solved: ${summary.solved}/${summary.samples}`,
+    `Routed connections: ${summary.routedConnections}/${summary.totalConnections} (${summary.completionPercent.toFixed(1)}%)`,
+    `Partial/errors/timeouts: ${summary.partial}/${summary.errors}/${summary.timeouts}`,
+    `Layers/assignment budget/concurrency: ${report.layerCount}/${configuration.maxLayerCombinations}/${configuration.concurrency}`,
+    `Wall time/aggregate solver time: ${(summary.wallClockMilliseconds / 1_000).toFixed(2)}s/${(summary.solverMilliseconds / 1_000).toFixed(2)}s`,
+  ].join("\n")
+}
+
+async function writeReport(
+  report: BenchmarkReport,
+  outputDirectory: string,
+): Promise<void> {
+  await mkdir(outputDirectory, { recursive: true })
+  await Promise.all([
+    Bun.write(
+      join(outputDirectory, "srj19.json"),
+      `${JSON.stringify(report, null, 2)}\n`,
+    ),
+    Bun.write(join(outputDirectory, "srj19.md"), renderMarkdown(report)),
+  ])
+}
+
+const options = parseOptions(Bun.argv.slice(2))
+if (options.help) {
+  printHelp()
+  process.exit(0)
+}
+
+const selectedSamples = selectSamples(options)
+const maxLayerCombinations =
+  options.maxLayerCombinations ??
+  selectedSamples[0]?.solverOptions.maxLayerCombinations ??
+  DEFAULT_MAX_LAYER_COMBINATIONS
+
+if (options.worker) {
+  if (selectedSamples.length !== 1) {
+    throw new Error("An SRJ19 benchmark worker requires exactly one sample")
+  }
+  console.log(
+    JSON.stringify(runSample(selectedSamples[0]!, maxLayerCombinations)),
+  )
+  process.exit(0)
+}
+
+console.log(
+  `Running ${selectedSamples.length} SRJ19 sample${selectedSamples.length === 1 ? "" : "s"} with ${SRJ19_FANOUT_LAYER_COUNT} layers, ${maxLayerCombinations} assignments, and concurrency ${Math.min(options.concurrency, selectedSamples.length)}`,
+)
+const startTime = performance.now()
+const rows = await runSamples({
+  samples: selectedSamples,
+  concurrency: options.concurrency,
+  maxLayerCombinations,
+  sampleTimeoutSeconds: options.sampleTimeoutSeconds,
 })
+const report = buildReport({
+  rows,
+  maxLayerCombinations,
+  concurrency: Math.min(options.concurrency, selectedSamples.length),
+  sampleTimeoutSeconds: options.sampleTimeoutSeconds,
+  wallClockMilliseconds: performance.now() - startTime,
+})
+await writeReport(report, options.outputDirectory)
+console.log("")
+console.log(renderConsoleSummary(report))
+console.log(
+  `Reports: ${join(options.outputDirectory, "srj19.json")}, ${join(options.outputDirectory, "srj19.md")}`,
+)

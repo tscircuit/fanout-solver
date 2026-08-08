@@ -84,7 +84,8 @@ export default function Srj19Page() {
             <div style={{ color: "#475569", fontSize: 13, marginTop: 4 }}>
               {selectedSample.id} · sample {selectedIndex + 1} of{" "}
               {srj19FanoutSamples.length} · {selectedSample.bgaPadCount} BGA
-              pads · {selectedSample.fanoutConnectionCount} fanout connections
+              pads · {selectedSample.fanoutConnectionCount} fanout connections ·{" "}
+              {selectedSample.simpleRouteJson.layerCount} layers
             </div>
             <div style={{ color: "#475569", fontSize: 13, marginTop: 4 }}>
               {selectedSample.componentCount} components ·{" "}
