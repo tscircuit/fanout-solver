@@ -4,4 +4,4 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
-exec bun benchmarks/run-srj19-benchmark.ts "$@"
+exec bun benchmarks/run-srj29-benchmark.ts "$@"

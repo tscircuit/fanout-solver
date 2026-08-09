@@ -507,7 +507,12 @@ export class FanoutSolver extends BaseSolver {
           `FanoutSolver: assignment ${assignmentIndex} has no layer for bus "${bus.busId}"`,
         )
       }
-      routingPrefixKey += `${targetLayer.length}:${targetLayer};`
+      // The routing order can change between assignments (notably for
+      // group-by-layer search). A layer-only key can therefore replay a
+      // prefix belonging to a different bus and duplicate or drop plans when
+      // buses contain multiple connections. Include the bus identity so the
+      // cache remains valid for grouped power/signal lanes.
+      routingPrefixKey += `${bus.busId.length}:${bus.busId};${targetLayer.length}:${targetLayer};`
       const cachedPrefix = this.routingPrefixCache.get(routingPrefixKey)
       if (cachedPrefix) {
         plans = [...cachedPrefix.plans]
@@ -633,8 +638,10 @@ export class FanoutSolver extends BaseSolver {
    * Search layer assignments and track alternatives together. The regular
    * assignment loop commits to one route per bus before the next bus is
    * considered, so a locally-valid track can still starve a later bus. A
-   * bounded beam keeps several grouped-layer route prefixes alive and is
-   * especially useful for the many singleton buses in the SRJ19 samples.
+   * bounded beam keeps several grouped-layer route prefixes alive. It also
+   * evaluates multi-connection buses atomically, so one promising route for a
+   * power or signal lane cannot starve a later bus before the solver explores
+   * an alternate layer/track combination.
    */
   private evaluateGroupedBeam(
     assignmentIndex: number,
@@ -642,9 +649,12 @@ export class FanoutSolver extends BaseSolver {
   ): EvaluatedAssignment | null {
     if (this.config.escapeLayers.length < 2) return null
     if (this.preparedBuses.length > 56) return null
-    if (this.preparedBuses.some((bus) => bus.connections.length !== 1)) {
-      return null
-    }
+    const totalConnections = this.inputSrj.connections.length
+    // Multi-pin alternatives grow with both the bus width and the number of
+    // layer prefixes. Keep the new search bounded on the small/medium grouped
+    // problems it can improve, then let the regular assignment/repair search
+    // handle the very large benchmark samples without starving them.
+    if (totalConnections > 64) return null
     if (new Set(this.preparedBuses.map((bus) => bus.componentId)).size !== 1) {
       return null
     }
@@ -672,8 +682,8 @@ export class FanoutSolver extends BaseSolver {
       )
     })
 
-    const beamWidth = 128
-    const alternativesPerLayer = 4
+    const beamWidth = totalConnections <= 24 ? 48 : 12
+    const alternativesPerLayer = totalConnections <= 24 ? 4 : 1
     let states: GroupedBeamState[] = [{ assignment: {}, plans: [] }]
 
     const getStateScore = (state: GroupedBeamState): number => {

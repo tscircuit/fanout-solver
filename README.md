@@ -42,6 +42,11 @@ and treats each bus-layer decision atomically.
   alternate instead of favoring one axis; square grids distribute equally
   across north, south, east, and west.
 - Enumerates combinations of the copper layers implied by `layerCount`.
+- Keeps a bounded beam of route alternatives for multi-connection buses, so
+  grouped power/signal lanes can backtrack across layer and track choices
+  before committing a prefix.
+- Keys route-prefix caches by both bus and layer, preserving plan uniqueness
+  when grouped-layer search changes bus order.
 - Prefers depth-cycled layer assignments: matching north/south (or east/west)
   bus depths share a layer, and deeper pairs cycle through every available
   escape layer. This forces a small stackup to reuse routing channels.
@@ -198,15 +203,16 @@ parameters. Each sample has one shared boundary around all of its footprints,
 and component bounds come from the exact footprinter-generated copper pad
 extents.
 
-## SRJ19 benchmark
+## SRJ29 benchmark
 
-The repository also loads all 200 samples from
-[`tscircuit/dataset-srj19`](https://github.com/tscircuit/dataset-srj19) as a
-pinned development dependency. The adapter keeps the complete obstacle field
-but selects only connections that touch the BGA, producing progressively larger
-fanout problems with opposite-side passive overlays. Every adapted problem uses
-the same six-layer stackup (`top`, `inner1` through `inner4`, and `bottom`) so
-benchmark improvements are directly comparable.
+The repository loads all 200 samples from the derivative
+[`tscircuit/dataset-srj29-bga-decoupling`](https://github.com/tscircuit/dataset-srj29-bga-decoupling)
+as a pinned development dependency. The adapter keeps the complete obstacle
+field, including opposite-layer capacitor pads and bodies, and groups the
+central power escapes into VCC/GND buses while grouping remaining edge signals
+by direction. Every adapted problem uses the same six-layer stackup (`top`,
+`inner1` through `inner4`, and `bottom`) so benchmark improvements are directly
+comparable.
 
 Run the full benchmark with:
 
@@ -219,22 +225,21 @@ Use `--sample sample001`, `--limit 10`, or
 default and print progress as they finish. `--concurrency 8` runs isolated
 samples in parallel, and `--sample-timeout-seconds 600` prevents a difficult
 sample from blocking the remaining work. Each run writes the full ordered
-results to `benchmark-results/srj19.json` and
-`benchmark-results/srj19.md`. Partial solutions are reported as benchmark
+results to `benchmark-results/srj29.json` and
+`benchmark-results/srj29.md`. Partial solutions are reported as benchmark
 results instead of failing the command, making current completion rates a
-baseline for solver improvements. `bun run benchmark:srj19` is an alias for the
+baseline for solver improvements. `bun run benchmark:srj29` is an alias for the
 same command.
 
-The `SRJ19 Benchmark` GitHub Actions workflow runs the complete dataset on a
+The `SRJ29 Benchmark` GitHub Actions workflow runs the complete dataset on a
 Blacksmith 32-vCPU ARM runner with 32 sample processes by default. It can be
 started manually with an optional sample id, or for a pull request by adding
 `[BENCHMARK TEST]` to its title. The workflow publishes the Markdown summary and
 uploads both reports as an artifact.
 
-Run `bun run start` and open the `datasets/srj19` Cosmos fixture to step the
-selected sample through `GenericSolverDebugger`. The page has Previous/Next,
-sample dropdown, and range controls and stores the selection in the `sample`
-URL parameter.
+Run `bun run start` and inspect the SRJ29 fixtures to step through the selected
+sample. The derivative dataset also publishes dedicated Cosmos pages for the
+first ten samples.
 
 ## Dataset 02
 
