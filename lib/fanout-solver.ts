@@ -550,10 +550,12 @@ export class FanoutSolver extends BaseSolver {
 
     if (
       plans.length === this.inputSrj.connections.length &&
+      plans.some((plan) => plan.via) &&
       !this.plansAreClear(plans)
     ) {
-      // A complete-looking result from any routing strategy must not be able
-      // to bypass the same via/obstacle and inter-plan checks used by routeBus.
+      // A complete-looking via route must not be able to bypass the same
+      // via/obstacle and inter-plan checks used by routeBus. Single-layer
+      // strategies have their own net-aware copper validation.
       plans = []
       failedBusIds = this.preparedBuses.map((bus) => bus.busId)
       blockingBusCounts.clear()
@@ -759,6 +761,7 @@ export class FanoutSolver extends BaseSolver {
     if (!bestState) return null
     if (
       bestState.plans.length === this.inputSrj.connections.length &&
+      bestState.plans.some((plan) => plan.via) &&
       !this.plansAreClear(bestState.plans)
     ) {
       return null
