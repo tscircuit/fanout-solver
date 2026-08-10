@@ -66,9 +66,17 @@ and treats each bus-layer decision atomically.
   breakout corridor.
 - Chamfers orthogonal routing corners into 45° segments before validating and
   emitting the fanout.
-- Verifies pad, via, trace, and already-routed fanout clearance.
-- Treats an obstacle whose `connectedTo` list contains the connection name as
-  electrically connected copper rather than a foreign keepout.
+- Verifies oriented-pad, via, trace, and already-routed fanout clearance on
+  every complete candidate, independent of the routing strategy that produced
+  it.
+- Resolves `netConnectionName`, connection, port, trace, and obstacle metadata
+  into electrical-net identities. Same-net copper may merge; different-net
+  pads, traces, and vias must retain clearance on every layer they occupy.
+- `allowSameNetMerges` lets grouped branches such as VCC or GND reuse connected
+  copper instead of reserving artificial clearance from one another. It is
+  opt-in; different electrical nets remain hard obstacles.
+- Audits route continuity, unique connection coverage, boundary exits, and
+  retained downstream endpoints before marking a solution complete.
 - Emits supplied fanout traces, via obstacles, and moved breakout endpoints in a
   new `SimpleRouteJson`. The returned problem is ready for a downstream
   autorouter to finish.
@@ -182,6 +190,8 @@ bus-layer combination search.
 - `busLayerAssignments`: the selected layer for every bus
 - `busDirections`: the direction shared by each bus
 - `attempts`: score and success metadata for every tried layer combination
+- `validation`: the final geometry/connectivity report, including the number of
+  independently validated breakouts
 
 ## Dataset 01
 
@@ -208,9 +218,11 @@ extents.
 The repository loads all 200 samples from the derivative
 [`tscircuit/dataset-srj29-bga-decoupling`](https://github.com/tscircuit/dataset-srj29-bga-decoupling)
 as a pinned development dependency. The adapter keeps the complete obstacle
-field, including opposite-layer capacitor pads and bodies, and groups the
-central power escapes into VCC/GND buses while grouping remaining edge signals
-by direction. Every adapted problem uses the same six-layer stackup (`top`,
+field, including opposite-layer capacitor pads and bodies. VCC and GND are
+grouped onto opposite boundary corridors, while the capacitor pad remains the
+downstream endpoint of every power connection; a local capacitor or plane via
+alone cannot count as a solved BGA pin. Remaining edge signals are grouped by
+direction. Every adapted problem uses the same six-layer stackup (`top`,
 `inner1` through `inner4`, and `bottom`) so benchmark improvements are directly
 comparable.
 
@@ -226,10 +238,12 @@ default and print progress as they finish. `--concurrency 8` runs isolated
 samples in parallel, and `--sample-timeout-seconds 600` prevents a difficult
 sample from blocking the remaining work. Each run writes the full ordered
 results to `benchmark-results/srj29.json` and
-`benchmark-results/srj29.md`. Partial solutions are reported as benchmark
-results instead of failing the command, making current completion rates a
-baseline for solver improvements. `bun run benchmark:srj29` is an alias for the
-same command.
+`benchmark-results/srj29.md`. A row is marked solved only when every input
+connection has a validated breakout, all downstream endpoints remain attached,
+and the independent DRC audit passes. Partial solutions are reported as
+benchmark results instead of failing the command, making current completion
+rates a baseline for solver improvements. `bun run benchmark:srj29` is an alias
+for the same command.
 
 The `SRJ29 Benchmark` GitHub Actions workflow runs the complete dataset on a
 Blacksmith 32-vCPU ARM runner with 32 sample processes by default. It can be

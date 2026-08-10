@@ -32,6 +32,7 @@ interface BenchmarkRow {
   completionPercent: number
   attempts: number
   vias: number | null
+  validatedBreakouts: number | null
   milliseconds: number
   error?: string
 }
@@ -177,6 +178,7 @@ function createFailureRow(params: {
     completionPercent: 0,
     attempts: 0,
     vias: null,
+    validatedBreakouts: null,
     milliseconds: round(milliseconds),
     error,
   }
@@ -198,17 +200,22 @@ function runSample(
       (first, second) => first.score - second.score,
     )[0]
     const routedConnections = bestAttempt?.routedConnectionCount ?? 0
-    const viaCount = solver.solved
-      ? solver
-          .getOutput()
-          .fanoutTraces.filter((trace) =>
-            trace.route.some((point) => point.route_type === "via"),
-          ).length
+    const output = solver.solved ? solver.getOutput() : null
+    const solutionIsValidated =
+      output?.validation.valid === true &&
+      output.validation.checkedConnectionCount ===
+        sample.fanoutConnectionCount &&
+      output.validation.brokenOutConnectionCount ===
+        sample.fanoutConnectionCount
+    const viaCount = output
+      ? output.fanoutTraces.filter((trace) =>
+          trace.route.some((point) => point.route_type === "via"),
+        ).length
       : null
 
     return {
       sample: sample.id,
-      status: solver.solved ? "solved" : "partial",
+      status: solutionIsValidated ? "solved" : "partial",
       bgaPads: sample.bgaPadCount,
       components: sample.componentCount,
       obstacles: sample.obstacleCount,
@@ -220,6 +227,7 @@ function runSample(
       ),
       attempts: solver.attempts.length,
       vias: viaCount,
+      validatedBreakouts: output?.validation.brokenOutConnectionCount ?? null,
       milliseconds: round(elapsedMilliseconds),
     }
   } catch (error) {
@@ -399,12 +407,12 @@ function renderMarkdown(report: BenchmarkReport): string {
     `- Wall time: ${(summary.wallClockMilliseconds / 1_000).toFixed(2)}s`,
     `- Aggregate solver time: ${(summary.solverMilliseconds / 1_000).toFixed(2)}s`,
     "",
-    "| Sample | Status | Routed | Completion | Attempts | Vias | Time |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+    "| Sample | Status | Routed | Validated breakouts | Completion | Attempts | Vias | Time |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
   ]
   for (const row of report.rows) {
     lines.push(
-      `| ${row.sample} | ${row.status} | ${row.routed}/${row.connections} | ${row.completionPercent.toFixed(1)}% | ${row.attempts} | ${row.vias ?? "-"} | ${(row.milliseconds / 1_000).toFixed(2)}s |`,
+      `| ${row.sample} | ${row.status} | ${row.routed}/${row.connections} | ${row.validatedBreakouts === null ? "-" : `${row.validatedBreakouts}/${row.connections}`} | ${row.completionPercent.toFixed(1)}% | ${row.attempts} | ${row.vias ?? "-"} | ${(row.milliseconds / 1_000).toFixed(2)}s |`,
     )
   }
   return `${lines.join("\n")}\n`

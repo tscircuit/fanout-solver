@@ -112,32 +112,23 @@ function directionForBusId(busId: string): FanoutBusSpec["direction"] {
   }
 }
 
-function createSrj29Buses(
-  sourceSrj: SimpleRouteJson,
-  passiveLayer: string,
-): FanoutBusSpec[] {
-  const powerPlaneLayer = passiveLayer === "bottom" ? "inner1" : "inner4"
-  // Keep the largest samples comparable to the old boundary-only search; the
-  // bounded multi-pin beam is reserved for the small/medium grouped cases.
-  const usePowerPlane = sourceSrj.connections.length <= 64
+function createSrj29Buses(sourceSrj: SimpleRouteJson): FanoutBusSpec[] {
   return (sourceSrj.buses ?? []).map((bus) => {
     const isPowerBus = bus.busId === "power_vcc" || bus.busId === "power_gnd"
     return {
       ...bus,
       sourceComponentId: BGA_COMPONENT_ID,
-      direction: isPowerBus ? "right" : directionForBusId(bus.busId),
-      // Power nets still have explicit opposite-layer capacitor endpoints in
-      // the SRJ. Treating the opposite copper layer as the plane target models
-      // the local decoupling return while the capacitor pads remain keepouts.
-      termination: isPowerBus
-        ? usePowerPlane
-          ? { type: "plane", layer: powerPlaneLayer }
-          : { type: "boundary" }
-        : { type: "boundary" },
-      ...(isPowerBus ? { preferredExit: undefined } : {}),
-      ...(isPowerBus && passiveLayer === "top"
-        ? { direction: "left" as const }
-        : {}),
+      // VCC and GND must escape the package as real downstream connection
+      // prefixes. Splitting them across opposite edges gives the grouped power
+      // nets independent routing corridors while retaining each capacitor pad
+      // as the other endpoint in the output SRJ.
+      direction:
+        bus.busId === "power_vcc"
+          ? "left"
+          : bus.busId === "power_gnd"
+            ? "right"
+            : directionForBusId(bus.busId),
+      termination: { type: "boundary" },
     }
   })
 }
@@ -145,9 +136,9 @@ function createSrj29Buses(
 /**
  * Adapt a complete SRJ29 routing problem into the BGA-prefix problem consumed
  * by FanoutSolver. Every connection in the derivative is intentionally kept:
- * signal buses terminate at the board edge and VCC/GND buses terminate after
- * their grouped escape while the opposite-layer capacitor pads remain in the
- * obstacle field.
+ * signal and VCC/GND buses terminate at the board edge while the opposite-layer
+ * capacitor pads remain connected as downstream endpoints and in the obstacle
+ * field.
  */
 export function createSrj29FanoutInput(
   sourceSrj: SimpleRouteJson,
@@ -209,9 +200,10 @@ export const srj29FanoutSamples: Srj29FanoutSample[] = (
     simpleRouteJson,
     solverOptions: {
       sourceComponentId: BGA_COMPONENT_ID,
-      buses: createSrj29Buses(sourceSrj, manifestSample.passiveLayer),
+      buses: createSrj29Buses(sourceSrj),
       sharedBoundary: { ...manifestSample.bounds },
       compactBusTracks: simpleRouteJson.connections.length <= 64,
+      allowSameNetMerges: true,
       maxLayerCombinations: 256,
     },
   }

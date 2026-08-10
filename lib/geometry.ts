@@ -3,10 +3,25 @@ import type { Point2D, RoutedSegment } from "./types"
 
 const EPSILON = 1e-9
 
-type ShapeAwareObstacle = Obstacle & { shape?: "circle" }
+type ShapeAwareObstacle = Obstacle & {
+  shape?: "circle"
+  ccwRotationDegrees?: number
+}
 
 function obstacleIsCircular(obstacle: Obstacle): boolean {
   return (obstacle as ShapeAwareObstacle).shape === "circle"
+}
+
+function toObstacleLocalPoint(point: Point2D, obstacle: Obstacle): Point2D {
+  const rotationRadians =
+    (-((obstacle as ShapeAwareObstacle).ccwRotationDegrees ?? 0) * Math.PI) /
+    180
+  const dx = point.x - obstacle.center.x
+  const dy = point.y - obstacle.center.y
+  return {
+    x: dx * Math.cos(rotationRadians) - dy * Math.sin(rotationRadians),
+    y: dx * Math.sin(rotationRadians) + dy * Math.cos(rotationRadians),
+  }
 }
 
 export function distance(a: Point2D, b: Point2D): number {
@@ -76,9 +91,10 @@ export function pointIsInsideObstacle(
   if (obstacleIsCircular(obstacle)) {
     return distance(point, obstacle.center) <= obstacle.width / 2 + tolerance
   }
+  const localPoint = toObstacleLocalPoint(point, obstacle)
   return (
-    Math.abs(point.x - obstacle.center.x) <= obstacle.width / 2 + tolerance &&
-    Math.abs(point.y - obstacle.center.y) <= obstacle.height / 2 + tolerance
+    Math.abs(localPoint.x) <= obstacle.width / 2 + tolerance &&
+    Math.abs(localPoint.y) <= obstacle.height / 2 + tolerance
   )
 }
 
@@ -89,14 +105,9 @@ export function distancePointToObstacle(
   if (obstacleIsCircular(obstacle)) {
     return Math.max(0, distance(point, obstacle.center) - obstacle.width / 2)
   }
-  const dx = Math.max(
-    Math.abs(point.x - obstacle.center.x) - obstacle.width / 2,
-    0,
-  )
-  const dy = Math.max(
-    Math.abs(point.y - obstacle.center.y) - obstacle.height / 2,
-    0,
-  )
+  const localPoint = toObstacleLocalPoint(point, obstacle)
+  const dx = Math.max(Math.abs(localPoint.x) - obstacle.width / 2, 0)
+  const dy = Math.max(Math.abs(localPoint.y) - obstacle.height / 2, 0)
   return Math.hypot(dx, dy)
 }
 
@@ -111,16 +122,24 @@ export function distanceSegmentToObstacle(
         obstacle.width / 2,
     )
   }
+  const localStart = toObstacleLocalPoint(segment.start, obstacle)
+  const localEnd = toObstacleLocalPoint(segment.end, obstacle)
   if (
-    pointIsInsideObstacle(segment.start, obstacle) ||
-    pointIsInsideObstacle(segment.end, obstacle)
+    Math.abs(localStart.x) <= obstacle.width / 2 + EPSILON &&
+    Math.abs(localStart.y) <= obstacle.height / 2 + EPSILON
   ) {
     return 0
   }
-  const minX = obstacle.center.x - obstacle.width / 2
-  const maxX = obstacle.center.x + obstacle.width / 2
-  const minY = obstacle.center.y - obstacle.height / 2
-  const maxY = obstacle.center.y + obstacle.height / 2
+  if (
+    Math.abs(localEnd.x) <= obstacle.width / 2 + EPSILON &&
+    Math.abs(localEnd.y) <= obstacle.height / 2 + EPSILON
+  ) {
+    return 0
+  }
+  const minX = -obstacle.width / 2
+  const maxX = obstacle.width / 2
+  const minY = -obstacle.height / 2
+  const maxY = obstacle.height / 2
   const corners = [
     { x: minX, y: minY },
     { x: maxX, y: minY },
@@ -133,8 +152,8 @@ export function distanceSegmentToObstacle(
     minimumDistance = Math.min(
       minimumDistance,
       distanceSegmentToSegment(
-        segment.start,
-        segment.end,
+        localStart,
+        localEnd,
         corners[index]!,
         corners[(index + 1) % corners.length]!,
       ),

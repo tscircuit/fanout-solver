@@ -98,6 +98,8 @@ export interface FanoutSolverOptions {
   viaHoleDiameter?: number
   clearance?: number
   compactBusTracks?: boolean
+  /** Allow branches belonging to the same electrical net to share copper. */
+  allowSameNetMerges?: boolean
   singleLayerPushAndShove?: boolean
   /**
    * When preferred single-layer exits cannot coexist, allow a global
@@ -115,6 +117,7 @@ export interface FanoutAttemptSummary {
   routedConnectionCount: number
   failedBusIds: string[]
   score: number
+  validationIssues?: FanoutValidationIssue[]
 }
 
 export interface FanoutSolverOutput {
@@ -124,6 +127,42 @@ export interface FanoutSolverOutput {
   busLayerAssignments: Readonly<Record<string, string>>
   busDirections: Readonly<Record<string, FanoutDirection>>
   attempts: FanoutAttemptSummary[]
+  validation: FanoutValidationReport
+}
+
+export interface FanoutValidationIssue {
+  code:
+    | "missing-plan"
+    | "duplicate-plan"
+    | "unknown-plan"
+    | "connection-mismatch"
+    | "source-mismatch"
+    | "termination-mismatch"
+    | "not-broken-out"
+    | "outside-routing-bounds"
+    | "disconnected-trace"
+    | "unsupported-route-point"
+    | "trace-plan-mismatch"
+    | "output-connection-missing"
+    | "output-exit-mismatch"
+    | "downstream-endpoint-lost"
+    | "plane-connection-retained"
+    | "obstacle-clearance"
+    | "via-obstacle-clearance"
+    | "different-net-trace-clearance"
+    | "different-net-trace-via-clearance"
+    | "different-net-via-clearance"
+  message: string
+  connectionName?: string
+  otherConnectionName?: string
+  busId?: string
+}
+
+export interface FanoutValidationReport {
+  valid: boolean
+  checkedConnectionCount: number
+  brokenOutConnectionCount: number
+  issues: FanoutValidationIssue[]
 }
 
 export interface Point2D {

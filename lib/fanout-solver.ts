@@ -12,13 +12,13 @@ import {
   resolveAvailableBoundaryRegions,
 } from "./prepare-buses"
 import {
-  fanoutPlansAreClear,
   routeBus,
   routeBusAlternatives,
   type RouteBusStaticClearanceCache,
 } from "./route-bus"
 import { routeSingleLayerWithAdaptiveExits } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
+import { validateFanoutSolution } from "./validate-fanout-solution"
 import type {
   AssignmentAttempt,
   Bounds,
@@ -36,6 +36,7 @@ interface ResolvedFanoutConfig {
   viaHoleDiameter: number
   clearance: number
   compactBusTracks: boolean
+  allowSameNetMerges: boolean
   singleLayerPushAndShove: boolean
   singleLayerAdaptiveExits: boolean
   borderDistribution: FanoutBorderDistribution
@@ -125,6 +126,7 @@ function resolveConfig(
     viaHoleDiameter,
     clearance,
     compactBusTracks: options.compactBusTracks ?? false,
+    allowSameNetMerges: options.allowSameNetMerges ?? false,
     singleLayerPushAndShove: options.singleLayerPushAndShove ?? false,
     singleLayerAdaptiveExits: options.singleLayerAdaptiveExits ?? false,
     borderDistribution,
@@ -305,6 +307,7 @@ function getCandidateEscapeLayersForBus(params: {
         viaHoleDiameter: config.viaHoleDiameter,
         clearance: config.clearance,
         compactBusTracks: config.compactBusTracks,
+        allowSameNetMerges: config.allowSameNetMerges,
         staticClearanceCache,
       }) !== null,
   )
@@ -426,21 +429,28 @@ export class FanoutSolver extends BaseSolver {
 
   private getValidationBoundary(): Bounds {
     if (this.options.sharedBoundary) return this.options.sharedBoundary
-    return this.preparedBuses.reduce<Bounds>(
+    const firstBoundary = this.preparedBuses[0]?.sharedBoundary
+    if (!firstBoundary) return this.inputSrj.bounds
+    return this.preparedBuses.slice(1).reduce<Bounds>(
       (boundary, bus) => ({
         minX: Math.min(boundary.minX, bus.sharedBoundary.minX),
         maxX: Math.max(boundary.maxX, bus.sharedBoundary.maxX),
         minY: Math.min(boundary.minY, bus.sharedBoundary.minY),
         maxY: Math.max(boundary.maxY, bus.sharedBoundary.maxY),
       }),
-      this.inputSrj.bounds,
+      { ...firstBoundary },
     )
   }
 
-  private plansAreClear(plans: readonly FanoutRoutePlan[]): boolean {
-    return fanoutPlansAreClear({
+  private validateCompletePlans(
+    plans: readonly FanoutRoutePlan[],
+    outputSrj: SimpleRouteJson,
+  ) {
+    return validateFanoutSolution({
+      inputSrj: this.inputSrj,
+      outputSrj,
       plans,
-      srj: this.inputSrj,
+      preparedBuses: this.preparedBuses,
       sharedBoundary: this.getValidationBoundary(),
       clearance: this.config.clearance,
     })
@@ -532,6 +542,7 @@ export class FanoutSolver extends BaseSolver {
         viaHoleDiameter: this.config.viaHoleDiameter,
         clearance: this.config.clearance,
         compactBusTracks: this.config.compactBusTracks,
+        allowSameNetMerges: this.config.allowSameNetMerges,
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
       })
@@ -553,17 +564,28 @@ export class FanoutSolver extends BaseSolver {
       })
     }
 
-    if (
-      plans.length === this.inputSrj.connections.length &&
-      plans.some((plan) => plan.via) &&
-      !this.plansAreClear(plans)
-    ) {
-      // A complete-looking via route must not be able to bypass the same
-      // via/obstacle and inter-plan checks used by routeBus. Single-layer
-      // strategies have their own net-aware copper validation.
+    let validationIssues: FanoutAttemptSummary["validationIssues"]
+    let outputSrj = buildOutputSimpleRouteJson({
+      inputSrj: this.inputSrj,
+      plans,
+      layerNames: this.config.layerNames,
+    })
+    const validation =
+      plans.length === this.inputSrj.connections.length
+        ? this.validateCompletePlans(plans, outputSrj)
+        : null
+    if (validation && !validation.valid) {
+      // Every route-producing strategy must pass the same final layer-aware,
+      // same-net-aware copper validation before it can be scored as complete.
+      validationIssues = validation.issues
       plans = []
       failedBusIds = this.preparedBuses.map((bus) => bus.busId)
       blockingBusCounts.clear()
+      outputSrj = buildOutputSimpleRouteJson({
+        inputSrj: this.inputSrj,
+        plans,
+        layerNames: this.config.layerNames,
+      })
     }
 
     const routedBusCount = this.preparedBuses.length - failedBusIds.length
@@ -583,6 +605,7 @@ export class FanoutSolver extends BaseSolver {
       routedConnectionCount: plans.length,
       failedBusIds,
       score,
+      ...(validationIssues ? { validationIssues } : {}),
     }
 
     return {
@@ -591,11 +614,7 @@ export class FanoutSolver extends BaseSolver {
       blockingBusIds: [...blockingBusCounts.entries()]
         .toSorted(([, firstCount], [, secondCount]) => secondCount - firstCount)
         .map(([busId]) => busId),
-      outputSrj: buildOutputSimpleRouteJson({
-        inputSrj: this.inputSrj,
-        plans,
-        layerNames: this.config.layerNames,
-      }),
+      outputSrj,
     }
   }
 
@@ -682,8 +701,17 @@ export class FanoutSolver extends BaseSolver {
       )
     })
 
-    const beamWidth = totalConnections <= 24 ? 48 : 12
-    const alternativesPerLayer = totalConnections <= 24 ? 4 : 1
+    const isSmallProblem = totalConnections <= 24
+    const hasMultiConnectionBus = this.preparedBuses.some(
+      (bus) => bus.connections.length > 1,
+    )
+    // Preserve the broad track search for small singleton problems. Grouped
+    // power buses already branch across every candidate layer and make each
+    // route-alternative expansion combinatorial, so retain layer diversity but
+    // only one atomic route per layer for those buses.
+    const beamWidth = isSmallProblem ? 48 : totalConnections <= 32 ? 24 : 12
+    const alternativesPerLayer =
+      isSmallProblem && !hasMultiConnectionBus ? 4 : 1
     let states: GroupedBeamState[] = [{ assignment: {}, plans: [] }]
 
     const getStateScore = (state: GroupedBeamState): number => {
@@ -731,6 +759,7 @@ export class FanoutSolver extends BaseSolver {
               viaHoleDiameter: this.config.viaHoleDiameter,
               clearance: this.config.clearance,
               compactBusTracks: this.config.compactBusTracks,
+              allowSameNetMerges: this.config.allowSameNetMerges,
               staticClearanceCache: this.routeStaticClearanceCache,
             },
             alternativesPerLayer,
@@ -769,10 +798,14 @@ export class FanoutSolver extends BaseSolver {
 
     const bestState = states[0]
     if (!bestState) return null
+    const outputSrj = buildOutputSimpleRouteJson({
+      inputSrj: this.inputSrj,
+      plans: bestState.plans,
+      layerNames: this.config.layerNames,
+    })
     if (
       bestState.plans.length === this.inputSrj.connections.length &&
-      bestState.plans.some((plan) => plan.via) &&
-      !this.plansAreClear(bestState.plans)
+      !this.validateCompletePlans(bestState.plans, outputSrj).valid
     ) {
       return null
     }
@@ -796,11 +829,7 @@ export class FanoutSolver extends BaseSolver {
       summary,
       plans: bestState.plans,
       blockingBusIds: [],
-      outputSrj: buildOutputSimpleRouteJson({
-        inputSrj: this.inputSrj,
-        plans: bestState.plans,
-        layerNames: this.config.layerNames,
-      }),
+      outputSrj,
     }
   }
 
@@ -1012,6 +1041,15 @@ export class FanoutSolver extends BaseSolver {
         "FanoutSolver: getOutput() called before a complete fanout was solved",
       )
     }
+    const validation = this.validateCompletePlans(
+      this.bestAttempt.plans,
+      this.bestAttempt.outputSrj,
+    )
+    if (!validation.valid) {
+      throw new Error(
+        `FanoutSolver: completed output failed validation: ${validation.issues[0]?.message ?? "unknown validation error"}`,
+      )
+    }
     return {
       simpleRouteJson: this.bestAttempt.outputSrj,
       fanoutTraces: this.bestAttempt.plans.map((plan) => plan.trace),
@@ -1032,6 +1070,7 @@ export class FanoutSolver extends BaseSolver {
         this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
       ),
       attempts: [...this.attempts],
+      validation,
     }
   }
 
