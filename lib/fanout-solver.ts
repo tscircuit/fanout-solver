@@ -18,8 +18,10 @@ import {
 } from "./route-bus"
 import { routeSingleLayerWithAdaptiveExits } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
+import { validateFanoutSolution } from "./validate-fanout-solution"
 import type {
   AssignmentAttempt,
+  Bounds,
   FanoutAttemptSummary,
   FanoutBorderDistribution,
   FanoutRoutePlan,
@@ -34,6 +36,7 @@ interface ResolvedFanoutConfig {
   viaHoleDiameter: number
   clearance: number
   compactBusTracks: boolean
+  allowSameNetMerges: boolean
   singleLayerPushAndShove: boolean
   singleLayerAdaptiveExits: boolean
   borderDistribution: FanoutBorderDistribution
@@ -123,6 +126,7 @@ function resolveConfig(
     viaHoleDiameter,
     clearance,
     compactBusTracks: options.compactBusTracks ?? false,
+    allowSameNetMerges: options.allowSameNetMerges ?? false,
     singleLayerPushAndShove: options.singleLayerPushAndShove ?? false,
     singleLayerAdaptiveExits: options.singleLayerAdaptiveExits ?? false,
     borderDistribution,
@@ -303,6 +307,7 @@ function getCandidateEscapeLayersForBus(params: {
         viaHoleDiameter: config.viaHoleDiameter,
         clearance: config.clearance,
         compactBusTracks: config.compactBusTracks,
+        allowSameNetMerges: config.allowSameNetMerges,
         staticClearanceCache,
       }) !== null,
   )
@@ -422,6 +427,35 @@ export class FanoutSolver extends BaseSolver {
     return "FanoutSolver"
   }
 
+  private getValidationBoundary(): Bounds {
+    if (this.options.sharedBoundary) return this.options.sharedBoundary
+    const firstBoundary = this.preparedBuses[0]?.sharedBoundary
+    if (!firstBoundary) return this.inputSrj.bounds
+    return this.preparedBuses.slice(1).reduce<Bounds>(
+      (boundary, bus) => ({
+        minX: Math.min(boundary.minX, bus.sharedBoundary.minX),
+        maxX: Math.max(boundary.maxX, bus.sharedBoundary.maxX),
+        minY: Math.min(boundary.minY, bus.sharedBoundary.minY),
+        maxY: Math.max(boundary.maxY, bus.sharedBoundary.maxY),
+      }),
+      { ...firstBoundary },
+    )
+  }
+
+  private validateCompletePlans(
+    plans: readonly FanoutRoutePlan[],
+    outputSrj: SimpleRouteJson,
+  ) {
+    return validateFanoutSolution({
+      inputSrj: this.inputSrj,
+      outputSrj,
+      plans,
+      preparedBuses: this.preparedBuses,
+      sharedBoundary: this.getValidationBoundary(),
+      clearance: this.config.clearance,
+    })
+  }
+
   private evaluateAssignmentWithStrategy(
     assignmentIndex: number,
     busLayerAssignments: Readonly<Record<string, string>>,
@@ -483,7 +517,12 @@ export class FanoutSolver extends BaseSolver {
           `FanoutSolver: assignment ${assignmentIndex} has no layer for bus "${bus.busId}"`,
         )
       }
-      routingPrefixKey += `${targetLayer.length}:${targetLayer};`
+      // The routing order can change between assignments (notably for
+      // group-by-layer search). A layer-only key can therefore replay a
+      // prefix belonging to a different bus and duplicate or drop plans when
+      // buses contain multiple connections. Include the bus identity so the
+      // cache remains valid for grouped power/signal lanes.
+      routingPrefixKey += `${bus.busId.length}:${bus.busId};${targetLayer.length}:${targetLayer};`
       const cachedPrefix = this.routingPrefixCache.get(routingPrefixKey)
       if (cachedPrefix) {
         plans = [...cachedPrefix.plans]
@@ -503,6 +542,7 @@ export class FanoutSolver extends BaseSolver {
         viaHoleDiameter: this.config.viaHoleDiameter,
         clearance: this.config.clearance,
         compactBusTracks: this.config.compactBusTracks,
+        allowSameNetMerges: this.config.allowSameNetMerges,
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
       })
@@ -524,6 +564,30 @@ export class FanoutSolver extends BaseSolver {
       })
     }
 
+    let validationIssues: FanoutAttemptSummary["validationIssues"]
+    let outputSrj = buildOutputSimpleRouteJson({
+      inputSrj: this.inputSrj,
+      plans,
+      layerNames: this.config.layerNames,
+    })
+    const validation =
+      plans.length === this.inputSrj.connections.length
+        ? this.validateCompletePlans(plans, outputSrj)
+        : null
+    if (validation && !validation.valid) {
+      // Every route-producing strategy must pass the same final layer-aware,
+      // same-net-aware copper validation before it can be scored as complete.
+      validationIssues = validation.issues
+      plans = []
+      failedBusIds = this.preparedBuses.map((bus) => bus.busId)
+      blockingBusCounts.clear()
+      outputSrj = buildOutputSimpleRouteJson({
+        inputSrj: this.inputSrj,
+        plans,
+        layerNames: this.config.layerNames,
+      })
+    }
+
     const routedBusCount = this.preparedBuses.length - failedBusIds.length
     const routeLength = plans.reduce((total, plan) => total + plan.length, 0)
     const unroutedConnectionCount =
@@ -541,6 +605,7 @@ export class FanoutSolver extends BaseSolver {
       routedConnectionCount: plans.length,
       failedBusIds,
       score,
+      ...(validationIssues ? { validationIssues } : {}),
     }
 
     return {
@@ -549,11 +614,7 @@ export class FanoutSolver extends BaseSolver {
       blockingBusIds: [...blockingBusCounts.entries()]
         .toSorted(([, firstCount], [, secondCount]) => secondCount - firstCount)
         .map(([busId]) => busId),
-      outputSrj: buildOutputSimpleRouteJson({
-        inputSrj: this.inputSrj,
-        plans,
-        layerNames: this.config.layerNames,
-      }),
+      outputSrj,
     }
   }
 
@@ -596,8 +657,10 @@ export class FanoutSolver extends BaseSolver {
    * Search layer assignments and track alternatives together. The regular
    * assignment loop commits to one route per bus before the next bus is
    * considered, so a locally-valid track can still starve a later bus. A
-   * bounded beam keeps several grouped-layer route prefixes alive and is
-   * especially useful for the many singleton buses in the SRJ19 samples.
+   * bounded beam keeps several grouped-layer route prefixes alive. It also
+   * evaluates multi-connection buses atomically, so one promising route for a
+   * power or signal lane cannot starve a later bus before the solver explores
+   * an alternate layer/track combination.
    */
   private evaluateGroupedBeam(
     assignmentIndex: number,
@@ -605,9 +668,12 @@ export class FanoutSolver extends BaseSolver {
   ): EvaluatedAssignment | null {
     if (this.config.escapeLayers.length < 2) return null
     if (this.preparedBuses.length > 56) return null
-    if (this.preparedBuses.some((bus) => bus.connections.length !== 1)) {
-      return null
-    }
+    const totalConnections = this.inputSrj.connections.length
+    // Multi-pin alternatives grow with both the bus width and the number of
+    // layer prefixes. Keep the new search bounded on the small/medium grouped
+    // problems it can improve, then let the regular assignment/repair search
+    // handle the very large benchmark samples without starving them.
+    if (totalConnections > 64) return null
     if (new Set(this.preparedBuses.map((bus) => bus.componentId)).size !== 1) {
       return null
     }
@@ -635,8 +701,17 @@ export class FanoutSolver extends BaseSolver {
       )
     })
 
-    const beamWidth = 128
-    const alternativesPerLayer = 4
+    const isSmallProblem = totalConnections <= 24
+    const hasMultiConnectionBus = this.preparedBuses.some(
+      (bus) => bus.connections.length > 1,
+    )
+    // Preserve the broad track search for small singleton problems. Grouped
+    // power buses already branch across every candidate layer and make each
+    // route-alternative expansion combinatorial, so retain layer diversity but
+    // only one atomic route per layer for those buses.
+    const beamWidth = isSmallProblem ? 48 : totalConnections <= 32 ? 24 : 12
+    const alternativesPerLayer =
+      isSmallProblem && !hasMultiConnectionBus ? 4 : 1
     let states: GroupedBeamState[] = [{ assignment: {}, plans: [] }]
 
     const getStateScore = (state: GroupedBeamState): number => {
@@ -684,6 +759,7 @@ export class FanoutSolver extends BaseSolver {
               viaHoleDiameter: this.config.viaHoleDiameter,
               clearance: this.config.clearance,
               compactBusTracks: this.config.compactBusTracks,
+              allowSameNetMerges: this.config.allowSameNetMerges,
               staticClearanceCache: this.routeStaticClearanceCache,
             },
             alternativesPerLayer,
@@ -722,6 +798,17 @@ export class FanoutSolver extends BaseSolver {
 
     const bestState = states[0]
     if (!bestState) return null
+    const outputSrj = buildOutputSimpleRouteJson({
+      inputSrj: this.inputSrj,
+      plans: bestState.plans,
+      layerNames: this.config.layerNames,
+    })
+    if (
+      bestState.plans.length === this.inputSrj.connections.length &&
+      !this.validateCompletePlans(bestState.plans, outputSrj).valid
+    ) {
+      return null
+    }
     const score =
       bestState.plans.length === this.inputSrj.connections.length
         ? bestState.plans.reduce((total, plan) => total + plan.length, 0) +
@@ -742,11 +829,7 @@ export class FanoutSolver extends BaseSolver {
       summary,
       plans: bestState.plans,
       blockingBusIds: [],
-      outputSrj: buildOutputSimpleRouteJson({
-        inputSrj: this.inputSrj,
-        plans: bestState.plans,
-        layerNames: this.config.layerNames,
-      }),
+      outputSrj,
     }
   }
 
@@ -958,6 +1041,15 @@ export class FanoutSolver extends BaseSolver {
         "FanoutSolver: getOutput() called before a complete fanout was solved",
       )
     }
+    const validation = this.validateCompletePlans(
+      this.bestAttempt.plans,
+      this.bestAttempt.outputSrj,
+    )
+    if (!validation.valid) {
+      throw new Error(
+        `FanoutSolver: completed output failed validation: ${validation.issues[0]?.message ?? "unknown validation error"}`,
+      )
+    }
     return {
       simpleRouteJson: this.bestAttempt.outputSrj,
       fanoutTraces: this.bestAttempt.plans.map((plan) => plan.trace),
@@ -978,6 +1070,7 @@ export class FanoutSolver extends BaseSolver {
         this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
       ),
       attempts: [...this.attempts],
+      validation,
     }
   }
 

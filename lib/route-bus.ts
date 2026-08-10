@@ -11,6 +11,10 @@ import {
   segmentsAreClear,
 } from "./geometry"
 import { getLayerSpan } from "./layer-names"
+import {
+  connectionsShareElectricalNet,
+  obstacleSharesElectricalNet,
+} from "./net-identity"
 import type {
   Bounds,
   FanoutDirection,
@@ -34,6 +38,7 @@ export interface RouteBusParams {
   viaHoleDiameter: number
   clearance: number
   compactBusTracks: boolean
+  allowSameNetMerges?: boolean
   staticClearanceCache?: RouteBusStaticClearanceCache
   blockingBusCounts?: Map<string, number>
 }
@@ -662,13 +667,29 @@ function segmentIsClearOfObstacles(params: {
   segment: RoutedSegment
   plan: FanoutRoutePlan
   segmentIndex: number
+  srj: SimpleRouteJson
+  allowSameNetMerges: boolean
   obstacles: Obstacle[]
   clearance: number
 }): boolean {
-  const { segment, plan, segmentIndex, obstacles, clearance } = params
+  const {
+    segment,
+    plan,
+    segmentIndex,
+    srj,
+    allowSameNetMerges,
+    obstacles,
+    clearance,
+  } = params
   for (const obstacle of obstacles) {
     if (!obstacle.layers.includes(segment.layer)) continue
     if (obstacle.connectedTo.includes(plan.connectionName)) continue
+    if (
+      allowSameNetMerges &&
+      obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
+    ) {
+      continue
+    }
     if (
       segmentIndex === 0 &&
       obstacle === plan.sourceObstacle &&
@@ -691,8 +712,9 @@ function planIsStaticallyClear(params: {
   srj: SimpleRouteJson
   sharedBoundary: Bounds
   clearance: number
+  allowSameNetMerges: boolean
 }): boolean {
-  const { plan, srj, sharedBoundary, clearance } = params
+  const { plan, srj, sharedBoundary, clearance, allowSameNetMerges } = params
   const routableBounds = getRoutableBounds(srj.bounds, sharedBoundary)
   if (
     !pointIsInsideBounds(plan.exitPoint, routableBounds) ||
@@ -710,6 +732,8 @@ function planIsStaticallyClear(params: {
         segment: plan.segments[index]!,
         plan,
         segmentIndex: index,
+        srj,
+        allowSameNetMerges,
         obstacles: srj.obstacles,
         clearance,
       })
@@ -721,6 +745,12 @@ function planIsStaticallyClear(params: {
     for (const obstacle of srj.obstacles) {
       if (
         !obstacle.layers.some((layer) => plan.via!.spanLayers.includes(layer))
+      ) {
+        continue
+      }
+      if (
+        allowSameNetMerges &&
+        obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
       ) {
         continue
       }
@@ -739,11 +769,30 @@ function planIsStaticallyClear(params: {
 function planIsClearOfPlans(params: {
   plan: FanoutRoutePlan
   otherPlans: FanoutRoutePlan[]
+  srj: SimpleRouteJson
+  allowSameNetMerges: boolean
   clearance: number
   blockingBusCounts?: Map<string, number>
 }): boolean {
-  const { plan, otherPlans, clearance, blockingBusCounts } = params
+  const {
+    plan,
+    otherPlans,
+    srj,
+    allowSameNetMerges,
+    clearance,
+    blockingBusCounts,
+  } = params
   for (const otherPlan of otherPlans) {
+    if (
+      allowSameNetMerges &&
+      connectionsShareElectricalNet(
+        srj,
+        plan.connectionName,
+        otherPlan.connectionName,
+      )
+    ) {
+      continue
+    }
     const plansShareSourcePort =
       (plan.sourcePoint.pcb_port_id &&
         plan.sourcePoint.pcb_port_id === otherPlan.sourcePoint.pcb_port_id) ||
@@ -817,6 +866,7 @@ function planIsClear(params: {
   srj: SimpleRouteJson
   sharedBoundary: Bounds
   clearance: number
+  allowSameNetMerges: boolean
 }): boolean {
   const {
     plan,
@@ -827,6 +877,7 @@ function planIsClear(params: {
     srj,
     sharedBoundary,
     clearance,
+    allowSameNetMerges,
   } = params
   let staticallyClear = staticClearanceCache?.get(cacheKey)
   if (staticallyClear === undefined) {
@@ -835,6 +886,7 @@ function planIsClear(params: {
       srj,
       sharedBoundary,
       clearance,
+      allowSameNetMerges,
     })
     staticClearanceCache?.set(cacheKey, staticallyClear)
   }
@@ -843,10 +895,59 @@ function planIsClear(params: {
     planIsClearOfPlans({
       plan,
       otherPlans,
+      srj,
+      allowSameNetMerges,
       clearance,
       blockingBusCounts,
     })
   )
+}
+
+/**
+ * Validate a complete set of fanout plans against the source SRJ and against
+ * one another. This is intentionally separate from route search so every
+ * route-producing strategy can share the same final safety invariant.
+ */
+export function fanoutPlansAreClear(params: {
+  plans: readonly FanoutRoutePlan[]
+  srj: SimpleRouteJson
+  sharedBoundary: Bounds
+  clearance: number
+  allowSameNetMerges?: boolean
+}): boolean {
+  const {
+    plans,
+    srj,
+    sharedBoundary,
+    clearance,
+    allowSameNetMerges = false,
+  } = params
+  for (let index = 0; index < plans.length; index++) {
+    const plan = plans[index]!
+    if (
+      !planIsStaticallyClear({
+        plan,
+        srj,
+        sharedBoundary,
+        clearance,
+        allowSameNetMerges,
+      })
+    ) {
+      return false
+    }
+    if (
+      !planIsClearOfPlans({
+        plan,
+        otherPlans: plans.filter((_, otherIndex) => otherIndex !== index),
+        srj,
+        allowSameNetMerges,
+        clearance,
+      })
+    ) {
+      return false
+    }
+  }
+  return true
 }
 
 function routePlaneTerminatedBus(
@@ -864,6 +965,7 @@ function routePlaneTerminatedBus(
     clearance,
     staticClearanceCache,
     blockingBusCounts,
+    allowSameNetMerges = false,
   } = params
   const sourceObstacle = bus.connections[0]?.sourceObstacle
   if (!sourceObstacle || bus.termination.type !== "plane") return null
@@ -914,6 +1016,7 @@ function routePlaneTerminatedBus(
             srj,
             sharedBoundary: bus.sharedBoundary,
             clearance,
+            allowSameNetMerges,
           })
         ) {
           orderIsClear = false
@@ -945,6 +1048,7 @@ export function routeBusAlternatives(
     compactBusTracks,
     staticClearanceCache,
     blockingBusCounts,
+    allowSameNetMerges = false,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
     throw new Error(
@@ -1055,6 +1159,7 @@ export function routeBusAlternatives(
           srj,
           sharedBoundary: bus.sharedBoundary,
           clearance,
+          allowSameNetMerges,
         })
       ) {
         continue
