@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { FanoutSolver } from "lib/fanout-solver"
 import { validateOriginalEndpointConnectivity } from "lib/validate-original-endpoint-connectivity"
+import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import {
   SRJ29_FANOUT_LAYER_COUNT,
   type Srj29FanoutSample,
@@ -37,12 +38,15 @@ interface BenchmarkRow {
   connectedOriginalConnections: number | null
   connectionCompletionPercent: number | null
   disconnectedConnections: string[] | null
+  routedCopperDrcValid: boolean | null
+  routedCopperDrcIssueCount: number | null
+  routedCopperDrcIssues: string[] | null
   milliseconds: number
   error?: string
 }
 
 interface BenchmarkReport {
-  version: 2
+  version: 3
   datasetName: string
   layerCount: number
   generatedAt: string
@@ -59,6 +63,7 @@ interface BenchmarkReport {
     timeouts: number
     routedConnections: number
     connectedOriginalConnections: number
+    drcCleanSamples: number
     totalConnections: number
     completionPercent: number
     connectionCompletionPercent: number
@@ -188,6 +193,9 @@ function createFailureRow(params: {
     connectedOriginalConnections: null,
     connectionCompletionPercent: null,
     disconnectedConnections: null,
+    routedCopperDrcValid: null,
+    routedCopperDrcIssueCount: null,
+    routedCopperDrcIssues: null,
     milliseconds: round(milliseconds),
     error,
   }
@@ -216,6 +224,13 @@ function runSample(
           routedSrj: output.simpleRouteJson,
         })
       : null
+    const routedCopperDrc = output
+      ? validateRoutedCopperDrc({
+          inputSrj: sample.simpleRouteJson,
+          routedSrj: output.simpleRouteJson,
+          clearance: solver.config.clearance,
+        })
+      : null
     const solutionIsValidated =
       output?.validation.valid === true &&
       output.validation.checkedConnectionCount ===
@@ -226,7 +241,8 @@ function runSample(
       endpointConnectivity.checkedConnectionCount ===
         sample.fanoutConnectionCount &&
       endpointConnectivity.connectedConnectionCount ===
-        sample.fanoutConnectionCount
+        sample.fanoutConnectionCount &&
+      routedCopperDrc?.valid === true
     const viaCount = output
       ? output.fanoutTraces.filter((trace) =>
           trace.route.some((point) => point.route_type === "via"),
@@ -259,6 +275,10 @@ function runSample(
       disconnectedConnections:
         endpointConnectivity?.issues.map((issue) => issue.connectionName) ??
         null,
+      routedCopperDrcValid: routedCopperDrc?.valid ?? null,
+      routedCopperDrcIssueCount: routedCopperDrc?.issues.length ?? null,
+      routedCopperDrcIssues:
+        routedCopperDrc?.issues.map((issue) => issue.message) ?? null,
       milliseconds: round(elapsedMilliseconds),
     }
   } catch (error) {
@@ -401,7 +421,7 @@ function buildReport(params: {
   )
   const totalConnections = rows.reduce((sum, row) => sum + row.connections, 0)
   return {
-    version: 2,
+    version: 3,
     datasetName: srj29DatasetName,
     layerCount: SRJ29_FANOUT_LAYER_COUNT,
     generatedAt: new Date().toISOString(),
@@ -418,6 +438,8 @@ function buildReport(params: {
       timeouts: rows.filter((row) => row.status === "timeout").length,
       routedConnections,
       connectedOriginalConnections,
+      drcCleanSamples: rows.filter((row) => row.routedCopperDrcValid === true)
+        .length,
       totalConnections,
       completionPercent: completionPercent(routedConnections, totalConnections),
       connectionCompletionPercent: completionPercent(
@@ -442,18 +464,19 @@ function renderMarkdown(report: BenchmarkReport): string {
     `- Solved: ${summary.solved}/${summary.samples}`,
     `- Fanout prefixes: ${summary.routedConnections}/${summary.totalConnections} (${summary.completionPercent.toFixed(1)}%)`,
     `- Original connections physically connected in complete fanout attempts: ${summary.connectedOriginalConnections}/${summary.totalConnections} (${summary.connectionCompletionPercent.toFixed(1)}%)`,
+    `- Complete fanout attempts with independently clean emitted copper: ${summary.drcCleanSamples}/${summary.samples}`,
     `- Partial/errors/timeouts: ${summary.partial}/${summary.errors}/${summary.timeouts}`,
     `- Assignment budget: ${configuration.maxLayerCombinations} per sample`,
     `- Concurrency: ${configuration.concurrency}`,
     `- Wall time: ${(summary.wallClockMilliseconds / 1_000).toFixed(2)}s`,
     `- Aggregate solver time: ${(summary.solverMilliseconds / 1_000).toFixed(2)}s`,
     "",
-    "| Sample | Status | Fanout prefixes | Validated breakouts | Original connections connected | Attempts | Vias | Time |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Sample | Status | Fanout prefixes | Validated breakouts | Original connections connected | Emitted-copper DRC | Attempts | Vias | Time |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ]
   for (const row of report.rows) {
     lines.push(
-      `| ${row.sample} | ${row.status} | ${row.routed}/${row.connections} (${row.completionPercent.toFixed(1)}%) | ${row.validatedBreakouts === null ? "-" : `${row.validatedBreakouts}/${row.connections}`} | ${row.connectedOriginalConnections === null ? "-" : `${row.connectedOriginalConnections}/${row.connections} (${(row.connectionCompletionPercent ?? 0).toFixed(1)}%)`} | ${row.attempts} | ${row.vias ?? "-"} | ${(row.milliseconds / 1_000).toFixed(2)}s |`,
+      `| ${row.sample} | ${row.status} | ${row.routed}/${row.connections} (${row.completionPercent.toFixed(1)}%) | ${row.validatedBreakouts === null ? "-" : `${row.validatedBreakouts}/${row.connections}`} | ${row.connectedOriginalConnections === null ? "-" : `${row.connectedOriginalConnections}/${row.connections} (${(row.connectionCompletionPercent ?? 0).toFixed(1)}%)`} | ${row.routedCopperDrcValid === null ? "-" : row.routedCopperDrcValid ? "clean" : `${row.routedCopperDrcIssueCount} issue(s)`} | ${row.attempts} | ${row.vias ?? "-"} | ${(row.milliseconds / 1_000).toFixed(2)}s |`,
     )
   }
   return `${lines.join("\n")}\n`
@@ -465,6 +488,7 @@ function renderConsoleSummary(report: BenchmarkReport): string {
     `Solved: ${summary.solved}/${summary.samples}`,
     `Fanout prefixes: ${summary.routedConnections}/${summary.totalConnections} (${summary.completionPercent.toFixed(1)}%)`,
     `Original connections connected: ${summary.connectedOriginalConnections}/${summary.totalConnections} (${summary.connectionCompletionPercent.toFixed(1)}%)`,
+    `Independently DRC-clean complete attempts: ${summary.drcCleanSamples}/${summary.samples}`,
     `Partial/errors/timeouts: ${summary.partial}/${summary.errors}/${summary.timeouts}`,
     `Layers/assignment budget/concurrency: ${report.layerCount}/${configuration.maxLayerCombinations}/${configuration.concurrency}`,
     `Wall time/aggregate solver time: ${(summary.wallClockMilliseconds / 1_000).toFixed(2)}s/${(summary.solverMilliseconds / 1_000).toFixed(2)}s`,

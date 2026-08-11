@@ -241,12 +241,15 @@ results to `benchmark-results/srj29.json` and
 `benchmark-results/srj29.md`. A row is marked solved only when every input
 connection has a validated breakout and an independent physical-copper audit
 proves that the emitted wires, vias, and same-net pads connect every original
-endpoint on compatible layers. Reaching an arbitrary boundary point or merely
-retaining an unrouted endpoint in the output JSON does not count. The report
-separates fanout-prefix completion from physically connected original
-connections so partial progress remains visible without overstating it as a
-solution. Partial solutions are reported as benchmark results instead of
-failing the command. `bun run benchmark:srj29` is an alias for the same command.
+endpoint on compatible layers. A second independent audit checks every emitted
+trace and via against different-net pads, obstacles, traces, and vias on every
+physical layer in its span. Reaching an arbitrary boundary point, retaining an
+unrouted endpoint in the output JSON, or emitting copper with a DRC violation
+does not count. The report separates fanout-prefix completion from physically
+connected original connections so partial progress remains visible without
+overstating it as a solution. Partial solutions are reported as benchmark
+results instead of failing the command. `bun run benchmark:srj29` is an alias
+for the same command.
 
 The `SRJ29 Benchmark` GitHub Actions workflow runs the complete dataset on a
 Blacksmith 32-vCPU ARM runner with 32 sample processes by default. It can be
