@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { FanoutSolver } from "lib/fanout-solver"
+import { validateOriginalEndpointConnectivity } from "lib/validate-original-endpoint-connectivity"
 import {
   SRJ29_FANOUT_LAYER_COUNT,
   type Srj29FanoutSample,
@@ -33,12 +34,15 @@ interface BenchmarkRow {
   attempts: number
   vias: number | null
   validatedBreakouts: number | null
+  connectedOriginalConnections: number | null
+  connectionCompletionPercent: number | null
+  disconnectedConnections: string[] | null
   milliseconds: number
   error?: string
 }
 
 interface BenchmarkReport {
-  version: 1
+  version: 2
   datasetName: string
   layerCount: number
   generatedAt: string
@@ -54,8 +58,10 @@ interface BenchmarkReport {
     errors: number
     timeouts: number
     routedConnections: number
+    connectedOriginalConnections: number
     totalConnections: number
     completionPercent: number
+    connectionCompletionPercent: number
     solverMilliseconds: number
     wallClockMilliseconds: number
   }
@@ -179,6 +185,9 @@ function createFailureRow(params: {
     attempts: 0,
     vias: null,
     validatedBreakouts: null,
+    connectedOriginalConnections: null,
+    connectionCompletionPercent: null,
+    disconnectedConnections: null,
     milliseconds: round(milliseconds),
     error,
   }
@@ -201,11 +210,22 @@ function runSample(
     )[0]
     const routedConnections = bestAttempt?.routedConnectionCount ?? 0
     const output = solver.solved ? solver.getOutput() : null
+    const endpointConnectivity = output
+      ? validateOriginalEndpointConnectivity({
+          inputSrj: sample.simpleRouteJson,
+          routedSrj: output.simpleRouteJson,
+        })
+      : null
     const solutionIsValidated =
       output?.validation.valid === true &&
       output.validation.checkedConnectionCount ===
         sample.fanoutConnectionCount &&
       output.validation.brokenOutConnectionCount ===
+        sample.fanoutConnectionCount &&
+      endpointConnectivity?.valid === true &&
+      endpointConnectivity.checkedConnectionCount ===
+        sample.fanoutConnectionCount &&
+      endpointConnectivity.connectedConnectionCount ===
         sample.fanoutConnectionCount
     const viaCount = output
       ? output.fanoutTraces.filter((trace) =>
@@ -228,6 +248,17 @@ function runSample(
       attempts: solver.attempts.length,
       vias: viaCount,
       validatedBreakouts: output?.validation.brokenOutConnectionCount ?? null,
+      connectedOriginalConnections:
+        endpointConnectivity?.connectedConnectionCount ?? null,
+      connectionCompletionPercent: endpointConnectivity
+        ? completionPercent(
+            endpointConnectivity.connectedConnectionCount,
+            sample.fanoutConnectionCount,
+          )
+        : null,
+      disconnectedConnections:
+        endpointConnectivity?.issues.map((issue) => issue.connectionName) ??
+        null,
       milliseconds: round(elapsedMilliseconds),
     }
   } catch (error) {
@@ -312,7 +343,7 @@ function printProgress(
   const duration = `${(row.milliseconds / 1_000).toFixed(2)}s`
   const attempts = `${row.attempts} attempt${row.attempts === 1 ? "" : "s"}`
   console.log(
-    `[${String(completed).padStart(String(total).length)}/${total}] ${row.sample} ${row.status}: ${row.routed}/${row.connections} (${row.completionPercent.toFixed(1)}%), ${attempts}, ${duration}`,
+    `[${String(completed).padStart(String(total).length)}/${total}] ${row.sample} ${row.status}: fanout ${row.routed}/${row.connections} (${row.completionPercent.toFixed(1)}%), connected ${row.connectedOriginalConnections ?? 0}/${row.connections} (${(row.connectionCompletionPercent ?? 0).toFixed(1)}%), ${attempts}, ${duration}`,
   )
   if (row.error) console.log(`  ${row.error}`)
 }
@@ -364,9 +395,13 @@ function buildReport(params: {
     wallClockMilliseconds,
   } = params
   const routedConnections = rows.reduce((sum, row) => sum + row.routed, 0)
+  const connectedOriginalConnections = rows.reduce(
+    (sum, row) => sum + (row.connectedOriginalConnections ?? 0),
+    0,
+  )
   const totalConnections = rows.reduce((sum, row) => sum + row.connections, 0)
   return {
-    version: 1,
+    version: 2,
     datasetName: srj29DatasetName,
     layerCount: SRJ29_FANOUT_LAYER_COUNT,
     generatedAt: new Date().toISOString(),
@@ -382,8 +417,13 @@ function buildReport(params: {
       errors: rows.filter((row) => row.status === "error").length,
       timeouts: rows.filter((row) => row.status === "timeout").length,
       routedConnections,
+      connectedOriginalConnections,
       totalConnections,
       completionPercent: completionPercent(routedConnections, totalConnections),
+      connectionCompletionPercent: completionPercent(
+        connectedOriginalConnections,
+        totalConnections,
+      ),
       solverMilliseconds: round(
         rows.reduce((sum, row) => sum + row.milliseconds, 0),
       ),
@@ -400,19 +440,20 @@ function renderMarkdown(report: BenchmarkReport): string {
     "",
     `- Layers: ${report.layerCount}`,
     `- Solved: ${summary.solved}/${summary.samples}`,
-    `- Routed connections: ${summary.routedConnections}/${summary.totalConnections} (${summary.completionPercent.toFixed(1)}%)`,
+    `- Fanout prefixes: ${summary.routedConnections}/${summary.totalConnections} (${summary.completionPercent.toFixed(1)}%)`,
+    `- Original connections physically connected in complete fanout attempts: ${summary.connectedOriginalConnections}/${summary.totalConnections} (${summary.connectionCompletionPercent.toFixed(1)}%)`,
     `- Partial/errors/timeouts: ${summary.partial}/${summary.errors}/${summary.timeouts}`,
     `- Assignment budget: ${configuration.maxLayerCombinations} per sample`,
     `- Concurrency: ${configuration.concurrency}`,
     `- Wall time: ${(summary.wallClockMilliseconds / 1_000).toFixed(2)}s`,
     `- Aggregate solver time: ${(summary.solverMilliseconds / 1_000).toFixed(2)}s`,
     "",
-    "| Sample | Status | Routed | Validated breakouts | Completion | Attempts | Vias | Time |",
+    "| Sample | Status | Fanout prefixes | Validated breakouts | Original connections connected | Attempts | Vias | Time |",
     "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
   ]
   for (const row of report.rows) {
     lines.push(
-      `| ${row.sample} | ${row.status} | ${row.routed}/${row.connections} | ${row.validatedBreakouts === null ? "-" : `${row.validatedBreakouts}/${row.connections}`} | ${row.completionPercent.toFixed(1)}% | ${row.attempts} | ${row.vias ?? "-"} | ${(row.milliseconds / 1_000).toFixed(2)}s |`,
+      `| ${row.sample} | ${row.status} | ${row.routed}/${row.connections} (${row.completionPercent.toFixed(1)}%) | ${row.validatedBreakouts === null ? "-" : `${row.validatedBreakouts}/${row.connections}`} | ${row.connectedOriginalConnections === null ? "-" : `${row.connectedOriginalConnections}/${row.connections} (${(row.connectionCompletionPercent ?? 0).toFixed(1)}%)`} | ${row.attempts} | ${row.vias ?? "-"} | ${(row.milliseconds / 1_000).toFixed(2)}s |`,
     )
   }
   return `${lines.join("\n")}\n`
@@ -422,7 +463,8 @@ function renderConsoleSummary(report: BenchmarkReport): string {
   const { configuration, summary } = report
   return [
     `Solved: ${summary.solved}/${summary.samples}`,
-    `Routed connections: ${summary.routedConnections}/${summary.totalConnections} (${summary.completionPercent.toFixed(1)}%)`,
+    `Fanout prefixes: ${summary.routedConnections}/${summary.totalConnections} (${summary.completionPercent.toFixed(1)}%)`,
+    `Original connections connected: ${summary.connectedOriginalConnections}/${summary.totalConnections} (${summary.connectionCompletionPercent.toFixed(1)}%)`,
     `Partial/errors/timeouts: ${summary.partial}/${summary.errors}/${summary.timeouts}`,
     `Layers/assignment budget/concurrency: ${report.layerCount}/${configuration.maxLayerCombinations}/${configuration.concurrency}`,
     `Wall time/aggregate solver time: ${(summary.wallClockMilliseconds / 1_000).toFixed(2)}s/${(summary.solverMilliseconds / 1_000).toFixed(2)}s`,
