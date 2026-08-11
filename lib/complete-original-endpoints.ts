@@ -235,6 +235,21 @@ function connectionIsComplete(
   return !report.issues.some((issue) => issue.connectionName === connectionName)
 }
 
+function traceHasViaAtEndpoint(params: {
+  trace: SimplifiedPcbTrace
+  endpointSrjs: SimpleRouteJson[]
+}): boolean {
+  const { trace, endpointSrjs } = params
+  const endpoints = endpointSrjs.flatMap((srj) =>
+    srj.connections.flatMap((connection) => connection.pointsToConnect),
+  )
+  return trace.route.some(
+    (routePoint) =>
+      routePoint.route_type === "via" &&
+      endpoints.some((endpoint) => distance(routePoint, endpoint) <= 1e-6),
+  )
+}
+
 function findLocalBranch(params: {
   inputSrj: SimpleRouteJson
   fanoutSrj: SimpleRouteJson
@@ -278,6 +293,8 @@ function findLocalBranch(params: {
   let bestBlockingConnectionNames: string[] = []
   let bestIssueCount = Number.POSITIVE_INFINITY
   let candidateIndex = 0
+  const maximumCandidateCount =
+    inputSrj.connections.length > 32 ? 600 : Number.POSITIVE_INFINITY
 
   for (const outwardDistance of [0.4, 0.8, 1.2, 1.6]) {
     for (const perpendicularDistance of [
@@ -324,6 +341,11 @@ function findLocalBranch(params: {
             })),
           ]
           for (const terminalApproach of terminalApproaches) {
+            if (candidateIndex >= maximumCandidateCount) {
+              return {
+                blockingConnectionNames: bestBlockingConnectionNames,
+              }
+            }
             const trace = createBranchTrace({
               plan,
               branchStart,
@@ -338,6 +360,14 @@ function findLocalBranch(params: {
               // slots disappear when both sides of a short corner are moved.
               chamfer: 0,
             })
+            if (
+              traceHasViaAtEndpoint({
+                trace,
+                endpointSrjs: [inputSrj, fanoutSrj],
+              })
+            ) {
+              continue
+            }
             const candidateSrj = {
               ...fanoutSrj,
               traces: [...(fanoutSrj.traces ?? []), ...acceptedTraces, trace],
@@ -513,106 +543,32 @@ function createFanoutCopperObstacles(srj: SimpleRouteJson): Obstacle[] {
   return obstacles
 }
 
-function realizeEndpointLayerTransitions(params: {
-  srj: SimpleRouteJson
-  trace: SimplifiedPcbTrace
-  viaDiameter: number
-  viaHoleDiameter: number
-}): SimplifiedPcbTrace {
-  const { srj, trace, viaDiameter, viaHoleDiameter } = params
-  const connection = srj.connections.find(
-    (candidate) => candidate.name === trace.connection_name,
-  )
-  if (!connection) return trace
-  const route = [...trace.route]
-  const coordinateRouteIndexes = route.flatMap((point, index) =>
-    "x" in point && "y" in point ? [index] : [],
-  )
-  for (const routeIndex of [
-    coordinateRouteIndexes.at(-1),
-    coordinateRouteIndexes[0],
-  ]) {
-    if (routeIndex === undefined) continue
-    const routePoint = route[routeIndex]
-    if (!routePoint || routePoint.route_type !== "wire") continue
-    const endpoint = connection.pointsToConnect.find(
-      (point) => distance(point, routePoint) <= 1e-6,
-    )
-    if (!endpoint) continue
-    const endpointLayer = getPointLayer(endpoint)
-    if (endpointLayer === routePoint.layer) continue
-    const endpointWire = {
-      ...routePoint,
-      layer: endpointLayer,
-    }
-    const via = {
-      route_type: "via" as const,
-      x: routePoint.x,
-      y: routePoint.y,
-      from_layer: endpointLayer,
-      to_layer: routePoint.layer,
-      via_diameter: viaDiameter,
-      via_hole_diameter: viaHoleDiameter,
-    }
-    if (routeIndex === coordinateRouteIndexes[0]) {
-      route.splice(routeIndex, 0, endpointWire, via)
-    } else {
-      route.splice(
-        routeIndex + 1,
-        0,
-        {
-          ...via,
-          from_layer: routePoint.layer,
-          to_layer: endpointLayer,
-        },
-        endpointWire,
-      )
-    }
-  }
-  return { ...trace, route }
-}
-
 function acceptDownstreamTraces(params: {
   inputSrj: SimpleRouteJson
   fanoutSrj: SimpleRouteJson
   localTraces: SimplifiedPcbTrace[]
   candidates: SimplifiedPcbTrace[]
   clearance: number
-  viaDiameter: number
-  viaHoleDiameter: number
 }): SimplifiedPcbTrace[] {
-  const {
-    inputSrj,
-    fanoutSrj,
-    localTraces,
-    candidates,
-    clearance,
-    viaDiameter,
-    viaHoleDiameter,
-  } = params
+  const { inputSrj, fanoutSrj, localTraces, candidates, clearance } = params
   const baselineTraces = [...(fanoutSrj.traces ?? []), ...localTraces]
   const baselineSrj = { ...fanoutSrj, traces: baselineTraces }
   const baselineConnectivity = validateOriginalEndpointConnectivity({
     inputSrj,
     routedSrj: baselineSrj,
   })
-  const physicalCandidates = candidates
-    .map((trace) =>
-      realizeEndpointLayerTransitions({
-        srj: fanoutSrj,
+  const physicalCandidates = candidates.filter(
+    (trace) =>
+      trace.route.length > 1 &&
+      trace.route.every(
+        (routePoint) =>
+          routePoint.route_type === "wire" || routePoint.route_type === "via",
+      ) &&
+      !traceHasViaAtEndpoint({
         trace,
-        viaDiameter,
-        viaHoleDiameter,
+        endpointSrjs: [inputSrj, fanoutSrj],
       }),
-    )
-    .filter(
-      (trace) =>
-        trace.route.length > 1 &&
-        trace.route.every(
-          (routePoint) =>
-            routePoint.route_type === "wire" || routePoint.route_type === "via",
-        ),
-    )
+  )
   const usefulCandidates = physicalCandidates.filter((trace) => {
     const report = validateOriginalEndpointConnectivity({
       inputSrj,
@@ -673,6 +629,48 @@ function acceptDownstreamTraces(params: {
   return accepted
 }
 
+function getPointsBackAlongTrace(params: {
+  trace: SimplifiedPcbTrace
+  endpoint: Point2D
+  layer: string
+  distances: number[]
+}): Point2D[] {
+  const { trace, endpoint, layer, distances } = params
+  const endpointIndex = trace.route.findLastIndex(
+    (routePoint) =>
+      routePoint.route_type === "wire" &&
+      routePoint.layer === layer &&
+      distance(routePoint, endpoint) <= 1e-6,
+  )
+  if (endpointIndex < 0) return []
+
+  return distances.flatMap((requestedDistance) => {
+    let remainingDistance = requestedDistance
+    let current = endpoint
+    for (let index = endpointIndex - 1; index >= 0; index--) {
+      const previous = trace.route[index]
+      if (previous?.route_type !== "wire" || previous.layer !== layer) break
+      const segmentLength = distance(current, previous)
+      if (segmentLength <= EPSILON) continue
+      if (remainingDistance < segmentLength - 1e-6) {
+        return [
+          {
+            x:
+              current.x +
+              ((previous.x - current.x) * remainingDistance) / segmentLength,
+            y:
+              current.y +
+              ((previous.y - current.y) * remainingDistance) / segmentLength,
+          },
+        ]
+      }
+      remainingDistance -= segmentLength
+      current = previous
+    }
+    return []
+  })
+}
+
 function findDownstreamTerminalBranch(params: {
   inputSrj: SimpleRouteJson
   fanoutSrj: SimpleRouteJson
@@ -699,28 +697,33 @@ function findDownstreamTerminalBranch(params: {
     layer: plan.targetLayer,
   }
   const target = plan.targetPoint
-  const approaches: Array<Point2D | undefined> = [
-    undefined,
-    { x: target.x, y: branchStart.y },
-    { x: branchStart.x, y: target.y },
-  ]
-  for (
-    let candidateIndex = 0;
-    candidateIndex < approaches.length;
-    candidateIndex++
-  ) {
+  const targetLayer = getPointLayer(target)
+  let candidateIndex = 0
+  const tryCandidate = (candidate: {
+    start: Point2D & { layer: string }
+    viaPoint: Point2D
+    terminalApproach?: Point2D
+  }): SimplifiedPcbTrace | undefined => {
     const trace = createBranchTrace({
       plan,
-      branchStart,
-      viaPoint: branchStart,
-      assignedLayerPath: [branchStart],
-      terminalApproach: approaches[candidateIndex],
+      branchStart: candidate.start,
+      viaPoint: candidate.viaPoint,
+      assignedLayerPath: [candidate.start, candidate.viaPoint],
+      terminalApproach: candidate.terminalApproach,
       traceWidth,
       viaDiameter,
       viaHoleDiameter,
-      candidateIndex: 10_000 + candidateIndex,
+      candidateIndex: 10_000 + candidateIndex++,
       chamfer: Math.max(traceWidth, 0.1),
     })
+    if (
+      traceHasViaAtEndpoint({
+        trace,
+        endpointSrjs: [inputSrj, fanoutSrj],
+      })
+    ) {
+      return undefined
+    }
     const candidateSrj = {
       ...fanoutSrj,
       traces: [...(fanoutSrj.traces ?? []), ...acceptedTraces, trace],
@@ -732,7 +735,7 @@ function findDownstreamTerminalBranch(params: {
         clearance,
       }).valid
     ) {
-      continue
+      return undefined
     }
     if (
       connectionIsComplete(
@@ -744,6 +747,71 @@ function findDownstreamTerminalBranch(params: {
       )
     ) {
       return trace
+    }
+    return undefined
+  }
+
+  if (branchStart.layer !== targetLayer) {
+    const existingTraceTransitionPoints = getPointsBackAlongTrace({
+      trace: plan.trace,
+      endpoint: plan.exitPoint,
+      layer: plan.targetLayer,
+      distances: [0.4, 0.8, 1.2, 1.6],
+    })
+    for (const viaPoint of existingTraceTransitionPoints) {
+      const transitionStart = { ...viaPoint, layer: plan.targetLayer }
+      for (const terminalApproach of [
+        undefined,
+        { x: target.x, y: viaPoint.y },
+        { x: viaPoint.x, y: target.y },
+      ]) {
+        const trace = tryCandidate({
+          start: transitionStart,
+          viaPoint,
+          terminalApproach,
+        })
+        if (trace) return trace
+      }
+    }
+  }
+
+  const routePaths: Point2D[][] = [
+    [target],
+    [{ x: target.x, y: branchStart.y }, target],
+    [{ x: branchStart.x, y: target.y }, target],
+  ]
+  for (const routePath of routePaths) {
+    const firstTarget = routePath[0]!
+    const firstSegmentLength = distance(branchStart, firstTarget)
+    const transitionDistances =
+      branchStart.layer === targetLayer ? [0] : [0.4, 0.8, 1.2, 1.6]
+    for (const transitionDistance of transitionDistances) {
+      if (
+        branchStart.layer !== targetLayer &&
+        (firstSegmentLength <= transitionDistance + 0.2 ||
+          transitionDistance <= 1e-6)
+      ) {
+        continue
+      }
+      const viaPoint =
+        branchStart.layer === targetLayer
+          ? { x: branchStart.x, y: branchStart.y }
+          : {
+              x:
+                branchStart.x +
+                ((firstTarget.x - branchStart.x) * transitionDistance) /
+                  firstSegmentLength,
+              y:
+                branchStart.y +
+                ((firstTarget.y - branchStart.y) * transitionDistance) /
+                  firstSegmentLength,
+            }
+      const trace = tryCandidate({
+        start: branchStart,
+        viaPoint,
+        terminalApproach: routePath.length > 1 ? firstTarget : undefined,
+      })
+      if (trace) return trace
     }
   }
   return undefined
@@ -937,8 +1005,6 @@ export function completeOriginalEndpoints(params: {
                 downstreamConnectionNames.has(trace.connection_name),
               ) ?? [],
           clearance,
-          viaDiameter,
-          viaHoleDiameter,
         })
       } else {
         errors.push(

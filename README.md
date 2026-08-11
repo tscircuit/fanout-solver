@@ -79,9 +79,11 @@ and treats each bus-layer decision atomically.
   retained downstream endpoints before marking a solution complete.
 - `completeOriginalEndpoints` adds a bounded fail-first completion stage after
   fanout. It first places DRC-gated interstitial capacitor escapes, then tries
-  direct breakout-to-pad routes and a bounded capacity-router fallback. A
-  candidate is retained only when it improves independently proven original
-  endpoint connectivity and the complete emitted copper remains DRC-clean.
+  breakout-to-pad routes with layer transitions at interior points along the
+  existing fanout copper, and finally a bounded capacity-router fallback. Vias
+  at original or moved routing endpoints are rejected. A candidate is retained
+  only when it improves independently proven original endpoint connectivity
+  and the complete emitted copper remains DRC-clean.
 - Emits supplied fanout traces, via obstacles, and moved breakout endpoints in a
   new `SimpleRouteJson`. The returned problem is ready for a downstream
   autorouter to finish.
