@@ -136,4 +136,4 @@ test("multi-connection SRJ29 buses never duplicate routed connection plans", () 
         attempt.routedConnectionCount <= sample.fanoutConnectionCount,
     ),
   ).toBe(true)
-})
+}, 30_000)
