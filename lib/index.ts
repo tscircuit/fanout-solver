@@ -1,4 +1,5 @@
 export { FanoutSolver } from "./fanout-solver"
+export { completeOriginalEndpoints } from "./complete-original-endpoints"
 export { getCopperLayerColor } from "./layer-colors"
 export { getCopperLayerNames } from "./layer-names"
 export { validateOriginalEndpointConnectivity } from "./validate-original-endpoint-connectivity"
@@ -26,6 +27,7 @@ export type {
   FanoutCorner,
   FanoutDirection,
   FanoutEdge,
+  FanoutEndpointCompletionReport,
   FanoutPlaneTermination,
   FanoutRoutePlan,
   FanoutSolverOptions,

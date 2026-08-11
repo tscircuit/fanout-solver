@@ -635,6 +635,7 @@ function buildPlan(params: {
     sourcePoint: preparedConnection.sourcePoint,
     sourceObstacle: preparedConnection.sourceObstacle,
     sourceLayer: preparedConnection.sourceLayer,
+    targetPoint: preparedConnection.targetPoint,
     targetLayer,
     termination: bus.termination,
     direction: bus.direction,

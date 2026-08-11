@@ -145,6 +145,7 @@ function createPlan(params: {
     sourcePoint: source,
     sourceObstacle,
     sourceLayer: "top",
+    targetPoint: connection.pointsToConnect[1]!,
     targetLayer,
     termination: { type: "boundary" },
     direction: "right",

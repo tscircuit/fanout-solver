@@ -6,6 +6,8 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import type { OriginalEndpointConnectivityReport } from "./validate-original-endpoint-connectivity"
+import type { RoutedCopperDrcReport } from "./validate-routed-copper-drc"
 
 export type FanoutDirection = "left" | "right" | "up" | "down"
 
@@ -108,6 +110,14 @@ export interface FanoutSolverOptions {
    */
   singleLayerAdaptiveExits?: boolean
   borderDistribution?: FanoutBorderDistribution
+  /**
+   * After every source pad is escaped, attempt to physically join the fanout
+   * copper to each original downstream endpoint. Every added trace is audited
+   * with the independent endpoint-connectivity and emitted-copper validators.
+   */
+  completeOriginalEndpoints?: boolean
+  /** Effort passed to the bounded downstream capacity-router pass. */
+  endpointCompletionEffort?: number
 }
 
 export interface FanoutAttemptSummary {
@@ -123,11 +133,23 @@ export interface FanoutAttemptSummary {
 export interface FanoutSolverOutput {
   simpleRouteJson: SimpleRouteJson
   fanoutTraces: SimplifiedPcbTrace[]
+  completionTraces: SimplifiedPcbTrace[]
+  endpointCompletion?: FanoutEndpointCompletionReport
   planeTerminations: FanoutPlaneTermination[]
   busLayerAssignments: Readonly<Record<string, string>>
   busDirections: Readonly<Record<string, FanoutDirection>>
   attempts: FanoutAttemptSummary[]
   validation: FanoutValidationReport
+}
+
+export interface FanoutEndpointCompletionReport {
+  attemptedLocalConnectionCount: number
+  attemptedDownstreamConnectionCount: number
+  completionTraceCount: number
+  searchPassCount: number
+  errors: string[]
+  connectivity: OriginalEndpointConnectivityReport
+  drc: RoutedCopperDrcReport
 }
 
 export interface FanoutValidationIssue {
@@ -227,6 +249,7 @@ export interface FanoutRoutePlan {
   sourcePoint: ConnectionPoint
   sourceObstacle: Obstacle
   sourceLayer: string
+  targetPoint: ConnectionPoint
   targetLayer: string
   termination: FanoutBusTermination
   direction: FanoutDirection

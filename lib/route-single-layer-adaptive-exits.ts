@@ -823,6 +823,7 @@ function buildPlan(route: FlowRoute, traceWidth: number): FanoutRoutePlan {
     sourcePoint: item.connection.sourcePoint,
     sourceObstacle: item.connection.sourceObstacle,
     sourceLayer: item.connection.sourceLayer,
+    targetPoint: item.connection.targetPoint,
     targetLayer: "top",
     termination: item.bus.termination,
     direction: item.bus.direction,

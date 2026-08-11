@@ -54,6 +54,9 @@ test("SRJ29 VCC and GND pins are validated boundary breakouts with capacitor end
   )!
   const solver = new FanoutSolver(sample.simpleRouteJson, {
     ...sample.solverOptions,
+    // This test audits the fanout contract and retained endpoint metadata;
+    // endpoint completion has its own DRC/connectivity integration coverage.
+    completeOriginalEndpoints: false,
     maxLayerCombinations: 32,
   })
   solver.solve()

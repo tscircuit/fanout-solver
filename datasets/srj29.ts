@@ -214,6 +214,8 @@ export const srj29FanoutSamples: Srj29FanoutSample[] = (
       sharedBoundary: { ...manifestSample.bounds },
       compactBusTracks: simpleRouteJson.connections.length <= 64,
       allowSameNetMerges: true,
+      completeOriginalEndpoints: true,
+      endpointCompletionEffort: 1,
       maxLayerCombinations: 256,
     },
   }

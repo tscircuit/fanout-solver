@@ -177,9 +177,12 @@ test("a via creates a physical path from an inner-layer trace to a target pad", 
   expect(report.connectedConnectionCount).toBe(1)
 })
 
-test("SRJ29 sample001 is not complete when its fanouts miss every original endpoint", () => {
+test("SRJ29 sample001 prefix is not complete before endpoint completion", () => {
   const sample = srj29FanoutSamples.find(({ id }) => id === "sample001")!
-  const solver = new FanoutSolver(sample.simpleRouteJson, sample.solverOptions)
+  const solver = new FanoutSolver(sample.simpleRouteJson, {
+    ...sample.solverOptions,
+    completeOriginalEndpoints: false,
+  })
   solver.solve()
 
   expect(solver.getOutput().validation.valid).toBe(true)

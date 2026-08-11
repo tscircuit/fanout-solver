@@ -5,6 +5,10 @@ import {
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { buildOutputSimpleRouteJson } from "./build-output"
+import {
+  completeOriginalEndpoints,
+  type CompleteOriginalEndpointsResult,
+} from "./complete-original-endpoints"
 import { getCopperLayerColor } from "./layer-colors"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import {
@@ -349,6 +353,7 @@ export class FanoutSolver extends BaseSolver {
   private nextAssignmentIndex = 0
   private nextGeneratedAssignmentIndex = 0
   private bestAttempt: AssignmentAttempt | null = null
+  private endpointCompletion: CompleteOriginalEndpointsResult | null = null
 
   constructor(
     public readonly inputSrj: SimpleRouteJson,
@@ -425,6 +430,26 @@ export class FanoutSolver extends BaseSolver {
 
   override getSolverName(): string {
     return "FanoutSolver"
+  }
+
+  private completeBestAttemptEndpoints(): void {
+    if (
+      !this.options.completeOriginalEndpoints ||
+      this.endpointCompletion ||
+      !this.bestAttempt
+    ) {
+      return
+    }
+    this.endpointCompletion = completeOriginalEndpoints({
+      inputSrj: this.inputSrj,
+      fanoutSrj: this.bestAttempt.outputSrj,
+      plans: this.bestAttempt.plans,
+      traceWidth: this.config.traceWidth,
+      viaDiameter: this.config.viaDiameter,
+      viaHoleDiameter: this.config.viaHoleDiameter,
+      clearance: this.config.clearance,
+      effort: this.options.endpointCompletionEffort,
+    })
   }
 
   private getValidationBoundary(): Bounds {
@@ -937,6 +962,7 @@ export class FanoutSolver extends BaseSolver {
           failedBuses: "none",
           bestScore: beamAttempt.summary.score,
         }
+        this.completeBestAttemptEndpoints()
         this.solved = true
         return
       }
@@ -977,6 +1003,7 @@ export class FanoutSolver extends BaseSolver {
         this.bestAttempt.summary.routedConnectionCount ===
           this.inputSrj.connections.length
       ) {
+        this.completeBestAttemptEndpoints()
         this.solved = true
       } else {
         this.failed = true
@@ -1022,6 +1049,7 @@ export class FanoutSolver extends BaseSolver {
     if (
       attempt.summary.routedConnectionCount === this.inputSrj.connections.length
     ) {
+      this.completeBestAttemptEndpoints()
       this.solved = true
     }
   }
@@ -1051,8 +1079,13 @@ export class FanoutSolver extends BaseSolver {
       )
     }
     return {
-      simpleRouteJson: this.bestAttempt.outputSrj,
+      simpleRouteJson:
+        this.endpointCompletion?.simpleRouteJson ?? this.bestAttempt.outputSrj,
       fanoutTraces: this.bestAttempt.plans.map((plan) => plan.trace),
+      completionTraces: this.endpointCompletion?.traces ?? [],
+      ...(this.endpointCompletion
+        ? { endpointCompletion: this.endpointCompletion.report }
+        : {}),
       planeTerminations: this.bestAttempt.plans.flatMap((plan) =>
         plan.termination.type === "plane" && plan.via
           ? [
@@ -1079,7 +1112,10 @@ export class FanoutSolver extends BaseSolver {
   }
 
   override visualize(): GraphicsObject {
-    const visualizedSrj = this.bestAttempt?.outputSrj ?? this.inputSrj
+    const visualizedSrj =
+      this.endpointCompletion?.simpleRouteJson ??
+      this.bestAttempt?.outputSrj ??
+      this.inputSrj
     const graphics = convertSrjToGraphicsObject(visualizedSrj)
     const circularPadKeys = new Set(
       visualizedSrj.obstacles

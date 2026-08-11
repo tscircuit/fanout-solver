@@ -27,5 +27,5 @@ for (const sampleId of PASSING_SAMPLE_IDS) {
     await expect(
       getSvgFromGraphicsObject(solver.visualize()),
     ).toMatchSvgSnapshot(import.meta.path, `${sampleId}-validated-fanout`)
-  }, 60_000)
+  }, 90_000)
 }
