@@ -269,3 +269,86 @@ test("rejects virtual through-obstacle transitions as emitted copper", () => {
     issues: [expect.objectContaining({ code: "unsupported-route-point" })],
   })
 })
+
+test("allows a trace to leave its own component pad away from the package body", () => {
+  const ownPad = {
+    ...obstacle({
+      id: "a-pad",
+      x: 0,
+      y: 0.4,
+      layer: "top",
+      connectionName: "A",
+    }),
+    componentId: "C1",
+  }
+  const body: Obstacle = {
+    obstacleId: "c1-body",
+    type: "rect",
+    center: { x: 0, y: 0 },
+    width: 0.4,
+    height: 0.4,
+    layers: ["top"],
+    connectedTo: [],
+    componentId: "C1",
+  }
+  const input = srj({ obstacles: [ownPad, body], traces: [] })
+  const outwardTrace = wireTrace({
+    id: "trace-a",
+    connectionName: "A",
+    points: [
+      { x: 0, y: 0.4 },
+      { x: 0, y: 1 },
+    ],
+  })
+
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: input,
+      routedSrj: { ...input, traces: [outwardTrace] },
+      clearance: 0.1,
+    }),
+  ).toMatchObject({ valid: true, issues: [] })
+})
+
+test("rejects a terminal trace directed through its package body", () => {
+  const ownPad = {
+    ...obstacle({
+      id: "a-pad",
+      x: 0,
+      y: 0.4,
+      layer: "top",
+      connectionName: "A",
+    }),
+    componentId: "C1",
+  }
+  const body: Obstacle = {
+    obstacleId: "c1-body",
+    type: "rect",
+    center: { x: 0, y: 0 },
+    width: 0.4,
+    height: 0.4,
+    layers: ["top"],
+    connectedTo: [],
+    componentId: "C1",
+  }
+  const input = srj({ obstacles: [ownPad, body], traces: [] })
+  const inwardTrace = wireTrace({
+    id: "trace-a",
+    connectionName: "A",
+    points: [
+      { x: 0, y: 0.4 },
+      { x: 0, y: -0.5 },
+    ],
+  })
+
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: input,
+      routedSrj: { ...input, traces: [inwardTrace] },
+      clearance: 0.1,
+    }),
+  ).toMatchObject({
+    valid: false,
+    issues: [expect.objectContaining({ code: "trace-obstacle-clearance" })],
+  })
+})

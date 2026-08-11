@@ -7,6 +7,7 @@ import {
   distancePointToObstacle,
   distancePointToSegment,
   distanceSegmentToObstacle,
+  pointIsInsideObstacle,
   segmentsAreClear,
 } from "./geometry"
 import { getCopperLayerNames, getLayerSpan } from "./layer-names"
@@ -58,6 +59,48 @@ interface TraceCopper {
   connectionName: string
   segments: RoutedSegment[]
   vias: RoutedVia[]
+}
+
+function isLegalTerminalBodyEscape(params: {
+  inputSrj: SimpleRouteJson
+  segment: RoutedSegment
+  bodyObstacle: SimpleRouteJson["obstacles"][number]
+  connectionName: string
+}): boolean {
+  const { inputSrj, segment, bodyObstacle, connectionName } = params
+  if (bodyObstacle.connectedTo.length > 0 || !bodyObstacle.componentId) {
+    return false
+  }
+  const sameNetComponentPads = inputSrj.obstacles.filter(
+    (obstacle) =>
+      obstacle.componentId === bodyObstacle.componentId &&
+      obstacle.layers.includes(segment.layer) &&
+      obstacleSharesElectricalNet(inputSrj, obstacle, connectionName),
+  )
+  for (const pad of sameNetComponentPads) {
+    for (const [terminal, other] of [
+      [segment.start, segment.end],
+      [segment.end, segment.start],
+    ] as const) {
+      if (!pointIsInsideObstacle(terminal, pad, EPSILON)) continue
+      const outwardFromBody = {
+        x: terminal.x - bodyObstacle.center.x,
+        y: terminal.y - bodyObstacle.center.y,
+      }
+      const terminalToOther = {
+        x: other.x - terminal.x,
+        y: other.y - terminal.y,
+      }
+      if (
+        outwardFromBody.x * terminalToOther.x +
+          outwardFromBody.y * terminalToOther.y >
+        EPSILON
+      ) {
+        return true
+      }
+    }
+  }
+  return false
 }
 
 function pointsMatch(first: Point2D, second: Point2D): boolean {
@@ -226,6 +269,16 @@ export function validateRoutedCopperDrc(params: {
         if (
           !obstacle.layers.includes(segment.layer) ||
           obstacleSharesElectricalNet(inputSrj, obstacle, copper.connectionName)
+        ) {
+          continue
+        }
+        if (
+          isLegalTerminalBodyEscape({
+            inputSrj,
+            segment,
+            bodyObstacle: obstacle,
+            connectionName: copper.connectionName,
+          })
         ) {
           continue
         }
