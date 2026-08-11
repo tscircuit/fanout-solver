@@ -113,23 +113,33 @@ function directionForBusId(busId: string): FanoutBusSpec["direction"] {
 }
 
 function createSrj29Buses(sourceSrj: SimpleRouteJson): FanoutBusSpec[] {
-  return (sourceSrj.buses ?? []).map((bus) => {
+  return (sourceSrj.buses ?? []).flatMap((bus): FanoutBusSpec[] => {
     const isPowerBus = bus.busId === "power_vcc" || bus.busId === "power_gnd"
-    return {
+    const direction =
+      bus.busId === "power_vcc"
+        ? "left"
+        : bus.busId === "power_gnd"
+          ? "right"
+          : directionForBusId(bus.busId)
+    const adaptedBus: FanoutBusSpec = {
       ...bus,
       sourceComponentId: BGA_COMPONENT_ID,
-      // VCC and GND must escape the package as real downstream connection
-      // prefixes. Splitting them across opposite edges gives the grouped power
-      // nets independent routing corridors while retaining each capacitor pad
-      // as the other endpoint in the output SRJ.
-      direction:
-        bus.busId === "power_vcc"
-          ? "left"
-          : bus.busId === "power_gnd"
-            ? "right"
-            : directionForBusId(bus.busId),
+      direction,
       termination: { type: "boundary" },
     }
+
+    if (!isPowerBus) return [adaptedBus]
+
+    // A power net is not a length-matched signal bus: every pin can choose its
+    // own escape layer and can merge into existing same-net copper. Keeping
+    // VCC and GND on opposite sides still gives each net a coherent corridor,
+    // while singleton routing prevents one blocked pin from discarding every
+    // otherwise valid breakout on that power net.
+    return bus.connectionNames.map((connectionName) => ({
+      ...adaptedBus,
+      busId: connectionName,
+      connectionNames: [connectionName],
+    }))
   })
 }
 

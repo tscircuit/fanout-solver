@@ -6,7 +6,7 @@ import {
   srj29FanoutSamples,
 } from "../datasets/srj29"
 
-test("SRJ29 exposes paired power nets and directional signal buses", () => {
+test("SRJ29 exposes independently routed power pins and directional signal buses", () => {
   expect(srj29FanoutSamples).toHaveLength(200)
 
   const sample = srj29FanoutSamples[0]!
@@ -22,8 +22,20 @@ test("SRJ29 exposes paired power nets and directional signal buses", () => {
 
   expect(input.layerCount).toBe(SRJ29_FANOUT_LAYER_COUNT)
   expect(powerConnections).toHaveLength(sample.powerConnectionCount)
-  expect(powerBuses).toHaveLength(2)
-  expect(powerBuses?.every((bus) => bus.connectionNames.length > 1)).toBe(true)
+  expect(powerBuses).toHaveLength(sample.powerConnectionCount)
+  expect(powerBuses?.every((bus) => bus.connectionNames.length === 1)).toBe(
+    true,
+  )
+  expect(
+    powerBuses
+      ?.filter((bus) => bus.busId.startsWith("power_vcc"))
+      .every((bus) => bus.direction === "left"),
+  ).toBe(true)
+  expect(
+    powerBuses
+      ?.filter((bus) => bus.busId.startsWith("power_gnd"))
+      .every((bus) => bus.direction === "right"),
+  ).toBe(true)
   expect(powerBuses?.every((bus) => bus.termination?.type === "boundary")).toBe(
     true,
   )
@@ -124,4 +136,4 @@ test("multi-connection SRJ29 buses never duplicate routed connection plans", () 
         attempt.routedConnectionCount <= sample.fanoutConnectionCount,
     ),
   ).toBe(true)
-})
+}, 30_000)
