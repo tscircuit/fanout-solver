@@ -235,6 +235,100 @@ test("rejects a via colliding with a different-net pad anywhere in its span", ()
   )
 })
 
+test("rejects a via placed directly at a moved breakout endpoint", () => {
+  const input = srj({ traces: [] })
+  const movedEndpoint = { x: 0.5, y: 0.5, layer: "top" }
+  const routed = {
+    ...input,
+    connections: input.connections.map((connection) =>
+      connection.name === "A"
+        ? {
+            ...connection,
+            pointsToConnect: [movedEndpoint, connection.pointsToConnect[1]!],
+          }
+        : connection,
+    ),
+    traces: [
+      {
+        type: "pcb_trace" as const,
+        pcb_trace_id: "trace-a",
+        connection_name: "A",
+        route: [
+          {
+            route_type: "wire" as const,
+            ...movedEndpoint,
+            width: 0.1,
+          },
+          {
+            route_type: "via" as const,
+            x: movedEndpoint.x,
+            y: movedEndpoint.y,
+            from_layer: "top",
+            to_layer: "inner1",
+            via_diameter: 0.3,
+          },
+          {
+            route_type: "wire" as const,
+            x: movedEndpoint.x,
+            y: movedEndpoint.y,
+            layer: "inner1",
+            width: 0.1,
+          },
+          {
+            route_type: "wire" as const,
+            x: 1,
+            y: 0.5,
+            layer: "inner1",
+            width: 0.1,
+          },
+        ],
+      },
+    ],
+  }
+
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: input,
+      routedSrj: routed,
+      clearance: 0.1,
+    }),
+  ).toMatchObject({
+    valid: false,
+    issues: [expect.objectContaining({ code: "via-at-endpoint" })],
+  })
+})
+
+test("allows a via at an interior point along a connected trace", () => {
+  const input = srj({ traces: [] })
+  const trace: SimplifiedPcbTrace = {
+    type: "pcb_trace",
+    pcb_trace_id: "trace-a",
+    connection_name: "A",
+    route: [
+      { route_type: "wire", x: 0, y: 0, width: 0.1, layer: "top" },
+      { route_type: "wire", x: 0.5, y: 0, width: 0.1, layer: "top" },
+      {
+        route_type: "via",
+        x: 0.5,
+        y: 0,
+        from_layer: "top",
+        to_layer: "inner1",
+        via_diameter: 0.3,
+      },
+      { route_type: "wire", x: 0.5, y: 0, width: 0.1, layer: "inner1" },
+      { route_type: "wire", x: 2, y: 0, width: 0.1, layer: "inner1" },
+    ],
+  }
+
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: input,
+      routedSrj: { ...input, traces: [trace] },
+      clearance: 0.1,
+    }),
+  ).toMatchObject({ valid: true, issues: [] })
+})
+
 test("rejects virtual through-obstacle transitions as emitted copper", () => {
   const routed = srj({
     traces: [
