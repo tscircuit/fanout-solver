@@ -33,8 +33,13 @@ interface Srj29ManifestSample {
 
 interface Srj29Manifest {
   datasetName: string
+  generationVersion: number
   sampleCount: number
   rule: string
+  validation: {
+    valid: boolean
+    invalidSampleCount: number
+  }
   samples: Srj29ManifestSample[]
 }
 
@@ -56,6 +61,15 @@ export interface Srj29FanoutSample {
 }
 
 const manifest = datasetDistManifest as unknown as Srj29Manifest
+if (
+  manifest.generationVersion < 2 ||
+  !manifest.validation.valid ||
+  manifest.validation.invalidSampleCount !== 0
+) {
+  throw new Error(
+    "SRJ29 fanout benchmarks require the validated generation-v2 dataset",
+  )
+}
 const manifestBySampleName = new Map(
   manifest.samples.map((sample) => [sample.sampleName, sample]),
 )
@@ -97,7 +111,7 @@ function connectionTouchesComponent(
 }
 
 function directionForBusId(busId: string): FanoutBusSpec["direction"] {
-  const side = busId.match(/^signal_bus_(left|right|top|bottom)$/)?.[1]
+  const side = busId.match(/^signal_bus_(left|right|top|bottom)(?:_\d+)?$/)?.[1]
   switch (side) {
     case "left":
       return "left"
@@ -112,33 +126,94 @@ function directionForBusId(busId: string): FanoutBusSpec["direction"] {
   }
 }
 
+function getPowerPlaneLayer(busId: string): string {
+  return busId === "power_vcc" ? "inner2" : "inner3"
+}
+
+function getPowerEscapeDirections(
+  sourceSrj: SimpleRouteJson,
+): Map<string, FanoutBusSpec["direction"]> {
+  const bgaObstacles = sourceSrj.obstacles.filter(
+    (obstacle) => obstacle.componentId === BGA_COMPONENT_ID,
+  )
+  const sourcePointByConnectionName = new Map<string, ConnectionPoint>()
+  for (const connection of sourceSrj.connections) {
+    const sourcePoint = connection.pointsToConnect.find((point) =>
+      bgaObstacles.some((obstacle) => pointTouchesObstacle(point, obstacle)),
+    )
+    if (sourcePoint)
+      sourcePointByConnectionName.set(connection.name, sourcePoint)
+  }
+  const sourcePoints = [...sourcePointByConnectionName.values()]
+  const center = {
+    x:
+      sourcePoints.reduce((sum, point) => sum + point.x, 0) /
+      Math.max(sourcePoints.length, 1),
+    y:
+      sourcePoints.reduce((sum, point) => sum + point.y, 0) /
+      Math.max(sourcePoints.length, 1),
+  }
+  const directions = new Map<string, FanoutBusSpec["direction"]>()
+  for (const connection of sourceSrj.connections) {
+    const sourcePoint = sourcePointByConnectionName.get(connection.name)
+    if (!sourcePoint) continue
+    const targetPoint = connection.pointsToConnect.find(
+      (point) => point !== sourcePoint,
+    )
+    // The nearby capacitor pad tells us which side of the BGA pad is occupied.
+    // Escape in the opposite direction so the dogbone via does not sit under
+    // the capacitor body or force its top-layer branch through the other pad.
+    let dx = sourcePoint.x - (targetPoint?.x ?? sourcePoint.x)
+    let dy = sourcePoint.y - (targetPoint?.y ?? sourcePoint.y)
+    if (Math.hypot(dx, dy) < 1e-3) {
+      dx = sourcePoint.x - center.x
+      dy = sourcePoint.y - center.y
+    }
+    directions.set(
+      connection.name,
+      Math.abs(dx) >= Math.abs(dy)
+        ? dx < 0
+          ? "left"
+          : "right"
+        : dy < 0
+          ? "down"
+          : "up",
+    )
+  }
+  return directions
+}
+
 function createSrj29Buses(sourceSrj: SimpleRouteJson): FanoutBusSpec[] {
+  const powerEscapeDirections = getPowerEscapeDirections(sourceSrj)
   return (sourceSrj.buses ?? []).flatMap((bus): FanoutBusSpec[] => {
     const isPowerBus = bus.busId === "power_vcc" || bus.busId === "power_gnd"
-    const direction =
-      bus.busId === "power_vcc"
-        ? "left"
-        : bus.busId === "power_gnd"
-          ? "right"
-          : directionForBusId(bus.busId)
-    const adaptedBus: FanoutBusSpec = {
-      ...bus,
-      sourceComponentId: BGA_COMPONENT_ID,
-      direction,
-      termination: { type: "boundary" },
+    if (!isPowerBus) {
+      return [
+        {
+          ...bus,
+          sourceComponentId: BGA_COMPONENT_ID,
+          direction: directionForBusId(bus.busId),
+          termination: { type: "boundary" },
+        },
+      ]
     }
 
-    if (!isPowerBus) return [adaptedBus]
-
-    // A power net is not a length-matched signal bus: every pin can choose its
-    // own escape layer and can merge into existing same-net copper. Keeping
-    // VCC and GND on opposite sides still gives each net a coherent corridor,
-    // while singleton routing prevents one blocked pin from discarding every
-    // otherwise valid breakout on that power net.
+    // Each power pin needs two local results: a short branch to its nearby
+    // decoupling capacitor and a physical breakout into the appropriate power
+    // plane. Treating power pins as edge-bound signal traces creates long,
+    // redundant copper and gives the optimizer the wrong topology.
     return bus.connectionNames.map((connectionName) => ({
-      ...adaptedBus,
+      ...bus,
       busId: connectionName,
       connectionNames: [connectionName],
+      sourceComponentId: BGA_COMPONENT_ID,
+      direction:
+        powerEscapeDirections.get(connectionName) ??
+        (bus.busId === "power_vcc" ? "left" : "right"),
+      termination: {
+        type: "plane",
+        layer: getPowerPlaneLayer(bus.busId),
+      },
     }))
   })
 }
@@ -146,9 +221,9 @@ function createSrj29Buses(sourceSrj: SimpleRouteJson): FanoutBusSpec[] {
 /**
  * Adapt a complete SRJ29 routing problem into the BGA-prefix problem consumed
  * by FanoutSolver. Every connection in the derivative is intentionally kept:
- * signal and VCC/GND buses terminate at the board edge while the opposite-layer
- * capacitor pads remain connected as downstream endpoints and in the obstacle
- * field.
+ * signals terminate at the board edge, while VCC/GND pins terminate into
+ * dedicated inner planes and retain their opposite-layer capacitor pads as
+ * required endpoints in the obstacle field.
  */
 export function createSrj29FanoutInput(
   sourceSrj: SimpleRouteJson,
@@ -213,7 +288,16 @@ export const srj29FanoutSamples: Srj29FanoutSample[] = (
       buses: createSrj29Buses(sourceSrj),
       sharedBoundary: { ...manifestSample.bounds },
       compactBusTracks: simpleRouteJson.connections.length <= 64,
+      preferOriginalEndpointTracks: true,
       allowSameNetMerges: true,
+      // Keep signals off the capacitor side and the two dedicated power
+      // planes. This leaves bottom/inner1/inner4 as coherent signal-routing
+      // layers and prevents a legal fanout prefix from blocking the short
+      // top-layer decoupling branches during endpoint completion.
+      escapeLayers: ["bottom", "inner1", "inner4"],
+      completeOriginalEndpoints: true,
+      endpointCompletionEffort: 1,
+      balanceLayerLoadByConnectionCount: true,
       maxLayerCombinations: 256,
     },
   }

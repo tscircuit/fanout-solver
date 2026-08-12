@@ -23,6 +23,7 @@ export type RoutedCopperDrcIssueCode =
   | "unknown-trace-connection"
   | "unsupported-route-point"
   | "disconnected-trace"
+  | "via-at-endpoint"
   | "trace-obstacle-clearance"
   | "via-obstacle-clearance"
   | "different-net-trace-clearance"
@@ -61,7 +62,7 @@ interface TraceCopper {
   vias: RoutedVia[]
 }
 
-function isLegalTerminalBodyEscape(params: {
+export function segmentIsLegalTerminalBodyEscape(params: {
   inputSrj: SimpleRouteJson
   segment: RoutedSegment
   bodyObstacle: SimpleRouteJson["obstacles"][number]
@@ -235,6 +236,14 @@ export function validateRoutedCopperDrc(params: {
   const issues: RoutedCopperDrcIssue[] = []
   const layerNames = getCopperLayerNames(routedSrj.layerCount)
   const traceCopper: TraceCopper[] = []
+  const originalAndRoutedEndpoints = [inputSrj, routedSrj].flatMap((srj) =>
+    srj.connections.flatMap((connection) =>
+      connection.pointsToConnect.map((point) => ({
+        connectionName: connection.name,
+        point,
+      })),
+    ),
+  )
 
   for (const trace of routedSrj.traces ?? []) {
     const connectionName = trace.connection_name
@@ -273,7 +282,7 @@ export function validateRoutedCopperDrc(params: {
           continue
         }
         if (
-          isLegalTerminalBodyEscape({
+          segmentIsLegalTerminalBodyEscape({
             inputSrj,
             segment,
             bodyObstacle: obstacle,
@@ -297,6 +306,18 @@ export function validateRoutedCopperDrc(params: {
       }
     }
     for (const via of copper.vias) {
+      const coincidentEndpoint = originalAndRoutedEndpoints.find(
+        ({ point }) => distance(via.center, point) <= EPSILON,
+      )
+      if (coincidentEndpoint) {
+        addIssue(issues, {
+          code: "via-at-endpoint",
+          traceId: copper.trace.pcb_trace_id,
+          connectionName: copper.connectionName,
+          otherConnectionName: coincidentEndpoint.connectionName,
+          message: `Via in ${copper.trace.pcb_trace_id} is placed directly at an original or routed connection endpoint`,
+        })
+      }
       for (const obstacle of inputSrj.obstacles) {
         if (
           !obstacle.layers.some((layer) => via.spanLayers.includes(layer)) ||

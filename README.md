@@ -64,6 +64,9 @@ and treats each bus-layer decision atomically.
 - `compactBusTracks` bends each bus into a trace/clearance-pitch routing
   envelope, so a wide pad row does not consume a disproportionately wide
   breakout corridor.
+- `preferOriginalEndpointTracks` projects boundary tracks onto the original
+  downstream pad coordinates and prefers their layer when legal. This lets
+  ordered edge-pad buses make direct, visibly continuous pad connections.
 - Chamfers orthogonal routing corners into 45° segments before validating and
   emitting the fanout.
 - Verifies oriented-pad, via, trace, and already-routed fanout clearance on
@@ -77,6 +80,13 @@ and treats each bus-layer decision atomically.
   opt-in; different electrical nets remain hard obstacles.
 - Audits route continuity, unique connection coverage, boundary exits, and
   retained downstream endpoints before marking a solution complete.
+- `completeOriginalEndpoints` adds a bounded fail-first completion stage after
+  fanout. It first places DRC-gated interstitial capacitor escapes, then tries
+  breakout-to-pad routes with layer transitions at interior points along the
+  existing fanout copper, and finally a bounded capacity-router fallback. Vias
+  at original or moved routing endpoints are rejected. A candidate is retained
+  only when it improves independently proven original endpoint connectivity
+  and the complete emitted copper remains DRC-clean.
 - Emits supplied fanout traces, via obstacles, and moved breakout endpoints in a
   new `SimpleRouteJson`. The returned problem is ready for a downstream
   autorouter to finish.
@@ -115,6 +125,7 @@ const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   availableCornersAndSides: ["top_left", "top", "top_right"],
   borderDistribution: "even",
   compactBusTracks: true,
+  preferOriginalEndpointTracks: true,
   buses: [
     {
       busId: "ground",
@@ -186,6 +197,10 @@ bus-layer combination search.
 
 - `simpleRouteJson`: the downstream routing problem with fanout prefixes
 - `fanoutTraces`: the newly supplied pad-to-breakout traces
+- `completionTraces`: optional DRC-gated traces from breakouts to original
+  endpoints
+- `endpointCompletion`: optional independent connectivity/DRC reports and
+  bounded-search diagnostics
 - `planeTerminations`: the completed local-via connection, layer, and via data
 - `busLayerAssignments`: the selected layer for every bus
 - `busDirections`: the direction shared by each bus

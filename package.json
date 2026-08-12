@@ -41,7 +41,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
     "@tsci/tscircuit.dataset-srj19-bga-passive-overlays": "github:tscircuit/dataset-srj19#c1206f3",
-    "@tsci/tscircuit.dataset-srj29-bga-decoupling": "github:tscircuit/dataset-srj29-bga-decoupling#a8a1e74",
+    "@tsci/tscircuit.dataset-srj29-bga-decoupling": "github:tscircuit/dataset-srj29-bga-decoupling#bfdf7bc",
     "@tscircuit/footprinter": "0.0.394",
     "@types/bun": "1.3.14",
     "@types/react": "19.2.14",

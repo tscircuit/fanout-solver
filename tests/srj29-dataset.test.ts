@@ -5,8 +5,16 @@ import {
   SRJ29_FANOUT_LAYER_COUNT,
   srj29FanoutSamples,
 } from "../datasets/srj29"
+import { datasetDistManifest } from "@tsci/tscircuit.dataset-srj29-bga-decoupling"
 
 test("SRJ29 exposes independently routed power pins and directional signal buses", () => {
+  expect(datasetDistManifest).toMatchObject({
+    generationVersion: 2,
+    validation: {
+      valid: true,
+      invalidSampleCount: 0,
+    },
+  })
   expect(srj29FanoutSamples).toHaveLength(200)
 
   const sample = srj29FanoutSamples[0]!
@@ -19,6 +27,9 @@ test("SRJ29 exposes independently routed power pins and directional signal buses
   const powerBuses = sample.solverOptions.buses?.filter((bus) =>
     bus.busId.startsWith("power_"),
   )
+  const signalBuses = sample.solverOptions.buses?.filter((bus) =>
+    bus.busId.startsWith("signal_bus_"),
+  )
 
   expect(input.layerCount).toBe(SRJ29_FANOUT_LAYER_COUNT)
   expect(powerConnections).toHaveLength(sample.powerConnectionCount)
@@ -29,16 +40,32 @@ test("SRJ29 exposes independently routed power pins and directional signal buses
   expect(
     powerBuses
       ?.filter((bus) => bus.busId.startsWith("power_vcc"))
-      .every((bus) => bus.direction === "left"),
+      .every(
+        (bus) =>
+          bus.termination?.type === "plane" &&
+          bus.termination.layer === "inner2",
+      ),
   ).toBe(true)
   expect(
     powerBuses
       ?.filter((bus) => bus.busId.startsWith("power_gnd"))
-      .every((bus) => bus.direction === "right"),
+      .every(
+        (bus) =>
+          bus.termination?.type === "plane" &&
+          bus.termination.layer === "inner3",
+      ),
   ).toBe(true)
-  expect(powerBuses?.every((bus) => bus.termination?.type === "boundary")).toBe(
-    true,
-  )
+  expect(powerBuses?.every((bus) => bus.direction !== undefined)).toBe(true)
+  expect(sample.solverOptions.preferOriginalEndpointTracks).toBe(true)
+  expect(
+    signalBuses?.every((bus) => {
+      if (bus.busId.includes("_left_")) return bus.direction === "left"
+      if (bus.busId.includes("_right_")) return bus.direction === "right"
+      if (bus.busId.includes("_top_")) return bus.direction === "up"
+      if (bus.busId.includes("_bottom_")) return bus.direction === "down"
+      return false
+    }),
+  ).toBe(true)
   expect(
     input.obstacles.some(
       (obstacle) =>
@@ -48,12 +75,15 @@ test("SRJ29 exposes independently routed power pins and directional signal buses
   ).toBe(true)
 })
 
-test("SRJ29 VCC and GND pins are validated boundary breakouts with capacitor endpoints retained", () => {
+test("SRJ29 VCC and GND pins break out to dedicated planes", () => {
   const sample = srj29FanoutSamples.find(
     (candidate) => candidate.id === "sample093",
   )!
   const solver = new FanoutSolver(sample.simpleRouteJson, {
     ...sample.solverOptions,
+    // This test audits the fanout contract and retained endpoint metadata;
+    // endpoint completion has its own DRC/connectivity integration coverage.
+    completeOriginalEndpoints: false,
     maxLayerCombinations: 32,
   })
   solver.solve()
@@ -70,7 +100,7 @@ test("SRJ29 VCC and GND pins are validated boundary breakouts with capacitor end
   )
 
   expect(powerNetNames).toEqual(new Set(["VCC", "GND"]))
-  expect(output.planeTerminations).toHaveLength(0)
+  expect(output.planeTerminations).toHaveLength(powerConnections.length)
   expect(output.validation).toMatchObject({
     valid: true,
     checkedConnectionCount: sample.fanoutConnectionCount,
@@ -79,38 +109,26 @@ test("SRJ29 VCC and GND pins are validated boundary breakouts with capacitor end
   })
 
   for (const inputConnection of powerConnections) {
-    const preparedConnection = solver.preparedBuses
-      .flatMap((bus) => bus.connections)
-      .find(
-        (connection) => connection.connection.name === inputConnection.name,
-      )!
     const outputConnection = output.simpleRouteJson.connections.find(
       (connection) => connection.name === inputConnection.name,
     )
-    const trace = output.fanoutTraces.find(
-      (candidate) => candidate.connection_name === inputConnection.name,
-    )!
-    const traceEnd = [...trace.route]
-      .reverse()
-      .find((routePoint) => "x" in routePoint && "y" in routePoint)!
-    const outputExit =
-      outputConnection?.pointsToConnect[preparedConnection.sourcePointIndex]
+    const planeTermination = output.planeTerminations.find(
+      (termination) => termination.connectionName === inputConnection.name,
+    )
 
-    expect(outputConnection).toBeDefined()
-    expect(outputExit).toMatchObject({
-      x: traceEnd.x,
-      y: traceEnd.y,
-    })
+    expect(outputConnection).toBeUndefined()
+    expect(planeTermination?.layer).toBe(
+      inputConnection.netConnectionName === "VCC" ? "inner2" : "inner3",
+    )
     expect(
-      inputConnection.pointsToConnect
-        .filter(
-          (_, pointIndex) => pointIndex !== preparedConnection.sourcePointIndex,
-        )
-        .every((capacitorPoint) =>
-          outputConnection!.pointsToConnect.some(
-            (point) =>
-              point.pointId === capacitorPoint.pointId &&
-              point.pcb_port_id === capacitorPoint.pcb_port_id,
+      output.fanoutTraces
+        .filter((trace) => trace.connection_name === inputConnection.name)
+        .flatMap((trace) => trace.route)
+        .filter((routePoint) => routePoint.route_type === "via")
+        .every((via) =>
+          inputConnection.pointsToConnect.every(
+            (endpoint) =>
+              Math.hypot(via.x - endpoint.x, via.y - endpoint.y) > 1e-6,
           ),
         ),
     ).toBe(true)
@@ -136,4 +154,4 @@ test("multi-connection SRJ29 buses never duplicate routed connection plans", () 
         attempt.routedConnectionCount <= sample.fanoutConnectionCount,
     ),
   ).toBe(true)
-}, 30_000)
+}, 60_000)

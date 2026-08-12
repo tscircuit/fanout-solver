@@ -1,12 +1,14 @@
 import type { Obstacle, SimpleRouteJson } from "@tscircuit/capacity-autorouter"
-import type { FanoutRoutePlan } from "./types"
+import type { FanoutRoutePlan, SimpleRouteJsonWithFanoutPlanes } from "./types"
 
 function createViaObstacle(
   plan: FanoutRoutePlan,
   layerNames: string[],
+  endpoint = false,
 ): Obstacle | null {
-  if (!plan.via) return null
-  const zLayers = plan.via.spanLayers.map((layer) => {
+  const via = endpoint ? plan.planeEndpointVia : plan.via
+  if (!via) return null
+  const zLayers = via.spanLayers.map((layer) => {
     const layerIndex = layerNames.indexOf(layer)
     if (layerIndex < 0) {
       throw new Error(
@@ -16,12 +18,12 @@ function createViaObstacle(
     return layerIndex
   })
   return {
-    obstacleId: `fanout-via:${plan.connectionName}`,
+    obstacleId: `${endpoint ? "fanout-plane-endpoint-via" : "fanout-via"}:${plan.connectionName}`,
     type: "rect",
-    center: plan.via.center,
-    width: plan.via.diameter,
-    height: plan.via.diameter,
-    layers: plan.via.spanLayers,
+    center: via.center,
+    width: via.diameter,
+    height: via.diameter,
+    layers: via.spanLayers,
     zLayers,
     __zLayers: zLayers,
     connectedTo: [plan.connectionName, plan.trace.pcb_trace_id],
@@ -32,7 +34,7 @@ export function buildOutputSimpleRouteJson(params: {
   inputSrj: SimpleRouteJson
   plans: FanoutRoutePlan[]
   layerNames: string[]
-}): SimpleRouteJson {
+}): SimpleRouteJsonWithFanoutPlanes {
   const { inputSrj, plans, layerNames } = params
   const outputConnections = inputSrj.connections.map((connection) => ({
     ...connection,
@@ -62,9 +64,15 @@ export function buildOutputSimpleRouteJson(params: {
     }
     const viaObstacle = createViaObstacle(plan, layerNames)
     if (viaObstacle) viaObstacles.push(viaObstacle)
+    const endpointViaObstacle = createViaObstacle(plan, layerNames, true)
+    if (endpointViaObstacle) viaObstacles.push(endpointViaObstacle)
   }
-  const coordinateRoutePoints = plans.flatMap((plan) =>
-    plan.trace.route.filter(
+  const planTraces = plans.flatMap((plan) => [
+    plan.trace,
+    ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
+  ])
+  const coordinateRoutePoints = planTraces.flatMap((trace) =>
+    trace.route.filter(
       (
         routePoint,
       ): routePoint is Extract<typeof routePoint, { x: number; y: number }> =>
@@ -107,6 +115,16 @@ export function buildOutputSimpleRouteJson(params: {
 
   return {
     ...inputSrj,
+    fanoutPlaneConnectivity: plans.flatMap((plan) =>
+      plan.termination.type === "plane"
+        ? [
+            {
+              connectionName: plan.connectionName,
+              layer: plan.termination.layer,
+            },
+          ]
+        : [],
+    ),
     bounds: outputBounds,
     connections: outputConnections.filter(
       (connection) => !planeTerminatedConnectionNames.has(connection.name),
@@ -134,7 +152,7 @@ export function buildOutputSimpleRouteJson(params: {
         ...trace,
         route: trace.route.map((routePoint) => ({ ...routePoint })),
       })),
-      ...plans.map((plan) => plan.trace),
+      ...planTraces,
     ],
   }
 }

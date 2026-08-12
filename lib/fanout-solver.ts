@@ -5,6 +5,10 @@ import {
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { buildOutputSimpleRouteJson } from "./build-output"
+import {
+  completeOriginalEndpoints,
+  type CompleteOriginalEndpointsResult,
+} from "./complete-original-endpoints"
 import { getCopperLayerColor } from "./layer-colors"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import {
@@ -36,6 +40,7 @@ interface ResolvedFanoutConfig {
   viaHoleDiameter: number
   clearance: number
   compactBusTracks: boolean
+  preferOriginalEndpointTracks: boolean
   allowSameNetMerges: boolean
   singleLayerPushAndShove: boolean
   singleLayerAdaptiveExits: boolean
@@ -43,6 +48,7 @@ interface ResolvedFanoutConfig {
   layerNames: string[]
   escapeLayers: string[]
   maxLayerCombinations: number
+  balanceLayerLoadByConnectionCount: boolean
 }
 
 interface EvaluatedAssignment extends AssignmentAttempt {
@@ -126,6 +132,7 @@ function resolveConfig(
     viaHoleDiameter,
     clearance,
     compactBusTracks: options.compactBusTracks ?? false,
+    preferOriginalEndpointTracks: options.preferOriginalEndpointTracks ?? false,
     allowSameNetMerges: options.allowSameNetMerges ?? false,
     singleLayerPushAndShove: options.singleLayerPushAndShove ?? false,
     singleLayerAdaptiveExits: options.singleLayerAdaptiveExits ?? false,
@@ -139,18 +146,45 @@ function resolveConfig(
             "maxLayerCombinations",
             options.maxLayerCombinations,
           ),
+    balanceLayerLoadByConnectionCount:
+      options.balanceLayerLoadByConnectionCount ?? false,
   }
 }
 
 function assignmentLoadPenalty(
   assignment: Readonly<Record<string, string>>,
+  buses: readonly PreparedBus[],
+  weightByConnectionCount: boolean,
 ): number {
+  const connectionCountByBusId = new Map(
+    buses.map((bus) => [bus.busId, bus.connections.length]),
+  )
   const loadByLayer = new Map<string, number>()
-  for (const layer of Object.values(assignment)) {
-    loadByLayer.set(layer, (loadByLayer.get(layer) ?? 0) + 1)
+  for (const [busId, layer] of Object.entries(assignment)) {
+    loadByLayer.set(
+      layer,
+      (loadByLayer.get(layer) ?? 0) +
+        (weightByConnectionCount
+          ? (connectionCountByBusId.get(busId) ?? 1)
+          : 1),
+    )
   }
   return [...loadByLayer.values()].reduce(
     (penalty, load) => penalty + load * load,
+    0,
+  )
+}
+
+function getLayerLoadPenaltyWeight(config: ResolvedFanoutConfig): number {
+  return config.balanceLayerLoadByConnectionCount ? 0.25 : 0.01
+}
+
+function getPlanViaCount(plans: readonly FanoutRoutePlan[]): number {
+  return plans.reduce(
+    (count, plan) =>
+      count +
+      Number(Boolean(plan.via)) +
+      Number(Boolean(plan.planeEndpointVia)),
     0,
   )
 }
@@ -222,8 +256,14 @@ function createPreferredLayerAssignment(params: {
   buses: PreparedBus[]
   escapeLayers: string[]
   escapeLayersByBusId: Readonly<Record<string, readonly string[]>>
+  preferOriginalEndpointTracks: boolean
 }): Readonly<Record<string, string>> {
-  const { buses, escapeLayers, escapeLayersByBusId } = params
+  const {
+    buses,
+    escapeLayers,
+    escapeLayersByBusId,
+    preferOriginalEndpointTracks,
+  } = params
   const assignment: Record<string, string> = {}
   const directionsByComponent = new Map<string, Set<PreparedBus["direction"]>>()
   let nextViaLayerIndex = 0
@@ -248,7 +288,7 @@ function createPreferredLayerAssignment(params: {
     )
     if (
       routableEscapeLayers.includes(sourceLayer) &&
-      busIsOnOutwardComponentEdge(bus)
+      (preferOriginalEndpointTracks || busIsOnOutwardComponentEdge(bus))
     ) {
       assignment[bus.busId] = sourceLayer
     } else if (viaLayers.length > 0) {
@@ -307,6 +347,7 @@ function getCandidateEscapeLayersForBus(params: {
         viaHoleDiameter: config.viaHoleDiameter,
         clearance: config.clearance,
         compactBusTracks: config.compactBusTracks,
+        preferOriginalEndpointTracks: config.preferOriginalEndpointTracks,
         allowSameNetMerges: config.allowSameNetMerges,
         staticClearanceCache,
       }) !== null,
@@ -349,6 +390,7 @@ export class FanoutSolver extends BaseSolver {
   private nextAssignmentIndex = 0
   private nextGeneratedAssignmentIndex = 0
   private bestAttempt: AssignmentAttempt | null = null
+  private endpointCompletion: CompleteOriginalEndpointsResult | null = null
 
   constructor(
     public readonly inputSrj: SimpleRouteJson,
@@ -416,6 +458,7 @@ export class FanoutSolver extends BaseSolver {
         buses: this.preparedBuses,
         escapeLayers: this.config.escapeLayers,
         escapeLayersByBusId,
+        preferOriginalEndpointTracks: this.config.preferOriginalEndpointTracks,
       }),
       generatedAssignments,
       maxAssignments: this.config.maxLayerCombinations,
@@ -425,6 +468,26 @@ export class FanoutSolver extends BaseSolver {
 
   override getSolverName(): string {
     return "FanoutSolver"
+  }
+
+  private completeBestAttemptEndpoints(): void {
+    if (
+      !this.options.completeOriginalEndpoints ||
+      this.endpointCompletion ||
+      !this.bestAttempt
+    ) {
+      return
+    }
+    this.endpointCompletion = completeOriginalEndpoints({
+      inputSrj: this.inputSrj,
+      fanoutSrj: this.bestAttempt.outputSrj,
+      plans: this.bestAttempt.plans,
+      traceWidth: this.config.traceWidth,
+      viaDiameter: this.config.viaDiameter,
+      viaHoleDiameter: this.config.viaHoleDiameter,
+      clearance: this.config.clearance,
+      effort: this.options.endpointCompletionEffort,
+    })
   }
 
   private getValidationBoundary(): Bounds {
@@ -491,8 +554,8 @@ export class FanoutSolver extends BaseSolver {
     }
     const busesInRoutingOrder = [...this.preparedBuses].sort(
       (a, b) =>
-        Number(a.termination.type === "plane") -
-          Number(b.termination.type === "plane") ||
+        Number(b.termination.type === "plane") -
+          Number(a.termination.type === "plane") ||
         (routingStrategy === "group-by-layer"
           ? (busLayerAssignments[a.busId] ?? "").localeCompare(
               busLayerAssignments[b.busId] ?? "",
@@ -542,6 +605,7 @@ export class FanoutSolver extends BaseSolver {
         viaHoleDiameter: this.config.viaHoleDiameter,
         clearance: this.config.clearance,
         compactBusTracks: this.config.compactBusTracks,
+        preferOriginalEndpointTracks: this.config.preferOriginalEndpointTracks,
         allowSameNetMerges: this.config.allowSameNetMerges,
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
@@ -596,8 +660,13 @@ export class FanoutSolver extends BaseSolver {
       unroutedConnectionCount * 1_000_000 +
       failedBusIds.length * 100_000 +
       routeLength +
-      plans.filter((plan) => plan.via).length * 0.1 +
-      assignmentLoadPenalty(busLayerAssignments) * 0.01
+      getPlanViaCount(plans) * 0.1 +
+      assignmentLoadPenalty(
+        busLayerAssignments,
+        this.preparedBuses,
+        this.config.balanceLayerLoadByConnectionCount,
+      ) *
+        getLayerLoadPenaltyWeight(this.config)
     const summary: FanoutAttemptSummary = {
       assignmentIndex,
       busLayerAssignments,
@@ -690,8 +759,8 @@ export class FanoutSolver extends BaseSolver {
           : (this.escapeLayersByBusId[b.busId]?.length ??
             this.config.escapeLayers.length)
       return (
-        Number(a.termination.type === "plane") -
-          Number(b.termination.type === "plane") ||
+        Number(b.termination.type === "plane") -
+          Number(a.termination.type === "plane") ||
         (groupByDirection ? a.direction.localeCompare(b.direction) : 0) ||
         aLayerCount - bLayerCount ||
         b.componentObstacles.length - a.componentObstacles.length ||
@@ -719,11 +788,29 @@ export class FanoutSolver extends BaseSolver {
         (total, plan) => total + plan.length,
         0,
       )
-      const viaCount = state.plans.filter((plan) => plan.via).length
+      const viaCount = getPlanViaCount(state.plans)
+      const offEndpointLayerConnectionCount = this.preparedBuses.reduce(
+        (count, bus) => {
+          if (bus.termination.type !== "boundary") return count
+          const sourceLayer = bus.connections[0]?.sourceLayer
+          return state.assignment[bus.busId] === sourceLayer
+            ? count
+            : count + bus.connections.length
+        },
+        0,
+      )
       return (
         routeLength +
         viaCount * 0.1 +
-        assignmentLoadPenalty(state.assignment) * 0.01
+        (this.config.preferOriginalEndpointTracks
+          ? offEndpointLayerConnectionCount * 10_000
+          : 0) +
+        assignmentLoadPenalty(
+          state.assignment,
+          this.preparedBuses,
+          this.config.balanceLayerLoadByConnectionCount,
+        ) *
+          getLayerLoadPenaltyWeight(this.config)
       )
     }
 
@@ -735,14 +822,26 @@ export class FanoutSolver extends BaseSolver {
             ? [bus.termination.layer]
             : (this.escapeLayersByBusId[bus.busId] ?? this.config.escapeLayers)
         const layerLoads = new Map<string, number>()
-        for (const layer of Object.values(state.assignment)) {
-          layerLoads.set(layer, (layerLoads.get(layer) ?? 0) + 1)
+        for (const [assignedBusId, layer] of Object.entries(state.assignment)) {
+          const assignedBus = this.preparedBuses.find(
+            (candidate) => candidate.busId === assignedBusId,
+          )
+          layerLoads.set(
+            layer,
+            (layerLoads.get(layer) ?? 0) +
+              (this.config.balanceLayerLoadByConnectionCount
+                ? (assignedBus?.connections.length ?? 1)
+                : 1),
+          )
         }
         const sourceLayer = bus.connections[0]?.sourceLayer
         const orderedLayers = candidateLayers.toSorted(
           (first, second) =>
             (layerLoads.get(first) ?? 0) - (layerLoads.get(second) ?? 0) ||
-            Number(first === sourceLayer) - Number(second === sourceLayer) ||
+            (this.config.preferOriginalEndpointTracks
+              ? Number(second === sourceLayer) - Number(first === sourceLayer)
+              : Number(first === sourceLayer) -
+                Number(second === sourceLayer)) ||
             first.localeCompare(second),
         )
 
@@ -759,6 +858,8 @@ export class FanoutSolver extends BaseSolver {
               viaHoleDiameter: this.config.viaHoleDiameter,
               clearance: this.config.clearance,
               compactBusTracks: this.config.compactBusTracks,
+              preferOriginalEndpointTracks:
+                this.config.preferOriginalEndpointTracks,
               allowSameNetMerges: this.config.allowSameNetMerges,
               staticClearanceCache: this.routeStaticClearanceCache,
             },
@@ -812,8 +913,13 @@ export class FanoutSolver extends BaseSolver {
     const score =
       bestState.plans.length === this.inputSrj.connections.length
         ? bestState.plans.reduce((total, plan) => total + plan.length, 0) +
-          bestState.plans.filter((plan) => plan.via).length * 0.1 +
-          assignmentLoadPenalty(bestState.assignment) * 0.01
+          getPlanViaCount(bestState.plans) * 0.1 +
+          assignmentLoadPenalty(
+            bestState.assignment,
+            this.preparedBuses,
+            this.config.balanceLayerLoadByConnectionCount,
+          ) *
+            getLayerLoadPenaltyWeight(this.config)
         : Number.POSITIVE_INFINITY
     if (!Number.isFinite(score)) return null
 
@@ -937,6 +1043,7 @@ export class FanoutSolver extends BaseSolver {
           failedBuses: "none",
           bestScore: beamAttempt.summary.score,
         }
+        this.completeBestAttemptEndpoints()
         this.solved = true
         return
       }
@@ -977,6 +1084,7 @@ export class FanoutSolver extends BaseSolver {
         this.bestAttempt.summary.routedConnectionCount ===
           this.inputSrj.connections.length
       ) {
+        this.completeBestAttemptEndpoints()
         this.solved = true
       } else {
         this.failed = true
@@ -1022,6 +1130,7 @@ export class FanoutSolver extends BaseSolver {
     if (
       attempt.summary.routedConnectionCount === this.inputSrj.connections.length
     ) {
+      this.completeBestAttemptEndpoints()
       this.solved = true
     }
   }
@@ -1050,9 +1159,27 @@ export class FanoutSolver extends BaseSolver {
         `FanoutSolver: completed output failed validation: ${validation.issues[0]?.message ?? "unknown validation error"}`,
       )
     }
+    const finalSrj =
+      this.endpointCompletion?.simpleRouteJson ?? this.bestAttempt.outputSrj
+    const finalTraceById = new Map(
+      (finalSrj.traces ?? []).map((trace) => [trace.pcb_trace_id, trace]),
+    )
     return {
-      simpleRouteJson: this.bestAttempt.outputSrj,
-      fanoutTraces: this.bestAttempt.plans.map((plan) => plan.trace),
+      simpleRouteJson:
+        this.endpointCompletion?.simpleRouteJson ?? this.bestAttempt.outputSrj,
+      fanoutTraces: this.bestAttempt.plans.flatMap((plan) => [
+        finalTraceById.get(plan.trace.pcb_trace_id) ?? plan.trace,
+        ...(plan.planeEndpointTrace
+          ? [
+              finalTraceById.get(plan.planeEndpointTrace.pcb_trace_id) ??
+                plan.planeEndpointTrace,
+            ]
+          : []),
+      ]),
+      completionTraces: this.endpointCompletion?.traces ?? [],
+      ...(this.endpointCompletion
+        ? { endpointCompletion: this.endpointCompletion.report }
+        : {}),
       planeTerminations: this.bestAttempt.plans.flatMap((plan) =>
         plan.termination.type === "plane" && plan.via
           ? [
@@ -1079,7 +1206,10 @@ export class FanoutSolver extends BaseSolver {
   }
 
   override visualize(): GraphicsObject {
-    const visualizedSrj = this.bestAttempt?.outputSrj ?? this.inputSrj
+    const visualizedSrj =
+      this.endpointCompletion?.simpleRouteJson ??
+      this.bestAttempt?.outputSrj ??
+      this.inputSrj
     const graphics = convertSrjToGraphicsObject(visualizedSrj)
     const circularPadKeys = new Set(
       visualizedSrj.obstacles
