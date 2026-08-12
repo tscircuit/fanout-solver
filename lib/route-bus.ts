@@ -24,6 +24,7 @@ import type {
   PreparedConnection,
   RoutedSegment,
 } from "./types"
+import { segmentIsLegalTerminalBodyEscape } from "./validate-routed-copper-drc"
 
 export type RouteBusStaticClearanceCache = Map<string, boolean>
 
@@ -664,6 +665,193 @@ function buildPlan(params: {
   }
 }
 
+function getPointLayer(point: PreparedConnection["targetPoint"]): string {
+  const layer = "layer" in point ? point.layer : point.layers[0]
+  if (!layer) {
+    throw new Error("FanoutSolver: plane endpoint has no copper layer")
+  }
+  return layer
+}
+
+function getPlaneEndpointViaCandidates(params: {
+  preparedConnection: PreparedConnection
+  bus: PreparedBus
+  viaDiameter: number
+  clearance: number
+}): Point2D[] {
+  const { preparedConnection, bus, viaDiameter, clearance } = params
+  const { sourcePoint, targetPoint } = preparedConnection
+  const nearbyEndpointLimit = Math.max(bus.pitchX, bus.pitchY) * 0.5
+  if (
+    distance(sourcePoint, targetPoint) <= 1e-6 ||
+    distance(sourcePoint, targetPoint) > nearbyEndpointLimit
+  ) {
+    return []
+  }
+
+  const preferred = (() => {
+    switch (bus.direction) {
+      case "left":
+        return { x: -1, y: 0 }
+      case "right":
+        return { x: 1, y: 0 }
+      case "up":
+        return { x: 0, y: 1 }
+      case "down":
+        return { x: 0, y: -1 }
+    }
+  })()
+  const diagonal = Math.SQRT1_2
+  const directions = [
+    preferred,
+    ...[
+      { x: diagonal, y: diagonal },
+      { x: diagonal, y: -diagonal },
+      { x: -diagonal, y: diagonal },
+      { x: -diagonal, y: -diagonal },
+      { x: 1, y: 0 },
+      { x: -1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: -1 },
+    ].toSorted(
+      (first, second) =>
+        second.x * preferred.x +
+        second.y * preferred.y -
+        (first.x * preferred.x + first.y * preferred.y),
+    ),
+  ]
+  const minimumRadius = Math.max(viaDiameter, viaDiameter / 2 + clearance)
+  const radii = [
+    minimumRadius,
+    Math.max(minimumRadius, Math.min(bus.pitchX, bus.pitchY) * 0.5),
+    Math.max(minimumRadius, Math.min(bus.pitchX, bus.pitchY) * 0.625),
+    Math.max(minimumRadius, Math.min(bus.pitchX, bus.pitchY) * 0.75),
+  ]
+  const candidates: Point2D[] = []
+  for (const origin of [sourcePoint, targetPoint]) {
+    for (const radius of radii) {
+      for (const direction of directions) {
+        const candidate = {
+          x: origin.x + direction.x * radius,
+          y: origin.y + direction.y * radius,
+        }
+        if (
+          distance(candidate, sourcePoint) <= 1e-6 ||
+          distance(candidate, targetPoint) <= 1e-6 ||
+          candidates.some((existing) => distance(existing, candidate) <= 1e-6)
+        ) {
+          continue
+        }
+        candidates.push(candidate)
+      }
+    }
+  }
+  return candidates
+}
+
+function addPlaneEndpointTerminal(params: {
+  plan: FanoutRoutePlan
+  preparedConnection: PreparedConnection
+  planeLayer: string
+  viaPoint: Point2D
+  layerNames: string[]
+  traceWidth: number
+  viaDiameter: number
+  viaHoleDiameter: number
+}): FanoutRoutePlan {
+  const {
+    plan,
+    preparedConnection,
+    planeLayer,
+    viaPoint,
+    layerNames,
+    traceWidth,
+    viaDiameter,
+    viaHoleDiameter,
+  } = params
+  const targetPoint = {
+    x: preparedConnection.targetPoint.x,
+    y: preparedConnection.targetPoint.y,
+  }
+  const targetEndpointLayer = getPointLayer(preparedConnection.targetPoint)
+  const spanLayers = getLayerSpan(planeLayer, targetEndpointLayer, layerNames)
+  if (!spanLayers.includes(planeLayer)) {
+    throw new Error(
+      `FanoutSolver: via for "${preparedConnection.connection.name}" does not cross plane ${planeLayer}`,
+    )
+  }
+  const planeEndpointSegments: RoutedSegment[] = [
+    {
+      start: viaPoint,
+      end: targetPoint,
+      width: traceWidth,
+      layer: targetEndpointLayer,
+    },
+  ]
+  const via = {
+    center: viaPoint,
+    diameter: viaDiameter,
+    holeDiameter: viaHoleDiameter,
+    fromLayer: planeLayer,
+    toLayer: targetEndpointLayer,
+    spanLayers,
+  }
+  const planeEndpointTrace: SimplifiedPcbTrace = {
+    type: "pcb_trace",
+    pcb_trace_id: `fanout-plane-endpoint:${preparedConnection.connection.name}`,
+    connection_name: preparedConnection.connection.name,
+    connectsTo: [
+      preparedConnection.connection.name,
+      ...(preparedConnection.targetPoint.pointId
+        ? [preparedConnection.targetPoint.pointId]
+        : []),
+      ...(preparedConnection.targetPoint.pcb_port_id
+        ? [preparedConnection.targetPoint.pcb_port_id]
+        : []),
+    ],
+    route: [
+      {
+        route_type: "wire",
+        ...viaPoint,
+        width: traceWidth,
+        layer: planeLayer,
+      },
+      {
+        route_type: "via",
+        ...viaPoint,
+        from_layer: planeLayer,
+        to_layer: targetEndpointLayer,
+        via_diameter: viaDiameter,
+        via_hole_diameter: viaHoleDiameter,
+      },
+      {
+        route_type: "wire",
+        ...viaPoint,
+        width: traceWidth,
+        layer: targetEndpointLayer,
+      },
+      {
+        route_type: "wire",
+        ...targetPoint,
+        width: traceWidth,
+        layer: targetEndpointLayer,
+      },
+    ],
+  }
+  return {
+    ...plan,
+    planeEndpointTrace,
+    planeEndpointSegments,
+    planeEndpointVia: via,
+    length:
+      plan.length +
+      planeEndpointSegments.reduce(
+        (total, segment) => total + distance(segment.start, segment.end),
+        0,
+      ),
+  }
+}
+
 function segmentIsClearOfObstacles(params: {
   segment: RoutedSegment
   plan: FanoutRoutePlan
@@ -692,6 +880,16 @@ function segmentIsClearOfObstacles(params: {
       continue
     }
     if (
+      segmentIsLegalTerminalBodyEscape({
+        inputSrj: srj,
+        segment,
+        bodyObstacle: obstacle,
+        connectionName: plan.connectionName,
+      })
+    ) {
+      continue
+    }
+    if (
       segmentIndex === 0 &&
       obstacle === plan.sourceObstacle &&
       segment.layer === plan.sourceLayer
@@ -708,6 +906,16 @@ function segmentIsClearOfObstacles(params: {
   return true
 }
 
+function getPlanSegments(plan: FanoutRoutePlan): RoutedSegment[] {
+  return [...plan.segments, ...(plan.planeEndpointSegments ?? [])]
+}
+
+function getPlanVias(plan: FanoutRoutePlan) {
+  return [plan.via, plan.planeEndpointVia].filter(
+    (via): via is NonNullable<FanoutRoutePlan["via"]> => Boolean(via),
+  )
+}
+
 function planIsStaticallyClear(params: {
   plan: FanoutRoutePlan
   srj: SimpleRouteJson
@@ -719,7 +927,7 @@ function planIsStaticallyClear(params: {
   const routableBounds = getRoutableBounds(srj.bounds, sharedBoundary)
   if (
     !pointIsInsideBounds(plan.exitPoint, routableBounds) ||
-    plan.segments.some(
+    getPlanSegments(plan).some(
       (segment) =>
         !pointIsInsideBounds(segment.start, routableBounds) ||
         !pointIsInsideBounds(segment.end, routableBounds),
@@ -727,12 +935,13 @@ function planIsStaticallyClear(params: {
   ) {
     return false
   }
-  for (let index = 0; index < plan.segments.length; index++) {
+  const segments = getPlanSegments(plan)
+  for (let index = 0; index < segments.length; index++) {
     if (
       !segmentIsClearOfObstacles({
-        segment: plan.segments[index]!,
+        segment: segments[index]!,
         plan,
-        segmentIndex: index,
+        segmentIndex: index < plan.segments.length ? index : -1,
         srj,
         allowSameNetMerges,
         obstacles: srj.obstacles,
@@ -742,11 +951,9 @@ function planIsStaticallyClear(params: {
       return false
     }
   }
-  if (plan.via) {
+  for (const via of getPlanVias(plan)) {
     for (const obstacle of srj.obstacles) {
-      if (
-        !obstacle.layers.some((layer) => plan.via!.spanLayers.includes(layer))
-      ) {
+      if (!obstacle.layers.some((layer) => via.spanLayers.includes(layer))) {
         continue
       }
       if (
@@ -756,8 +963,8 @@ function planIsStaticallyClear(params: {
         continue
       }
       if (
-        distancePointToObstacle(plan.via.center, obstacle) <
-        plan.via.diameter / 2 + clearance - 1e-9
+        distancePointToObstacle(via.center, obstacle) <
+        via.diameter / 2 + clearance - 1e-9
       ) {
         return false
       }
@@ -807,51 +1014,54 @@ function planIsClearOfPlans(params: {
         (blockingBusCounts.get(otherPlan.busId) ?? 0) + 1,
       )
     }
-    for (const segment of plan.segments) {
-      for (const otherSegment of otherPlan.segments) {
+    const planSegments = getPlanSegments(plan)
+    const otherSegments = getPlanSegments(otherPlan)
+    const planVias = getPlanVias(plan)
+    const otherVias = getPlanVias(otherPlan)
+    for (const segment of planSegments) {
+      for (const otherSegment of otherSegments) {
         if (!segmentsAreClear(segment, otherSegment, clearance)) {
           recordBlocker()
           return false
         }
       }
-      if (
-        otherPlan.via?.spanLayers.includes(segment.layer) &&
-        distancePointToSegment(
-          otherPlan.via.center,
-          segment.start,
-          segment.end,
-        ) <
-          otherPlan.via.diameter / 2 + segment.width / 2 + clearance - 1e-9
-      ) {
-        recordBlocker()
-        return false
-      }
-    }
-    if (plan.via) {
-      for (const otherSegment of otherPlan.segments) {
+      for (const otherVia of otherVias) {
         if (
-          plan.via.spanLayers.includes(otherSegment.layer) &&
-          distancePointToSegment(
-            plan.via.center,
-            otherSegment.start,
-            otherSegment.end,
-          ) <
-            plan.via.diameter / 2 + otherSegment.width / 2 + clearance - 1e-9
+          otherVia.spanLayers.includes(segment.layer) &&
+          distancePointToSegment(otherVia.center, segment.start, segment.end) <
+            otherVia.diameter / 2 + segment.width / 2 + clearance - 1e-9
         ) {
           recordBlocker()
           return false
         }
       }
-      if (
-        otherPlan.via &&
-        plan.via.spanLayers.some((layer) =>
-          otherPlan.via!.spanLayers.includes(layer),
-        ) &&
-        distance(plan.via.center, otherPlan.via.center) <
-          (plan.via.diameter + otherPlan.via.diameter) / 2 + clearance - 1e-9
-      ) {
-        recordBlocker()
-        return false
+    }
+    for (const planVia of planVias) {
+      for (const otherSegment of otherSegments) {
+        if (
+          planVia.spanLayers.includes(otherSegment.layer) &&
+          distancePointToSegment(
+            planVia.center,
+            otherSegment.start,
+            otherSegment.end,
+          ) <
+            planVia.diameter / 2 + otherSegment.width / 2 + clearance - 1e-9
+        ) {
+          recordBlocker()
+          return false
+        }
+      }
+      for (const otherVia of otherVias) {
+        if (
+          planVia.spanLayers.some((layer) =>
+            otherVia.spanLayers.includes(layer),
+          ) &&
+          distance(planVia.center, otherVia.center) <
+            (planVia.diameter + otherVia.diameter) / 2 + clearance - 1e-9
+        ) {
+          recordBlocker()
+          return false
+        }
       }
     }
   }
@@ -972,60 +1182,93 @@ function routePlaneTerminatedBus(
   if (!sourceObstacle || bus.termination.type !== "plane") return null
   const sourceLayer = bus.connections[0]!.sourceLayer
   if (targetLayer === sourceLayer) return null
-  const directionalPadSize = isHorizontal(bus.direction)
-    ? sourceObstacle.width
-    : sourceObstacle.height
-  const pairChannelFitsVia =
-    getDirectionalPitch(bus) / 2 - directionalPadSize / 2 >=
-    viaDiameter / 2 + clearance - 1e-9
-  const viaHandednesses: readonly ViaHandedness[] = pairChannelFitsVia
-    ? [0]
-    : [1, -1]
 
-  for (const viaHandedness of viaHandednesses) {
-    for (const connectionOrder of getConnectionOrders(bus)) {
-      const candidatePlans: FanoutRoutePlan[] = []
-      let orderIsClear = true
-      for (const preparedConnection of connectionOrder) {
-        const sourceTrack = getPerpendicularAxis(
-          preparedConnection.sourcePoint,
-          bus.direction,
-        )
-        const plan = buildPlan({
-          preparedConnection,
-          bus,
-          targetLayer,
-          track: sourceTrack,
-          exitAxis: getExitAxis(bus),
-          layerNames,
-          traceWidth,
-          viaDiameter,
-          viaHoleDiameter,
-          viaHandedness,
-          interstitialEscape: !pairChannelFitsVia,
-          spreadLaneIndex: 0,
-          clearance,
-          terminateAtVia: true,
-        })
-        if (
-          !planIsClear({
-            plan,
-            otherPlans: [...acceptedPlans, ...candidatePlans],
-            staticClearanceCache,
-            blockingBusCounts,
-            cacheKey: `plane:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}`,
-            srj,
-            sharedBoundary: bus.sharedBoundary,
+  const candidateDirections: FanoutDirection[] = [
+    bus.direction,
+    ...(["left", "right", "up", "down"] as const).filter(
+      (direction) => direction !== bus.direction,
+    ),
+  ]
+  for (const direction of candidateDirections) {
+    const directionalBus =
+      direction === bus.direction ? bus : { ...bus, direction }
+    const directionalPadSize = isHorizontal(direction)
+      ? sourceObstacle.width
+      : sourceObstacle.height
+    const pairChannelFitsVia =
+      getDirectionalPitch(directionalBus) / 2 - directionalPadSize / 2 >=
+      viaDiameter / 2 + clearance - 1e-9
+    const viaHandednesses: readonly ViaHandedness[] = pairChannelFitsVia
+      ? [0]
+      : [1, -1]
+
+    for (const viaHandedness of viaHandednesses) {
+      for (const connectionOrder of getConnectionOrders(directionalBus)) {
+        const candidatePlans: FanoutRoutePlan[] = []
+        let orderIsClear = true
+        for (const preparedConnection of connectionOrder) {
+          const sourceTrack = getPerpendicularAxis(
+            preparedConnection.sourcePoint,
+            direction,
+          )
+          const basePlan = buildPlan({
+            preparedConnection,
+            bus: directionalBus,
+            targetLayer,
+            track: sourceTrack,
+            exitAxis: getExitAxis(directionalBus),
+            layerNames,
+            traceWidth,
+            viaDiameter,
+            viaHoleDiameter,
+            viaHandedness,
+            interstitialEscape: !pairChannelFitsVia,
+            spreadLaneIndex: 0,
             clearance,
-            allowSameNetMerges,
+            terminateAtVia: true,
           })
-        ) {
-          orderIsClear = false
-          break
+          const endpointViaCandidates = getPlaneEndpointViaCandidates({
+            preparedConnection,
+            bus: directionalBus,
+            viaDiameter,
+            clearance,
+          })
+          const plansToTry = [
+            ...endpointViaCandidates.map((viaPoint) =>
+              addPlaneEndpointTerminal({
+                plan: basePlan,
+                preparedConnection,
+                planeLayer: targetLayer,
+                viaPoint,
+                layerNames,
+                traceWidth,
+                viaDiameter,
+                viaHoleDiameter,
+              }),
+            ),
+            basePlan,
+          ]
+          const plan = plansToTry.find((candidatePlan, candidateIndex) =>
+            planIsClear({
+              plan: candidatePlan,
+              otherPlans: [...acceptedPlans, ...candidatePlans],
+              staticClearanceCache,
+              blockingBusCounts,
+              cacheKey: `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${candidateIndex}`,
+              srj,
+              sharedBoundary: bus.sharedBoundary,
+              clearance,
+              allowSameNetMerges,
+            }),
+          )
+          if (!plan) {
+            orderIsClear = false
+            break
+          }
+          candidatePlans.push(plan)
         }
-        candidatePlans.push(plan)
+        if (orderIsClear) return candidatePlans
       }
-      if (orderIsClear) return candidatePlans
     }
   }
 

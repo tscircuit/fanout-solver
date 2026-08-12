@@ -95,6 +95,8 @@ export interface FanoutSolverOptions {
   sharedBoundary?: Bounds
   escapeLayers?: string[]
   maxLayerCombinations?: number
+  /** Balance layer congestion by routed connection count instead of bus count. */
+  balanceLayerLoadByConnectionCount?: boolean
   traceWidth?: number
   viaDiameter?: number
   viaHoleDiameter?: number
@@ -257,6 +259,10 @@ export interface FanoutRoutePlan {
   trace: SimplifiedPcbTrace
   segments: RoutedSegment[]
   via?: RoutedVia
+  /** Optional capacitor-side dogbone reserved and emitted with a plane escape. */
+  planeEndpointTrace?: SimplifiedPcbTrace
+  planeEndpointSegments?: RoutedSegment[]
+  planeEndpointVia?: RoutedVia
   length: number
 }
 
@@ -265,6 +271,20 @@ export interface FanoutPlaneTermination {
   connectionName: string
   layer: string
   via: RoutedVia
+}
+
+/**
+ * Declares an ideal copper plane used by emitted fanout traces. This metadata
+ * lets independent connectivity validation join same-net vias on the named
+ * layer without inventing a long point-to-point trace across the plane.
+ */
+export interface FanoutPlaneConnectivity {
+  connectionName: string
+  layer: string
+}
+
+export type SimpleRouteJsonWithFanoutPlanes = SimpleRouteJson & {
+  fanoutPlaneConnectivity?: FanoutPlaneConnectivity[]
 }
 
 export interface AssignmentAttempt {

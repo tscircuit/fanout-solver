@@ -24,6 +24,7 @@ import type {
   PreparedBus,
   RoutedSegment,
 } from "./types"
+import { segmentIsLegalTerminalBodyEscape } from "./validate-routed-copper-drc"
 
 const EPSILON = 1e-6
 
@@ -33,6 +34,16 @@ function pointsMatch(first: Point2D, second: Point2D): boolean {
 
 function getPointLayers(point: ConnectionPoint): string[] {
   return "layer" in point ? [point.layer] : point.layers
+}
+
+function getPlanSegments(plan: FanoutRoutePlan): RoutedSegment[] {
+  return [...plan.segments, ...(plan.planeEndpointSegments ?? [])]
+}
+
+function getPlanVias(plan: FanoutRoutePlan) {
+  return [plan.via, plan.planeEndpointVia].filter(
+    (via): via is NonNullable<FanoutRoutePlan["via"]> => Boolean(via),
+  )
 }
 
 function connectionPointsMatch(
@@ -322,6 +333,52 @@ function validatePlanStructure(params: {
     )
   }
 
+  if (
+    plan.planeEndpointTrace ||
+    plan.planeEndpointSegments ||
+    plan.planeEndpointVia
+  ) {
+    if (
+      !plan.planeEndpointTrace ||
+      !plan.planeEndpointSegments ||
+      !plan.planeEndpointVia
+    ) {
+      addIssue(
+        issues,
+        "trace-plan-mismatch",
+        `Plane endpoint geometry for ${plan.connectionName} is incomplete`,
+        plan,
+      )
+    } else {
+      const endpointSegments = extractTraceSegments({
+        trace: plan.planeEndpointTrace,
+        plan,
+        issues,
+      })
+      if (
+        endpointSegments.length !== plan.planeEndpointSegments.length ||
+        endpointSegments.some((segment, index) => {
+          const declared = plan.planeEndpointSegments?.[index]
+          return (
+            !declared ||
+            segment.layer !== declared.layer ||
+            Math.abs(segment.width - declared.width) > EPSILON ||
+            !pointsMatch(segment.start, declared.start) ||
+            !pointsMatch(segment.end, declared.end)
+          )
+        }) ||
+        distance(plan.planeEndpointVia.center, plan.targetPoint) <= EPSILON
+      ) {
+        addIssue(
+          issues,
+          "trace-plan-mismatch",
+          `Trace ${plan.planeEndpointTrace.pcb_trace_id} does not encode a valid offset plane-to-endpoint dogbone`,
+          plan,
+        )
+      }
+    }
+  }
+
   const firstRoutePoint = plan.trace.route.find(
     (routePoint): routePoint is Extract<typeof routePoint, { x: number }> =>
       "x" in routePoint && "y" in routePoint,
@@ -409,8 +466,12 @@ function plansHaveConnectedCopper(
   first: FanoutRoutePlan,
   second: FanoutRoutePlan,
 ): boolean {
-  for (const firstSegment of first.segments) {
-    for (const secondSegment of second.segments) {
+  const firstSegments = getPlanSegments(first)
+  const secondSegments = getPlanSegments(second)
+  const firstVias = getPlanVias(first)
+  const secondVias = getPlanVias(second)
+  for (const firstSegment of firstSegments) {
+    for (const secondSegment of secondSegments) {
       if (
         firstSegment.layer === secondSegment.layer &&
         distanceSegmentToSegment(
@@ -424,41 +485,44 @@ function plansHaveConnectedCopper(
         return true
       }
     }
-    if (
-      second.via?.spanLayers.includes(firstSegment.layer) &&
-      distancePointToSegment(
-        second.via.center,
-        firstSegment.start,
-        firstSegment.end,
-      ) <=
-        second.via.diameter / 2 + firstSegment.width / 2 + EPSILON
-    ) {
-      return true
-    }
-  }
-  if (first.via) {
-    for (const secondSegment of second.segments) {
+    for (const secondVia of secondVias) {
       if (
-        first.via.spanLayers.includes(secondSegment.layer) &&
+        secondVia.spanLayers.includes(firstSegment.layer) &&
         distancePointToSegment(
-          first.via.center,
-          secondSegment.start,
-          secondSegment.end,
+          secondVia.center,
+          firstSegment.start,
+          firstSegment.end,
         ) <=
-          first.via.diameter / 2 + secondSegment.width / 2 + EPSILON
+          secondVia.diameter / 2 + firstSegment.width / 2 + EPSILON
       ) {
         return true
       }
     }
-    if (
-      second.via &&
-      first.via.spanLayers.some((layer) =>
-        second.via!.spanLayers.includes(layer),
-      ) &&
-      distance(first.via.center, second.via.center) <=
-        (first.via.diameter + second.via.diameter) / 2 + EPSILON
-    ) {
-      return true
+  }
+  for (const firstVia of firstVias) {
+    for (const secondSegment of secondSegments) {
+      if (
+        firstVia.spanLayers.includes(secondSegment.layer) &&
+        distancePointToSegment(
+          firstVia.center,
+          secondSegment.start,
+          secondSegment.end,
+        ) <=
+          firstVia.diameter / 2 + secondSegment.width / 2 + EPSILON
+      ) {
+        return true
+      }
+    }
+    for (const secondVia of secondVias) {
+      if (
+        firstVia.spanLayers.some((layer) =>
+          secondVia.spanLayers.includes(layer),
+        ) &&
+        distance(firstVia.center, secondVia.center) <=
+          (firstVia.diameter + secondVia.diameter) / 2 + EPSILON
+      ) {
+        return true
+      }
     }
   }
   return false
@@ -541,12 +605,9 @@ function validateClearances(params: {
 }): void {
   const { plans, inputSrj, clearance, issues } = params
   for (const plan of plans) {
-    for (
-      let segmentIndex = 0;
-      segmentIndex < plan.segments.length;
-      segmentIndex++
-    ) {
-      const segment = plan.segments[segmentIndex]!
+    const segments = getPlanSegments(plan)
+    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
+      const segment = segments[segmentIndex]!
       for (const obstacle of inputSrj.obstacles) {
         if (!obstacle.layers.includes(segment.layer)) continue
         if (
@@ -558,6 +619,16 @@ function validateClearances(params: {
           segmentIndex === 0 &&
           obstacle.obstacleId === plan.sourceObstacle.obstacleId &&
           segment.layer === plan.sourceLayer
+        ) {
+          continue
+        }
+        if (
+          segmentIsLegalTerminalBodyEscape({
+            inputSrj,
+            segment,
+            bodyObstacle: obstacle,
+            connectionName: plan.connectionName,
+          })
         ) {
           continue
         }
@@ -573,18 +644,16 @@ function validateClearances(params: {
         }
       }
     }
-    if (plan.via) {
+    for (const via of getPlanVias(plan)) {
       for (const obstacle of inputSrj.obstacles) {
         if (
-          !obstacle.layers.some((layer) =>
-            plan.via!.spanLayers.includes(layer),
-          ) ||
+          !obstacle.layers.some((layer) => via.spanLayers.includes(layer)) ||
           obstacleSharesElectricalNet(inputSrj, obstacle, plan.connectionName)
         ) {
           continue
         }
-        const actual = distancePointToObstacle(plan.via.center, obstacle)
-        const required = plan.via.diameter / 2 + clearance
+        const actual = distancePointToObstacle(via.center, obstacle)
+        const required = via.diameter / 2 + clearance
         if (actual < required - 1e-9) {
           addIssue(
             issues,
@@ -614,8 +683,12 @@ function validateClearances(params: {
       ) {
         continue
       }
-      for (const firstSegment of first.segments) {
-        for (const secondSegment of second.segments) {
+      const firstSegments = getPlanSegments(first)
+      const secondSegments = getPlanSegments(second)
+      const firstVias = getPlanVias(first)
+      const secondVias = getPlanVias(second)
+      for (const firstSegment of firstSegments) {
+        for (const secondSegment of secondSegments) {
           if (!segmentsAreClear(firstSegment, secondSegment, clearance)) {
             addIssue(
               issues,
@@ -626,37 +699,36 @@ function validateClearances(params: {
             )
           }
         }
-        if (
-          second.via?.spanLayers.includes(firstSegment.layer) &&
-          distancePointToSegment(
-            second.via.center,
-            firstSegment.start,
-            firstSegment.end,
-          ) <
-            second.via.diameter / 2 + firstSegment.width / 2 + clearance - 1e-9
-        ) {
-          addIssue(
-            issues,
-            "different-net-trace-via-clearance",
-            `Trace ${first.connectionName} violates via clearance to ${second.connectionName} on ${firstSegment.layer}`,
-            first,
-            second.connectionName,
-          )
+        for (const secondVia of secondVias) {
+          if (
+            secondVia.spanLayers.includes(firstSegment.layer) &&
+            distancePointToSegment(
+              secondVia.center,
+              firstSegment.start,
+              firstSegment.end,
+            ) <
+              secondVia.diameter / 2 + firstSegment.width / 2 + clearance - 1e-9
+          ) {
+            addIssue(
+              issues,
+              "different-net-trace-via-clearance",
+              `Trace ${first.connectionName} violates via clearance to ${second.connectionName} on ${firstSegment.layer}`,
+              first,
+              second.connectionName,
+            )
+          }
         }
       }
-      if (first.via) {
-        for (const secondSegment of second.segments) {
+      for (const firstVia of firstVias) {
+        for (const secondSegment of secondSegments) {
           if (
-            first.via.spanLayers.includes(secondSegment.layer) &&
+            firstVia.spanLayers.includes(secondSegment.layer) &&
             distancePointToSegment(
-              first.via.center,
+              firstVia.center,
               secondSegment.start,
               secondSegment.end,
             ) <
-              first.via.diameter / 2 +
-                secondSegment.width / 2 +
-                clearance -
-                1e-9
+              firstVia.diameter / 2 + secondSegment.width / 2 + clearance - 1e-9
           ) {
             addIssue(
               issues,
@@ -667,21 +739,22 @@ function validateClearances(params: {
             )
           }
         }
-        if (
-          second.via &&
-          first.via.spanLayers.some((layer) =>
-            second.via!.spanLayers.includes(layer),
-          ) &&
-          distance(first.via.center, second.via.center) <
-            (first.via.diameter + second.via.diameter) / 2 + clearance - 1e-9
-        ) {
-          addIssue(
-            issues,
-            "different-net-via-clearance",
-            `Vias ${first.connectionName} and ${second.connectionName} violate clearance on an overlapping layer span`,
-            first,
-            second.connectionName,
-          )
+        for (const secondVia of secondVias) {
+          if (
+            firstVia.spanLayers.some((layer) =>
+              secondVia.spanLayers.includes(layer),
+            ) &&
+            distance(firstVia.center, secondVia.center) <
+              (firstVia.diameter + secondVia.diameter) / 2 + clearance - 1e-9
+          ) {
+            addIssue(
+              issues,
+              "different-net-via-clearance",
+              `Vias ${first.connectionName} and ${second.connectionName} violate clearance on an overlapping layer span`,
+              first,
+              second.connectionName,
+            )
+          }
         }
       }
     }

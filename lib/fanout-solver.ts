@@ -47,6 +47,7 @@ interface ResolvedFanoutConfig {
   layerNames: string[]
   escapeLayers: string[]
   maxLayerCombinations: number
+  balanceLayerLoadByConnectionCount: boolean
 }
 
 interface EvaluatedAssignment extends AssignmentAttempt {
@@ -143,18 +144,45 @@ function resolveConfig(
             "maxLayerCombinations",
             options.maxLayerCombinations,
           ),
+    balanceLayerLoadByConnectionCount:
+      options.balanceLayerLoadByConnectionCount ?? false,
   }
 }
 
 function assignmentLoadPenalty(
   assignment: Readonly<Record<string, string>>,
+  buses: readonly PreparedBus[],
+  weightByConnectionCount: boolean,
 ): number {
+  const connectionCountByBusId = new Map(
+    buses.map((bus) => [bus.busId, bus.connections.length]),
+  )
   const loadByLayer = new Map<string, number>()
-  for (const layer of Object.values(assignment)) {
-    loadByLayer.set(layer, (loadByLayer.get(layer) ?? 0) + 1)
+  for (const [busId, layer] of Object.entries(assignment)) {
+    loadByLayer.set(
+      layer,
+      (loadByLayer.get(layer) ?? 0) +
+        (weightByConnectionCount
+          ? (connectionCountByBusId.get(busId) ?? 1)
+          : 1),
+    )
   }
   return [...loadByLayer.values()].reduce(
     (penalty, load) => penalty + load * load,
+    0,
+  )
+}
+
+function getLayerLoadPenaltyWeight(config: ResolvedFanoutConfig): number {
+  return config.balanceLayerLoadByConnectionCount ? 0.25 : 0.01
+}
+
+function getPlanViaCount(plans: readonly FanoutRoutePlan[]): number {
+  return plans.reduce(
+    (count, plan) =>
+      count +
+      Number(Boolean(plan.via)) +
+      Number(Boolean(plan.planeEndpointVia)),
     0,
   )
 }
@@ -516,8 +544,8 @@ export class FanoutSolver extends BaseSolver {
     }
     const busesInRoutingOrder = [...this.preparedBuses].sort(
       (a, b) =>
-        Number(a.termination.type === "plane") -
-          Number(b.termination.type === "plane") ||
+        Number(b.termination.type === "plane") -
+          Number(a.termination.type === "plane") ||
         (routingStrategy === "group-by-layer"
           ? (busLayerAssignments[a.busId] ?? "").localeCompare(
               busLayerAssignments[b.busId] ?? "",
@@ -621,8 +649,13 @@ export class FanoutSolver extends BaseSolver {
       unroutedConnectionCount * 1_000_000 +
       failedBusIds.length * 100_000 +
       routeLength +
-      plans.filter((plan) => plan.via).length * 0.1 +
-      assignmentLoadPenalty(busLayerAssignments) * 0.01
+      getPlanViaCount(plans) * 0.1 +
+      assignmentLoadPenalty(
+        busLayerAssignments,
+        this.preparedBuses,
+        this.config.balanceLayerLoadByConnectionCount,
+      ) *
+        getLayerLoadPenaltyWeight(this.config)
     const summary: FanoutAttemptSummary = {
       assignmentIndex,
       busLayerAssignments,
@@ -715,8 +748,8 @@ export class FanoutSolver extends BaseSolver {
           : (this.escapeLayersByBusId[b.busId]?.length ??
             this.config.escapeLayers.length)
       return (
-        Number(a.termination.type === "plane") -
-          Number(b.termination.type === "plane") ||
+        Number(b.termination.type === "plane") -
+          Number(a.termination.type === "plane") ||
         (groupByDirection ? a.direction.localeCompare(b.direction) : 0) ||
         aLayerCount - bLayerCount ||
         b.componentObstacles.length - a.componentObstacles.length ||
@@ -744,11 +777,16 @@ export class FanoutSolver extends BaseSolver {
         (total, plan) => total + plan.length,
         0,
       )
-      const viaCount = state.plans.filter((plan) => plan.via).length
+      const viaCount = getPlanViaCount(state.plans)
       return (
         routeLength +
         viaCount * 0.1 +
-        assignmentLoadPenalty(state.assignment) * 0.01
+        assignmentLoadPenalty(
+          state.assignment,
+          this.preparedBuses,
+          this.config.balanceLayerLoadByConnectionCount,
+        ) *
+          getLayerLoadPenaltyWeight(this.config)
       )
     }
 
@@ -760,8 +798,17 @@ export class FanoutSolver extends BaseSolver {
             ? [bus.termination.layer]
             : (this.escapeLayersByBusId[bus.busId] ?? this.config.escapeLayers)
         const layerLoads = new Map<string, number>()
-        for (const layer of Object.values(state.assignment)) {
-          layerLoads.set(layer, (layerLoads.get(layer) ?? 0) + 1)
+        for (const [assignedBusId, layer] of Object.entries(state.assignment)) {
+          const assignedBus = this.preparedBuses.find(
+            (candidate) => candidate.busId === assignedBusId,
+          )
+          layerLoads.set(
+            layer,
+            (layerLoads.get(layer) ?? 0) +
+              (this.config.balanceLayerLoadByConnectionCount
+                ? (assignedBus?.connections.length ?? 1)
+                : 1),
+          )
         }
         const sourceLayer = bus.connections[0]?.sourceLayer
         const orderedLayers = candidateLayers.toSorted(
@@ -837,8 +884,13 @@ export class FanoutSolver extends BaseSolver {
     const score =
       bestState.plans.length === this.inputSrj.connections.length
         ? bestState.plans.reduce((total, plan) => total + plan.length, 0) +
-          bestState.plans.filter((plan) => plan.via).length * 0.1 +
-          assignmentLoadPenalty(bestState.assignment) * 0.01
+          getPlanViaCount(bestState.plans) * 0.1 +
+          assignmentLoadPenalty(
+            bestState.assignment,
+            this.preparedBuses,
+            this.config.balanceLayerLoadByConnectionCount,
+          ) *
+            getLayerLoadPenaltyWeight(this.config)
         : Number.POSITIVE_INFINITY
     if (!Number.isFinite(score)) return null
 
@@ -1078,10 +1130,23 @@ export class FanoutSolver extends BaseSolver {
         `FanoutSolver: completed output failed validation: ${validation.issues[0]?.message ?? "unknown validation error"}`,
       )
     }
+    const finalSrj =
+      this.endpointCompletion?.simpleRouteJson ?? this.bestAttempt.outputSrj
+    const finalTraceById = new Map(
+      (finalSrj.traces ?? []).map((trace) => [trace.pcb_trace_id, trace]),
+    )
     return {
       simpleRouteJson:
         this.endpointCompletion?.simpleRouteJson ?? this.bestAttempt.outputSrj,
-      fanoutTraces: this.bestAttempt.plans.map((plan) => plan.trace),
+      fanoutTraces: this.bestAttempt.plans.flatMap((plan) => [
+        finalTraceById.get(plan.trace.pcb_trace_id) ?? plan.trace,
+        ...(plan.planeEndpointTrace
+          ? [
+              finalTraceById.get(plan.planeEndpointTrace.pcb_trace_id) ??
+                plan.planeEndpointTrace,
+            ]
+          : []),
+      ]),
       completionTraces: this.endpointCompletion?.traces ?? [],
       ...(this.endpointCompletion
         ? { endpointCompletion: this.endpointCompletion.report }

@@ -62,7 +62,7 @@ interface TraceCopper {
   vias: RoutedVia[]
 }
 
-function isLegalTerminalBodyEscape(params: {
+export function segmentIsLegalTerminalBodyEscape(params: {
   inputSrj: SimpleRouteJson
   segment: RoutedSegment
   bodyObstacle: SimpleRouteJson["obstacles"][number]
@@ -282,7 +282,7 @@ export function validateRoutedCopperDrc(params: {
           continue
         }
         if (
-          isLegalTerminalBodyEscape({
+          segmentIsLegalTerminalBodyEscape({
             inputSrj,
             segment,
             bodyObstacle: obstacle,

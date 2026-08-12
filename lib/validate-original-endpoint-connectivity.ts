@@ -19,7 +19,11 @@ import {
   getConnectionNetKey,
   obstacleSharesElectricalNet,
 } from "./net-identity"
-import type { Point2D, RoutedSegment } from "./types"
+import type {
+  Point2D,
+  RoutedSegment,
+  SimpleRouteJsonWithFanoutPlanes,
+} from "./types"
 
 const EPSILON = 1e-6
 
@@ -64,11 +68,17 @@ interface ViaCopper {
   layers: string[]
 }
 
+interface PlaneCopper {
+  type: "plane"
+  layer: string
+}
+
 type CopperPrimitive =
   | EndpointCopper
   | ObstacleCopper
   | SegmentCopper
   | ViaCopper
+  | PlaneCopper
 
 function getPointLayers(point: ConnectionPoint): string[] {
   return "layer" in point ? [point.layer] : point.layers
@@ -124,6 +134,21 @@ function extractTraceCopper(
 }
 
 function primitivesTouch(first: CopperPrimitive, second: CopperPrimitive) {
+  if (first.type === "plane" && second.type === "plane") {
+    return first.layer === second.layer
+  }
+  if (first.type === "plane" && second.type === "via") {
+    return second.layers.includes(first.layer)
+  }
+  if (first.type === "via" && second.type === "plane") {
+    return primitivesTouch(second, first)
+  }
+  if (first.type === "plane" && second.type === "segment") {
+    return first.layer === second.segment.layer
+  }
+  if (first.type === "segment" && second.type === "plane") {
+    return primitivesTouch(second, first)
+  }
   if (first.type === "endpoint" && second.type === "endpoint") {
     return (
       layersOverlap(first.layers, second.layers) &&
@@ -265,6 +290,8 @@ export function validateOriginalEndpointConnectivity(params: {
   routedSrj: SimpleRouteJson
 }): OriginalEndpointConnectivityReport {
   const { inputSrj, routedSrj } = params
+  const planeConnectivity = (routedSrj as SimpleRouteJsonWithFanoutPlanes)
+    .fanoutPlaneConnectivity
   const layerNames = getCopperLayerNames(routedSrj.layerCount)
   const connectionsByNet = new Map<string, SimpleRouteConnection[]>()
   for (const connection of inputSrj.connections) {
@@ -303,10 +330,24 @@ export function validateOriginalEndpointConnectivity(params: {
         traceBelongsToNet(inputSrj, trace, representativeConnection),
       )
       .flatMap((trace) => extractTraceCopper(trace, layerNames))
+    const planeCopper: PlaneCopper[] = [
+      ...new Set(
+        (planeConnectivity ?? []).flatMap((plane) =>
+          connectionsShareElectricalNet(
+            inputSrj,
+            plane.connectionName,
+            representativeConnection.name,
+          )
+            ? [plane.layer]
+            : [],
+        ),
+      ),
+    ].map((layer) => ({ type: "plane", layer }))
     const copper: CopperPrimitive[] = [
       ...endpointCopper,
       ...obstacleCopper,
       ...routeCopper,
+      ...planeCopper,
     ]
     const connectedCopper = new DisjointSet(copper.length)
     for (let firstIndex = 0; firstIndex < copper.length; firstIndex++) {

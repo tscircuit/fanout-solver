@@ -29,16 +29,22 @@ test("SRJ29 exposes independently routed power pins and directional signal buses
   expect(
     powerBuses
       ?.filter((bus) => bus.busId.startsWith("power_vcc"))
-      .every((bus) => bus.direction === "left"),
+      .every(
+        (bus) =>
+          bus.termination?.type === "plane" &&
+          bus.termination.layer === "inner2",
+      ),
   ).toBe(true)
   expect(
     powerBuses
       ?.filter((bus) => bus.busId.startsWith("power_gnd"))
-      .every((bus) => bus.direction === "right"),
+      .every(
+        (bus) =>
+          bus.termination?.type === "plane" &&
+          bus.termination.layer === "inner3",
+      ),
   ).toBe(true)
-  expect(powerBuses?.every((bus) => bus.termination?.type === "boundary")).toBe(
-    true,
-  )
+  expect(powerBuses?.every((bus) => bus.direction !== undefined)).toBe(true)
   expect(
     input.obstacles.some(
       (obstacle) =>
@@ -48,7 +54,7 @@ test("SRJ29 exposes independently routed power pins and directional signal buses
   ).toBe(true)
 })
 
-test("SRJ29 VCC and GND pins are validated boundary breakouts with capacitor endpoints retained", () => {
+test("SRJ29 VCC and GND pins break out to dedicated planes", () => {
   const sample = srj29FanoutSamples.find(
     (candidate) => candidate.id === "sample093",
   )!
@@ -73,7 +79,7 @@ test("SRJ29 VCC and GND pins are validated boundary breakouts with capacitor end
   )
 
   expect(powerNetNames).toEqual(new Set(["VCC", "GND"]))
-  expect(output.planeTerminations).toHaveLength(0)
+  expect(output.planeTerminations).toHaveLength(powerConnections.length)
   expect(output.validation).toMatchObject({
     valid: true,
     checkedConnectionCount: sample.fanoutConnectionCount,
@@ -82,38 +88,26 @@ test("SRJ29 VCC and GND pins are validated boundary breakouts with capacitor end
   })
 
   for (const inputConnection of powerConnections) {
-    const preparedConnection = solver.preparedBuses
-      .flatMap((bus) => bus.connections)
-      .find(
-        (connection) => connection.connection.name === inputConnection.name,
-      )!
     const outputConnection = output.simpleRouteJson.connections.find(
       (connection) => connection.name === inputConnection.name,
     )
-    const trace = output.fanoutTraces.find(
-      (candidate) => candidate.connection_name === inputConnection.name,
-    )!
-    const traceEnd = [...trace.route]
-      .reverse()
-      .find((routePoint) => "x" in routePoint && "y" in routePoint)!
-    const outputExit =
-      outputConnection?.pointsToConnect[preparedConnection.sourcePointIndex]
+    const planeTermination = output.planeTerminations.find(
+      (termination) => termination.connectionName === inputConnection.name,
+    )
 
-    expect(outputConnection).toBeDefined()
-    expect(outputExit).toMatchObject({
-      x: traceEnd.x,
-      y: traceEnd.y,
-    })
+    expect(outputConnection).toBeUndefined()
+    expect(planeTermination?.layer).toBe(
+      inputConnection.netConnectionName === "VCC" ? "inner2" : "inner3",
+    )
     expect(
-      inputConnection.pointsToConnect
-        .filter(
-          (_, pointIndex) => pointIndex !== preparedConnection.sourcePointIndex,
-        )
-        .every((capacitorPoint) =>
-          outputConnection!.pointsToConnect.some(
-            (point) =>
-              point.pointId === capacitorPoint.pointId &&
-              point.pcb_port_id === capacitorPoint.pcb_port_id,
+      output.fanoutTraces
+        .filter((trace) => trace.connection_name === inputConnection.name)
+        .flatMap((trace) => trace.route)
+        .filter((routePoint) => routePoint.route_type === "via")
+        .every((via) =>
+          inputConnection.pointsToConnect.every(
+            (endpoint) =>
+              Math.hypot(via.x - endpoint.x, via.y - endpoint.y) > 1e-6,
           ),
         ),
     ).toBe(true)

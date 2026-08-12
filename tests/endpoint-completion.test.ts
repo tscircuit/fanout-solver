@@ -14,10 +14,15 @@ test("SRJ29 endpoint completion only retains physically connected DRC-clean copp
     valid: true,
     issues: [],
   })
+  expect(output.endpointCompletion!.connectivity.connectedConnectionCount).toBe(
+    sample.fanoutConnectionCount,
+  )
+  expect(output.completionTraces.length).toBeGreaterThan(0)
   expect(
-    output.endpointCompletion!.connectivity.connectedConnectionCount,
-  ).toBeGreaterThanOrEqual(20)
-  expect(output.completionTraces.length).toBeGreaterThanOrEqual(20)
+    output.fanoutTraces.some((trace) =>
+      trace.pcb_trace_id.startsWith("fanout-plane-endpoint:"),
+    ),
+  ).toBe(true)
   expect(
     output.completionTraces.every((trace) =>
       trace.route.every(
@@ -32,11 +37,14 @@ test("SRJ29 endpoint completion only retains physically connected DRC-clean copp
   ].flatMap((srj) =>
     srj.connections.flatMap((connection) => connection.pointsToConnect),
   )
-  const completionVias = output.completionTraces.flatMap((trace) =>
+  const emittedVias = [
+    ...output.fanoutTraces,
+    ...output.completionTraces,
+  ].flatMap((trace) =>
     trace.route.filter((routePoint) => routePoint.route_type === "via"),
   )
-  expect(completionVias.length).toBeGreaterThan(0)
-  for (const via of completionVias) {
+  expect(emittedVias.length).toBeGreaterThan(0)
+  for (const via of emittedVias) {
     expect(
       Math.min(
         ...originalAndRoutedEndpoints.map((endpoint) =>

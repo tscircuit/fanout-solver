@@ -5,7 +5,11 @@ import {
   type SimpleRouteJson,
   type SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
-import { distance, pointIsInsideObstacle } from "./geometry"
+import {
+  distance,
+  distancePointToSegment,
+  pointIsInsideObstacle,
+} from "./geometry"
 import { getCopperLayerNames, getLayerSpan } from "./layer-names"
 import { obstacleSharesElectricalNet } from "./net-identity"
 import type {
@@ -296,113 +300,141 @@ function findLocalBranch(params: {
   const maximumCandidateCount =
     inputSrj.connections.length > 32 ? 600 : Number.POSITIVE_INFINITY
 
-  for (const outwardDistance of [0.4, 0.8, 1.2, 1.6]) {
-    for (const perpendicularDistance of [
-      0.4, -0.4, 0, 0.8, -0.8, 1.2, -1.2, 1.6, -1.6,
-    ]) {
-      const viaPoint = {
-        x:
-          plan.sourcePoint.x +
-          outward.x * outwardDistance +
-          perpendicular.x * perpendicularDistance,
-        y:
-          plan.sourcePoint.y +
-          outward.y * outwardDistance +
-          perpendicular.y * perpendicularDistance,
-      }
-      for (const branchStart of branchStarts) {
-        const assignedLayerPaths = [
-          [branchStart, viaPoint],
-          [branchStart, { x: viaPoint.x, y: branchStart.y }, viaPoint],
-          [branchStart, { x: branchStart.x, y: viaPoint.y }, viaPoint],
-          ...[0.4, -0.4].map((corridorOffset) => [
-            branchStart,
-            { x: branchStart.x + corridorOffset, y: branchStart.y },
-            { x: branchStart.x + corridorOffset, y: viaPoint.y },
-            viaPoint,
-          ]),
+  const planeTraceTransitionPoints =
+    plan.termination.type === "plane"
+      ? getPointsBackAlongTrace({
+          trace: plan.trace,
+          endpoint: plan.exitPoint,
+          layer: plan.sourceLayer,
+          distances: [0.2, 0.3, 0.4],
+        })
+      : []
+  const candidateViaPoints: Point2D[] = [
+    ...(plan.termination.type === "plane" && plan.via
+      ? [{ ...plan.via.center }]
+      : []),
+    ...planeTraceTransitionPoints,
+    ...[0.4, 0.8, 1.2, 1.6].flatMap((outwardDistance) =>
+      [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2, 1.6, -1.6].map(
+        (perpendicularDistance) => ({
+          x:
+            plan.sourcePoint.x +
+            outward.x * outwardDistance +
+            perpendicular.x * perpendicularDistance,
+          y:
+            plan.sourcePoint.y +
+            outward.y * outwardDistance +
+            perpendicular.y * perpendicularDistance,
+        }),
+      ),
+    ),
+  ]
+  for (const viaPoint of candidateViaPoints) {
+    const candidateBranchStarts = [
+      ...(plan.termination.type === "plane"
+        ? [{ ...viaPoint, layer: plan.targetLayer }]
+        : []),
+      ...branchStarts,
+      ...planeTraceTransitionPoints.flatMap((transitionPoint) =>
+        distance(transitionPoint, viaPoint) <= 1e-6
+          ? [{ ...transitionPoint, layer: plan.sourceLayer }]
+          : [],
+      ),
+    ]
+    for (const branchStart of candidateBranchStarts) {
+      const assignedLayerPaths =
+        distance(branchStart, viaPoint) <= 1e-6
+          ? [[branchStart]]
+          : [
+              [branchStart, viaPoint],
+              [branchStart, { x: viaPoint.x, y: branchStart.y }, viaPoint],
+              [branchStart, { x: branchStart.x, y: viaPoint.y }, viaPoint],
+              ...[0.4, -0.4].map((corridorOffset) => [
+                branchStart,
+                { x: branchStart.x + corridorOffset, y: branchStart.y },
+                { x: branchStart.x + corridorOffset, y: viaPoint.y },
+                viaPoint,
+              ]),
+            ]
+      for (const assignedLayerPath of assignedLayerPaths) {
+        const terminalApproaches: Array<Point2D | undefined> = [
+          undefined,
+          ...[0.4, 0.8].map((terminalDistance) => ({
+            x: plan.targetPoint.x + outward.x * terminalDistance,
+            y: plan.targetPoint.y + outward.y * terminalDistance,
+          })),
+          ...[0.4, -0.4].map((sideDistance) => ({
+            x:
+              plan.targetPoint.x +
+              outward.x * 0.4 +
+              perpendicular.x * sideDistance,
+            y:
+              plan.targetPoint.y +
+              outward.y * 0.4 +
+              perpendicular.y * sideDistance,
+          })),
         ]
-        for (const assignedLayerPath of assignedLayerPaths) {
-          const terminalApproaches: Array<Point2D | undefined> = [
-            undefined,
-            ...[0.4, 0.8].map((terminalDistance) => ({
-              x: plan.targetPoint.x + outward.x * terminalDistance,
-              y: plan.targetPoint.y + outward.y * terminalDistance,
-            })),
-            ...[0.4, -0.4].map((sideDistance) => ({
-              x:
-                plan.targetPoint.x +
-                outward.x * 0.4 +
-                perpendicular.x * sideDistance,
-              y:
-                plan.targetPoint.y +
-                outward.y * 0.4 +
-                perpendicular.y * sideDistance,
-            })),
-          ]
-          for (const terminalApproach of terminalApproaches) {
-            if (candidateIndex >= maximumCandidateCount) {
-              return {
-                blockingConnectionNames: bestBlockingConnectionNames,
-              }
+        for (const terminalApproach of terminalApproaches) {
+          if (candidateIndex >= maximumCandidateCount) {
+            return {
+              blockingConnectionNames: bestBlockingConnectionNames,
             }
-            const trace = createBranchTrace({
-              plan,
-              branchStart,
-              viaPoint,
-              assignedLayerPath,
-              terminalApproach,
-              traceWidth,
-              viaDiameter,
-              viaHoleDiameter,
-              candidateIndex: candidateIndex++,
-              // Preserve the raw Manhattan alternative. Some dense escape
-              // slots disappear when both sides of a short corner are moved.
-              chamfer: 0,
+          }
+          const trace = createBranchTrace({
+            plan,
+            branchStart,
+            viaPoint,
+            assignedLayerPath,
+            terminalApproach,
+            traceWidth,
+            viaDiameter,
+            viaHoleDiameter,
+            candidateIndex: candidateIndex++,
+            // Preserve the raw Manhattan alternative. Some dense escape
+            // slots disappear when both sides of a short corner are moved.
+            chamfer: 0,
+          })
+          if (
+            traceHasViaAtEndpoint({
+              trace,
+              endpointSrjs: [inputSrj, fanoutSrj],
             })
-            if (
-              traceHasViaAtEndpoint({
-                trace,
-                endpointSrjs: [inputSrj, fanoutSrj],
-              })
-            ) {
-              continue
-            }
-            const candidateSrj = {
-              ...fanoutSrj,
-              traces: [...(fanoutSrj.traces ?? []), ...acceptedTraces, trace],
-            }
-            const drc = validateRoutedCopperDrc({
-              inputSrj,
-              routedSrj: candidateSrj,
-              clearance,
-            })
-            if (!drc.valid) {
-              if (drc.issues.length < bestIssueCount) {
-                bestIssueCount = drc.issues.length
-                bestBlockingConnectionNames = [
-                  ...new Set(
-                    drc.issues.flatMap((issue) =>
-                      [issue.connectionName, issue.otherConnectionName].flatMap(
-                        (connectionName) =>
-                          connectionName &&
-                          connectionName !== plan.connectionName
-                            ? [connectionName]
-                            : [],
-                      ),
+          ) {
+            continue
+          }
+          const candidateSrj = {
+            ...fanoutSrj,
+            traces: [...(fanoutSrj.traces ?? []), ...acceptedTraces, trace],
+          }
+          const drc = validateRoutedCopperDrc({
+            inputSrj,
+            routedSrj: candidateSrj,
+            clearance,
+          })
+          if (!drc.valid) {
+            if (drc.issues.length < bestIssueCount) {
+              bestIssueCount = drc.issues.length
+              bestBlockingConnectionNames = [
+                ...new Set(
+                  drc.issues.flatMap((issue) =>
+                    [issue.connectionName, issue.otherConnectionName].flatMap(
+                      (connectionName) =>
+                        connectionName && connectionName !== plan.connectionName
+                          ? [connectionName]
+                          : [],
                     ),
                   ),
-                ]
-              }
-              continue
+                ),
+              ]
             }
-            const connectivity = validateOriginalEndpointConnectivity({
-              inputSrj,
-              routedSrj: candidateSrj,
-            })
-            if (connectionIsComplete(connectivity, plan.connectionName)) {
-              return { trace, blockingConnectionNames: [] }
-            }
+            continue
+          }
+          const connectivity = validateOriginalEndpointConnectivity({
+            inputSrj,
+            routedSrj: candidateSrj,
+          })
+          if (connectionIsComplete(connectivity, plan.connectionName)) {
+            return { trace, blockingConnectionNames: [] }
           }
         }
       }
@@ -489,6 +521,71 @@ function traceLength(trace: SimplifiedPcbTrace): number {
     previousWire = point
   }
   return length
+}
+
+function trimCompletedFanoutTails(params: {
+  fanoutSrj: SimpleRouteJson
+  completionTraces: SimplifiedPcbTrace[]
+}): SimpleRouteJson {
+  const { fanoutSrj, completionTraces } = params
+  const branchStartByConnectionName = new Map(
+    completionTraces.flatMap((trace) => {
+      const firstWire = trace.route.find(
+        (point): point is Extract<typeof point, { route_type: "wire" }> =>
+          point.route_type === "wire",
+      )
+      return firstWire
+        ? [
+            [
+              trace.connection_name,
+              {
+                x: firstWire.x,
+                y: firstWire.y,
+                layer: firstWire.layer,
+              },
+            ] as const,
+          ]
+        : []
+    }),
+  )
+  const traces = (fanoutSrj.traces ?? []).map((trace) => {
+    if (!trace.pcb_trace_id.startsWith("fanout:")) return trace
+    const branchStart = branchStartByConnectionName.get(trace.connection_name)
+    if (!branchStart) return trace
+
+    let previousWireIndex: number | undefined
+    for (let index = 0; index < trace.route.length; index++) {
+      const point = trace.route[index]
+      if (point?.route_type !== "wire") {
+        previousWireIndex = undefined
+        continue
+      }
+      if (previousWireIndex !== undefined) {
+        const previous = trace.route[previousWireIndex]
+        if (
+          previous?.route_type === "wire" &&
+          previous.layer === branchStart.layer &&
+          point.layer === branchStart.layer &&
+          distancePointToSegment(branchStart, previous, point) <= 1e-6
+        ) {
+          const route = trace.route.slice(0, previousWireIndex + 1)
+          if (distance(previous, branchStart) > 1e-6) {
+            route.push({
+              route_type: "wire",
+              x: branchStart.x,
+              y: branchStart.y,
+              width: point.width,
+              layer: branchStart.layer,
+            })
+          }
+          return { ...trace, route }
+        }
+      }
+      previousWireIndex = index
+    }
+    return trace
+  })
+  return { ...fanoutSrj, traces }
 }
 
 function createFanoutCopperObstacles(srj: SimpleRouteJson): Obstacle[] {
@@ -848,22 +945,24 @@ export function completeOriginalEndpoints(params: {
     routedSrj: fanoutSrj,
     clearance,
   })
+  const baselineConnectivity = validateOriginalEndpointConnectivity({
+    inputSrj,
+    routedSrj: fanoutSrj,
+  })
   const localPlans = plans.filter((plan) => {
     const sourceLayer = getPointLayer(plan.sourcePoint)
     const targetLayer = getPointLayer(plan.targetPoint)
     return (
       sourceLayer !== targetLayer &&
-      distance(plan.sourcePoint, plan.targetPoint) <= 0.25
+      distance(plan.sourcePoint, plan.targetPoint) <= 0.25 &&
+      !connectionIsComplete(baselineConnectivity, plan.connectionName)
     )
   })
   let bestLocalAttempt: CompletionAttempt = {
     traces: [],
     failedConnectionNames: localPlans.map((plan) => plan.connectionName),
     blockingConnectionNames: [],
-    connectivity: validateOriginalEndpointConnectivity({
-      inputSrj,
-      routedSrj: fanoutSrj,
-    }),
+    connectivity: baselineConnectivity,
     drc: baselineDrc,
   }
   let searchPassCount = 0
@@ -925,7 +1024,9 @@ export function completeOriginalEndpoints(params: {
     localPlans.map((plan) => plan.connectionName),
   )
   const downstreamPlans = plans.filter(
-    (plan) => !localConnectionNames.has(plan.connectionName),
+    (plan) =>
+      !localConnectionNames.has(plan.connectionName) &&
+      !connectionIsComplete(baselineConnectivity, plan.connectionName),
   )
   const directDownstreamTraces: SimplifiedPcbTrace[] = []
   if (baselineDrc.valid) {
@@ -1055,10 +1156,14 @@ export function completeOriginalEndpoints(params: {
     })
     if (terminalBranch) traces.push(terminalBranch)
   }
-  const simpleRouteJson = {
+  const untrimmedSimpleRouteJson = {
     ...fanoutSrj,
     traces: [...(fanoutSrj.traces ?? []), ...traces],
   }
+  const simpleRouteJson = trimCompletedFanoutTails({
+    fanoutSrj: untrimmedSimpleRouteJson,
+    completionTraces: traces,
+  })
   const connectivity = validateOriginalEndpointConnectivity({
     inputSrj,
     routedSrj: simpleRouteJson,

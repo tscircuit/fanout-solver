@@ -5,6 +5,7 @@ import type {
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
 import { FanoutSolver } from "lib/fanout-solver"
+import type { SimpleRouteJsonWithFanoutPlanes } from "lib/types"
 import { validateOriginalEndpointConnectivity } from "lib/validate-original-endpoint-connectivity"
 import { srj29FanoutSamples } from "../datasets/srj29"
 
@@ -177,7 +178,68 @@ test("a via creates a physical path from an inner-layer trace to a target pad", 
   expect(report.connectedConnectionCount).toBe(1)
 })
 
-test("SRJ29 sample001 prefix is not complete before endpoint completion", () => {
+test("same-net dogbones connect through an explicitly declared plane", () => {
+  const dogbones: SimplifiedPcbTrace[] = [
+    {
+      type: "pcb_trace",
+      pcb_trace_id: "source-dogbone",
+      connection_name: "SIGNAL",
+      route: [
+        { route_type: "wire", x: 0, y: 0, width: 0.1, layer: "top" },
+        { route_type: "wire", x: 0.5, y: 0, width: 0.1, layer: "top" },
+        {
+          route_type: "via",
+          x: 0.5,
+          y: 0,
+          from_layer: "top",
+          to_layer: "inner1",
+          via_diameter: 0.3,
+          via_hole_diameter: 0.15,
+        },
+        { route_type: "wire", x: 0.5, y: 0, width: 0.1, layer: "inner1" },
+      ],
+    },
+    {
+      type: "pcb_trace",
+      pcb_trace_id: "target-dogbone",
+      connection_name: "SIGNAL",
+      route: [
+        { route_type: "wire", x: 2, y: 1, width: 0.1, layer: "top" },
+        { route_type: "wire", x: 1.5, y: 1, width: 0.1, layer: "top" },
+        {
+          route_type: "via",
+          x: 1.5,
+          y: 1,
+          from_layer: "top",
+          to_layer: "inner1",
+          via_diameter: 0.3,
+          via_hole_diameter: 0.15,
+        },
+        { route_type: "wire", x: 1.5, y: 1, width: 0.1, layer: "inner1" },
+      ],
+    },
+  ]
+  const withoutPlane = validateOriginalEndpointConnectivity({
+    inputSrj,
+    routedSrj: { ...inputSrj, traces: dogbones },
+  })
+  const withPlane: SimpleRouteJsonWithFanoutPlanes = {
+    ...inputSrj,
+    traces: dogbones,
+    fanoutPlaneConnectivity: [{ connectionName: "SIGNAL", layer: "inner1" }],
+  }
+
+  expect(withoutPlane.valid).toBe(false)
+  expect(
+    validateOriginalEndpointConnectivity({ inputSrj, routedSrj: withPlane }),
+  ).toMatchObject({
+    valid: true,
+    connectedConnectionCount: 1,
+    connectedEndpointCount: 2,
+  })
+})
+
+test("SRJ29 plane dogbones connect power but boundary exits do not connect signals", () => {
   const sample = srj29FanoutSamples.find(({ id }) => id === "sample001")!
   const solver = new FanoutSolver(sample.simpleRouteJson, {
     ...sample.solverOptions,
@@ -186,14 +248,16 @@ test("SRJ29 sample001 prefix is not complete before endpoint completion", () => 
   solver.solve()
 
   expect(solver.getOutput().validation.valid).toBe(true)
-  expect(
-    validateOriginalEndpointConnectivity({
-      inputSrj: sample.simpleRouteJson,
-      routedSrj: solver.getOutput().simpleRouteJson,
-    }),
-  ).toMatchObject({
-    valid: false,
-    checkedConnectionCount: 21,
-    connectedConnectionCount: 0,
+  const report = validateOriginalEndpointConnectivity({
+    inputSrj: sample.simpleRouteJson,
+    routedSrj: solver.getOutput().simpleRouteJson,
   })
+  expect(report.valid).toBe(false)
+  expect(report.checkedConnectionCount).toBe(21)
+  expect(report.connectedConnectionCount).toBeGreaterThan(0)
+  expect(
+    report.issues.some((issue) =>
+      issue.connectionName.startsWith("BUS_SIGNAL"),
+    ),
+  ).toBe(true)
 }, 30_000)

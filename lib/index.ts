@@ -28,6 +28,7 @@ export type {
   FanoutDirection,
   FanoutEdge,
   FanoutEndpointCompletionReport,
+  FanoutPlaneConnectivity,
   FanoutPlaneTermination,
   FanoutRoutePlan,
   FanoutSolverOptions,
@@ -35,4 +36,5 @@ export type {
   FanoutValidationIssue,
   FanoutValidationReport,
   PreparedBus,
+  SimpleRouteJsonWithFanoutPlanes,
 } from "./types"
