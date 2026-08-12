@@ -239,7 +239,7 @@ test("same-net dogbones connect through an explicitly declared plane", () => {
   })
 })
 
-test("SRJ29 plane dogbones connect power but boundary exits do not connect signals", () => {
+test("SRJ29 endpoint tracks connect signals directly without a completion pass", () => {
   const sample = srj29FanoutSamples.find(({ id }) => id === "sample001")!
   const solver = new FanoutSolver(sample.simpleRouteJson, {
     ...sample.solverOptions,
@@ -252,12 +252,10 @@ test("SRJ29 plane dogbones connect power but boundary exits do not connect signa
     inputSrj: sample.simpleRouteJson,
     routedSrj: solver.getOutput().simpleRouteJson,
   })
-  expect(report.valid).toBe(false)
-  expect(report.checkedConnectionCount).toBe(21)
-  expect(report.connectedConnectionCount).toBeGreaterThan(0)
-  expect(
-    report.issues.some((issue) =>
-      issue.connectionName.startsWith("BUS_SIGNAL"),
-    ),
-  ).toBe(true)
+  expect(report).toMatchObject({
+    valid: true,
+    checkedConnectionCount: sample.fanoutConnectionCount,
+    connectedConnectionCount: sample.fanoutConnectionCount,
+    issues: [],
+  })
 }, 30_000)

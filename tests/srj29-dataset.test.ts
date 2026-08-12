@@ -5,8 +5,16 @@ import {
   SRJ29_FANOUT_LAYER_COUNT,
   srj29FanoutSamples,
 } from "../datasets/srj29"
+import { datasetDistManifest } from "@tsci/tscircuit.dataset-srj29-bga-decoupling"
 
 test("SRJ29 exposes independently routed power pins and directional signal buses", () => {
+  expect(datasetDistManifest).toMatchObject({
+    generationVersion: 2,
+    validation: {
+      valid: true,
+      invalidSampleCount: 0,
+    },
+  })
   expect(srj29FanoutSamples).toHaveLength(200)
 
   const sample = srj29FanoutSamples[0]!
@@ -18,6 +26,9 @@ test("SRJ29 exposes independently routed power pins and directional signal buses
   )
   const powerBuses = sample.solverOptions.buses?.filter((bus) =>
     bus.busId.startsWith("power_"),
+  )
+  const signalBuses = sample.solverOptions.buses?.filter((bus) =>
+    bus.busId.startsWith("signal_bus_"),
   )
 
   expect(input.layerCount).toBe(SRJ29_FANOUT_LAYER_COUNT)
@@ -45,6 +56,16 @@ test("SRJ29 exposes independently routed power pins and directional signal buses
       ),
   ).toBe(true)
   expect(powerBuses?.every((bus) => bus.direction !== undefined)).toBe(true)
+  expect(sample.solverOptions.preferOriginalEndpointTracks).toBe(true)
+  expect(
+    signalBuses?.every((bus) => {
+      if (bus.busId.includes("_left_")) return bus.direction === "left"
+      if (bus.busId.includes("_right_")) return bus.direction === "right"
+      if (bus.busId.includes("_top_")) return bus.direction === "up"
+      if (bus.busId.includes("_bottom_")) return bus.direction === "down"
+      return false
+    }),
+  ).toBe(true)
   expect(
     input.obstacles.some(
       (obstacle) =>

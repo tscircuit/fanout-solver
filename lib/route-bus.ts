@@ -39,6 +39,7 @@ export interface RouteBusParams {
   viaHoleDiameter: number
   clearance: number
   compactBusTracks: boolean
+  preferOriginalEndpointTracks?: boolean
   allowSameNetMerges?: boolean
   staticClearanceCache?: RouteBusStaticClearanceCache
   blockingBusCounts?: Map<string, number>
@@ -295,6 +296,7 @@ function getPreferredTrack(params: {
   targetUsesVia: boolean
   interstitialEscape: boolean
   compactBusTracks: boolean
+  preferOriginalEndpointTracks: boolean
   traceWidth: number
   viaDiameter: number
   clearance: number
@@ -305,6 +307,7 @@ function getPreferredTrack(params: {
     targetUsesVia,
     interstitialEscape,
     compactBusTracks,
+    preferOriginalEndpointTracks,
     traceWidth,
     viaDiameter,
     clearance,
@@ -316,6 +319,9 @@ function getPreferredTrack(params: {
     connection.sourcePoint,
     bus.direction,
   )
+  if (preferOriginalEndpointTracks) {
+    return getPerpendicularAxis(connection.targetPoint, bus.direction)
+  }
   if (compactBusTracks) {
     const connectionRank = getConnectionRank(bus, connection)
     const componentCenter =
@@ -1290,6 +1296,7 @@ export function routeBusAlternatives(
     viaHoleDiameter,
     clearance,
     compactBusTracks,
+    preferOriginalEndpointTracks = false,
     staticClearanceCache,
     blockingBusCounts,
     allowSameNetMerges = false,
@@ -1361,6 +1368,7 @@ export function routeBusAlternatives(
         targetUsesVia,
         interstitialEscape,
         compactBusTracks,
+        preferOriginalEndpointTracks,
         traceWidth,
         viaDiameter,
         clearance,

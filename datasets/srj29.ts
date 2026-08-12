@@ -33,8 +33,13 @@ interface Srj29ManifestSample {
 
 interface Srj29Manifest {
   datasetName: string
+  generationVersion: number
   sampleCount: number
   rule: string
+  validation: {
+    valid: boolean
+    invalidSampleCount: number
+  }
   samples: Srj29ManifestSample[]
 }
 
@@ -56,6 +61,15 @@ export interface Srj29FanoutSample {
 }
 
 const manifest = datasetDistManifest as unknown as Srj29Manifest
+if (
+  manifest.generationVersion < 2 ||
+  !manifest.validation.valid ||
+  manifest.validation.invalidSampleCount !== 0
+) {
+  throw new Error(
+    "SRJ29 fanout benchmarks require the validated generation-v2 dataset",
+  )
+}
 const manifestBySampleName = new Map(
   manifest.samples.map((sample) => [sample.sampleName, sample]),
 )
@@ -97,7 +111,7 @@ function connectionTouchesComponent(
 }
 
 function directionForBusId(busId: string): FanoutBusSpec["direction"] {
-  const side = busId.match(/^signal_bus_(left|right|top|bottom)$/)?.[1]
+  const side = busId.match(/^signal_bus_(left|right|top|bottom)(?:_\d+)?$/)?.[1]
   switch (side) {
     case "left":
       return "left"
@@ -274,6 +288,7 @@ export const srj29FanoutSamples: Srj29FanoutSample[] = (
       buses: createSrj29Buses(sourceSrj),
       sharedBoundary: { ...manifestSample.bounds },
       compactBusTracks: simpleRouteJson.connections.length <= 64,
+      preferOriginalEndpointTracks: true,
       allowSameNetMerges: true,
       // Keep signals off the capacitor side and the two dedicated power
       // planes. This leaves bottom/inner1/inner4 as coherent signal-routing

@@ -4,7 +4,7 @@ import { FanoutSolver } from "../lib/fanout-solver"
 import { distancePointToSegment } from "../lib/geometry"
 
 test("SRJ29 endpoint completion only retains physically connected DRC-clean copper", () => {
-  const sample = srj29FanoutSamples.find(({ id }) => id === "sample001")!
+  const sample = srj29FanoutSamples.find(({ id }) => id === "sample005")!
   const solver = new FanoutSolver(sample.simpleRouteJson, sample.solverOptions)
   solver.solve()
 
@@ -56,12 +56,12 @@ test("SRJ29 endpoint completion only retains physically connected DRC-clean copp
 }, 60_000)
 
 test("short outside-pad routes transition at an interior fanout-trace point", () => {
-  const sample = srj29FanoutSamples.find(({ id }) => id === "sample009")!
+  const sample = srj29FanoutSamples.find(({ id }) => id === "sample005")!
   const solver = new FanoutSolver(sample.simpleRouteJson, sample.solverOptions)
   solver.solve()
 
   const output = solver.getOutput()
-  const connectionName = "BUS_SIGNAL_009"
+  const connectionName = "BUS_SIGNAL_LEFT_02_010"
   const fanoutTrace = output.fanoutTraces.find(
     (trace) => trace.connection_name === connectionName,
   )!

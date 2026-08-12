@@ -64,6 +64,9 @@ and treats each bus-layer decision atomically.
 - `compactBusTracks` bends each bus into a trace/clearance-pitch routing
   envelope, so a wide pad row does not consume a disproportionately wide
   breakout corridor.
+- `preferOriginalEndpointTracks` projects boundary tracks onto the original
+  downstream pad coordinates and prefers their layer when legal. This lets
+  ordered edge-pad buses make direct, visibly continuous pad connections.
 - Chamfers orthogonal routing corners into 45° segments before validating and
   emitting the fanout.
 - Verifies oriented-pad, via, trace, and already-routed fanout clearance on
@@ -122,6 +125,7 @@ const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   availableCornersAndSides: ["top_left", "top", "top_right"],
   borderDistribution: "even",
   compactBusTracks: true,
+  preferOriginalEndpointTracks: true,
   buses: [
     {
       busId: "ground",
