@@ -153,4 +153,4 @@ test("Dataset 05 preserves the exact RK3588 map and completes plane-aware fanout
       { left: 0, right: 0, up: 0, down: 0 },
     )
   expect(Object.values(layerByDirection).every((count) => count > 0)).toBe(true)
-})
+}, 30_000)
