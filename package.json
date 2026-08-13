@@ -36,7 +36,7 @@
   "dependencies": {
     "@tscircuit/capacity-autorouter": "0.0.718",
     "@tscircuit/solver-utils": "0.0.19",
-    "graphics-debug": "0.0.96"
+    "graphics-debug": "0.0.99"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
@@ -46,7 +46,7 @@
     "@types/bun": "1.3.14",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "bun-match-svg": "^0.0.15",
+    "bun-match-svg": "^0.0.16",
     "circuit-json": "0.0.455",
     "react": "19.2.8",
     "react-cosmos": "7.3.0",
