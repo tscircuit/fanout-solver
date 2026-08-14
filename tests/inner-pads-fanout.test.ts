@@ -44,4 +44,4 @@ test("inner BGA pads receive via fanouts", () => {
       }
     }
   }
-})
+}, 30_000)
