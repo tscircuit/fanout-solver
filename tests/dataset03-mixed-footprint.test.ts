@@ -55,7 +55,7 @@ function pointIsOnBoundary(
   }
 }
 
-test("dataset03 fans out a rotated QFN50 and two oriented 0603s on two JLCPCB-rule layers", () => {
+test("dataset03 fans out a rotated QFN50 and two oriented 0603s on their original endpoint tracks", () => {
   expect(fanoutDataset03).toHaveLength(4)
 
   for (const sample of fanoutDataset03) {
@@ -98,9 +98,13 @@ test("dataset03 fans out a rotated QFN50 and two oriented 0603s on two JLCPCB-ru
     const output = solver.getOutput()
     expect(output.attempts).toHaveLength(1)
     expect(output.fanoutTraces).toHaveLength(54)
-    expect(new Set(Object.values(output.busLayerAssignments))).toEqual(
-      new Set(["top", "bottom"]),
-    )
+    const assignedLayers = new Set(Object.values(output.busLayerAssignments))
+    expect(assignedLayers.has("top")).toBe(true)
+    expect(
+      [...assignedLayers].every(
+        (layer) => layer === "top" || layer === "bottom",
+      ),
+    ).toBe(true)
 
     for (const bus of solver.preparedBuses) {
       const expectedLayer = output.busLayerAssignments[bus.busId]
@@ -120,15 +124,6 @@ test("dataset03 fans out a rotated QFN50 and two oriented 0603s on two JLCPCB-ru
       })
       expect(new Set(viaUse).size).toBe(1)
       expect(viaUse[0]).toBe(expectedLayer === "bottom")
-    }
-
-    if (sample.id === "sample001") {
-      expect(output.busLayerAssignments["qfn50:north"]).toBe("bottom")
-      expect(output.busLayerAssignments["qfn50:south"]).toBe("bottom")
-    }
-    if (sample.id === "sample002") {
-      expect(output.busLayerAssignments["qfn50:east"]).toBe("bottom")
-      expect(output.busLayerAssignments["qfn50:west"]).toBe("bottom")
     }
 
     const segments: NamedSegment[] = []

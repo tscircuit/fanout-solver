@@ -40,7 +40,6 @@ interface ResolvedFanoutConfig {
   viaHoleDiameter: number
   clearance: number
   compactBusTracks: boolean
-  preferOriginalEndpointTracks: boolean
   allowSameNetMerges: boolean
   singleLayerPushAndShove: boolean
   singleLayerAdaptiveExits: boolean
@@ -132,7 +131,6 @@ function resolveConfig(
     viaHoleDiameter,
     clearance,
     compactBusTracks: options.compactBusTracks ?? false,
-    preferOriginalEndpointTracks: options.preferOriginalEndpointTracks ?? false,
     allowSameNetMerges: options.allowSameNetMerges ?? false,
     singleLayerPushAndShove: options.singleLayerPushAndShove ?? false,
     singleLayerAdaptiveExits: options.singleLayerAdaptiveExits ?? false,
@@ -210,6 +208,19 @@ function getBusDistanceToBoundary(bus: PreparedBus): number {
   }
 }
 
+function busUsesOriginalEndpointTracks(bus: PreparedBus): boolean {
+  const isHorizontal = bus.direction === "left" || bus.direction === "right"
+  return bus.connections.some((connection) => {
+    const sourceTrack = isHorizontal
+      ? connection.sourcePoint.y
+      : connection.sourcePoint.x
+    const targetTrack = isHorizontal
+      ? connection.targetPoint.y
+      : connection.targetPoint.x
+    return Math.abs(sourceTrack - targetTrack) > 1e-6
+  })
+}
+
 function busIsOnOutwardComponentEdge(bus: PreparedBus): boolean {
   const isHorizontal = bus.direction === "left" || bus.direction === "right"
   const directionalCoordinates = isHorizontal
@@ -256,14 +267,8 @@ function createPreferredLayerAssignment(params: {
   buses: PreparedBus[]
   escapeLayers: string[]
   escapeLayersByBusId: Readonly<Record<string, readonly string[]>>
-  preferOriginalEndpointTracks: boolean
 }): Readonly<Record<string, string>> {
-  const {
-    buses,
-    escapeLayers,
-    escapeLayersByBusId,
-    preferOriginalEndpointTracks,
-  } = params
+  const { buses, escapeLayers, escapeLayersByBusId } = params
   const assignment: Record<string, string> = {}
   const directionsByComponent = new Map<string, Set<PreparedBus["direction"]>>()
   let nextViaLayerIndex = 0
@@ -288,7 +293,7 @@ function createPreferredLayerAssignment(params: {
     )
     if (
       routableEscapeLayers.includes(sourceLayer) &&
-      (preferOriginalEndpointTracks || busIsOnOutwardComponentEdge(bus))
+      (busUsesOriginalEndpointTracks(bus) || busIsOnOutwardComponentEdge(bus))
     ) {
       assignment[bus.busId] = sourceLayer
     } else if (viaLayers.length > 0) {
@@ -347,7 +352,6 @@ function getCandidateEscapeLayersForBus(params: {
         viaHoleDiameter: config.viaHoleDiameter,
         clearance: config.clearance,
         compactBusTracks: config.compactBusTracks,
-        preferOriginalEndpointTracks: config.preferOriginalEndpointTracks,
         allowSameNetMerges: config.allowSameNetMerges,
         staticClearanceCache,
       }) !== null,
@@ -458,7 +462,6 @@ export class FanoutSolver extends BaseSolver {
         buses: this.preparedBuses,
         escapeLayers: this.config.escapeLayers,
         escapeLayersByBusId,
-        preferOriginalEndpointTracks: this.config.preferOriginalEndpointTracks,
       }),
       generatedAssignments,
       maxAssignments: this.config.maxLayerCombinations,
@@ -605,7 +608,6 @@ export class FanoutSolver extends BaseSolver {
         viaHoleDiameter: this.config.viaHoleDiameter,
         clearance: this.config.clearance,
         compactBusTracks: this.config.compactBusTracks,
-        preferOriginalEndpointTracks: this.config.preferOriginalEndpointTracks,
         allowSameNetMerges: this.config.allowSameNetMerges,
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
@@ -791,7 +793,12 @@ export class FanoutSolver extends BaseSolver {
       const viaCount = getPlanViaCount(state.plans)
       const offEndpointLayerConnectionCount = this.preparedBuses.reduce(
         (count, bus) => {
-          if (bus.termination.type !== "boundary") return count
+          if (
+            bus.termination.type !== "boundary" ||
+            !busUsesOriginalEndpointTracks(bus)
+          ) {
+            return count
+          }
           const sourceLayer = bus.connections[0]?.sourceLayer
           return state.assignment[bus.busId] === sourceLayer
             ? count
@@ -802,9 +809,7 @@ export class FanoutSolver extends BaseSolver {
       return (
         routeLength +
         viaCount * 0.1 +
-        (this.config.preferOriginalEndpointTracks
-          ? offEndpointLayerConnectionCount * 10_000
-          : 0) +
+        offEndpointLayerConnectionCount * 10_000 +
         assignmentLoadPenalty(
           state.assignment,
           this.preparedBuses,
@@ -835,10 +840,11 @@ export class FanoutSolver extends BaseSolver {
           )
         }
         const sourceLayer = bus.connections[0]?.sourceLayer
+        const preferSourceLayer = busUsesOriginalEndpointTracks(bus)
         const orderedLayers = candidateLayers.toSorted(
           (first, second) =>
             (layerLoads.get(first) ?? 0) - (layerLoads.get(second) ?? 0) ||
-            (this.config.preferOriginalEndpointTracks
+            (preferSourceLayer
               ? Number(second === sourceLayer) - Number(first === sourceLayer)
               : Number(first === sourceLayer) -
                 Number(second === sourceLayer)) ||
@@ -858,8 +864,6 @@ export class FanoutSolver extends BaseSolver {
               viaHoleDiameter: this.config.viaHoleDiameter,
               clearance: this.config.clearance,
               compactBusTracks: this.config.compactBusTracks,
-              preferOriginalEndpointTracks:
-                this.config.preferOriginalEndpointTracks,
               allowSameNetMerges: this.config.allowSameNetMerges,
               staticClearanceCache: this.routeStaticClearanceCache,
             },

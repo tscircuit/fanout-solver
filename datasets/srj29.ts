@@ -288,7 +288,6 @@ export const srj29FanoutSamples: Srj29FanoutSample[] = (
       buses: createSrj29Buses(sourceSrj),
       sharedBoundary: { ...manifestSample.bounds },
       compactBusTracks: simpleRouteJson.connections.length <= 64,
-      preferOriginalEndpointTracks: true,
       allowSameNetMerges: true,
       // Keep signals off the capacitor side and the two dedicated power
       // planes. This leaves bottom/inner1/inner4 as coherent signal-routing
