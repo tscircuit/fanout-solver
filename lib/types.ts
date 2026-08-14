@@ -102,13 +102,6 @@ export interface FanoutSolverOptions {
   viaHoleDiameter?: number
   clearance?: number
   compactBusTracks?: boolean
-  /**
-   * Prefer the perpendicular coordinate of each original downstream endpoint
-   * when assigning boundary tracks. Ordered edge-pad buses can then enter
-   * same-layer pads directly instead of requiring a second global router to
-   * undo compacted fanout tracks.
-   */
-  preferOriginalEndpointTracks?: boolean
   /** Allow branches belonging to the same electrical net to share copper. */
   allowSameNetMerges?: boolean
   singleLayerPushAndShove?: boolean

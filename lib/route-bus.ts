@@ -39,7 +39,6 @@ export interface RouteBusParams {
   viaHoleDiameter: number
   clearance: number
   compactBusTracks: boolean
-  preferOriginalEndpointTracks?: boolean
   allowSameNetMerges?: boolean
   staticClearanceCache?: RouteBusStaticClearanceCache
   blockingBusCounts?: Map<string, number>
@@ -293,10 +292,19 @@ function getTrackCandidates(params: {
 function getPreferredTrack(params: {
   bus: PreparedBus
   connection: PreparedConnection
+}): number {
+  return getPerpendicularAxis(
+    params.connection.targetPoint,
+    params.bus.direction,
+  )
+}
+
+function getLegacyPreferredTrack(params: {
+  bus: PreparedBus
+  connection: PreparedConnection
   targetUsesVia: boolean
   interstitialEscape: boolean
   compactBusTracks: boolean
-  preferOriginalEndpointTracks: boolean
   traceWidth: number
   viaDiameter: number
   clearance: number
@@ -307,7 +315,6 @@ function getPreferredTrack(params: {
     targetUsesVia,
     interstitialEscape,
     compactBusTracks,
-    preferOriginalEndpointTracks,
     traceWidth,
     viaDiameter,
     clearance,
@@ -319,9 +326,6 @@ function getPreferredTrack(params: {
     connection.sourcePoint,
     bus.direction,
   )
-  if (preferOriginalEndpointTracks) {
-    return getPerpendicularAxis(connection.targetPoint, bus.direction)
-  }
   if (compactBusTracks) {
     const connectionRank = getConnectionRank(bus, connection)
     const componentCenter =
@@ -332,11 +336,9 @@ function getPreferredTrack(params: {
         (traceWidth + clearance)
     )
   }
-  if (!targetUsesVia) return sourceTrack
-  if (!interstitialEscape) return sourceTrack
+  if (!targetUsesVia || !interstitialEscape) return sourceTrack
 
   const depthInRows = getDepthInRows(bus)
-
   const trackPitch = traceWidth + clearance
   const halfConnectionCount = Math.ceil(bus.connections.length / 2)
   const sideBandWidth = (halfConnectionCount - 1) * trackPitch
@@ -1296,7 +1298,6 @@ export function routeBusAlternatives(
     viaHoleDiameter,
     clearance,
     compactBusTracks,
-    preferOriginalEndpointTracks = false,
     staticClearanceCache,
     blockingBusCounts,
     allowSameNetMerges = false,
@@ -1359,23 +1360,42 @@ export function routeBusAlternatives(
 
     const preparedConnection = connectionOrder[connectionIndex]!
     const connectionRank = getConnectionRank(bus, preparedConnection)
-    const trackCandidates = getTrackCandidates({
-      bus,
-      connection: preparedConnection,
-      preferredTrack: getPreferredTrack({
+    const preferredTracks = [
+      getPreferredTrack({
+        bus,
+        connection: preparedConnection,
+      }),
+      getLegacyPreferredTrack({
         bus,
         connection: preparedConnection,
         targetUsesVia,
         interstitialEscape,
         compactBusTracks,
-        preferOriginalEndpointTracks,
         traceWidth,
         viaDiameter,
         clearance,
       }),
-      traceWidth,
-      clearance,
-    })
+    ].filter(
+      (track, index, tracks) =>
+        tracks.findIndex((candidate) => Math.abs(candidate - track) < 1e-9) ===
+        index,
+    )
+    const trackCandidates = preferredTracks
+      .flatMap((preferredTrack) =>
+        getTrackCandidates({
+          bus,
+          connection: preparedConnection,
+          preferredTrack,
+          traceWidth,
+          clearance,
+        }),
+      )
+      .filter(
+        (track, index, tracks) =>
+          tracks.findIndex(
+            (candidate) => Math.abs(candidate.value - track.value) < 1e-9,
+          ) === index,
+      )
     for (
       let trackIndex = 0;
       trackIndex < trackCandidates.length;

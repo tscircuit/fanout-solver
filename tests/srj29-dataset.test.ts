@@ -56,7 +56,6 @@ test("SRJ29 exposes independently routed power pins and directional signal buses
       ),
   ).toBe(true)
   expect(powerBuses?.every((bus) => bus.direction !== undefined)).toBe(true)
-  expect(sample.solverOptions.preferOriginalEndpointTracks).toBe(true)
   expect(
     signalBuses?.every((bus) => {
       if (bus.busId.includes("_left_")) return bus.direction === "left"
