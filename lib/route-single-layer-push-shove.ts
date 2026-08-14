@@ -3,6 +3,7 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import { getArrayItemFromEnd } from "./array-utils"
 import {
   distance,
   distanceSegmentToObstacle,
@@ -93,7 +94,7 @@ function compressPath(points: Point2D[]): Point2D[] {
   if (points.length < 3) return points
   const compressed = [points[0]!]
   for (let index = 1; index < points.length - 1; index++) {
-    const previous = compressed.at(-1)!
+    const previous = getArrayItemFromEnd(compressed)!
     const current = points[index]!
     const next = points[index + 1]!
     const incoming = {
@@ -108,7 +109,7 @@ function compressPath(points: Point2D[]): Point2D[] {
       compressed.push(current)
     }
   }
-  compressed.push(points.at(-1)!)
+  compressed.push(getArrayItemFromEnd(points)!)
   return compressed
 }
 
@@ -248,7 +249,7 @@ function getCornerChannelPrefixes(params: {
       }
     })
     .filter((candidate) => candidate !== null)
-    .toSorted(
+    .sort(
       (first, second) =>
         second.obstacleDistance - first.obstacleDistance ||
         first.targetDistance - second.targetDistance,
@@ -297,13 +298,13 @@ function completeCornerChannelRoute(params: {
   ) {
     trackCandidates.add(Number(track.toFixed(9)))
   }
-  const orderedTracks = [...trackCandidates].toSorted(
+  const orderedTracks = [...trackCandidates].sort(
     (first, second) =>
       Math.abs(first - targetTrack) - Math.abs(second - targetTrack),
   )
 
   for (const prefix of prefixes) {
-    const diagonalEnd = prefix.at(-1)!
+    const diagonalEnd = getArrayItemFromEnd(prefix)!
     const diagonalTrack = getPerpendicularAxis(diagonalEnd, direction)
     for (const track of orderedTracks) {
       const shift = Math.abs(track - diagonalTrack)
@@ -326,7 +327,9 @@ function completeCornerChannelRoute(params: {
         straightEnd,
         ...(shift > 1e-9 ? [doglegEnd] : []),
       ]
-      if (distance(completionPoints.at(-1)!, boundaryPoint) > 1e-9) {
+      if (
+        distance(getArrayItemFromEnd(completionPoints)!, boundaryPoint) > 1e-9
+      ) {
         completionPoints.push(boundaryPoint)
       }
       const points = compressPath(completionPoints)
@@ -462,7 +465,8 @@ function selectOrderedTracks(params: {
     }
   }
 
-  if (!Number.isFinite(costs.at(-1)!.at(-1)!)) return null
+  if (!Number.isFinite(getArrayItemFromEnd(getArrayItemFromEnd(costs)!)!))
+    return null
   const selectedTracks: number[] = []
   let row = requestedTracks.length
   let column = candidateTracks.length
@@ -604,7 +608,7 @@ function getFinalTrackTargets(params: {
   const getCurrentTrack = (item: RoutingItem) =>
     currentTrackByConnectionName.get(item.connection.connection.name) ??
     getPerpendicularAxis(item.source, direction)
-  const orderedItems = [...items].toSorted(
+  const orderedItems = [...items].sort(
     (first, second) =>
       getCurrentTrack(first) - getCurrentTrack(second) ||
       first.connection.connection.name.localeCompare(
@@ -624,7 +628,7 @@ function getFinalTrackTargets(params: {
   const enforcedConnectionNames = new Set<string>()
   if (borderDistribution === "even" && orderedItems.length > 1) {
     const sourceMinimum = sourceTracks[0]!
-    const sourceMaximum = sourceTracks.at(-1)!
+    const sourceMaximum = getArrayItemFromEnd(sourceTracks)!
     const desiredPitch = Math.max(
       lanePitch,
       (sourceMaximum - sourceMinimum) / (orderedItems.length - 1),
@@ -651,7 +655,8 @@ function getFinalTrackTargets(params: {
       return tracks
     }
     const tracksFitBoundary = (tracks: number[]) =>
-      tracks[0]! >= minimumLane - 1e-9 && tracks.at(-1)! <= maximumLane + 1e-9
+      tracks[0]! >= minimumLane - 1e-9 &&
+      getArrayItemFromEnd(tracks)! <= maximumLane + 1e-9
     targetTracks = buildOutwardTracks(desiredPitch)
     if (tracksFitBoundary(targetTracks)) {
       distributedPitch = desiredPitch
@@ -763,7 +768,7 @@ function buildPlan(path: RoutedPath): FanoutRoutePlan {
     targetLayer: "top",
     termination: item.bus.termination,
     direction: item.direction,
-    exitPoint: points.at(-1)!,
+    exitPoint: getArrayItemFromEnd(points)!,
     trace: {
       type: "pcb_trace",
       pcb_trace_id: `fanout:${item.connection.connection.name}`,
@@ -800,7 +805,7 @@ function routesAreClear(params: {
   for (const path of paths) {
     if (
       Math.abs(
-        getAxis(path.points.at(-1)!, path.item.direction) -
+        getAxis(getArrayItemFromEnd(path.points)!, path.item.direction) -
           getExitAxis(path.item.bus),
       ) > 1e-6
     ) {
@@ -927,7 +932,7 @@ export function routeSingleLayerWithPushAndShove(
       )
     }
 
-    const eventAxes = [...axisByEventKey.values()].toSorted(
+    const eventAxes = [...axisByEventKey.values()].sort(
       (a, b) => sign * (a - b),
     )
     const active = new Map<string, ActiveRoute>()
@@ -964,7 +969,7 @@ export function routeSingleLayerWithPushAndShove(
       if (active.size === 0 || sign * (nextAxis - eventAxis) <= 1e-9) {
         continue
       }
-      const orderedRoutes = [...active.values()].toSorted(
+      const orderedRoutes = [...active.values()].sort(
         (a, b) =>
           a.track - b.track ||
           a.item.connection.connection.name.localeCompare(
@@ -975,7 +980,9 @@ export function routeSingleLayerWithPushAndShove(
         .slice(eventIndex + 1, eventIndex + 3)
         .flatMap((axis) => obstaclesByEventKey.get(axis.toFixed(6)) ?? [])
       const maximumShifts = orderedRoutes.map((route) =>
-        Math.abs(nextAxis - getAxis(route.points.at(-1)!, direction)),
+        Math.abs(
+          nextAxis - getAxis(getArrayItemFromEnd(route.points)!, direction),
+        ),
       )
       const selectedTracks = getCandidateTracks({
         direction,
@@ -994,17 +1001,20 @@ export function routeSingleLayerWithPushAndShove(
         const route = orderedRoutes[index]!
         const selectedTrack = selectedTracks[index]!
         const shift = Math.abs(selectedTrack - route.track)
-        const routeStartAxis = getAxis(route.points.at(-1)!, direction)
+        const routeStartAxis = getAxis(
+          getArrayItemFromEnd(route.points)!,
+          direction,
+        )
         const diagonalEnd = makePoint(
           routeStartAxis + sign * shift,
           selectedTrack,
           direction,
         )
-        if (distance(route.points.at(-1)!, diagonalEnd) > 1e-9) {
+        if (distance(getArrayItemFromEnd(route.points)!, diagonalEnd) > 1e-9) {
           route.points.push(diagonalEnd)
         }
         const nextPoint = makePoint(nextAxis, selectedTrack, direction)
-        if (distance(route.points.at(-1)!, nextPoint) > 1e-9) {
+        if (distance(getArrayItemFromEnd(route.points)!, nextPoint) > 1e-9) {
           route.points.push(nextPoint)
         }
         route.track = selectedTrack
@@ -1027,7 +1037,7 @@ export function routeSingleLayerWithPushAndShove(
       ),
     })
     if (!finalTrackTargets) return null
-    const orderedActiveRoutes = [...active.values()].toSorted(
+    const orderedActiveRoutes = [...active.values()].sort(
       (first, second) =>
         first.track - second.track ||
         first.item.connection.connection.name.localeCompare(
@@ -1076,7 +1086,7 @@ export function routeSingleLayerWithPushAndShove(
         finalTrackTargets.byConnectionName.get(connectionName) ?? route.track
       const startOffset =
         distributionStartOffsetByConnectionName.get(connectionName) ?? 0
-      const previousPoint = route.points.at(-2)
+      const previousPoint = getArrayItemFromEnd(route.points, 2)
       const availableDepth = previousPoint
         ? sign * (exitAxis - getAxis(previousPoint, direction))
         : 0
@@ -1117,11 +1127,11 @@ export function routeSingleLayerWithPushAndShove(
       const distributionDepth =
         shift > 1e-9 ? distributionStartOffset + shift : 0
       const distributionStartAxis = exitAxis - sign * distributionDepth
-      const lastPoint = route.points.at(-1)!
+      const lastPoint = getArrayItemFromEnd(route.points)!
       if (Math.abs(getAxis(lastPoint, direction) - exitAxis) > 1e-6) {
         return null
       }
-      const previousPoint = route.points.at(-2)
+      const previousPoint = getArrayItemFromEnd(route.points, 2)
       if (
         previousPoint &&
         (Math.abs(
@@ -1154,7 +1164,7 @@ export function routeSingleLayerWithPushAndShove(
       if (shift > 1e-9 && distributionStartOffset > 1e-9) {
         route.points.push(
           makePoint(
-            getAxis(route.points.at(-1)!, direction) +
+            getAxis(getArrayItemFromEnd(route.points)!, direction) +
               sign * distributionStartOffset,
             route.track,
             direction,
@@ -1164,7 +1174,8 @@ export function routeSingleLayerWithPushAndShove(
       if (shift > 1e-9) {
         route.points.push(
           makePoint(
-            getAxis(route.points.at(-1)!, direction) + sign * shift,
+            getAxis(getArrayItemFromEnd(route.points)!, direction) +
+              sign * shift,
             targetTrack,
             direction,
           ),
@@ -1172,9 +1183,11 @@ export function routeSingleLayerWithPushAndShove(
         route.track = targetTrack
       }
       const boundaryPoint = makePoint(exitAxis, route.track, direction)
-      if (distance(route.points.at(-1)!, boundaryPoint) > 1e-9) {
+      if (distance(getArrayItemFromEnd(route.points)!, boundaryPoint) > 1e-9) {
         if (
-          sign * (exitAxis - getAxis(route.points.at(-1)!, direction)) <
+          sign *
+            (exitAxis -
+              getAxis(getArrayItemFromEnd(route.points)!, direction)) <
           -1e-6
         ) {
           return null

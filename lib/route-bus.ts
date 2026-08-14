@@ -3,6 +3,7 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import { copyAndSortArray, getArrayItemFromEnd } from "./array-utils"
 import {
   distance,
   distancePointToObstacle,
@@ -102,9 +103,10 @@ function getPerpendicularPitch(bus: PreparedBus): number {
 }
 
 function getDepthInRows(bus: PreparedBus): number {
-  const directionalCoordinates = (
-    isHorizontal(bus.direction) ? bus.xCoordinates : bus.yCoordinates
-  ).toSorted((a, b) => a - b)
+  const directionalCoordinates = copyAndSortArray(
+    isHorizontal(bus.direction) ? bus.xCoordinates : bus.yCoordinates,
+    (a, b) => a - b,
+  )
   const averageDirectionalSource =
     bus.connections.reduce(
       (sum, candidate) => sum + getAxis(candidate.sourcePoint, bus.direction),
@@ -112,7 +114,7 @@ function getDepthInRows(bus: PreparedBus): number {
     ) / bus.connections.length
   const outwardCoordinate =
     directionSign(bus.direction) > 0
-      ? directionalCoordinates.at(-1)!
+      ? getArrayItemFromEnd(directionalCoordinates)!
       : directionalCoordinates[0]!
 
   return (
@@ -215,9 +217,10 @@ function getTrackCandidates(params: {
   clearance: number
 }): TrackCandidate[] {
   const { bus, connection, preferredTrack, traceWidth, clearance } = params
-  const coordinates = (
-    isHorizontal(bus.direction) ? bus.yCoordinates : bus.xCoordinates
-  ).toSorted((a, b) => a - b)
+  const coordinates = copyAndSortArray(
+    isHorizontal(bus.direction) ? bus.yCoordinates : bus.xCoordinates,
+    (a, b) => a - b,
+  )
   const obstacleHalfSize = Math.max(
     ...bus.componentObstacles.map((obstacle) =>
       isHorizontal(bus.direction) ? obstacle.height / 2 : obstacle.width / 2,
@@ -258,7 +261,7 @@ function getTrackCandidates(params: {
   }
   tracks.push(
     ...getTracksInSpan(
-      coordinates.at(-1)! + obstacleHalfSize,
+      getArrayItemFromEnd(coordinates)! + obstacleHalfSize,
       ladderMaximum,
       traceWidth,
       clearance,
@@ -270,7 +273,8 @@ function getTrackCandidates(params: {
     connection.sourcePoint,
     bus.direction,
   )
-  const componentCenter = (coordinates[0]! + coordinates.at(-1)!) / 2
+  const componentCenter =
+    (coordinates[0]! + getArrayItemFromEnd(coordinates)!) / 2
   return tracks
     .filter((track) => Math.abs(track.value - sourceTrack) <= maximumJog + 1e-9)
     .filter(
@@ -319,9 +323,10 @@ function getLegacyPreferredTrack(params: {
     viaDiameter,
     clearance,
   } = params
-  const perpendicularCoordinates = (
-    isHorizontal(bus.direction) ? bus.yCoordinates : bus.xCoordinates
-  ).toSorted((a, b) => a - b)
+  const perpendicularCoordinates = copyAndSortArray(
+    isHorizontal(bus.direction) ? bus.yCoordinates : bus.xCoordinates,
+    (a, b) => a - b,
+  )
   const sourceTrack = getPerpendicularAxis(
     connection.sourcePoint,
     bus.direction,
@@ -329,7 +334,9 @@ function getLegacyPreferredTrack(params: {
   if (compactBusTracks) {
     const connectionRank = getConnectionRank(bus, connection)
     const componentCenter =
-      (perpendicularCoordinates[0]! + perpendicularCoordinates.at(-1)!) / 2
+      (perpendicularCoordinates[0]! +
+        getArrayItemFromEnd(perpendicularCoordinates)!) /
+      2
     return (
       componentCenter +
       (connectionRank - (bus.connections.length - 1) / 2) *
@@ -348,7 +355,7 @@ function getLegacyPreferredTrack(params: {
     depthIndex * bandSeparation + (depthIndex - 1) * sideBandWidth
   const connectionRank = getConnectionRank(bus, connection)
   const componentMinimum = perpendicularCoordinates[0]!
-  const componentMaximum = perpendicularCoordinates.at(-1)!
+  const componentMaximum = getArrayItemFromEnd(perpendicularCoordinates)!
   const requestedTrack =
     connectionRank < halfConnectionCount
       ? componentMinimum -
@@ -463,7 +470,7 @@ function chamferOrthogonalPolyline(
     })
   }
 
-  chamfered.push(points.at(-1)!)
+  chamfered.push(getArrayItemFromEnd(points)!)
   return chamfered
 }
 
@@ -712,16 +719,17 @@ function getPlaneEndpointViaCandidates(params: {
   const diagonal = Math.SQRT1_2
   const directions = [
     preferred,
-    ...[
-      { x: diagonal, y: diagonal },
-      { x: diagonal, y: -diagonal },
-      { x: -diagonal, y: diagonal },
-      { x: -diagonal, y: -diagonal },
-      { x: 1, y: 0 },
-      { x: -1, y: 0 },
-      { x: 0, y: 1 },
-      { x: 0, y: -1 },
-    ].toSorted(
+    ...copyAndSortArray(
+      [
+        { x: diagonal, y: diagonal },
+        { x: diagonal, y: -diagonal },
+        { x: -diagonal, y: diagonal },
+        { x: -diagonal, y: -diagonal },
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 },
+      ],
       (first, second) =>
         second.x * preferred.x +
         second.y * preferred.y -

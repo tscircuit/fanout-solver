@@ -4,6 +4,7 @@ import type {
   SimpleRouteConnection,
   SimpleRouteJson,
 } from "@tscircuit/capacity-autorouter"
+import { copyAndSortArray } from "./array-utils"
 import { distance, pointIsInsideObstacle } from "./geometry"
 import type {
   Bounds,
@@ -847,7 +848,8 @@ function resolveAvailableBusExit(params: {
       ? preferredDirectionRegions
       : compatibleRegions
   const averageSource = getAverageSourcePoint(connections)
-  return [...candidates].toSorted(
+  return copyAndSortArray(
+    candidates,
     (first, second) =>
       getDistanceToBoundary(averageSource, first.direction, sharedBoundary) -
         getDistanceToBoundary(
@@ -923,7 +925,8 @@ function resolveBusDirection(params: {
   }
   const averageSource = getAverageSourcePoint(connections)
   return {
-    direction: compatibleDirections.toSorted(
+    direction: copyAndSortArray(
+      compatibleDirections,
       (first, second) =>
         getDistanceToBoundary(averageSource, first, sharedBoundary) -
           getDistanceToBoundary(averageSource, second, sharedBoundary) ||

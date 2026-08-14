@@ -2,10 +2,12 @@
   "name": "@tscircuit/fanout-solver",
   "version": "0.0.25",
   "description": "BGA fanout solver with coordinated bus-layer escapes for SimpleRouteJson",
-  "module": "lib/index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "type": "module",
   "files": [
-    "lib"
+    "dist"
   ],
   "license": "MIT",
   "repository": {
@@ -17,21 +19,23 @@
   },
   "exports": {
     ".": {
-      "import": "./lib/index.ts",
-      "types": "./lib/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
     "start": "cosmos",
     "build:site": "cosmos-export",
-    "build": "bunx tsc --noEmit",
+    "build": "tsup lib/index.ts --format esm --target es2020 --dts --sourcemap --clean",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
     "benchmark": "bun benchmarks/run-benchmark.ts",
     "benchmark:srj29": "./benchmark.sh",
     "render:dataset": "bun scripts/render-dataset-pngs.ts",
     "format": "biome format --write .",
-    "format:check": "biome format ."
+    "format:check": "biome format .",
+    "prepack": "bun run build"
   },
   "dependencies": {
     "@tscircuit/capacity-autorouter": "0.0.718",
@@ -52,9 +56,8 @@
     "react-cosmos": "7.3.0",
     "react-cosmos-plugin-vite": "7.3.0",
     "react-dom": "19.2.8",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
     "vite": "8.1.5"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
   }
 }

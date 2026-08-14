@@ -3,6 +3,7 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import { copyAndSortArray, getArrayItemFromEnd } from "./array-utils"
 import {
   distance,
   distancePointToObstacle,
@@ -144,7 +145,7 @@ function enforceStraightOr45DegreeSegments(points: Point2D[]): Point2D[] {
   if (points.length < 2) return points
   const normalized = [points[0]!]
   for (const end of points.slice(1)) {
-    const start = normalized.at(-1)!
+    const start = getArrayItemFromEnd(normalized)!
     const deltaX = Math.abs(end.x - start.x)
     const deltaY = Math.abs(end.y - start.y)
     if (
@@ -166,7 +167,7 @@ function compressPath(points: Point2D[]): Point2D[] {
   if (points.length < 3) return points
   const compressed = [points[0]!]
   for (let index = 1; index < points.length - 1; index++) {
-    const previous = compressed.at(-1)!
+    const previous = getArrayItemFromEnd(compressed)!
     const current = points[index]!
     const next = points[index + 1]!
     if (
@@ -176,7 +177,7 @@ function compressPath(points: Point2D[]): Point2D[] {
       compressed.push(current)
     }
   }
-  compressed.push(points.at(-1)!)
+  compressed.push(getArrayItemFromEnd(points)!)
   return compressed
 }
 
@@ -219,7 +220,7 @@ function chamferOrthogonalPolyline(
       y: corner.y + outgoing.y * chamfer,
     })
   }
-  chamfered.push(points.at(-1)!)
+  chamfered.push(getArrayItemFromEnd(points)!)
   return compressPath(chamfered)
 }
 
@@ -827,7 +828,7 @@ function buildPlan(route: FlowRoute, traceWidth: number): FanoutRoutePlan {
     targetLayer: "top",
     termination: item.bus.termination,
     direction: item.bus.direction,
-    exitPoint: points.at(-1)!,
+    exitPoint: getArrayItemFromEnd(points)!,
     trace: {
       type: "pcb_trace",
       pcb_trace_id: `fanout:${item.connection.connection.name}`,
@@ -1155,11 +1156,14 @@ function routeWithAdaptiveExits(params: {
         ? plan.exitPoint.x
         : plan.exitPoint.y
     item.bus.preferredExit =
-      compatibleRegions?.toSorted(
-        (first, second) =>
-          Math.abs(exitCoordinate - getRegionAnchor(first, grid.boundary)) -
-          Math.abs(exitCoordinate - getRegionAnchor(second, grid.boundary)),
-      )[0]?.preferredExit ??
+      (compatibleRegions
+        ? copyAndSortArray(
+            compatibleRegions,
+            (first, second) =>
+              Math.abs(exitCoordinate - getRegionAnchor(first, grid.boundary)) -
+              Math.abs(exitCoordinate - getRegionAnchor(second, grid.boundary)),
+          )[0]?.preferredExit
+        : undefined) ??
       (direction === "up" ? "top" : direction === "down" ? "bottom" : direction)
     plan.direction = direction
   }
