@@ -4,6 +4,7 @@ import {
 } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import { copyAndSortArray } from "./array-utils"
 import { buildOutputSimpleRouteJson } from "./build-output"
 import {
   completeOriginalEndpoints,
@@ -681,9 +682,10 @@ export class FanoutSolver extends BaseSolver {
     return {
       summary,
       plans,
-      blockingBusIds: [...blockingBusCounts.entries()]
-        .toSorted(([, firstCount], [, secondCount]) => secondCount - firstCount)
-        .map(([busId]) => busId),
+      blockingBusIds: copyAndSortArray(
+        [...blockingBusCounts.entries()],
+        ([, firstCount], [, secondCount]) => secondCount - firstCount,
+      ).map(([busId]) => busId),
       outputSrj,
     }
   }
@@ -840,7 +842,8 @@ export class FanoutSolver extends BaseSolver {
         }
         const sourceLayer = bus.connections[0]?.sourceLayer
         const preferSourceLayer = busUsesDestinationGuidedTracks(bus)
-        const orderedLayers = candidateLayers.toSorted(
+        const orderedLayers = copyAndSortArray(
+          candidateLayers,
           (first, second) =>
             (layerLoads.get(first) ?? 0) - (layerLoads.get(second) ?? 0) ||
             (preferSourceLayer

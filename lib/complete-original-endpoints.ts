@@ -6,6 +6,11 @@ import {
   type SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
 import {
+  copyAndSortArray,
+  findLastArrayIndex,
+  getArrayItemFromEnd,
+} from "./array-utils"
+import {
   distance,
   distancePointToSegment,
   pointIsInsideObstacle,
@@ -52,7 +57,8 @@ function getPointLayer(
 function uniquePoints(points: Point2D[]): Point2D[] {
   const unique: Point2D[] = []
   for (const point of points) {
-    if (unique.at(-1) && distance(unique.at(-1)!, point) < EPSILON) continue
+    const previousPoint = getArrayItemFromEnd(unique)
+    if (previousPoint && distance(previousPoint, point) < EPSILON) continue
     unique.push(point)
   }
   return unique
@@ -98,7 +104,7 @@ function chamferOrthogonalPolyline(
       y: corner.y + outgoing.y * chamfer,
     })
   }
-  chamfered.push(points.at(-1)!)
+  chamfered.push(getArrayItemFromEnd(points)!)
   return uniquePoints(chamfered)
 }
 
@@ -692,7 +698,8 @@ function acceptDownstreamTraces(params: {
   }
 
   const accepted: SimplifiedPcbTrace[] = []
-  for (const trace of usefulCandidates.toSorted(
+  for (const trace of copyAndSortArray(
+    usefulCandidates,
     (first, second) => traceLength(first) - traceLength(second),
   )) {
     const candidateSrj = {
@@ -733,7 +740,8 @@ function getPointsBackAlongTrace(params: {
   distances: number[]
 }): Point2D[] {
   const { trace, endpoint, layer, distances } = params
-  const endpointIndex = trace.route.findLastIndex(
+  const endpointIndex = findLastArrayIndex(
+    trace.route,
     (routePoint) =>
       routePoint.route_type === "wire" &&
       routePoint.layer === layer &&
@@ -982,7 +990,8 @@ export function completeOriginalEndpoints(params: {
           index,
         ]),
       )
-      const orderedPlans = localPlans.toSorted(
+      const orderedPlans = copyAndSortArray(
+        localPlans,
         (first, second) =>
           (priority.get(first.connectionName) ?? Number.MAX_SAFE_INTEGER) -
             (priority.get(second.connectionName) ?? Number.MAX_SAFE_INTEGER) ||

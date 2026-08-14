@@ -3,6 +3,7 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import { getArrayItemFromEnd } from "./array-utils"
 import {
   distance,
   distancePointToObstacle,
@@ -271,7 +272,7 @@ function validatePlanStructure(params: {
         plan,
       )
     }
-    if (!pointsMatch(plan.segments.at(-1)!.end, plan.exitPoint)) {
+    if (!pointsMatch(getArrayItemFromEnd(plan.segments)!.end, plan.exitPoint)) {
       addIssue(
         issues,
         "disconnected-trace",
