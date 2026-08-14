@@ -35,6 +35,7 @@ export type {
   FanoutSolverOutput,
   FanoutValidationIssue,
   FanoutValidationReport,
+  Point2D,
   PreparedBus,
   SimpleRouteJsonWithFanoutPlanes,
 } from "./types"

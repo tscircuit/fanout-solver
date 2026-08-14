@@ -643,6 +643,7 @@ function prepareConnection(params: {
   sourceGrid: ComponentGrid
   componentGrids: ComponentGrid[]
   termination: FanoutBusTermination
+  exitTargetPoint?: { x: number; y: number }
 }): PreparedConnection {
   const {
     connection,
@@ -650,6 +651,7 @@ function prepareConnection(params: {
     sourceGrid,
     componentGrids,
     termination,
+    exitTargetPoint,
   } = params
   for (
     let sourcePointIndex = 0;
@@ -671,6 +673,12 @@ function prepareConnection(params: {
         `FanoutSolver: connection "${connection.name}" has no source layer shared with its BGA pad`,
       )
     }
+    const targetPoint = chooseTargetPoint(
+      sourcePoint,
+      connection,
+      sourcePointIndex,
+      termination,
+    )
     return {
       connection,
       connectionIndex,
@@ -678,12 +686,8 @@ function prepareConnection(params: {
       sourcePointIndex,
       sourceLayer,
       sourceObstacle: sourceMatch.obstacle,
-      targetPoint: chooseTargetPoint(
-        sourcePoint,
-        connection,
-        sourcePointIndex,
-        termination,
-      ),
+      targetPoint,
+      exitTargetPoint: exitTargetPoint ?? targetPoint,
     }
   }
   throw new Error(
@@ -698,8 +702,10 @@ function inferDirection(
   let dx = 0
   let dy = 0
   for (const preparedConnection of connections) {
-    dx += preparedConnection.targetPoint.x - preparedConnection.sourcePoint.x
-    dy += preparedConnection.targetPoint.y - preparedConnection.sourcePoint.y
+    const exitTargetPoint =
+      preparedConnection.exitTargetPoint ?? preparedConnection.targetPoint
+    dx += exitTargetPoint.x - preparedConnection.sourcePoint.x
+    dy += exitTargetPoint.y - preparedConnection.sourcePoint.y
   }
   if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) {
     throw new Error(
@@ -941,6 +947,20 @@ export function prepareFanoutBuses(
     srj.connections.map((connection, index) => [connection.name, index]),
   )
   const resolvedBusInputs = resolveBusSpecs(srj, options).map((busSpec) => {
+    for (const [connectionName, point] of Object.entries(
+      busSpec.connectionExitTargets ?? {},
+    )) {
+      if (!busSpec.connectionNames.includes(connectionName)) {
+        throw new Error(
+          `FanoutSolver: connectionExitTargets contains connection "${connectionName}" outside bus "${busSpec.busId}"`,
+        )
+      }
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+        throw new Error(
+          `FanoutSolver: connectionExitTargets for connection "${connectionName}" must contain finite x and y coordinates`,
+        )
+      }
+    }
     const connections = busSpec.connectionNames.map((connectionName) => {
       const connectionIndex = connectionIndexByName.get(connectionName)
       if (connectionIndex === undefined) {
@@ -962,6 +982,7 @@ export function prepareFanoutBuses(
         sourceGrid,
         componentGrids,
         termination: busSpec.termination ?? { type: "boundary" },
+        exitTargetPoint: busSpec.connectionExitTargets?.[connection.name],
       }),
     )
     return { busSpec, sourceGrid, preparedConnections }
