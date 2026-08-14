@@ -64,6 +64,15 @@ export interface FanoutBusSpec extends SimpleRouteBus {
   direction?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   /**
+   * Preferred downstream routing point for each connection after it leaves the
+   * fanout boundary. This is routing guidance only and does not replace the
+   * connection's electrical endpoint in SimpleRouteJson.
+   *
+   * A caller coordinating two fanouts can pass the paired fanout's selected
+   * exit here so both sides aim toward the same track.
+   */
+  connectionExitTargets?: Readonly<Record<string, Point2D>>
+  /**
    * Defaults to `{ type: "boundary" }`.
    *
    * Plane-terminated connections are considered complete at their escaped via
@@ -209,6 +218,8 @@ export interface PreparedConnection {
   sourceLayer: string
   sourceObstacle: Obstacle
   targetPoint: ConnectionPoint
+  /** Preferred downstream point used to choose the boundary exit track. */
+  exitTargetPoint?: Point2D
 }
 
 export interface PreparedBus {

@@ -208,15 +208,14 @@ function getBusDistanceToBoundary(bus: PreparedBus): number {
   }
 }
 
-function busUsesOriginalEndpointTracks(bus: PreparedBus): boolean {
+function busUsesDestinationGuidedTracks(bus: PreparedBus): boolean {
   const isHorizontal = bus.direction === "left" || bus.direction === "right"
   return bus.connections.some((connection) => {
+    const exitTargetPoint = connection.exitTargetPoint ?? connection.targetPoint
     const sourceTrack = isHorizontal
       ? connection.sourcePoint.y
       : connection.sourcePoint.x
-    const targetTrack = isHorizontal
-      ? connection.targetPoint.y
-      : connection.targetPoint.x
+    const targetTrack = isHorizontal ? exitTargetPoint.y : exitTargetPoint.x
     return Math.abs(sourceTrack - targetTrack) > 1e-6
   })
 }
@@ -293,7 +292,7 @@ function createPreferredLayerAssignment(params: {
     )
     if (
       routableEscapeLayers.includes(sourceLayer) &&
-      (busUsesOriginalEndpointTracks(bus) || busIsOnOutwardComponentEdge(bus))
+      (busUsesDestinationGuidedTracks(bus) || busIsOnOutwardComponentEdge(bus))
     ) {
       assignment[bus.busId] = sourceLayer
     } else if (viaLayers.length > 0) {
@@ -795,7 +794,7 @@ export class FanoutSolver extends BaseSolver {
         (count, bus) => {
           if (
             bus.termination.type !== "boundary" ||
-            !busUsesOriginalEndpointTracks(bus)
+            !busUsesDestinationGuidedTracks(bus)
           ) {
             return count
           }
@@ -840,7 +839,7 @@ export class FanoutSolver extends BaseSolver {
           )
         }
         const sourceLayer = bus.connections[0]?.sourceLayer
-        const preferSourceLayer = busUsesOriginalEndpointTracks(bus)
+        const preferSourceLayer = busUsesDestinationGuidedTracks(bus)
         const orderedLayers = candidateLayers.toSorted(
           (first, second) =>
             (layerLoads.get(first) ?? 0) - (layerLoads.get(second) ?? 0) ||

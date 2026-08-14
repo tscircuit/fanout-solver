@@ -197,7 +197,10 @@ function getCornerChannelPrefixes(params: {
         maximum: bus.componentBounds.maxX,
       }
   const directionalDistance = sign * (componentExitAxis - sourceAxis)
-  const targetTrack = getPerpendicularAxis(connection.targetPoint, direction)
+  const targetTrack = getPerpendicularAxis(
+    connection.exitTargetPoint ?? connection.targetPoint,
+    direction,
+  )
   const lanePitch = traceWidth + clearance
   const exitAxis = getExitAxis(bus)
   const candidates = ([-1, 1] as const)
@@ -280,7 +283,7 @@ function completeCornerChannelRoute(params: {
   const minimumTrack = boundaryMinimum + traceWidth / 2
   const maximumTrack = boundaryMaximum - traceWidth / 2
   const targetTrack = getPerpendicularAxis(
-    item.connection.targetPoint,
+    item.connection.exitTargetPoint ?? item.connection.targetPoint,
     direction,
   )
   const trackStep = lanePitch / 2

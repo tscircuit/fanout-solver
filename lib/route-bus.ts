@@ -294,7 +294,7 @@ function getPreferredTrack(params: {
   connection: PreparedConnection
 }): number {
   return getPerpendicularAxis(
-    params.connection.targetPoint,
+    params.connection.exitTargetPoint ?? params.connection.targetPoint,
     params.bus.direction,
   )
 }
