@@ -35,7 +35,7 @@ const createBgaPads = ({
   return pads
 }
 
-test("visual repro: sequential fanout identity collision drops real copper", async () => {
+test("visual regression: sequential fanouts keep both real copper escapes", async () => {
   const leftPoint = { x: -1.1, y: 0, pointId: "left-point" }
   const rightPoint = { x: 1.1, y: 0, pointId: "right-point" }
   const inputSrj: SimpleRouteJson = {
@@ -101,7 +101,7 @@ test("visual repro: sequential fanout identity collision drops real copper", asy
   const output = rightFanout.getOutputSimpleRouteJson()
   const traceIds = (output.traces ?? []).map((trace) => trace.pcb_trace_id)
   expect(traceIds).toHaveLength(2)
-  expect(new Set(traceIds).size).toBe(1)
+  expect(new Set(traceIds).size).toBe(2)
 
   // Circuit JSON consumers index pcb_trace elements by ID. Reproduce that
   // normalization before rendering the actual emitted board and copper.

@@ -5,6 +5,7 @@ import {
   type SimpleRouteJson,
   type SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import { createFanoutCompletionTraceId } from "./fanout-output-ids"
 import {
   distance,
   distancePointToSegment,
@@ -226,7 +227,11 @@ function createBranchTrace(params: {
 
   return {
     type: "pcb_trace",
-    pcb_trace_id: `fanout-completion:${plan.connectionName}:${candidateIndex}`,
+    pcb_trace_id: createFanoutCompletionTraceId({
+      connectionName: plan.connectionName,
+      sourcePointIndex: plan.sourcePointIndex,
+      candidateIndex,
+    }),
     connection_name: plan.connectionName,
     route,
   }

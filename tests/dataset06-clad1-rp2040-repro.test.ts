@@ -125,7 +125,11 @@ test("dataset06 routes the spaced 0603 clad1 RP2040 fanout on one layer", () => 
     ).length,
   ).toBeGreaterThan(0)
   const centerPadTrace = traceByConnectionName.get("source_net_0::fanout:12")!
-  expect(centerPadTrace.connectsTo).toContain("connectivity_net376")
+  expect(centerPadTrace.connection_name).toBe("source_net_0::fanout:12")
+  expect(centerPadTrace.connectsTo).not.toContain("connectivity_net376")
+  expect(centerPadTrace.connectsTo).toContain(
+    "fanout-exit:source_net_0::fanout:12:source-0",
+  )
   expect(
     centerPadTrace.route.some(
       (routePoint) =>

@@ -9,6 +9,7 @@ import {
   distanceSegmentToObstacle,
   distanceSegmentToSegment,
 } from "./geometry"
+import { createFanoutOutputIds } from "./fanout-output-ids"
 import { type AvailableBoundaryRegion, getRegionAnchor } from "./prepare-buses"
 import type {
   FanoutDirection,
@@ -815,6 +816,10 @@ function buildPlan(route: FlowRoute, traceWidth: number): FanoutRoutePlan {
         : {}),
     }),
   )
+  const outputIds = createFanoutOutputIds({
+    connectionName: item.connection.connection.name,
+    sourcePointIndex: item.connection.sourcePointIndex,
+  })
   return {
     busId: item.bus.busId,
     connectionName: item.connection.connection.name,
@@ -830,17 +835,16 @@ function buildPlan(route: FlowRoute, traceWidth: number): FanoutRoutePlan {
     exitPoint: points.at(-1)!,
     trace: {
       type: "pcb_trace",
-      pcb_trace_id: `fanout:${item.connection.connection.name}`,
+      pcb_trace_id: outputIds.traceId,
       connection_name: item.connection.connection.name,
       connectsTo: [
-        item.connection.connection.name,
-        item.netKey,
         ...(item.connection.sourcePoint.pointId
           ? [item.connection.sourcePoint.pointId]
           : []),
         ...(item.connection.sourcePoint.pcb_port_id
           ? [item.connection.sourcePoint.pcb_port_id]
           : []),
+        outputIds.boundaryExitPointId,
       ],
       route: traceRoute,
     },
