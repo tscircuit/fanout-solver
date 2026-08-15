@@ -1028,8 +1028,31 @@ export class FanoutSolver extends BaseSolver {
     this.pendingRepairAssignments.push(...repairs)
   }
 
+  private hasCompleteBestAttempt(): boolean {
+    return (
+      this.bestAttempt?.summary.routedConnectionCount ===
+      this.inputSrj.connections.length
+    )
+  }
+
+  private shouldEvaluateGroupedBeam(): boolean {
+    if (this.groupedBeamEvaluated || this.nextAssignmentIndex === 0) {
+      return false
+    }
+
+    const targetedRepairSearchFinished =
+      this.hasCompleteBestAttempt() ||
+      this.pendingRepairAssignments.length === 0 ||
+      this.nextAssignmentIndex >= this.config.maxLayerCombinations
+
+    return targetedRepairSearchFinished
+  }
+
   override _step(): void {
-    if (!this.groupedBeamEvaluated) {
+    // Try the deterministic assignment and only its targeted repair queue
+    // before paying for the grouped beam. If the beam cannot solve, continue
+    // with the broader generated-assignment search below.
+    if (this.shouldEvaluateGroupedBeam()) {
       this.groupedBeamEvaluated = true
       let beamAttempt = this.evaluateGroupedBeam(-1)
       if (!beamAttempt) {
@@ -1037,15 +1060,29 @@ export class FanoutSolver extends BaseSolver {
       }
       if (beamAttempt) {
         this.attempts.push(beamAttempt.summary)
-        this.bestAttempt = beamAttempt
-        this.stats = {
-          assignment: 0,
-          assignmentCount: this.config.maxLayerCombinations,
-          routedBuses: `${beamAttempt.summary.routedBusCount}/${this.preparedBuses.length}`,
-          routedConnections: `${beamAttempt.summary.routedConnectionCount}/${this.inputSrj.connections.length}`,
-          failedBuses: "none",
-          bestScore: beamAttempt.summary.score,
+        if (
+          !this.bestAttempt ||
+          beamAttempt.summary.score < this.bestAttempt.summary.score
+        ) {
+          this.bestAttempt = beamAttempt
         }
+        const bestSummary = this.bestAttempt.summary
+        this.stats = {
+          assignment:
+            bestSummary.assignmentIndex < 0
+              ? 0
+              : bestSummary.assignmentIndex + 1,
+          assignmentCount: this.config.maxLayerCombinations,
+          routedBuses: `${bestSummary.routedBusCount}/${this.preparedBuses.length}`,
+          routedConnections: `${bestSummary.routedConnectionCount}/${this.inputSrj.connections.length}`,
+          failedBuses: "none",
+          bestScore: bestSummary.score,
+        }
+        this.completeBestAttemptEndpoints()
+        this.solved = true
+        return
+      }
+      if (this.hasCompleteBestAttempt()) {
         this.completeBestAttemptEndpoints()
         this.solved = true
         return
@@ -1060,13 +1097,19 @@ export class FanoutSolver extends BaseSolver {
       const preferGeneratedAssignment = this.nextAssignmentIndex % 3 === 0
       let candidate: Readonly<Record<string, string>> | undefined
       let candidateCameFromRepairQueue = false
-      if (preferGeneratedAssignment) {
+      if (!this.groupedBeamEvaluated && this.nextAssignmentIndex > 0) {
+        candidate = this.pendingRepairAssignments.pop()
+        candidateCameFromRepairQueue = candidate !== undefined
+      } else if (preferGeneratedAssignment) {
         candidate = this.layerAssignments[this.nextGeneratedAssignmentIndex++]
       } else {
         candidate = this.pendingRepairAssignments.pop()
         candidateCameFromRepairQueue = candidate !== undefined
       }
-      if (!candidate) {
+      if (
+        !candidate &&
+        (this.groupedBeamEvaluated || this.nextAssignmentIndex === 0)
+      ) {
         candidate = preferGeneratedAssignment
           ? this.pendingRepairAssignments.pop()
           : this.layerAssignments[this.nextGeneratedAssignmentIndex++]
@@ -1081,12 +1124,9 @@ export class FanoutSolver extends BaseSolver {
       if (this.evaluatedAssignmentKeys.has(candidateKey)) continue
       assignment = candidate
     }
+    if (!assignment && !this.groupedBeamEvaluated) return
     if (!assignment) {
-      if (
-        this.bestAttempt &&
-        this.bestAttempt.summary.routedConnectionCount ===
-          this.inputSrj.connections.length
-      ) {
+      if (this.hasCompleteBestAttempt()) {
         this.completeBestAttemptEndpoints()
         this.solved = true
       } else {
@@ -1131,6 +1171,7 @@ export class FanoutSolver extends BaseSolver {
       bestScore: this.bestAttempt.summary.score,
     }
     if (
+      this.groupedBeamEvaluated &&
       attempt.summary.routedConnectionCount === this.inputSrj.connections.length
     ) {
       this.completeBestAttemptEndpoints()
