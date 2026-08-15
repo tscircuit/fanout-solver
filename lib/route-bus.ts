@@ -10,6 +10,7 @@ import {
   distanceSegmentToObstacle,
   segmentsAreClear,
 } from "./geometry"
+import { createFanoutOutputIds } from "./fanout-output-ids"
 import { getLayerSpan } from "./layer-names"
 import {
   connectionsShareElectricalNet,
@@ -636,6 +637,10 @@ function buildPlan(params: {
     })
   }
 
+  const outputIds = createFanoutOutputIds({
+    connectionName: preparedConnection.connection.name,
+    sourcePointIndex: preparedConnection.sourcePointIndex,
+  })
   return {
     busId: bus.busId,
     connectionName: preparedConnection.connection.name,
@@ -651,16 +656,16 @@ function buildPlan(params: {
     exitPoint,
     trace: {
       type: "pcb_trace",
-      pcb_trace_id: `fanout:${preparedConnection.connection.name}`,
+      pcb_trace_id: outputIds.traceId,
       connection_name: preparedConnection.connection.name,
       connectsTo: [
-        preparedConnection.connection.name,
         ...(preparedConnection.sourcePoint.pointId
           ? [preparedConnection.sourcePoint.pointId]
           : []),
         ...(preparedConnection.sourcePoint.pcb_port_id
           ? [preparedConnection.sourcePoint.pcb_port_id]
           : []),
+        outputIds.boundaryExitPointId,
       ],
       route,
     },
@@ -804,18 +809,22 @@ function addPlaneEndpointTerminal(params: {
     toLayer: targetEndpointLayer,
     spanLayers,
   }
+  const outputIds = createFanoutOutputIds({
+    connectionName: preparedConnection.connection.name,
+    sourcePointIndex: preparedConnection.sourcePointIndex,
+  })
   const planeEndpointTrace: SimplifiedPcbTrace = {
     type: "pcb_trace",
-    pcb_trace_id: `fanout-plane-endpoint:${preparedConnection.connection.name}`,
+    pcb_trace_id: outputIds.planeEndpointTraceId,
     connection_name: preparedConnection.connection.name,
     connectsTo: [
-      preparedConnection.connection.name,
       ...(preparedConnection.targetPoint.pointId
         ? [preparedConnection.targetPoint.pointId]
         : []),
       ...(preparedConnection.targetPoint.pcb_port_id
         ? [preparedConnection.targetPoint.pcb_port_id]
         : []),
+      outputIds.planeEndpointPointId,
     ],
     route: [
       {

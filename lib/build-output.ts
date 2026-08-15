@@ -1,4 +1,5 @@
 import type { Obstacle, SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import { createFanoutOutputIds } from "./fanout-output-ids"
 import type { FanoutRoutePlan, SimpleRouteJsonWithFanoutPlanes } from "./types"
 
 function createViaObstacle(
@@ -17,8 +18,11 @@ function createViaObstacle(
     }
     return layerIndex
   })
+  const outputIds = createFanoutOutputIds(plan)
   return {
-    obstacleId: `${endpoint ? "fanout-plane-endpoint-via" : "fanout-via"}:${plan.connectionName}`,
+    obstacleId: endpoint
+      ? outputIds.planeEndpointViaObstacleId
+      : outputIds.viaObstacleId,
     type: "rect",
     center: via.center,
     width: via.diameter,
@@ -50,14 +54,15 @@ export function buildOutputSimpleRouteJson(params: {
         `FanoutSolver: output connection index ${plan.connectionIndex} is missing`,
       )
     }
+    const outputIds = createFanoutOutputIds(plan)
     connection.pointsToConnect[plan.sourcePointIndex] = {
       x: plan.exitPoint.x,
       y: plan.exitPoint.y,
       layer: plan.targetLayer,
       pointId:
         plan.termination.type === "plane"
-          ? `fanout-plane:${plan.connectionName}`
-          : `fanout-exit:${plan.connectionName}`,
+          ? outputIds.planeExitPointId
+          : outputIds.boundaryExitPointId,
     }
     if (plan.termination.type === "plane") {
       planeTerminatedConnectionNames.add(plan.connectionName)
