@@ -6,35 +6,25 @@ import { getPcbSvgFromSrj } from "./fixtures/getPcbSvgFromSrj"
 const sample = srj19FanoutSamples.find(({ id }) => id === "sample002")
 if (!sample) throw new Error("SRJ19 sample002 is missing")
 
-test("visual repro: targeted repair misses a bounded assignment budget", async () => {
-  const boundedSolver = new FanoutSolver(sample.simpleRouteJson, {
+test("visual regression: targeted repair solves a bounded assignment budget", async () => {
+  const solver = new FanoutSolver(sample.simpleRouteJson, {
     ...sample.solverOptions,
     maxLayerCombinations: 17,
   })
-  boundedSolver.solve()
+  solver.solve()
 
-  expect(boundedSolver.solved).toBe(false)
-  expect(boundedSolver.failed).toBe(true)
-  expect(boundedSolver.attempts).toHaveLength(17)
-  expect(
-    Math.max(
-      ...boundedSolver.attempts.map((attempt) => attempt.routedConnectionCount),
-    ),
-  ).toBe(14)
-
-  const completedSolver = new FanoutSolver(
-    sample.simpleRouteJson,
-    sample.solverOptions,
-  )
-  completedSolver.solve()
-
-  expect(completedSolver.solved).toBe(true)
-  expect(completedSolver.attempts).toHaveLength(35)
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(solver.attempts).toHaveLength(17)
+  const output = solver.getOutput()
+  expect(output.validation).toMatchObject({
+    valid: true,
+    checkedConnectionCount: sample.fanoutConnectionCount,
+    brokenOutConnectionCount: sample.fanoutConnectionCount,
+    issues: [],
+  })
 
   await expect(
-    getPcbSvgFromSrj(
-      sample.simpleRouteJson,
-      completedSolver.getOutputSimpleRouteJson(),
-    ),
+    getPcbSvgFromSrj(sample.simpleRouteJson, output.simpleRouteJson),
   ).toMatchSvgSnapshot(import.meta.path)
 }, 60_000)
