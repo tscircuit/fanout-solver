@@ -293,10 +293,22 @@ function getTrackCandidates(params: {
 function getPreferredTrack(params: {
   bus: PreparedBus
   connection: PreparedConnection
+  traceWidth: number
 }): number {
-  return getPerpendicularAxis(
+  const preferredTrack = getPerpendicularAxis(
     params.connection.exitTargetPoint ?? params.connection.targetPoint,
     params.bus.direction,
+  )
+  const boundaryMinimum = isHorizontal(params.bus.direction)
+    ? params.bus.sharedBoundary.minY
+    : params.bus.sharedBoundary.minX
+  const boundaryMaximum = isHorizontal(params.bus.direction)
+    ? params.bus.sharedBoundary.maxY
+    : params.bus.sharedBoundary.maxX
+
+  return Math.max(
+    boundaryMinimum + params.traceWidth / 2,
+    Math.min(boundaryMaximum - params.traceWidth / 2, preferredTrack),
   )
 }
 
@@ -1373,6 +1385,7 @@ export function routeBusAlternatives(
       getPreferredTrack({
         bus,
         connection: preparedConnection,
+        traceWidth,
       }),
       getLegacyPreferredTrack({
         bus,

@@ -10,28 +10,22 @@ const fixture = sample004ControllerFixture as unknown as {
   options: FanoutSolverOptions
 }
 
-type BestAttemptInspection = {
-  bestAttempt?: {
-    outputSrj: SimpleRouteJson
-    summary: { routedConnectionCount: number }
-  }
-}
-
-test("visual repro: out-of-bound guidance starves legal fanout tracks", async () => {
+test("visual regression: guided tracks stay inside the fanout boundary", async () => {
   const solver = new FanoutSolver(fixture.inputSrj, fixture.options)
   solver.solve()
 
-  expect(solver.solved).toBe(false)
-  expect(solver.failed).toBe(true)
-  expect(solver.stats).toMatchObject({
-    routedConnections: "23/25",
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  const output = solver.getOutput()
+  expect(output.validation).toMatchObject({
+    valid: true,
+    checkedConnectionCount: 25,
+    brokenOutConnectionCount: 25,
+    issues: [],
   })
 
-  const bestAttempt = (solver as unknown as BestAttemptInspection).bestAttempt
-  expect(bestAttempt?.summary.routedConnectionCount).toBe(23)
-
   await expect(
-    getPcbSvgFromSrj(fixture.inputSrj, bestAttempt!.outputSrj, {
+    getPcbSvgFromSrj(fixture.inputSrj, output.simpleRouteJson, {
       deduplicateTraceIds: true,
     }),
   ).toMatchSvgSnapshot(import.meta.path)
