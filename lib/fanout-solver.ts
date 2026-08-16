@@ -61,6 +61,19 @@ interface GroupedBeamState {
 
 type RoutingStrategy = "default" | "group-by-layer" | "deep-first"
 
+const CAPACITY_AUTOROUTER_VISUALIZATION_LAYERS = new Set([
+  "top",
+  "bottom",
+  "inner1",
+  "inner2",
+  "inner3",
+  "inner4",
+  "inner5",
+  "inner6",
+  "inner7",
+  "inner8",
+])
+
 function resolvePositiveNumber(label: string, value: number): number {
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error(
@@ -1254,7 +1267,49 @@ export class FanoutSolver extends BaseSolver {
       this.endpointCompletion?.simpleRouteJson ??
       this.bestAttempt?.outputSrj ??
       this.inputSrj
-    const graphics = convertSrjToGraphicsObject(visualizedSrj)
+    const hasArbitraryCopperLayer = (visualizedSrj.traces ?? []).some((trace) =>
+      trace.route.some((routePoint, routePointIndex) => {
+        const nextRoutePoint = trace.route[routePointIndex + 1]
+        return (
+          routePoint.route_type === "wire" &&
+          nextRoutePoint?.route_type === "wire" &&
+          nextRoutePoint.layer === routePoint.layer &&
+          !CAPACITY_AUTOROUTER_VISUALIZATION_LAYERS.has(routePoint.layer)
+        )
+      }),
+    )
+    let graphics: GraphicsObject
+    if (hasArbitraryCopperLayer) {
+      const visualizedConnectionNames = new Set(
+        visualizedSrj.connections.map(({ name }) => name),
+      )
+      const traceOnlyConnectionNames = [
+        ...new Set(
+          (visualizedSrj.traces ?? [])
+            .map(({ connection_name }) => connection_name)
+            .filter(
+              (connectionName) =>
+                connectionName &&
+                !visualizedConnectionNames.has(connectionName),
+            ),
+        ),
+      ]
+      const graphicsSrj = {
+        ...visualizedSrj,
+        connections: [
+          ...visualizedSrj.connections,
+          ...traceOnlyConnectionNames.map((name) => ({
+            name,
+            pointsToConnect: [],
+          })),
+        ],
+      }
+      graphics = convertSrjToGraphicsObject(graphicsSrj, {
+        traceColorMode: "net",
+      })
+    } else {
+      graphics = convertSrjToGraphicsObject(visualizedSrj)
+    }
     const circularPadKeys = new Set(
       visualizedSrj.obstacles
         .filter(
