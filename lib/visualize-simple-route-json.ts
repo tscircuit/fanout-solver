@@ -169,8 +169,7 @@ const transparentize = (color: string, amount: number): string => {
     ) as [number, number, number]
   }
   if (!channels) return color
-  const outputAlpha =
-    +Math.max(0, alpha * 100 - amount * 100).toFixed(2) / 100
+  const outputAlpha = +Math.max(0, alpha * 100 - amount * 100).toFixed(2) / 100
   if (outputAlpha >= 1) {
     const hex = channels
       .map((channel) => Math.round(channel).toString(16).padStart(2, "0"))
