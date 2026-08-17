@@ -486,6 +486,7 @@ export class FanoutSolver extends BaseSolver {
       viaHoleDiameter: this.config.viaHoleDiameter,
       clearance: this.config.clearance,
       effort: this.options.endpointCompletionEffort,
+      routeDownstreamConnections: this.options.routeDownstreamConnections,
     })
   }
 

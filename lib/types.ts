@@ -49,6 +49,19 @@ export type FanoutAvailableCornerAndSideInput =
 
 export type FanoutBorderDistribution = "preserve" | "even"
 
+export interface FanoutDownstreamRouterOptions {
+  effort: number
+}
+
+/**
+ * Optional host-provided router for unresolved connections after the fanout
+ * solver's local endpoint-completion passes.
+ */
+export type FanoutDownstreamRouter = (
+  inputSrj: SimpleRouteJson,
+  options: FanoutDownstreamRouterOptions,
+) => SimplifiedPcbTrace[]
+
 export type FanoutBusTermination =
   | {
       type: "boundary"
@@ -127,8 +140,13 @@ export interface FanoutSolverOptions {
    * with the independent endpoint-connectivity and emitted-copper validators.
    */
   completeOriginalEndpoints?: boolean
-  /** Effort passed to the bounded downstream capacity-router pass. */
+  /** Effort passed to the optional bounded downstream-router pass. */
   endpointCompletionEffort?: number
+  /**
+   * Host-provided fallback for unresolved endpoint connections. The fanout
+   * package deliberately does not import a board-level autorouter at runtime.
+   */
+  routeDownstreamConnections?: FanoutDownstreamRouter
 }
 
 export interface FanoutAttemptSummary {
