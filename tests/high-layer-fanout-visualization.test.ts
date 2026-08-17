@@ -20,10 +20,8 @@ test("repro: an 18-layer DDR3 fanout solves but its debugger cannot render inner
     'No visualization color for layer "inner10"',
   )
   await expect(
-    getPcbSvgFromSrj(
-      fixture.inputSrj,
-      solver.getOutputSimpleRouteJson(),
-      { deduplicateTraceIds: true },
-    ),
+    getPcbSvgFromSrj(fixture.inputSrj, solver.getOutputSimpleRouteJson(), {
+      deduplicateTraceIds: true,
+    }),
   ).toMatchSvgSnapshot(import.meta.path)
 }, 120_000)
