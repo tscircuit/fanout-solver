@@ -58,6 +58,10 @@ interface GroupedBeamState {
 
 type RoutingStrategy = "default" | "group-by-layer" | "deep-first"
 
+// One preference rank is worth 10 mm of local route length. This keeps layer
+// intent soft while making it decisive for otherwise comparable fanout routes.
+const LAYER_PREFERENCE_RANK_PENALTY = 10
+
 function resolvePositiveNumber(label: string, value: number): number {
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error(
@@ -168,6 +172,24 @@ function assignmentLoadPenalty(
     (penalty, load) => penalty + load * load,
     0,
   )
+}
+
+function assignmentLayerPreferencePenalty(
+  assignment: Readonly<Record<string, string>>,
+  buses: readonly PreparedBus[],
+): number {
+  return buses.reduce((penalty, bus) => {
+    const preferredLayers = bus.preferredLayers ?? []
+    if (preferredLayers.length === 0) return penalty
+    const assignedLayer = assignment[bus.busId]
+    const preferenceIndex = assignedLayer
+      ? preferredLayers.indexOf(assignedLayer)
+      : -1
+    return (
+      penalty +
+      (preferenceIndex >= 0 ? preferenceIndex : preferredLayers.length)
+    )
+  }, 0)
 }
 
 function getLayerLoadPenaltyWeight(config: ResolvedFanoutConfig): number {
@@ -284,6 +306,13 @@ function createPreferredLayerAssignment(params: {
       continue
     }
     const routableEscapeLayers = escapeLayersByBusId[bus.busId] ?? escapeLayers
+    const preferredLayer = bus.preferredLayers?.find((layer) =>
+      routableEscapeLayers.includes(layer),
+    )
+    if (preferredLayer) {
+      assignment[bus.busId] = preferredLayer
+      continue
+    }
     const viaLayers = routableEscapeLayers.filter(
       (layer) => layer !== sourceLayer,
     )
@@ -357,9 +386,15 @@ function getCandidateEscapeLayersForBus(params: {
   // route this bus by itself cannot become viable later in an assignment.
   // Preserve the original candidates when none route so impossible problems
   // still produce the usual failed-solver result instead of throwing here.
-  return individuallyRoutableLayers.length > 0
-    ? individuallyRoutableLayers
-    : config.escapeLayers
+  const candidateLayers =
+    individuallyRoutableLayers.length > 0
+      ? individuallyRoutableLayers
+      : config.escapeLayers
+  const preferredLayers = bus.preferredLayers ?? []
+  return [
+    ...preferredLayers.filter((layer) => candidateLayers.includes(layer)),
+    ...candidateLayers.filter((layer) => !preferredLayers.includes(layer)),
+  ]
 }
 
 export class FanoutSolver extends BaseSolver {
@@ -400,6 +435,13 @@ export class FanoutSolver extends BaseSolver {
     this.config = resolveConfig(inputSrj, options)
     this.preparedBuses = prepareFanoutBuses(inputSrj, options)
     for (const bus of this.preparedBuses) {
+      for (const preferredLayer of bus.preferredLayers ?? []) {
+        if (!this.config.layerNames.includes(preferredLayer)) {
+          throw new Error(
+            `FanoutSolver: bus "${bus.busId}" prefers unavailable layer "${preferredLayer}"`,
+          )
+        }
+      }
       if (bus.termination.type !== "plane") continue
       const planeLayer = bus.termination.layer
       if (!this.config.layerNames.includes(planeLayer)) {
@@ -660,6 +702,11 @@ export class FanoutSolver extends BaseSolver {
       failedBusIds.length * 100_000 +
       routeLength +
       getPlanViaCount(plans) * 0.1 +
+      assignmentLayerPreferencePenalty(
+        busLayerAssignments,
+        this.preparedBuses,
+      ) *
+        LAYER_PREFERENCE_RANK_PENALTY +
       assignmentLoadPenalty(
         busLayerAssignments,
         this.preparedBuses,
@@ -915,6 +962,11 @@ export class FanoutSolver extends BaseSolver {
       bestState.plans.length === this.inputSrj.connections.length
         ? bestState.plans.reduce((total, plan) => total + plan.length, 0) +
           getPlanViaCount(bestState.plans) * 0.1 +
+          assignmentLayerPreferencePenalty(
+            bestState.assignment,
+            this.preparedBuses,
+          ) *
+            LAYER_PREFERENCE_RANK_PENALTY +
           assignmentLoadPenalty(
             bestState.assignment,
             this.preparedBuses,
