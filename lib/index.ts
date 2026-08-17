@@ -26,6 +26,8 @@ export type {
   FanoutBusTermination,
   FanoutCorner,
   FanoutDirection,
+  FanoutDownstreamRouter,
+  FanoutDownstreamRouterOptions,
   FanoutEdge,
   FanoutEndpointCompletionReport,
   FanoutPlaneConnectivity,

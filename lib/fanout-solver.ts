@@ -1,7 +1,4 @@
-import {
-  convertSrjToGraphicsObject,
-  type SimpleRouteJson,
-} from "@tscircuit/capacity-autorouter"
+import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { buildOutputSimpleRouteJson } from "./build-output"
@@ -9,7 +6,6 @@ import {
   completeOriginalEndpoints,
   type CompleteOriginalEndpointsResult,
 } from "./complete-original-endpoints"
-import { getCopperLayerColor } from "./layer-colors"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import {
   prepareFanoutBuses,
@@ -23,6 +19,7 @@ import {
 import { routeSingleLayerWithAdaptiveExits } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
 import { validateFanoutSolution } from "./validate-fanout-solution"
+import { visualizeSimpleRouteJson } from "./visualize-simple-route-json"
 import type {
   AssignmentAttempt,
   Bounds,
@@ -489,6 +486,7 @@ export class FanoutSolver extends BaseSolver {
       viaHoleDiameter: this.config.viaHoleDiameter,
       clearance: this.config.clearance,
       effort: this.options.endpointCompletionEffort,
+      routeDownstreamConnections: this.options.routeDownstreamConnections,
     })
   }
 
@@ -1254,46 +1252,6 @@ export class FanoutSolver extends BaseSolver {
       this.endpointCompletion?.simpleRouteJson ??
       this.bestAttempt?.outputSrj ??
       this.inputSrj
-    const graphics = convertSrjToGraphicsObject(visualizedSrj)
-    const circularPadKeys = new Set(
-      visualizedSrj.obstacles
-        .filter(
-          (obstacle) =>
-            (obstacle as typeof obstacle & { shape?: string }).shape ===
-            "circle",
-        )
-        .map(
-          (obstacle) =>
-            `${obstacle.center.x}:${obstacle.center.y}:${obstacle.width}:${obstacle.height}`,
-        ),
-    )
-    const circularPadGraphics: NonNullable<GraphicsObject["circles"]> = []
-    const rects = graphics.rects?.filter((rect) => {
-      const key = `${rect.center.x}:${rect.center.y}:${rect.width}:${rect.height}`
-      if (!circularPadKeys.has(key)) return true
-      circularPadGraphics.push({
-        center: rect.center,
-        radius: Math.min(rect.width, rect.height) / 2,
-        fill: rect.fill,
-        stroke: rect.stroke,
-        layer: rect.layer,
-        label: rect.label,
-      })
-      return false
-    })
-    return {
-      ...graphics,
-      rects,
-      circles: [...(graphics.circles ?? []), ...circularPadGraphics],
-      lines: graphics.lines?.map((line) => {
-        const layerMatch = /^z(\d+)$/.exec(line.layer ?? "")
-        if (!layerMatch) return line
-        const { strokeDash: _strokeDash, ...solidLine } = line
-        return {
-          ...solidLine,
-          strokeColor: getCopperLayerColor(Number(layerMatch[1])),
-        }
-      }),
-    }
+    return visualizeSimpleRouteJson(visualizedSrj)
   }
 }

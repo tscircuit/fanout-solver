@@ -1,9 +1,8 @@
-import {
-  AutoroutingPipelineSolver6,
-  type ConnectionPoint,
-  type Obstacle,
-  type SimpleRouteJson,
-  type SimplifiedPcbTrace,
+import type {
+  ConnectionPoint,
+  Obstacle,
+  SimpleRouteJson,
+  SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
 import { createFanoutCompletionTraceId } from "./fanout-output-ids"
 import {
@@ -15,6 +14,7 @@ import { getCopperLayerNames, getLayerSpan } from "./layer-names"
 import { obstacleSharesElectricalNet } from "./net-identity"
 import type {
   FanoutEndpointCompletionReport,
+  FanoutDownstreamRouter,
   FanoutRoutePlan,
   Point2D,
 } from "./types"
@@ -921,8 +921,9 @@ function findDownstreamTerminalBranch(params: {
 
 /**
  * Connects short opposite-layer terminal pairs with constrained interstitial
- * vias, then delegates the remaining long routes to the capacity autorouter.
- * Only metric-improving, independently DRC-clean physical copper is retained.
+ * vias, then delegates remaining long routes to an optional host-provided
+ * router. Only metric-improving, independently DRC-clean physical copper is
+ * retained.
  */
 export function completeOriginalEndpoints(params: {
   inputSrj: SimpleRouteJson
@@ -933,6 +934,7 @@ export function completeOriginalEndpoints(params: {
   viaHoleDiameter: number
   clearance: number
   effort?: number
+  routeDownstreamConnections?: FanoutDownstreamRouter
 }): CompleteOriginalEndpointsResult {
   const {
     inputSrj,
@@ -943,6 +945,7 @@ export function completeOriginalEndpoints(params: {
     viaHoleDiameter,
     clearance,
     effort = 1,
+    routeDownstreamConnections,
   } = params
   const errors: string[] = []
   const baselineDrc = validateRoutedCopperDrc({
@@ -1072,7 +1075,8 @@ export function completeOriginalEndpoints(params: {
   if (
     baselineDrc.valid &&
     downstreamConnections.length > 0 &&
-    downstreamConnections.length <= 12
+    downstreamConnections.length <= 12 &&
+    routeDownstreamConnections
   ) {
     const downstreamConnectionNames = new Set(
       downstreamConnections.map((connection) => connection.name),
@@ -1095,36 +1099,32 @@ export function completeOriginalEndpoints(params: {
       traces: [],
     }
     try {
-      const downstreamSolver = new AutoroutingPipelineSolver6(downstreamInput, {
-        effort,
+      const candidates = routeDownstreamConnections(downstreamInput, { effort })
+      downstreamTraces = acceptDownstreamTraces({
+        inputSrj,
+        fanoutSrj,
+        localTraces: [...bestLocalAttempt.traces, ...directDownstreamTraces],
+        candidates: candidates.filter((trace) =>
+          downstreamConnectionNames.has(trace.connection_name),
+        ),
+        clearance,
       })
-      downstreamSolver.solve()
-      if (downstreamSolver.solved) {
-        downstreamTraces = acceptDownstreamTraces({
-          inputSrj,
-          fanoutSrj,
-          localTraces: [...bestLocalAttempt.traces, ...directDownstreamTraces],
-          candidates:
-            downstreamSolver
-              .getOutputSimpleRouteJson()
-              .traces?.filter((trace) =>
-                downstreamConnectionNames.has(trace.connection_name),
-              ) ?? [],
-          clearance,
-        })
-      } else {
-        errors.push(
-          `Downstream autorouter did not solve: ${downstreamSolver.error ?? "unknown error"}`,
-        )
-      }
     } catch (error) {
       errors.push(
-        `Downstream autorouter failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Downstream router failed: ${error instanceof Error ? error.message : String(error)}`,
       )
     }
+  } else if (!baselineDrc.valid && downstreamConnections.length > 0) {
+    errors.push(
+      "Skipped downstream router because the endpoint-completion baseline failed emitted-copper DRC",
+    )
   } else if (downstreamConnections.length > 12) {
     errors.push(
-      `Skipped downstream autorouter for ${downstreamConnections.length} unresolved connections (bounded at 12)`,
+      `Skipped downstream router for ${downstreamConnections.length} unresolved connections (bounded at 12)`,
+    )
+  } else if (downstreamConnections.length > 0 && !routeDownstreamConnections) {
+    errors.push(
+      `Skipped downstream router for ${downstreamConnections.length} unresolved connections because no routeDownstreamConnections callback was provided`,
     )
   }
 
