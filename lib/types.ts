@@ -100,6 +100,12 @@ export interface FanoutSolverOptions {
   buses?: FanoutBusSpec[]
   /** Default source component for every bus in this fanout operation. */
   sourceComponentId?: string
+  /**
+   * Components inside the host's fanout scope. The solver uses this set to
+   * disambiguate connections between multiple BGA footprints; an explicit
+   * bus `sourceComponentId` still takes precedence.
+   */
+  sourceComponentIds?: readonly string[]
   /** Default direction for every bus in this fanout operation. */
   defaultDirection?: FanoutDirection
   /** Default boundary target for every bus in this fanout operation. */
@@ -240,6 +246,8 @@ export interface PreparedConnection {
   targetPoint: ConnectionPoint
   /** Preferred downstream point used to choose the boundary exit track. */
   exitTargetPoint?: Point2D
+  /** Component containing the downstream electrical endpoint, when known. */
+  targetComponentId?: string
 }
 
 export interface PreparedBus {
