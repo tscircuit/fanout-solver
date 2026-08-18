@@ -407,6 +407,26 @@ function resolvePreferredExit(
   return value
 }
 
+function resolveAllowedLayers(
+  busId: string,
+  allowedLayers: readonly string[] | undefined,
+): string[] | undefined {
+  if (allowedLayers === undefined) return undefined
+  if (allowedLayers.length === 0) {
+    throw new Error(
+      `FanoutSolver: bus "${busId}" must allow at least one layer`,
+    )
+  }
+  for (const layer of allowedLayers) {
+    if (typeof layer !== "string" || layer.length === 0) {
+      throw new Error(
+        `FanoutSolver: bus "${busId}" has an invalid allowed layer`,
+      )
+    }
+  }
+  return [...new Set(allowedLayers)]
+}
+
 export function resolveAvailableBoundaryRegions(
   value: readonly FanoutAvailableCornerAndSideInput[] | undefined,
 ): AvailableBoundaryRegion[] | undefined {
@@ -491,6 +511,10 @@ function resolveBusSpecs(
         (requestedBus as FanoutBusSpec).preferredExit ??
         options.defaultPreferredExit,
     )
+    const allowedLayers = resolveAllowedLayers(
+      requestedBus.busId,
+      (requestedBus as FanoutBusSpec).allowedLayers,
+    )
     if (termination.type === "plane" && preferredExit !== undefined) {
       throw new Error(
         `FanoutSolver: plane-terminated bus "${requestedBus.busId}" cannot also specify preferredExit`,
@@ -506,6 +530,7 @@ function resolveBusSpecs(
         (requestedBus as FanoutBusSpec).direction ??
         options.defaultDirection,
       preferredExit,
+      ...(allowedLayers === undefined ? {} : { allowedLayers }),
       termination,
     })
   }
@@ -1020,6 +1045,7 @@ export function prepareFanoutBuses(
       busId: busSpec.busId,
       direction: resolvedExit.direction,
       preferredExit: resolvedExit.preferredExit,
+      allowedLayers: busSpec.allowedLayers,
       termination: busSpec.termination ?? { type: "boundary" },
       connections: preparedConnections,
       componentId: sourceGrid.componentId,

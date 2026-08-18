@@ -259,7 +259,7 @@ function getBusDepthInRows(bus: PreparedBus): number {
   )
 }
 
-function createPreferredLayerAssignment(params: {
+function createInitialLayerAssignment(params: {
   buses: PreparedBus[]
   escapeLayers: string[]
   escapeLayersByBusId: Readonly<Record<string, readonly string[]>>
@@ -314,16 +314,16 @@ function createPreferredLayerAssignment(params: {
 }
 
 function prioritizeLayerAssignment(params: {
-  preferredAssignment: Readonly<Record<string, string>>
+  initialAssignment: Readonly<Record<string, string>>
   generatedAssignments: Array<Readonly<Record<string, string>>>
   maxAssignments: number
 }): Array<Readonly<Record<string, string>>> {
-  const { preferredAssignment, generatedAssignments, maxAssignments } = params
-  const preferredKey = JSON.stringify(preferredAssignment)
+  const { initialAssignment, generatedAssignments, maxAssignments } = params
+  const initialKey = JSON.stringify(initialAssignment)
   return [
-    preferredAssignment,
+    initialAssignment,
     ...generatedAssignments.filter(
-      (assignment) => JSON.stringify(assignment) !== preferredKey,
+      (assignment) => JSON.stringify(assignment) !== initialKey,
     ),
   ].slice(0, maxAssignments)
 }
@@ -335,7 +335,12 @@ function getCandidateEscapeLayersForBus(params: {
   staticClearanceCache: RouteBusStaticClearanceCache
 }): string[] {
   const { bus, srj, config, staticClearanceCache } = params
-  const individuallyRoutableLayers = config.escapeLayers.filter(
+  const busAllowedLayers = bus.allowedLayers
+  const allowedEscapeLayers =
+    busAllowedLayers === undefined
+      ? config.escapeLayers
+      : config.escapeLayers.filter((layer) => busAllowedLayers.includes(layer))
+  const individuallyRoutableLayers = allowedEscapeLayers.filter(
     (targetLayer) =>
       routeBus({
         srj,
@@ -357,9 +362,11 @@ function getCandidateEscapeLayersForBus(params: {
   // route this bus by itself cannot become viable later in an assignment.
   // Preserve the original candidates when none route so impossible problems
   // still produce the usual failed-solver result instead of throwing here.
-  return individuallyRoutableLayers.length > 0
-    ? individuallyRoutableLayers
-    : config.escapeLayers
+  const candidateLayers =
+    individuallyRoutableLayers.length > 0
+      ? individuallyRoutableLayers
+      : allowedEscapeLayers
+  return candidateLayers
 }
 
 export class FanoutSolver extends BaseSolver {
@@ -400,11 +407,37 @@ export class FanoutSolver extends BaseSolver {
     this.config = resolveConfig(inputSrj, options)
     this.preparedBuses = prepareFanoutBuses(inputSrj, options)
     for (const bus of this.preparedBuses) {
+      for (const allowedLayer of bus.allowedLayers ?? []) {
+        if (!this.config.layerNames.includes(allowedLayer)) {
+          throw new Error(
+            `FanoutSolver: bus "${bus.busId}" allows unavailable layer "${allowedLayer}"`,
+          )
+        }
+      }
+      if (
+        bus.termination.type === "boundary" &&
+        bus.allowedLayers !== undefined &&
+        !bus.allowedLayers.some((layer) =>
+          this.config.escapeLayers.includes(layer),
+        )
+      ) {
+        throw new Error(
+          `FanoutSolver: bus "${bus.busId}" has no allowed layer in escapeLayers`,
+        )
+      }
       if (bus.termination.type !== "plane") continue
       const planeLayer = bus.termination.layer
       if (!this.config.layerNames.includes(planeLayer)) {
         throw new Error(
           `FanoutSolver: plane-terminated bus "${bus.busId}" targets unavailable layer "${planeLayer}"`,
+        )
+      }
+      if (
+        bus.allowedLayers !== undefined &&
+        !bus.allowedLayers.includes(planeLayer)
+      ) {
+        throw new Error(
+          `FanoutSolver: plane-terminated bus "${bus.busId}" targets disallowed layer "${planeLayer}"`,
         )
       }
       if (
@@ -454,7 +487,7 @@ export class FanoutSolver extends BaseSolver {
       ...fixedPlaneAssignments,
     }))
     this.layerAssignments = prioritizeLayerAssignment({
-      preferredAssignment: createPreferredLayerAssignment({
+      initialAssignment: createInitialLayerAssignment({
         buses: this.preparedBuses,
         escapeLayers: this.config.escapeLayers,
         escapeLayersByBusId,

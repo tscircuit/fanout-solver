@@ -76,6 +76,8 @@ export interface FanoutBusSpec extends SimpleRouteBus {
   sourceComponentId?: string
   direction?: FanoutDirection
   preferredExit?: FanoutBorderTarget
+  /** Layers to which this bus is allowed to escape. */
+  allowedLayers?: readonly string[]
   /**
    * Preferred downstream routing point for each connection after it leaves the
    * fanout boundary. This is routing guidance only and does not replace the
@@ -244,6 +246,8 @@ export interface PreparedBus {
   busId: string
   direction: FanoutDirection
   preferredExit?: FanoutBorderTarget
+  /** Layers to which this bus is allowed to escape. */
+  allowedLayers?: readonly string[]
   termination: FanoutBusTermination
   connections: PreparedConnection[]
   componentId: string
