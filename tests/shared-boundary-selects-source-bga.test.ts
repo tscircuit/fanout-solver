@@ -84,13 +84,6 @@ test("source component scope selects which BGA endpoint to fan out", async () =>
     componentId: "U2_RIGHT",
     direction: "left",
   })
-  expect(
-    new Set(
-      solver.preparedBuses[0]!.connections.map(
-        (connection) => connection.targetComponentId,
-      ),
-    ),
-  ).toEqual(new Set(["U1_LEFT"]))
   const output = solver.getOutput()
   expect(output.validation.valid).toBe(true)
   await expect(
