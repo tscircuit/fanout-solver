@@ -9,6 +9,13 @@
 - Cosmos debugger: `bun run start`
 - Export debugger: `bun run build:site`
 
+## Testing
+
+- New routing features and bug fixes should generally include a focused visual
+  SVG snapshot test. Prefer a snapshot that makes the intended geometry
+  obvious over multiple implementation-level tests, and add nonvisual
+  assertions only for behavior the image cannot communicate.
+
 ## Solver invariants
 
 - A bus is atomic: all of its connections escape in one direction and onto one
