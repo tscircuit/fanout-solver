@@ -370,8 +370,6 @@ function getCandidateEscapeLayersForBus(params: {
 }
 
 export class FanoutSolver extends BaseSolver {
-  static solverName = "FanoutSolver"
-
   readonly preparedBuses: PreparedBus[]
   readonly attempts: FanoutAttemptSummary[] = []
   readonly layerAssignments: Array<Readonly<Record<string, string>>>
