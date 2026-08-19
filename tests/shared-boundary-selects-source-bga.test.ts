@@ -70,7 +70,7 @@ test("source component scope selects which BGA endpoint to fan out", async () =>
     ],
   }
   const solver = new FanoutSolver(simpleRouteJson, {
-    sourceComponentIds: ["U2_RIGHT"],
+    sourcePcbComponentIds: ["U2_RIGHT"],
     sharedBoundary: { minX: 1, maxX: 7, minY: -3, maxY: 3 },
     escapeLayers: ["top", "bottom"],
     compactBusTracks: true,

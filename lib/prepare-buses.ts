@@ -586,9 +586,9 @@ function chooseSourceGrid(params: {
   busSpec: FanoutBusSpec
   connections: SimpleRouteConnection[]
   componentGrids: ComponentGrid[]
-  sourceComponentIds?: ReadonlySet<PcbComponentId>
+  sourcePcbComponentIds?: ReadonlySet<PcbComponentId>
 }): ComponentGrid {
-  const { busSpec, connections, componentGrids, sourceComponentIds } = params
+  const { busSpec, connections, componentGrids, sourcePcbComponentIds } = params
   const matchCountByComponent = new Map<PcbComponentId, number>()
 
   for (const connection of connections) {
@@ -635,13 +635,13 @@ function chooseSourceGrid(params: {
     (grid) =>
       (matchCountByComponent.get(grid.componentId) ?? 0) ===
         connections.length &&
-      (sourceComponentIds === undefined ||
-        sourceComponentIds.has(grid.componentId)),
+      (sourcePcbComponentIds === undefined ||
+        sourcePcbComponentIds.has(grid.componentId)),
   )
   if (sourceGridCandidates.length === 0) {
     throw new Error(
-      sourceComponentIds
-        ? `FanoutSolver: none of the sourceComponentIds is an endpoint on every connection in bus "${busSpec.busId}"`
+      sourcePcbComponentIds
+        ? `FanoutSolver: none of the sourcePcbComponentIds is an endpoint on every connection in bus "${busSpec.busId}"`
         : `FanoutSolver: bus "${busSpec.busId}" does not have one component endpoint on every connection`,
     )
   }
@@ -983,11 +983,11 @@ export function prepareFanoutBuses(
   const connectionIndexByName = new Map(
     srj.connections.map((connection, index) => [connection.name, index]),
   )
-  const sourceComponentIds = options.sourceComponentIds
-    ? new Set(options.sourceComponentIds)
+  const sourcePcbComponentIds = options.sourcePcbComponentIds
+    ? new Set(options.sourcePcbComponentIds)
     : undefined
-  if (sourceComponentIds?.size === 0) {
-    throw new Error("FanoutSolver: sourceComponentIds must not be empty")
+  if (sourcePcbComponentIds?.size === 0) {
+    throw new Error("FanoutSolver: sourcePcbComponentIds must not be empty")
   }
   const resolvedBusInputs = resolveBusSpecs(srj, options).map((busSpec) => {
     for (const [connectionName, point] of Object.entries(
@@ -1017,7 +1017,7 @@ export function prepareFanoutBuses(
       busSpec,
       connections,
       componentGrids,
-      sourceComponentIds,
+      sourcePcbComponentIds,
     })
     const preparedConnections = connections.map((connection) =>
       prepareConnection({

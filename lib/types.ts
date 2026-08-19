@@ -104,11 +104,11 @@ export interface FanoutSolverOptions {
   /** Default source component for every bus in this fanout operation. */
   sourceComponentId?: PcbComponentId
   /**
-   * Components inside the host's fanout scope. The solver uses this set to
-   * disambiguate connections between multiple BGA footprints; an explicit
+   * PCB components inside the host's fanout scope. The solver uses this set
+   * to disambiguate connections between multiple BGA footprints; an explicit
    * bus `sourceComponentId` still takes precedence.
    */
-  sourceComponentIds?: readonly PcbComponentId[]
+  sourcePcbComponentIds?: readonly PcbComponentId[]
   /** Default direction for every bus in this fanout operation. */
   defaultDirection?: FanoutDirection
   /** Default boundary target for every bus in this fanout operation. */
