@@ -66,16 +66,17 @@ export default function Am62lWindingFanoutPage() {
   return (
     <div>
       <header style={{ padding: 16 }}>
-        <label>
-          Padding: {padding}mm
+        <label style={{ alignItems: "center", display: "flex", gap: 6 }}>
+          padding:
           <input
             type="number"
             min={0}
             step={0.1}
             value={padding}
             onChange={(event) => setPadding(Number(event.target.value))}
-            style={{ display: "block", width: 120 }}
+            style={{ width: 120 }}
           />
+          mm
         </label>
       </header>
       <GenericSolverDebugger
