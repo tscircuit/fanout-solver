@@ -837,6 +837,7 @@ function buildPlan(route: FlowRoute, traceWidth: number): FanoutRoutePlan {
       type: "pcb_trace",
       pcb_trace_id: outputIds.traceId,
       connection_name: item.connection.connection.name,
+      source_trace_id: item.connection.connection.source_trace_id,
       connectsTo: [
         ...(item.connection.sourcePoint.pointId
           ? [item.connection.sourcePoint.pointId]

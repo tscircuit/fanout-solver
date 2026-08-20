@@ -13,7 +13,7 @@ type SimpleRouteJsonWithSourceTraceIds = Omit<
   >
 }
 
-test("fanout output drops the input source trace id", async () => {
+test("fanout output preserves the input source trace id", async () => {
   const connectionName = "DDR_D0"
   const sourceTraceId = "source_trace_ddr_d0"
   const simpleRouteJson: SimpleRouteJsonWithSourceTraceIds = {
@@ -73,7 +73,7 @@ test("fanout output drops the input source trace id", async () => {
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
   expect(output.fanoutTraces).toHaveLength(1)
-  expect(output.fanoutTraces[0]).not.toHaveProperty("source_trace_id")
+  expect(output.fanoutTraces[0]?.source_trace_id).toBe(sourceTraceId)
   await expect(
     getPcbSvgFromSrj(simpleRouteJson, output.simpleRouteJson),
   ).toMatchSvgSnapshot(import.meta.path)
