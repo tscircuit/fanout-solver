@@ -28,13 +28,12 @@ export default function Am62lWindingFanoutPage() {
         <label>
           Padding: {padding}mm
           <input
-            type="range"
-            min={1}
-            max={3}
-            step={1}
+            type="number"
+            min={0}
+            step={0.1}
             value={padding}
             onChange={(event) => setPadding(Number(event.target.value))}
-            style={{ display: "block", width: 320 }}
+            style={{ display: "block", width: 120 }}
           />
         </label>
         <span>Measured result at 1mm, 2mm, and 3mm: failed, 0/33 routed.</span>
