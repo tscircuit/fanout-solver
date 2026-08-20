@@ -17,7 +17,7 @@ test("visual repro: fanout can cross an existing different-net trace", async () 
     ],
   }
   const inputSrj: SimpleRouteJson = {
-    layerCount: 1,
+    layerCount: 2,
     minTraceWidth: 0.1,
     nominalTraceWidth: 0.1,
     minViaPadDiameter: 0.25,
