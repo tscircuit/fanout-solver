@@ -62,12 +62,16 @@ function createElectricalNetIdentity(
   }
 
   for (const trace of srj.traces ?? []) {
-    const netKey = trace.connection_name
-      ? connectionNetKeys.get(trace.connection_name)
-      : undefined
-    if (!netKey) continue
-    addTokenNet(tokenNetKeys, trace.pcb_trace_id, netKey)
-    for (const token of trace.connectsTo ?? []) {
+    const traceTokens = [
+      trace.connection_name,
+      trace.pcb_trace_id,
+      ...(trace.connectsTo ?? []),
+    ]
+    const knownNetKeys = getKnownNetKeys(tokenNetKeys, traceTokens)
+    if (knownNetKeys.size !== 1) continue
+    const netKey = [...knownNetKeys][0]!
+    connectionNetKeys.set(trace.connection_name, netKey)
+    for (const token of traceTokens) {
       addTokenNet(tokenNetKeys, token, netKey)
     }
   }

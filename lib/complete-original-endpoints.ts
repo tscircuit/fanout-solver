@@ -5,7 +5,6 @@ import type {
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
 import { createFanoutCompletionTraceId } from "./fanout-output-ids"
-import { createTraceCopperObstacles } from "./create-trace-copper-obstacles"
 import {
   distance,
   distancePointToSegment,
@@ -1040,11 +1039,8 @@ export function completeOriginalEndpoints(params: {
           ),
         }))
         .filter((bus) => bus.connectionNames.length > 0),
-      obstacles: [
-        ...fanoutSrj.obstacles,
-        ...createTraceCopperObstacles(fanoutSrj),
-      ],
-      traces: [],
+      obstacles: fanoutSrj.obstacles,
+      traces: directSrj.traces,
     }
     try {
       const candidates = routeDownstreamConnections(downstreamInput, { effort })

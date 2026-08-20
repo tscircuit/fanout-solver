@@ -6,7 +6,6 @@ import {
   completeOriginalEndpoints,
   type CompleteOriginalEndpointsResult,
 } from "./complete-original-endpoints"
-import { createTraceCopperObstacles } from "./create-trace-copper-obstacles"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import {
   prepareFanoutBuses,
@@ -408,10 +407,7 @@ export class FanoutSolver extends BaseSolver {
     super()
     this.routingSrj = {
       ...inputSrj,
-      obstacles: [
-        ...inputSrj.obstacles,
-        ...createTraceCopperObstacles(inputSrj),
-      ],
+      obstacles: [...inputSrj.obstacles],
     }
     this.config = resolveConfig(inputSrj, options)
     this.preparedBuses = prepareFanoutBuses(this.routingSrj, options)
@@ -520,7 +516,7 @@ export class FanoutSolver extends BaseSolver {
       return
     }
     this.endpointCompletion = completeOriginalEndpoints({
-      inputSrj: this.inputSrj,
+      inputSrj: this.routingSrj,
       fanoutSrj: this.bestAttempt.outputSrj,
       plans: this.bestAttempt.plans,
       traceWidth: this.config.traceWidth,
@@ -552,7 +548,7 @@ export class FanoutSolver extends BaseSolver {
     outputSrj: SimpleRouteJson,
   ) {
     return validateFanoutSolution({
-      inputSrj: this.routingSrj,
+      inputSrj: this.inputSrj,
       outputSrj,
       plans,
       preparedBuses: this.preparedBuses,

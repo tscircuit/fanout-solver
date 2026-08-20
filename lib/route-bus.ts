@@ -11,6 +11,7 @@ import {
   segmentsAreClear,
 } from "./geometry"
 import { createFanoutOutputIds } from "./fanout-output-ids"
+import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
 import { getLayerSpan } from "./layer-names"
 import {
   connectionsShareElectricalNet,
@@ -996,6 +997,66 @@ function planIsStaticallyClear(params: {
         via.diameter / 2 + clearance - 1e-9
       ) {
         return false
+      }
+    }
+  }
+
+  for (const traceCopper of getAllRoutedTraceCopper(srj)) {
+    if (
+      plan.connectionName === traceCopper.connectionName ||
+      (allowSameNetMerges &&
+        connectionsShareElectricalNet(
+          srj,
+          plan.connectionName,
+          traceCopper.connectionName,
+        ))
+    ) {
+      continue
+    }
+    for (const segment of getPlanSegments(plan)) {
+      for (const existingSegment of traceCopper.segments) {
+        if (!segmentsAreClear(segment, existingSegment, clearance)) {
+          return false
+        }
+      }
+      for (const existingVia of traceCopper.vias) {
+        if (
+          existingVia.spanLayers.includes(segment.layer) &&
+          distancePointToSegment(
+            existingVia.center,
+            segment.start,
+            segment.end,
+          ) <
+            existingVia.diameter / 2 + segment.width / 2 + clearance - 1e-9
+        ) {
+          return false
+        }
+      }
+    }
+    for (const via of getPlanVias(plan)) {
+      for (const existingSegment of traceCopper.segments) {
+        if (
+          via.spanLayers.includes(existingSegment.layer) &&
+          distancePointToSegment(
+            via.center,
+            existingSegment.start,
+            existingSegment.end,
+          ) <
+            via.diameter / 2 + existingSegment.width / 2 + clearance - 1e-9
+        ) {
+          return false
+        }
+      }
+      for (const existingVia of traceCopper.vias) {
+        if (
+          via.spanLayers.some((layer) =>
+            existingVia.spanLayers.includes(layer),
+          ) &&
+          distance(via.center, existingVia.center) <
+            (via.diameter + existingVia.diameter) / 2 + clearance - 1e-9
+        ) {
+          return false
+        }
       }
     }
   }
