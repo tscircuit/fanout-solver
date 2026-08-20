@@ -101,7 +101,7 @@ test("visual repro: fanout can cross an existing different-net trace", async () 
 
   const solver = new FanoutSolver(inputSrj, {
     sharedBoundary: { minX: -0.25, maxX: 3, minY: -0.75, maxY: 0.75 },
-    escapeLayers: ["top"],
+    escapeLayers: ["top", "bottom"],
   })
   solver.solve()
 
