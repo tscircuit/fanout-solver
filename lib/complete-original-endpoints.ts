@@ -10,7 +10,6 @@ import {
   distancePointToSegment,
   pointIsInsideObstacle,
 } from "./geometry"
-import { getCopperLayerNames, getLayerSpan } from "./layer-names"
 import { obstacleSharesElectricalNet } from "./net-identity"
 import type {
   FanoutEndpointCompletionReport,
@@ -593,58 +592,6 @@ function trimCompletedFanoutTails(params: {
   return { ...fanoutSrj, traces }
 }
 
-function createFanoutCopperObstacles(srj: SimpleRouteJson): Obstacle[] {
-  const layerNames = getCopperLayerNames(srj.layerCount)
-  const obstacles: Obstacle[] = []
-  for (const trace of srj.traces ?? []) {
-    let previousWire:
-      | Extract<SimplifiedPcbTrace["route"][number], { route_type: "wire" }>
-      | undefined
-    for (const point of trace.route) {
-      if (point.route_type === "via") {
-        obstacles.push({
-          obstacleId: `endpoint-completion-keepout:${trace.pcb_trace_id}:via:${obstacles.length}`,
-          type: "rect",
-          center: { x: point.x, y: point.y },
-          width: point.via_diameter ?? srj.minViaPadDiameter ?? 0.3,
-          height: point.via_diameter ?? srj.minViaPadDiameter ?? 0.3,
-          layers: getLayerSpan(point.from_layer, point.to_layer, layerNames),
-          connectedTo: [trace.connection_name],
-        })
-        previousWire = undefined
-        continue
-      }
-      if (point.route_type !== "wire") {
-        previousWire = undefined
-        continue
-      }
-      if (previousWire?.layer === point.layer) {
-        const segmentLength = distance(previousWire, point)
-        if (segmentLength > EPSILON) {
-          obstacles.push({
-            obstacleId: `endpoint-completion-keepout:${trace.pcb_trace_id}:segment:${obstacles.length}`,
-            type: "rect",
-            center: {
-              x: (previousWire.x + point.x) / 2,
-              y: (previousWire.y + point.y) / 2,
-            },
-            width: segmentLength,
-            height: Math.max(previousWire.width, point.width),
-            ccwRotationDegrees:
-              (Math.atan2(point.y - previousWire.y, point.x - previousWire.x) *
-                180) /
-              Math.PI,
-            layers: [point.layer],
-            connectedTo: [trace.connection_name],
-          })
-        }
-      }
-      previousWire = point
-    }
-  }
-  return obstacles
-}
-
 function acceptDownstreamTraces(params: {
   inputSrj: SimpleRouteJson
   fanoutSrj: SimpleRouteJson
@@ -1092,11 +1039,8 @@ export function completeOriginalEndpoints(params: {
           ),
         }))
         .filter((bus) => bus.connectionNames.length > 0),
-      obstacles: [
-        ...fanoutSrj.obstacles,
-        ...createFanoutCopperObstacles(fanoutSrj),
-      ],
-      traces: [],
+      obstacles: fanoutSrj.obstacles,
+      traces: directSrj.traces,
     }
     try {
       const candidates = routeDownstreamConnections(downstreamInput, { effort })

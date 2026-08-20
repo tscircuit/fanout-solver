@@ -35,6 +35,12 @@ test("endpoint completion delegates unresolved board routes to the host", () => 
   expect(routedInputs).toHaveLength(1)
   expect(routedInputs[0]!.connections.length).toBeGreaterThan(0)
   expect(routedInputs[0]!.connections.length).toBeLessThanOrEqual(12)
+  expect(routedInputs[0]!.traces?.length).toBeGreaterThan(0)
+  expect(
+    routedInputs[0]!.obstacles.some((obstacle) =>
+      obstacle.obstacleId?.startsWith("trace-copper:"),
+    ),
+  ).toBe(false)
   expect(solver.getOutput().endpointCompletion?.errors).toEqual([])
   expect(solver.getOutput().endpointCompletion?.drc.valid).toBe(true)
   expect(solver.getOutput().completionTraces.length).toBeGreaterThan(0)

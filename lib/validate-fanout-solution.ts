@@ -15,6 +15,7 @@ import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
 } from "./net-identity"
+import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
 import type {
   Bounds,
   FanoutRoutePlan,
@@ -661,6 +662,89 @@ function validateClearances(params: {
             `Via ${plan.connectionName} is ${actual.toFixed(4)}mm from different-net obstacle ${obstacle.obstacleId} on its layer span; ${required.toFixed(4)}mm is required`,
             plan,
           )
+        }
+      }
+    }
+
+    for (const traceCopper of getAllRoutedTraceCopper(inputSrj)) {
+      if (
+        plan.connectionName === traceCopper.connectionName ||
+        connectionsShareElectricalNet(
+          inputSrj,
+          plan.connectionName,
+          traceCopper.connectionName,
+        )
+      ) {
+        continue
+      }
+      for (const segment of getPlanSegments(plan)) {
+        for (const existingSegment of traceCopper.segments) {
+          if (!segmentsAreClear(segment, existingSegment, clearance)) {
+            addIssue(
+              issues,
+              "different-net-trace-clearance",
+              `Trace ${plan.connectionName} violates routed trace ${traceCopper.trace.pcb_trace_id} on ${segment.layer}`,
+              plan,
+              traceCopper.connectionName,
+            )
+          }
+        }
+        for (const existingVia of traceCopper.vias) {
+          if (
+            existingVia.spanLayers.includes(segment.layer) &&
+            distancePointToSegment(
+              existingVia.center,
+              segment.start,
+              segment.end,
+            ) <
+              existingVia.diameter / 2 + segment.width / 2 + clearance - 1e-9
+          ) {
+            addIssue(
+              issues,
+              "different-net-trace-via-clearance",
+              `Trace ${plan.connectionName} violates a via in routed trace ${traceCopper.trace.pcb_trace_id} on ${segment.layer}`,
+              plan,
+              traceCopper.connectionName,
+            )
+          }
+        }
+      }
+      for (const via of getPlanVias(plan)) {
+        for (const existingSegment of traceCopper.segments) {
+          if (
+            via.spanLayers.includes(existingSegment.layer) &&
+            distancePointToSegment(
+              via.center,
+              existingSegment.start,
+              existingSegment.end,
+            ) <
+              via.diameter / 2 + existingSegment.width / 2 + clearance - 1e-9
+          ) {
+            addIssue(
+              issues,
+              "different-net-trace-via-clearance",
+              `Via ${plan.connectionName} violates routed trace ${traceCopper.trace.pcb_trace_id} on ${existingSegment.layer}`,
+              plan,
+              traceCopper.connectionName,
+            )
+          }
+        }
+        for (const existingVia of traceCopper.vias) {
+          if (
+            via.spanLayers.some((layer) =>
+              existingVia.spanLayers.includes(layer),
+            ) &&
+            distance(via.center, existingVia.center) <
+              (via.diameter + existingVia.diameter) / 2 + clearance - 1e-9
+          ) {
+            addIssue(
+              issues,
+              "different-net-via-clearance",
+              `Via ${plan.connectionName} violates a via in routed trace ${traceCopper.trace.pcb_trace_id}`,
+              plan,
+              traceCopper.connectionName,
+            )
+          }
         }
       }
     }
