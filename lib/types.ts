@@ -9,6 +9,14 @@ import type {
 import type { OriginalEndpointConnectivityReport } from "./validate-original-endpoint-connectivity"
 import type { RoutedCopperDrcReport } from "./validate-routed-copper-drc"
 
+export interface FanoutSimpleRouteConnection extends SimpleRouteConnection {
+  source_trace_id?: string
+}
+
+export interface FanoutSimplifiedPcbTrace extends SimplifiedPcbTrace {
+  source_trace_id?: string
+}
+
 export type FanoutDirection = "left" | "right" | "up" | "down"
 
 export type FanoutEdge = "left" | "right" | "top" | "bottom"
@@ -163,7 +171,7 @@ export interface FanoutAttemptSummary {
 
 export interface FanoutSolverOutput {
   simpleRouteJson: SimpleRouteJson
-  fanoutTraces: SimplifiedPcbTrace[]
+  fanoutTraces: FanoutSimplifiedPcbTrace[]
   completionTraces: SimplifiedPcbTrace[]
   endpointCompletion?: FanoutEndpointCompletionReport
   planeTerminations: FanoutPlaneTermination[]
@@ -231,7 +239,7 @@ export interface Bounds {
 }
 
 export interface PreparedConnection {
-  connection: SimpleRouteConnection
+  connection: FanoutSimpleRouteConnection
   connectionIndex: number
   sourcePoint: ConnectionPoint
   sourcePointIndex: number
@@ -289,11 +297,11 @@ export interface FanoutRoutePlan {
   termination: FanoutBusTermination
   direction: FanoutDirection
   exitPoint: Point2D
-  trace: SimplifiedPcbTrace
+  trace: FanoutSimplifiedPcbTrace
   segments: RoutedSegment[]
   via?: RoutedVia
   /** Optional capacitor-side dogbone reserved and emitted with a plane escape. */
-  planeEndpointTrace?: SimplifiedPcbTrace
+  planeEndpointTrace?: FanoutSimplifiedPcbTrace
   planeEndpointSegments?: RoutedSegment[]
   planeEndpointVia?: RoutedVia
   length: number

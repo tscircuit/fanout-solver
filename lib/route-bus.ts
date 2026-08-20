@@ -21,6 +21,7 @@ import type {
   Bounds,
   FanoutDirection,
   FanoutRoutePlan,
+  FanoutSimplifiedPcbTrace,
   Point2D,
   PreparedBus,
   PreparedConnection,
@@ -671,6 +672,7 @@ function buildPlan(params: {
       type: "pcb_trace",
       pcb_trace_id: outputIds.traceId,
       connection_name: preparedConnection.connection.name,
+      source_trace_id: preparedConnection.connection.source_trace_id,
       connectsTo: [
         ...(preparedConnection.sourcePoint.pointId
           ? [preparedConnection.sourcePoint.pointId]
@@ -826,10 +828,11 @@ function addPlaneEndpointTerminal(params: {
     connectionName: preparedConnection.connection.name,
     sourcePointIndex: preparedConnection.sourcePointIndex,
   })
-  const planeEndpointTrace: SimplifiedPcbTrace = {
+  const planeEndpointTrace: FanoutSimplifiedPcbTrace = {
     type: "pcb_trace",
     pcb_trace_id: outputIds.planeEndpointTraceId,
     connection_name: preparedConnection.connection.name,
+    source_trace_id: preparedConnection.connection.source_trace_id,
     connectsTo: [
       ...(preparedConnection.targetPoint.pointId
         ? [preparedConnection.targetPoint.pointId]

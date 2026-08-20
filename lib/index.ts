@@ -33,6 +33,8 @@ export type {
   FanoutPlaneConnectivity,
   FanoutPlaneTermination,
   FanoutRoutePlan,
+  FanoutSimpleRouteConnection,
+  FanoutSimplifiedPcbTrace,
   FanoutSolverOptions,
   FanoutSolverOutput,
   FanoutValidationIssue,
