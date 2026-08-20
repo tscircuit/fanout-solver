@@ -6,6 +6,7 @@ import {
   completeOriginalEndpoints,
   type CompleteOriginalEndpointsResult,
 } from "./complete-original-endpoints"
+import { createTraceCopperObstacles } from "./create-trace-copper-obstacles"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import {
   prepareFanoutBuses,
@@ -374,6 +375,7 @@ export class FanoutSolver extends BaseSolver {
   readonly attempts: FanoutAttemptSummary[] = []
   readonly layerAssignments: Array<Readonly<Record<string, string>>>
   readonly config: ResolvedFanoutConfig
+  private readonly routingSrj: SimpleRouteJson
   private readonly escapeLayersByBusId: Readonly<
     Record<string, readonly string[]>
   >
@@ -404,8 +406,15 @@ export class FanoutSolver extends BaseSolver {
     public readonly options: FanoutSolverOptions = {},
   ) {
     super()
+    this.routingSrj = {
+      ...inputSrj,
+      obstacles: [
+        ...inputSrj.obstacles,
+        ...createTraceCopperObstacles(inputSrj),
+      ],
+    }
     this.config = resolveConfig(inputSrj, options)
-    this.preparedBuses = prepareFanoutBuses(inputSrj, options)
+    this.preparedBuses = prepareFanoutBuses(this.routingSrj, options)
     for (const bus of this.preparedBuses) {
       for (const allowedLayer of bus.allowedLayers ?? []) {
         if (!this.config.layerNames.includes(allowedLayer)) {
@@ -468,7 +477,7 @@ export class FanoutSolver extends BaseSolver {
             bus.busId,
             getCandidateEscapeLayersForBus({
               bus,
-              srj: inputSrj,
+              srj: this.routingSrj,
               config: this.config,
               staticClearanceCache: this.routeStaticClearanceCache,
             }),
@@ -543,7 +552,7 @@ export class FanoutSolver extends BaseSolver {
     outputSrj: SimpleRouteJson,
   ) {
     return validateFanoutSolution({
-      inputSrj: this.inputSrj,
+      inputSrj: this.routingSrj,
       outputSrj,
       plans,
       preparedBuses: this.preparedBuses,
@@ -563,7 +572,7 @@ export class FanoutSolver extends BaseSolver {
     const isSingleLayerFanout = this.config.escapeLayers.length === 1
     if (isSingleLayerFanout && this.config.singleLayerPushAndShove) {
       const singleLayerParams = {
-        srj: this.inputSrj,
+        srj: this.routingSrj,
         buses: this.preparedBuses,
         traceWidth: this.config.traceWidth,
         clearance: this.config.clearance,
@@ -628,7 +637,7 @@ export class FanoutSolver extends BaseSolver {
       }
       const currentBusBlockingCounts = new Map<string, number>()
       const busPlans = routeBus({
-        srj: this.inputSrj,
+        srj: this.routingSrj,
         bus,
         targetLayer,
         acceptedPlans: plans,
@@ -884,7 +893,7 @@ export class FanoutSolver extends BaseSolver {
         for (const targetLayer of orderedLayers) {
           const busAlternatives = routeBusAlternatives(
             {
-              srj: this.inputSrj,
+              srj: this.routingSrj,
               bus,
               targetLayer,
               acceptedPlans: state.plans,

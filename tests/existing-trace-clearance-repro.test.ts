@@ -8,7 +8,7 @@ import type { FanoutBusSpec } from "lib/types"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import { getPcbSvgFromSrj } from "./fixtures/getPcbSvgFromSrj"
 
-test("visual repro: fanout can cross an existing different-net trace", async () => {
+test("fanout avoids an existing different-net trace", async () => {
   const preRoutedConnection: SimpleRouteConnection = {
     name: "PRE_ROUTED",
     pointsToConnect: [
@@ -114,9 +114,31 @@ test("visual repro: fanout can cross an existing different-net trace", async () 
 
   const outputSrj = solver.getOutputSimpleRouteJson()
   expect(outputSrj.traces).toHaveLength(2)
+  expect(
+    outputSrj.obstacles.some((obstacle) =>
+      obstacle.obstacleId?.startsWith("trace-copper:"),
+    ),
+  ).toBe(false)
+  const signalTrace = outputSrj.traces?.find(
+    (trace) => trace.connection_name === "SIGNAL",
+  )
+  expect(signalTrace).toBeDefined()
+  expect(
+    signalTrace?.route.some(
+      (point) =>
+        point.route_type === "via" &&
+        point.from_layer === "top" &&
+        point.to_layer === "bottom",
+    ),
+  ).toBe(true)
+  expect(
+    signalTrace?.route.some(
+      (point) => point.route_type === "wire" && point.layer === "bottom",
+    ),
+  ).toBe(true)
 
-  // The independent emitted-copper audit catches the collision that the
-  // solver's plan validation misses.
+  // The independent emitted-copper audit verifies that the alternate-layer
+  // escape clears the existing top-layer trace.
   const outputReport = validateRoutedCopperDrc({
     inputSrj: auditInputSrj,
     routedSrj: {
@@ -125,17 +147,7 @@ test("visual repro: fanout can cross an existing different-net trace", async () 
     },
     clearance: 0.1,
   })
-  expect(outputReport.valid).toBe(false)
-  expect(outputReport.issues).toHaveLength(1)
-  expect(outputReport.issues).toContainEqual(
-    expect.objectContaining({
-      code: "different-net-trace-clearance",
-      traceId: "pre-routed-trace",
-      connectionName: "PRE_ROUTED",
-      otherConnectionName: "SIGNAL",
-      layer: "top",
-    }),
-  )
+  expect(outputReport).toMatchObject({ valid: true, issues: [] })
 
   await expect(getPcbSvgFromSrj(inputSrj, outputSrj)).toMatchSvgSnapshot(
     import.meta.path,
