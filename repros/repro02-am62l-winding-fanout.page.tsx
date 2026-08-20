@@ -65,8 +65,7 @@ export default function Am62lWindingFanoutPage() {
 
   return (
     <div>
-      <header style={{ display: "grid", gap: 8, padding: 16 }}>
-        <strong>AM62L winding fanout · boundary padding</strong>
+      <header style={{ padding: 16 }}>
         <label>
           Padding: {padding}mm
           <input
@@ -78,8 +77,6 @@ export default function Am62lWindingFanoutPage() {
             style={{ display: "block", width: 120 }}
           />
         </label>
-        <span>Breakout-point offset: +{padding}mm</span>
-        <span>Measured result at 1mm, 2mm, and 3mm: failed, 0/33 routed.</span>
       </header>
       <GenericSolverDebugger
         key={`padding-${padding}`}
