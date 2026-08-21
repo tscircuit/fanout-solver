@@ -282,12 +282,12 @@ class Dinic {
     while (head < tail) {
       const node = queue[head++]!
       for (const edge of this.edges[node]!) {
-        if (edge.capacity <= 0 || this.levels[edge.to] >= 0) continue
+        if (edge.capacity <= 0 || this.levels[edge.to]! >= 0) continue
         this.levels[edge.to] = this.levels[node]! + 1
         queue[tail++] = edge.to
       }
     }
-    return this.levels[sink] >= 0
+    return this.levels[sink]! >= 0
   }
 
   private sendFlow(node: number, sink: number): number {
