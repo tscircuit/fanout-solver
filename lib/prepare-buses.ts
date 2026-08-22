@@ -13,6 +13,7 @@ import type {
   FanoutBusTermination,
   FanoutDirection,
   FanoutSolverOptions,
+  PcbComponentId,
   PreparedBus,
   PreparedConnection,
 } from "./types"
@@ -103,7 +104,7 @@ const AVAILABLE_BOUNDARY_REGIONS: Readonly<
 }
 
 interface ComponentGrid {
-  componentId: string
+  componentId: PcbComponentId
   obstacles: Obstacle[]
   xCoordinates: number[]
   yCoordinates: number[]
@@ -286,7 +287,7 @@ function resolveSharedBoundary(
 }
 
 function findComponentGrids(obstacles: Obstacle[]): ComponentGrid[] {
-  const obstaclesByComponent = new Map<string, Obstacle[]>()
+  const obstaclesByComponent = new Map<PcbComponentId, Obstacle[]>()
   for (const obstacle of obstacles) {
     if (!obstacle.componentId || obstacle.isCopperPour) continue
     const componentObstacles =
@@ -585,12 +586,13 @@ function chooseSourceGrid(params: {
   busSpec: FanoutBusSpec
   connections: SimpleRouteConnection[]
   componentGrids: ComponentGrid[]
+  sourcePcbComponentIds?: ReadonlySet<PcbComponentId>
 }): ComponentGrid {
-  const { busSpec, connections, componentGrids } = params
-  const matchCountByComponent = new Map<string, number>()
+  const { busSpec, connections, componentGrids, sourcePcbComponentIds } = params
+  const matchCountByComponent = new Map<PcbComponentId, number>()
 
   for (const connection of connections) {
-    const matchedComponents = new Set<string>()
+    const matchedComponents = new Set<PcbComponentId>()
     for (const point of connection.pointsToConnect) {
       for (const match of findPointObstacleMatches({
         point,
@@ -608,35 +610,45 @@ function chooseSourceGrid(params: {
     }
   }
 
-  const selectedGrid = [...componentGrids].sort((a, b) => {
-    const countDifference =
-      (matchCountByComponent.get(b.componentId) ?? 0) -
-      (matchCountByComponent.get(a.componentId) ?? 0)
-    if (countDifference !== 0) return countDifference
-    return b.obstacles.length - a.obstacles.length
-  })[0]
-  const requestedGrid = busSpec.sourceComponentId
+  const requestedSourceGrid = busSpec.sourceComponentId
     ? componentGrids.find(
         (grid) => grid.componentId === busSpec.sourceComponentId,
       )
     : undefined
-  if (busSpec.sourceComponentId && !requestedGrid) {
+  if (busSpec.sourceComponentId && !requestedSourceGrid) {
     throw new Error(
       `FanoutSolver: source component "${busSpec.sourceComponentId}" for bus "${busSpec.busId}" was not found`,
     )
   }
-  const sourceGrid = requestedGrid ?? selectedGrid
-  const sourceMatchCount = sourceGrid
-    ? (matchCountByComponent.get(sourceGrid.componentId) ?? 0)
-    : 0
-  if (!sourceGrid || sourceMatchCount !== connections.length) {
+  if (requestedSourceGrid) {
+    const requestedSourceMatchCount =
+      matchCountByComponent.get(requestedSourceGrid.componentId) ?? 0
+    if (requestedSourceMatchCount !== connections.length) {
+      throw new Error(
+        `FanoutSolver: source component "${busSpec.sourceComponentId}" is not an endpoint on every connection in bus "${busSpec.busId}"`,
+      )
+    }
+    return requestedSourceGrid
+  }
+
+  const sourceGridCandidates = componentGrids.filter(
+    (grid) =>
+      (matchCountByComponent.get(grid.componentId) ?? 0) ===
+        connections.length &&
+      (sourcePcbComponentIds === undefined ||
+        sourcePcbComponentIds.has(grid.componentId)),
+  )
+  if (sourceGridCandidates.length === 0) {
     throw new Error(
-      busSpec.sourceComponentId
-        ? `FanoutSolver: source component "${busSpec.sourceComponentId}" is not an endpoint on every connection in bus "${busSpec.busId}"`
+      sourcePcbComponentIds
+        ? `FanoutSolver: none of the sourcePcbComponentIds is an endpoint on every connection in bus "${busSpec.busId}"`
         : `FanoutSolver: bus "${busSpec.busId}" does not have one component endpoint on every connection`,
     )
   }
-  return sourceGrid
+
+  return sourceGridCandidates.toSorted(
+    (first, second) => second.obstacles.length - first.obstacles.length,
+  )[0]
 }
 
 function chooseTargetPoint(
@@ -971,6 +983,12 @@ export function prepareFanoutBuses(
   const connectionIndexByName = new Map(
     srj.connections.map((connection, index) => [connection.name, index]),
   )
+  const sourcePcbComponentIds = options.sourcePcbComponentIds
+    ? new Set(options.sourcePcbComponentIds)
+    : undefined
+  if (sourcePcbComponentIds?.size === 0) {
+    throw new Error("FanoutSolver: sourcePcbComponentIds must not be empty")
+  }
   const resolvedBusInputs = resolveBusSpecs(srj, options).map((busSpec) => {
     for (const [connectionName, point] of Object.entries(
       busSpec.connectionExitTargets ?? {},
@@ -999,6 +1017,7 @@ export function prepareFanoutBuses(
       busSpec,
       connections,
       componentGrids,
+      sourcePcbComponentIds,
     })
     const preparedConnections = connections.map((connection) =>
       prepareConnection({

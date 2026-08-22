@@ -9,6 +9,9 @@ import type {
 import type { OriginalEndpointConnectivityReport } from "./validate-original-endpoint-connectivity"
 import type { RoutedCopperDrcReport } from "./validate-routed-copper-drc"
 
+/** A component identifier attached to an SRJ obstacle. */
+export type PcbComponentId = NonNullable<Obstacle["componentId"]>
+
 export type FanoutDirection = "left" | "right" | "up" | "down"
 
 export type FanoutEdge = "left" | "right" | "top" | "bottom"
@@ -73,7 +76,7 @@ export type FanoutBusTermination =
 
 export interface FanoutBusSpec extends SimpleRouteBus {
   /** Component whose connection endpoints should be escaped. */
-  sourceComponentId?: string
+  sourceComponentId?: PcbComponentId
   direction?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   /** Layers to which this bus is allowed to escape. */
@@ -99,7 +102,13 @@ export interface FanoutBusSpec extends SimpleRouteBus {
 export interface FanoutSolverOptions {
   buses?: FanoutBusSpec[]
   /** Default source component for every bus in this fanout operation. */
-  sourceComponentId?: string
+  sourceComponentId?: PcbComponentId
+  /**
+   * PCB components inside the host's fanout scope. The solver uses this set
+   * to disambiguate connections between multiple BGA footprints; an explicit
+   * bus `sourceComponentId` still takes precedence.
+   */
+  sourcePcbComponentIds?: readonly PcbComponentId[]
   /** Default direction for every bus in this fanout operation. */
   defaultDirection?: FanoutDirection
   /** Default boundary target for every bus in this fanout operation. */
@@ -115,7 +124,7 @@ export interface FanoutSolverOptions {
   availableCornersAndSides?: readonly FanoutAvailableCornerAndSideInput[]
   busDirections?: Readonly<Record<string, FanoutDirection>>
   busExitPreferences?: Readonly<Record<string, FanoutBorderTarget>>
-  componentBounds?: Readonly<Record<string, Bounds>>
+  componentBounds?: Readonly<Record<PcbComponentId, Bounds>>
   sharedBoundary?: Bounds
   escapeLayers?: string[]
   maxLayerCombinations?: number
@@ -250,7 +259,7 @@ export interface PreparedBus {
   allowedLayers?: readonly string[]
   termination: FanoutBusTermination
   connections: PreparedConnection[]
-  componentId: string
+  componentId: PcbComponentId
   componentObstacles: Obstacle[]
   componentBounds: Bounds
   sharedBoundary: Bounds
