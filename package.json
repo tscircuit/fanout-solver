@@ -1,6 +1,6 @@
 {
   "name": "@tscircuit/fanout-solver",
-  "version": "0.0.34",
+  "version": "0.0.35",
   "description": "BGA fanout solver with coordinated bus-layer escapes for SimpleRouteJson",
   "module": "lib/index.ts",
   "type": "module",
