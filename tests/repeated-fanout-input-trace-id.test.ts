@@ -2,7 +2,7 @@ import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
 
-test("repeated fanout emits a trace ID already present in its input", () => {
+test("repeated fanout reuses a trace already present in its input", () => {
   const input: SimpleRouteJson = {
     layerCount: 2,
     minTraceWidth: 0.1,
@@ -60,13 +60,10 @@ test("repeated fanout emits a trace ID already present in its input", () => {
   expect(secondSolver.failed).toBe(false)
 
   const secondOutput = secondSolver.getOutput()
-  expect(secondOutput.fanoutTraces).toHaveLength(1)
-  expect(secondOutput.fanoutTraces[0]!.pcb_trace_id).toBe(
-    firstTrace.pcb_trace_id,
-  )
+  expect(secondOutput.fanoutTraces).toEqual([])
   expect(
     secondOutput.simpleRouteJson.traces?.filter(
       (trace) => trace.pcb_trace_id === firstTrace.pcb_trace_id,
     ),
-  ).toHaveLength(2)
+  ).toHaveLength(1)
 })

@@ -46,6 +46,9 @@ export function buildOutputSimpleRouteJson(params: {
   }))
   const viaObstacles: Obstacle[] = []
   const planeTerminatedConnectionNames = new Set<string>()
+  const inputTraceIds = new Set(
+    (inputSrj.traces ?? []).map((trace) => trace.pcb_trace_id),
+  )
 
   for (const plan of plans) {
     const connection = outputConnections[plan.connectionIndex]
@@ -67,15 +70,24 @@ export function buildOutputSimpleRouteJson(params: {
     if (plan.termination.type === "plane") {
       planeTerminatedConnectionNames.add(plan.connectionName)
     }
-    const viaObstacle = createViaObstacle(plan, layerNames)
-    if (viaObstacle) viaObstacles.push(viaObstacle)
-    const endpointViaObstacle = createViaObstacle(plan, layerNames, true)
-    if (endpointViaObstacle) viaObstacles.push(endpointViaObstacle)
+    if (!inputTraceIds.has(plan.trace.pcb_trace_id)) {
+      const viaObstacle = createViaObstacle(plan, layerNames)
+      if (viaObstacle) viaObstacles.push(viaObstacle)
+    }
+    if (
+      plan.planeEndpointTrace &&
+      !inputTraceIds.has(plan.planeEndpointTrace.pcb_trace_id)
+    ) {
+      const endpointViaObstacle = createViaObstacle(plan, layerNames, true)
+      if (endpointViaObstacle) viaObstacles.push(endpointViaObstacle)
+    }
   }
-  const planTraces = plans.flatMap((plan) => [
-    plan.trace,
-    ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
-  ])
+  const planTraces = plans
+    .flatMap((plan) => [
+      plan.trace,
+      ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
+    ])
+    .filter((trace) => !inputTraceIds.has(trace.pcb_trace_id))
   const coordinateRoutePoints = planTraces.flatMap((trace) =>
     trace.route.filter(
       (
