@@ -44,9 +44,11 @@ function getPlanSegments(plan: FanoutRoutePlan): RoutedSegment[] {
 }
 
 function getPlanVias(plan: FanoutRoutePlan) {
-  return [plan.via, plan.planeEndpointVia].filter(
-    (via): via is NonNullable<FanoutRoutePlan["via"]> => Boolean(via),
-  )
+  return [
+    plan.via,
+    ...(plan.additionalVias ?? []),
+    plan.planeEndpointVia,
+  ].filter((via): via is NonNullable<FanoutRoutePlan["via"]> => Boolean(via))
 }
 
 function connectionPointsMatch(
@@ -341,13 +343,13 @@ function validatePlanStructure(params: {
           plan,
         )
       }
-      if (
-        previous.layer !== current.layer &&
-        (!plan.via ||
-          !pointsMatch(previous.end, plan.via.center) ||
-          !plan.via.spanLayers.includes(previous.layer) ||
-          !plan.via.spanLayers.includes(current.layer))
-      ) {
+      const transitionVia = getPlanVias(plan).find(
+        (via) =>
+          pointsMatch(previous.end, via.center) &&
+          via.spanLayers.includes(previous.layer) &&
+          via.spanLayers.includes(current.layer),
+      )
+      if (previous.layer !== current.layer && !transitionVia) {
         addIssue(
           issues,
           "disconnected-trace",

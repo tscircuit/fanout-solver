@@ -219,6 +219,7 @@ function getPlanViaCount(plans: readonly FanoutRoutePlan[]): number {
     (count, plan) =>
       count +
       Number(Boolean(plan.via)) +
+      (plan.additionalVias?.length ?? 0) +
       Number(Boolean(plan.planeEndpointVia)),
     0,
   )
@@ -453,6 +454,19 @@ export class FanoutSolver extends BaseSolver {
     this.preparedBuses = prepareFanoutBuses(this.routingSrj, options)
     validateCornerBandCapacities(this.preparedBuses, this.config)
     for (const bus of this.preparedBuses) {
+      for (const connection of bus.connections) {
+        if (!connection.hasExplicitLayeredExitTarget) continue
+        const targetLayer = connection.exitTargetPoint?.layer
+        if (
+          typeof targetLayer !== "string" ||
+          targetLayer.length === 0 ||
+          !this.config.layerNames.includes(targetLayer)
+        ) {
+          throw new Error(
+            `FanoutSolver: connection exit target for "${connection.connection.name}" uses unavailable layer "${String(targetLayer)}"`,
+          )
+        }
+      }
       for (const allowedLayer of bus.allowedLayers ?? []) {
         if (!this.config.layerNames.includes(allowedLayer)) {
           throw new Error(
@@ -471,6 +485,9 @@ export class FanoutSolver extends BaseSolver {
           `FanoutSolver: bus "${bus.busId}" has no allowed layer in escapeLayers`,
         )
       }
+      bus.routableEscapeLayers = this.config.escapeLayers.filter(
+        (layer) => bus.allowedLayers?.includes(layer) ?? true,
+      )
       if (bus.termination.type !== "plane") continue
       const planeLayer = bus.termination.layer
       if (!this.config.layerNames.includes(planeLayer)) {

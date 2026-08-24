@@ -124,9 +124,14 @@ export interface FanoutBusSpec extends SimpleRouteBus {
    * connection's electrical endpoint in SimpleRouteJson.
    *
    * A caller coordinating two fanouts can pass the paired fanout's selected
-   * exit here so both sides aim toward the same track.
+   * exit here so both sides aim toward the same track. When every target also
+   * includes a layer, the solver may use the bus's other allowed layer as an
+   * internal crossover channel, then return every exit to one common bus layer
+   * in the supplied target order.
    */
-  connectionExitTargets?: Readonly<Record<string, Point2D>>
+  connectionExitTargets?: Readonly<
+    Record<string, Point2D & { readonly layer?: string }>
+  >
   /**
    * Defaults to `{ type: "boundary" }`.
    *
@@ -279,7 +284,9 @@ export interface PreparedConnection {
   sourceObstacle: Obstacle
   targetPoint: ConnectionPoint
   /** Preferred downstream point used to choose the boundary exit track. */
-  exitTargetPoint?: Point2D
+  exitTargetPoint?: Point2D & { readonly layer?: string }
+  /** Whether the caller supplied the layered handoff metadata needed to coordinate winding. */
+  hasExplicitLayeredExitTarget?: boolean
 }
 
 export interface PreparedBus {
@@ -292,6 +299,8 @@ export interface PreparedBus {
   cornerBandConnectionCount?: number
   /** Layers to which this bus is allowed to escape. */
   allowedLayers?: readonly string[]
+  /** Bus layers that also survive the solver-wide escape-layer restriction. */
+  routableEscapeLayers?: readonly string[]
   termination: FanoutBusTermination
   connections: PreparedConnection[]
   componentId: string
@@ -341,6 +350,8 @@ export interface FanoutRoutePlan {
   trace: SimplifiedPcbTrace
   segments: RoutedSegment[]
   via?: RoutedVia
+  /** Additional layer transitions used by an explicit winding channel. */
+  additionalVias?: RoutedVia[]
   /** Optional capacitor-side dogbone reserved and emitted with a plane escape. */
   planeEndpointTrace?: SimplifiedPcbTrace
   planeEndpointSegments?: RoutedSegment[]

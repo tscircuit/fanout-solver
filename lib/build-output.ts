@@ -5,10 +5,9 @@ import type { FanoutRoutePlan, SimpleRouteJsonWithFanoutPlanes } from "./types"
 function createViaObstacle(
   plan: FanoutRoutePlan,
   layerNames: string[],
-  endpoint = false,
+  via: NonNullable<FanoutRoutePlan["via"]>,
+  viaIndex: number | "endpoint",
 ): Obstacle | null {
-  const via = endpoint ? plan.planeEndpointVia : plan.via
-  if (!via) return null
   const zLayers = via.spanLayers.map((layer) => {
     const layerIndex = layerNames.indexOf(layer)
     if (layerIndex < 0) {
@@ -20,9 +19,12 @@ function createViaObstacle(
   })
   const outputIds = createFanoutOutputIds(plan)
   return {
-    obstacleId: endpoint
-      ? outputIds.planeEndpointViaObstacleId
-      : outputIds.viaObstacleId,
+    obstacleId:
+      viaIndex === "endpoint"
+        ? outputIds.planeEndpointViaObstacleId
+        : viaIndex === 0
+          ? outputIds.viaObstacleId
+          : `${outputIds.viaObstacleId}:${viaIndex}`,
     type: "rect",
     center: via.center,
     width: via.diameter,
@@ -67,10 +69,30 @@ export function buildOutputSimpleRouteJson(params: {
     if (plan.termination.type === "plane") {
       planeTerminatedConnectionNames.add(plan.connectionName)
     }
-    const viaObstacle = createViaObstacle(plan, layerNames)
-    if (viaObstacle) viaObstacles.push(viaObstacle)
-    const endpointViaObstacle = createViaObstacle(plan, layerNames, true)
-    if (endpointViaObstacle) viaObstacles.push(endpointViaObstacle)
+    if (plan.via) {
+      const viaObstacle = createViaObstacle(plan, layerNames, plan.via, 0)
+      if (viaObstacle) viaObstacles.push(viaObstacle)
+    }
+    for (const [additionalViaIndex, via] of (
+      plan.additionalVias ?? []
+    ).entries()) {
+      const viaObstacle = createViaObstacle(
+        plan,
+        layerNames,
+        via,
+        additionalViaIndex + 1,
+      )
+      if (viaObstacle) viaObstacles.push(viaObstacle)
+    }
+    if (plan.planeEndpointVia) {
+      const endpointViaObstacle = createViaObstacle(
+        plan,
+        layerNames,
+        plan.planeEndpointVia,
+        "endpoint",
+      )
+      if (endpointViaObstacle) viaObstacles.push(endpointViaObstacle)
+    }
   }
   const planTraces = plans.flatMap((plan) => [
     plan.trace,

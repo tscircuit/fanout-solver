@@ -819,7 +819,7 @@ function prepareConnection(params: {
   sourceGrid: ComponentGrid
   componentGrids: ComponentGrid[]
   termination: FanoutBusTermination
-  exitTargetPoint?: { x: number; y: number }
+  exitTargetPoint?: { x: number; y: number; layer?: string }
 }): PreparedConnection {
   const {
     connection,
@@ -863,7 +863,11 @@ function prepareConnection(params: {
       sourceLayer,
       sourceObstacle: sourceMatch.obstacle,
       targetPoint,
-      exitTargetPoint: exitTargetPoint ?? targetPoint,
+      exitTargetPoint: exitTargetPoint ?? {
+        x: targetPoint.x,
+        y: targetPoint.y,
+      },
+      hasExplicitLayeredExitTarget: exitTargetPoint?.layer !== undefined,
     }
   }
   throw new Error(
