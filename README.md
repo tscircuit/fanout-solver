@@ -29,6 +29,10 @@ and treats each bus-layer decision atomically.
   (`left`, `right`, `top`, or `bottom`) or corner (`top-left`, `top-right`,
   `bottom-left`, or `bottom-right`). A corner chooses a compatible adjacent
   edge and reserves the bus at that end of the border.
+- Accepts an unambiguous `exitPosition` bus field when the local pad escape and
+  final boundary edge differ. For example, `rightside_top` escapes locally
+  upward into the upper band and terminates on the right boundary, while
+  `topside_right` escapes locally rightward and terminates on the top boundary.
 - `availableCornersAndSides` can restrict every boundary-terminated bus to
   named regions of the shared boundary. For example,
   `['top_left', 'top_middle', 'top_right']` allows only top-edge exits;
@@ -160,6 +164,16 @@ const autorouter = new CapacityMeshSolver(
 )
 autorouter.solve()
 ```
+
+Canonical exit positions are edge-first: `topside_left`, `topside_center`,
+`topside_right`, `rightside_top`, `rightside_center`, `rightside_bottom`,
+`bottomside_right`, `bottomside_center`, `bottomside_left`, `leftside_bottom`,
+`leftside_center`, `leftside_top`, and `center`. They normalize atomically into
+the local `direction`, boundary-band `preferredExit`, and physical `exitEdge`;
+conflicting bus-level legacy fields are rejected. Existing buses that omit
+`exitPosition` retain their previous behavior. Hosts can import
+`getFanoutExitPositionConfig` to inspect the same normalized tuple without
+duplicating this mapping.
 
 The downstream callback is optional. It lets the application choose its
 board-level router while keeping `@tscircuit/fanout-solver` free of a runtime

@@ -179,6 +179,13 @@ function createPreparedBus(
   return {
     busId: plan.busId,
     direction: "right",
+    ...(plan.exitEdge ? { exitEdge: plan.exitEdge } : {}),
+    ...(plan.cornerBandSide === "maximum"
+      ? { preferredExit: "top-right" as const }
+      : plan.cornerBandSide === "minimum"
+        ? { preferredExit: "bottom-right" as const }
+        : {}),
+    cornerBandConnectionCount: plan.cornerBandSide ? 1 : 0,
     termination: { type: "boundary" },
     connections: [
       {
@@ -342,6 +349,34 @@ test("validation rejects vias inside different-net obstacles on an intermediate 
   expect(report.valid).toBe(false)
   expect(
     report.issues.some((issue) => issue.code === "via-obstacle-clearance"),
+  ).toBe(true)
+})
+
+test("validation requires explicit fanout exits to reach their declared edge", () => {
+  const connection = createConnection("NET_A", { x: 0, y: 1 }, { x: 3, y: 1 })
+  const sourceObstacle = createSourceObstacle(connection)
+  const plan = createPlan({
+    connection,
+    connectionIndex: 0,
+    sourceObstacle,
+    exit: { x: 1, y: sharedBoundary.maxY },
+  })
+  plan.exitEdge = "right"
+  plan.cornerBandSide = "maximum"
+
+  const report = validateFixture({
+    connections: [connection],
+    obstacles: [sourceObstacle],
+    plans: [plan],
+  })
+
+  expect(report.valid).toBe(false)
+  expect(
+    report.issues.some(
+      (issue) =>
+        issue.code === "output-exit-mismatch" &&
+        issue.message.includes("declared right edge"),
+    ),
   ).toBe(true)
 })
 

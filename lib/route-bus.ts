@@ -4,13 +4,18 @@ import type {
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
 import {
+  getCornerBandSide,
+  getDirectionForExitEdge,
+  getExitEdgeForDirection,
+} from "./boundary-exit"
+import { createFanoutOutputIds } from "./fanout-output-ids"
+import {
   distance,
   distancePointToObstacle,
   distancePointToSegment,
   distanceSegmentToObstacle,
   segmentsAreClear,
 } from "./geometry"
-import { createFanoutOutputIds } from "./fanout-output-ids"
 import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
 import { getLayerSpan } from "./layer-names"
 import {
@@ -72,6 +77,92 @@ function getPerpendicularAxis(
   return isHorizontal(direction) ? point.y : point.x
 }
 
+function getCornerSide(bus: PreparedBus): "minimum" | "maximum" | undefined {
+  return getCornerBandSide(bus.exitEdge, bus.preferredExit)
+}
+
+function getLocalCornerSide(
+  bus: PreparedBus,
+): "minimum" | "maximum" | undefined {
+  return getCornerBandSide(
+    getExitEdgeForDirection(bus.direction),
+    bus.preferredExit,
+  )
+}
+
+function getCornerTargetTrack(params: {
+  bus: PreparedBus
+  connection: PreparedConnection
+  cornerExitLaneOffset: number
+  traceWidth: number
+  viaDiameter: number
+  clearance: number
+}): number {
+  const {
+    bus,
+    connection,
+    cornerExitLaneOffset,
+    traceWidth,
+    viaDiameter,
+    clearance,
+  } = params
+  const side = getCornerSide(bus)
+  if (!side || !bus.exitEdge) {
+    return getPerpendicularAxis(
+      connection.exitTargetPoint ?? connection.targetPoint,
+      bus.direction,
+    )
+  }
+  const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
+  const boundaryMinimum = isHorizontal(boundaryDirection)
+    ? bus.sharedBoundary.minY
+    : bus.sharedBoundary.minX
+  const boundaryMaximum = isHorizontal(boundaryDirection)
+    ? bus.sharedBoundary.maxY
+    : bus.sharedBoundary.maxX
+  const pitch = Math.max(traceWidth + clearance, viaDiameter + clearance)
+  const bandCenter =
+    boundaryMinimum +
+    (boundaryMaximum - boundaryMinimum) * (side === "minimum" ? 0.25 : 0.75)
+  const bandConnectionCount = Math.max(
+    bus.connections.length,
+    bus.cornerBandConnectionCount ?? bus.connections.length,
+  )
+  const firstTrack = bandCenter - ((bandConnectionCount - 1) * pitch) / 2
+  const rank = getConnectionRank(bus, connection)
+  const globalSlot = cornerExitLaneOffset + rank
+  const reverseSlotOrder =
+    (side === "maximum") === directionSign(boundaryDirection) > 0
+  const orientedSlot = reverseSlotOrder
+    ? bandConnectionCount - 1 - globalSlot
+    : globalSlot
+  return firstTrack + orientedSlot * pitch
+}
+
+function getCornerLaneOffsets(
+  bus: PreparedBus,
+  acceptedPlans: readonly FanoutRoutePlan[],
+): { exit: number; localChannel: number; boundaryChannel: number } {
+  const side = getCornerSide(bus)
+  if (!side || !bus.exitEdge) {
+    return { exit: 0, localChannel: 0, boundaryChannel: 0 }
+  }
+  const cornerPlans = acceptedPlans.filter(
+    (plan) => plan.exitEdge && plan.cornerBandSide !== undefined,
+  )
+  const plansOnExitEdge = cornerPlans.filter(
+    (plan) => plan.exitEdge === bus.exitEdge && plan.cornerBandSide === side,
+  )
+  const plansOnLocalEdge = cornerPlans.filter(
+    (plan) => plan.direction === bus.direction,
+  )
+  return {
+    exit: plansOnExitEdge.length,
+    localChannel: plansOnLocalEdge.length,
+    boundaryChannel: plansOnExitEdge.length,
+  }
+}
+
 function makePoint(
   axis: number,
   perpendicularAxis: number,
@@ -82,8 +173,11 @@ function makePoint(
     : { x: perpendicularAxis, y: axis }
 }
 
-function getExitAxis(bus: PreparedBus): number {
-  switch (bus.direction) {
+function getExitAxis(
+  bus: PreparedBus,
+  direction: FanoutDirection = bus.direction,
+): number {
+  switch (direction) {
     case "right":
       return bus.sharedBoundary.maxX
     case "left":
@@ -296,10 +390,12 @@ function getPreferredTrack(params: {
   connection: PreparedConnection
   traceWidth: number
 }): number {
-  const preferredTrack = getPerpendicularAxis(
-    params.connection.exitTargetPoint ?? params.connection.targetPoint,
-    params.bus.direction,
-  )
+  const preferredTrack = getCornerSide(params.bus)
+    ? getPerpendicularAxis(params.connection.sourcePoint, params.bus.direction)
+    : getPerpendicularAxis(
+        params.connection.exitTargetPoint ?? params.connection.targetPoint,
+        params.bus.direction,
+      )
   const boundaryMinimum = isHorizontal(params.bus.direction)
     ? params.bus.sharedBoundary.minY
     : params.bus.sharedBoundary.minX
@@ -494,6 +590,9 @@ function buildPlan(params: {
   viaHandedness: ViaHandedness
   interstitialEscape: boolean
   spreadLaneIndex: number
+  cornerExitLaneOffset: number
+  cornerLocalChannelLaneOffset: number
+  cornerBoundaryChannelLaneOffset: number
   clearance: number
   terminateAtVia: boolean
 }): FanoutRoutePlan {
@@ -510,6 +609,9 @@ function buildPlan(params: {
     viaHandedness,
     interstitialEscape,
     spreadLaneIndex,
+    cornerExitLaneOffset,
+    cornerLocalChannelLaneOffset,
+    cornerBoundaryChannelLaneOffset,
     clearance,
     terminateAtVia,
   } = params
@@ -567,9 +669,70 @@ function buildPlan(params: {
     ? getAxis(spreadPoint, bus.direction)
     : viaAxis + sign * Math.abs(track - viaPerpendicularAxis)
   const doglegPoint = makePoint(targetLayerDoglegAxis, track, bus.direction)
+  const cornerSide = getCornerSide(bus)
+  const boundaryDirection = bus.exitEdge
+    ? getDirectionForExitEdge(bus.exitEdge)
+    : bus.direction
+  const boundarySign = directionSign(boundaryDirection)
+  const boundaryExitAxis = getExitAxis(bus, boundaryDirection)
+  const cornerTrack =
+    cornerSide && bus.exitEdge
+      ? getCornerTargetTrack({
+          bus,
+          connection: preparedConnection,
+          cornerExitLaneOffset,
+          traceWidth,
+          viaDiameter,
+          clearance,
+        })
+      : track
+  const connectionRank = getConnectionRank(bus, preparedConnection)
+  const localCornerSide = getLocalCornerSide(bus)
+  const localChannelLaneIndex =
+    localCornerSide === "maximum"
+      ? cornerLocalChannelLaneOffset + connectionRank
+      : cornerLocalChannelLaneOffset +
+        bus.connections.length -
+        1 -
+        connectionRank
+  const globalBoundarySlot = cornerBoundaryChannelLaneOffset + connectionRank
+  const boundaryBandConnectionCount = Math.max(
+    bus.connections.length,
+    bus.cornerBandConnectionCount ?? bus.connections.length,
+  )
+  const boundaryChannelLaneIndex =
+    boundarySign > 0
+      ? globalBoundarySlot
+      : boundaryBandConnectionCount - 1 - globalBoundarySlot
+  const channelInset = (laneIndex: number) =>
+    viaDiameter / 2 +
+    traceWidth / 2 +
+    clearance +
+    laneIndex * (traceWidth + clearance)
+  const localChannelAxis =
+    getExitAxis(bus, bus.direction) - sign * channelInset(localChannelLaneIndex)
+  const boundaryChannelAxis =
+    boundaryExitAxis - boundarySign * channelInset(boundaryChannelLaneIndex)
+  const localChannelSourcePoint = makePoint(
+    localChannelAxis,
+    track,
+    bus.direction,
+  )
+  const localChannelTargetPoint = makePoint(
+    boundaryChannelAxis,
+    localChannelAxis,
+    boundaryDirection,
+  )
+  const boundaryChannelTargetPoint = makePoint(
+    boundaryChannelAxis,
+    cornerTrack,
+    boundaryDirection,
+  )
   const exitPoint = terminateAtVia
     ? viaPoint
-    : makePoint(exitAxis, track, bus.direction)
+    : cornerSide
+      ? makePoint(boundaryExitAxis, cornerTrack, boundaryDirection)
+      : makePoint(exitAxis, track, bus.direction)
   const segments: RoutedSegment[] = []
   const route: SimplifiedPcbTrace["route"] = []
 
@@ -631,12 +794,27 @@ function buildPlan(params: {
 
   const targetLayerPoints = terminateAtVia
     ? [viaPoint]
-    : useNestedSpread
+    : cornerSide
       ? chamferOrthogonalPolyline(
-          [viaPoint, spreadPoint, doglegPoint, exitPoint],
+          [
+            viaPoint,
+            ...(useNestedSpread ? [spreadPoint] : []),
+            doglegPoint,
+            localChannelSourcePoint,
+            ...(isHorizontal(bus.direction) !== isHorizontal(boundaryDirection)
+              ? [localChannelTargetPoint]
+              : []),
+            boundaryChannelTargetPoint,
+            exitPoint,
+          ],
           Math.max(traceWidth + clearance, traceWidth * 2),
         )
-      : [viaPoint, doglegPoint, exitPoint]
+      : useNestedSpread
+        ? chamferOrthogonalPolyline(
+            [viaPoint, spreadPoint, doglegPoint, exitPoint],
+            Math.max(traceWidth + clearance, traceWidth * 2),
+          )
+        : [viaPoint, doglegPoint, exitPoint]
   for (let index = 1; index < targetLayerPoints.length; index++) {
     const previousPoint = targetLayerPoints[index - 1]!
     const nextPoint = targetLayerPoints[index]!
@@ -666,6 +844,8 @@ function buildPlan(params: {
     targetLayer,
     termination: bus.termination,
     direction: bus.direction,
+    ...(bus.exitEdge ? { exitEdge: bus.exitEdge } : {}),
+    ...(cornerSide ? { cornerBandSide: cornerSide } : {}),
     exitPoint,
     trace: {
       type: "pcb_trace",
@@ -1314,6 +1494,9 @@ function routePlaneTerminatedBus(
             viaHandedness,
             interstitialEscape: !pairChannelFitsVia,
             spreadLaneIndex: 0,
+            cornerExitLaneOffset: 0,
+            cornerLocalChannelLaneOffset: 0,
+            cornerBoundaryChannelLaneOffset: 0,
             clearance,
             terminateAtVia: true,
           })
@@ -1415,6 +1598,7 @@ export function routeBusAlternatives(
 
   const alternatives: FanoutRoutePlan[][] = []
   const seenAlternativeKeys = new Set<string>()
+  const cornerLaneOffsets = getCornerLaneOffsets(bus, acceptedPlans)
 
   const addAlternative = (plans: FanoutRoutePlan[]): void => {
     const key = plans
@@ -1501,6 +1685,9 @@ export function routeBusAlternatives(
           connectionRank,
           bus.connections.length - connectionRank - 1,
         ),
+        cornerExitLaneOffset: cornerLaneOffsets.exit,
+        cornerLocalChannelLaneOffset: cornerLaneOffsets.localChannel,
+        cornerBoundaryChannelLaneOffset: cornerLaneOffsets.boundaryChannel,
         clearance,
         terminateAtVia: false,
       })
@@ -1510,7 +1697,7 @@ export function routeBusAlternatives(
           otherPlans: [...acceptedPlans, ...candidatePlans],
           staticClearanceCache,
           blockingBusCounts,
-          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}`,
+          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}`,
           srj,
           sharedBoundary: bus.sharedBoundary,
           clearance,

@@ -3,13 +3,13 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import { createFanoutOutputIds } from "./fanout-output-ids"
 import {
   distance,
   distancePointToObstacle,
   distanceSegmentToObstacle,
   distanceSegmentToSegment,
 } from "./geometry"
-import { createFanoutOutputIds } from "./fanout-output-ids"
 import { type AvailableBoundaryRegion, getRegionAnchor } from "./prepare-buses"
 import type {
   FanoutDirection,
@@ -729,7 +729,6 @@ function routeDirectionGroup(params: {
   if (achievedFlow !== terminals.length) {
     if (FANOUT_FLOW_DEBUG_ENABLED) {
       const unmatchedConnections = terminals.flatMap((terminal, index) => {
-        const terminalNode = terminalStart + index
         return terminalWasMatched(index)
           ? []
           : [terminal.item.connection.connection.name]
@@ -832,6 +831,7 @@ function buildPlan(route: FlowRoute, traceWidth: number): FanoutRoutePlan {
     targetLayer: "top",
     termination: item.bus.termination,
     direction: item.bus.direction,
+    ...(item.bus.exitEdge ? { exitEdge: item.bus.exitEdge } : {}),
     exitPoint: points.at(-1)!,
     trace: {
       type: "pcb_trace",

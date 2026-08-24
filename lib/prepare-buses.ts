@@ -4,6 +4,8 @@ import type {
   SimpleRouteConnection,
   SimpleRouteJson,
 } from "@tscircuit/capacity-autorouter"
+import { borderTargetIncludesEdge, getCornerBandSide } from "./boundary-exit"
+import { getFanoutExitPositionConfig } from "./fanout-exit-position"
 import { distance, pointIsInsideObstacle } from "./geometry"
 import type {
   Bounds,
@@ -12,6 +14,9 @@ import type {
   FanoutBusSpec,
   FanoutBusTermination,
   FanoutDirection,
+  FanoutEdge,
+  FanoutExitPosition,
+  FanoutExitPositionConfig,
   FanoutSolverOptions,
   PreparedBus,
   PreparedConnection,
@@ -20,6 +25,8 @@ import type {
 export interface AvailableBoundaryRegion {
   direction: FanoutDirection
   preferredExit: FanoutBorderTarget
+  /** Physical shared-boundary edge selected by the first region token. */
+  exitEdge: FanoutEdge
 }
 
 const FANOUT_BORDER_TARGETS = new Set<FanoutBorderTarget>([
@@ -33,72 +40,90 @@ const FANOUT_BORDER_TARGETS = new Set<FanoutBorderTarget>([
   "bottom-right",
 ])
 
+const FANOUT_EDGES = new Set<FanoutEdge>(["left", "right", "top", "bottom"])
+
 const AVAILABLE_BOUNDARY_REGIONS: Readonly<
   Record<FanoutAvailableCornerAndSideInput, AvailableBoundaryRegion>
 > = {
   top_left: {
     direction: "up",
     preferredExit: "top-left",
+    exitEdge: "top",
   },
   top_middle: {
     direction: "up",
     preferredExit: "top",
+    exitEdge: "top",
   },
   top_right: {
     direction: "up",
     preferredExit: "top-right",
+    exitEdge: "top",
   },
   right_top: {
     direction: "right",
     preferredExit: "top-right",
+    exitEdge: "right",
   },
   right_middle: {
     direction: "right",
     preferredExit: "right",
+    exitEdge: "right",
   },
   right_bottom: {
     direction: "right",
     preferredExit: "bottom-right",
+    exitEdge: "right",
   },
   bottom_right: {
     direction: "down",
     preferredExit: "bottom-right",
+    exitEdge: "bottom",
   },
   bottom_middle: {
     direction: "down",
     preferredExit: "bottom",
+    exitEdge: "bottom",
   },
   bottom_left: {
     direction: "down",
     preferredExit: "bottom-left",
+    exitEdge: "bottom",
   },
   left_bottom: {
     direction: "left",
     preferredExit: "bottom-left",
+    exitEdge: "left",
   },
   left_middle: {
     direction: "left",
     preferredExit: "left",
+    exitEdge: "left",
   },
   left_top: {
     direction: "left",
     preferredExit: "top-left",
+    exitEdge: "left",
   },
   top: {
     direction: "up",
     preferredExit: "top",
+    exitEdge: "top",
   },
   right: {
     direction: "right",
     preferredExit: "right",
+    exitEdge: "right",
   },
   bottom: {
     direction: "down",
     preferredExit: "bottom",
+    exitEdge: "bottom",
   },
   left: {
     direction: "left",
     preferredExit: "left",
+    exitEdge: "left",
   },
 }
 
@@ -407,6 +432,134 @@ function resolvePreferredExit(
   return value
 }
 
+function resolveExitEdge(
+  busId: string,
+  value: FanoutEdge | undefined,
+): FanoutEdge | undefined {
+  if (value === undefined) return undefined
+  if (!FANOUT_EDGES.has(value)) {
+    throw new Error(
+      `FanoutSolver: bus "${busId}" has invalid exitEdge "${value}"`,
+    )
+  }
+  return value
+}
+
+function resolveExitPosition(
+  busId: string,
+  value: FanoutExitPosition | undefined,
+): Readonly<FanoutExitPositionConfig> | undefined {
+  if (value === undefined) return undefined
+  try {
+    return getFanoutExitPositionConfig(value)
+  } catch {
+    throw new Error(
+      `FanoutSolver: bus "${busId}" has invalid exitPosition "${value}"`,
+    )
+  }
+}
+
+function assertExitPositionFieldMatches<T extends string>(params: {
+  busId: string
+  exitPosition: FanoutExitPosition
+  fieldName: "direction" | "preferredExit" | "exitEdge"
+  expected: T | undefined
+  actual: T | undefined
+  sourceName: string
+}): void {
+  const { busId, exitPosition, fieldName, expected, actual, sourceName } =
+    params
+  if (actual === undefined || actual === expected) return
+  throw new Error(
+    `FanoutSolver: bus "${busId}" exitPosition "${exitPosition}" conflicts with ${sourceName} ${fieldName} "${actual}"`,
+  )
+}
+
+function resolveBusExitFields(params: {
+  busId: string
+  requestedBus: FanoutBusSpec
+  options: FanoutSolverOptions
+}): Pick<
+  FanoutBusSpec,
+  "exitPosition" | "direction" | "preferredExit" | "exitEdge"
+> {
+  const { busId, requestedBus, options } = params
+  const exitPosition = requestedBus.exitPosition
+  const exitPositionConfig = resolveExitPosition(busId, exitPosition)
+  const busPreferredExit = resolvePreferredExit(
+    busId,
+    requestedBus.preferredExit,
+  )
+  const optionPreferredExit = resolvePreferredExit(
+    busId,
+    options.busExitPreferences?.[busId],
+  )
+  const busExitEdge = resolveExitEdge(busId, requestedBus.exitEdge)
+
+  if (exitPositionConfig && exitPosition) {
+    for (const [actual, sourceName] of [
+      [requestedBus.direction, "bus"],
+      [options.busDirections?.[busId], "busDirections"],
+    ] as const) {
+      assertExitPositionFieldMatches({
+        busId,
+        exitPosition,
+        fieldName: "direction",
+        expected: exitPositionConfig.direction,
+        actual,
+        sourceName,
+      })
+    }
+    for (const [actual, sourceName] of [
+      [busPreferredExit, "bus"],
+      [optionPreferredExit, "busExitPreferences"],
+    ] as const) {
+      assertExitPositionFieldMatches({
+        busId,
+        exitPosition,
+        fieldName: "preferredExit",
+        expected: exitPositionConfig.preferredExit,
+        actual,
+        sourceName,
+      })
+    }
+    assertExitPositionFieldMatches({
+      busId,
+      exitPosition,
+      fieldName: "exitEdge",
+      expected: exitPositionConfig.exitEdge,
+      actual: busExitEdge,
+      sourceName: "bus",
+    })
+    return {
+      exitPosition,
+      ...(exitPositionConfig.direction
+        ? { direction: exitPositionConfig.direction }
+        : {}),
+      ...(exitPositionConfig.preferredExit
+        ? { preferredExit: exitPositionConfig.preferredExit }
+        : {}),
+      ...(exitPositionConfig.exitEdge
+        ? { exitEdge: exitPositionConfig.exitEdge }
+        : {}),
+    }
+  }
+
+  const direction =
+    options.busDirections?.[busId] ??
+    requestedBus.direction ??
+    options.defaultDirection
+  const preferredExit = resolvePreferredExit(
+    busId,
+    optionPreferredExit ?? busPreferredExit ?? options.defaultPreferredExit,
+  )
+  return {
+    ...(direction ? { direction } : {}),
+    ...(preferredExit ? { preferredExit } : {}),
+    ...(busExitEdge ? { exitEdge: busExitEdge } : {}),
+  }
+}
+
 function resolveAllowedLayers(
   busId: string,
   allowedLayers: readonly string[] | undefined,
@@ -446,7 +599,7 @@ export function resolveAvailableBoundaryRegions(
         `FanoutSolver: invalid availableCornersAndSides value "${input}"`,
       )
     }
-    const key = `${region.direction}:${region.preferredExit}`
+    const key = `${region.exitEdge}:${region.direction}:${region.preferredExit}`
     if (seen.has(key)) continue
     seen.add(key)
     regions.push(region)
@@ -505,17 +658,19 @@ function resolveBusSpecs(
       requestedBus.busId,
       (requestedBus as FanoutBusSpec).termination,
     )
-    const preferredExit = resolvePreferredExit(
-      requestedBus.busId,
-      options.busExitPreferences?.[requestedBus.busId] ??
-        (requestedBus as FanoutBusSpec).preferredExit ??
-        options.defaultPreferredExit,
-    )
+    const resolvedExitFields = resolveBusExitFields({
+      busId: requestedBus.busId,
+      requestedBus: requestedBus as FanoutBusSpec,
+      options,
+    })
     const allowedLayers = resolveAllowedLayers(
       requestedBus.busId,
       (requestedBus as FanoutBusSpec).allowedLayers,
     )
-    if (termination.type === "plane" && preferredExit !== undefined) {
+    if (
+      termination.type === "plane" &&
+      resolvedExitFields.preferredExit !== undefined
+    ) {
       throw new Error(
         `FanoutSolver: plane-terminated bus "${requestedBus.busId}" cannot also specify preferredExit`,
       )
@@ -525,11 +680,7 @@ function resolveBusSpecs(
       sourceComponentId:
         (requestedBus as FanoutBusSpec).sourceComponentId ??
         options.sourceComponentId,
-      direction:
-        options.busDirections?.[requestedBus.busId] ??
-        (requestedBus as FanoutBusSpec).direction ??
-        options.defaultDirection,
-      preferredExit,
+      ...resolvedExitFields,
       ...(allowedLayers === undefined ? {} : { allowedLayers }),
       termination,
     })
@@ -540,26 +691,26 @@ function resolveBusSpecs(
     const inferredBusId = inferBusId(connection)
     if (inferredBusId) {
       const existing = specsById.get(inferredBusId)
-      specsById.set(inferredBusId, {
-        busId: inferredBusId,
-        connectionNames: [
-          ...(existing?.connectionNames ?? []),
-          connection.name,
-        ],
-        direction:
-          options.busDirections?.[inferredBusId] ??
-          existing?.direction ??
-          options.defaultDirection,
-        sourceComponentId:
-          existing?.sourceComponentId ?? options.sourceComponentId,
-        preferredExit: resolvePreferredExit(
-          inferredBusId,
-          options.busExitPreferences?.[inferredBusId] ??
-            existing?.preferredExit ??
-            options.defaultPreferredExit,
-        ),
-        termination: existing?.termination ?? { type: "boundary" },
-      })
+      if (existing) {
+        specsById.set(inferredBusId, {
+          ...existing,
+          connectionNames: [...existing.connectionNames, connection.name],
+        })
+      } else {
+        specsById.set(inferredBusId, {
+          busId: inferredBusId,
+          connectionNames: [connection.name],
+          direction:
+            options.busDirections?.[inferredBusId] ?? options.defaultDirection,
+          sourceComponentId: options.sourceComponentId,
+          preferredExit: resolvePreferredExit(
+            inferredBusId,
+            options.busExitPreferences?.[inferredBusId] ??
+              options.defaultPreferredExit,
+          ),
+          termination: { type: "boundary" },
+        })
+      }
     } else {
       const singletonBusId = `connection:${connection.name}`
       specsById.set(singletonBusId, {
@@ -892,6 +1043,27 @@ function resolveAvailableBusExit(params: {
   )[0]!
 }
 
+function validateExplicitExitAvailability(params: {
+  busId: string
+  exitEdge: FanoutEdge
+  preferredExit: FanoutBorderTarget
+  availableRegions: readonly AvailableBoundaryRegion[]
+}): void {
+  const { busId, exitEdge, preferredExit, availableRegions } = params
+  const requestedBandSide = getCornerBandSide(exitEdge, preferredExit)
+  const hasCompatibleRegion = availableRegions.some(
+    (region) =>
+      region.exitEdge === exitEdge &&
+      getCornerBandSide(region.exitEdge, region.preferredExit) ===
+        requestedBandSide,
+  )
+  if (!hasCompatibleRegion) {
+    throw new Error(
+      `FanoutSolver: bus "${busId}" cannot use its requested exit with availableCornersAndSides`,
+    )
+  }
+}
+
 function resolveBusDirection(params: {
   busId: string
   explicitDirection?: FanoutDirection
@@ -1031,6 +1203,20 @@ export function prepareFanoutBuses(
     sourceGrid,
     preparedConnections,
   } of resolvedBusInputs) {
+    if (busSpec.exitEdge && !busSpec.preferredExit) {
+      throw new Error(
+        `FanoutSolver: bus "${busSpec.busId}" exitEdge requires preferredExit`,
+      )
+    }
+    if (
+      busSpec.exitEdge &&
+      busSpec.preferredExit &&
+      !borderTargetIncludesEdge(busSpec.preferredExit, busSpec.exitEdge)
+    ) {
+      throw new Error(
+        `FanoutSolver: bus "${busSpec.busId}" exitEdge "${busSpec.exitEdge}" is incompatible with preferredExit "${busSpec.preferredExit}"`,
+      )
+    }
     const resolvedExit = resolveBusDirection({
       busId: busSpec.busId,
       explicitDirection:
@@ -1039,12 +1225,29 @@ export function prepareFanoutBuses(
       connections: preparedConnections,
       sharedBoundary,
       availableRegions:
-        busSpec.termination?.type === "plane" ? undefined : availableRegions,
+        busSpec.termination?.type === "plane" || busSpec.exitEdge
+          ? undefined
+          : availableRegions,
     })
+    if (
+      busSpec.termination?.type !== "plane" &&
+      busSpec.exitEdge &&
+      resolvedExit.preferredExit &&
+      availableRegions
+    ) {
+      validateExplicitExitAvailability({
+        busId: busSpec.busId,
+        exitEdge: busSpec.exitEdge,
+        preferredExit: resolvedExit.preferredExit,
+        availableRegions,
+      })
+    }
     buses.push({
       busId: busSpec.busId,
       direction: resolvedExit.direction,
       preferredExit: resolvedExit.preferredExit,
+      ...(busSpec.exitEdge ? { exitEdge: busSpec.exitEdge } : {}),
+      cornerBandConnectionCount: 0,
       allowedLayers: busSpec.allowedLayers,
       termination: busSpec.termination ?? { type: "boundary" },
       connections: preparedConnections,
@@ -1057,6 +1260,24 @@ export function prepareFanoutBuses(
       pitchX: sourceGrid.pitchX,
       pitchY: sourceGrid.pitchY,
     })
+  }
+
+  const cornerBandConnectionCounts = new Map<string, number>()
+  for (const bus of buses) {
+    const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+    if (!bus.exitEdge || !side) continue
+    const key = `${bus.exitEdge}:${side}`
+    cornerBandConnectionCounts.set(
+      key,
+      (cornerBandConnectionCounts.get(key) ?? 0) + bus.connections.length,
+    )
+  }
+  for (const bus of buses) {
+    const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+    if (!bus.exitEdge || !side) continue
+    bus.cornerBandConnectionCount =
+      cornerBandConnectionCounts.get(`${bus.exitEdge}:${side}`) ??
+      bus.connections.length
   }
 
   return buses
