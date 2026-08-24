@@ -22,6 +22,35 @@ export type FanoutCorner =
 export type FanoutBorderTarget = FanoutEdge | FanoutCorner
 
 /**
+ * An unambiguous fanout exit position.
+ *
+ * The `*side` prefix names the physical shared-boundary edge. A corner suffix
+ * names the local escape direction and band on that edge; a `_center` suffix
+ * escapes outward through the middle of that edge. `center` leaves all three
+ * exit fields unconstrained.
+ */
+export type FanoutExitPosition =
+  | "topside_left"
+  | "topside_center"
+  | "topside_right"
+  | "rightside_top"
+  | "rightside_center"
+  | "rightside_bottom"
+  | "bottomside_right"
+  | "bottomside_center"
+  | "bottomside_left"
+  | "leftside_bottom"
+  | "leftside_center"
+  | "leftside_top"
+  | "center"
+
+export interface FanoutExitPositionConfig {
+  direction?: FanoutDirection
+  preferredExit?: FanoutBorderTarget
+  exitEdge?: FanoutEdge
+}
+
+/**
  * A directed region of the shared fanout boundary. Corner regions are named
  * after the edge they belong to, so `top_left` exits through the top edge and
  * `left_top` exits through the left edge.
@@ -74,8 +103,19 @@ export type FanoutBusTermination =
 export interface FanoutBusSpec extends SimpleRouteBus {
   /** Component whose connection endpoints should be escaped. */
   sourceComponentId?: string
+  /** Canonical local-escape, boundary-edge, and edge-band selection. */
+  exitPosition?: FanoutExitPosition
+  /** Direction used to leave the source pads locally. */
   direction?: FanoutDirection
   preferredExit?: FanoutBorderTarget
+  /**
+   * Physical boundary edge on which the fanout endpoints terminate.
+   *
+   * This is independent of `direction`: a bus may escape its pads `up`, use
+   * the `top-right` band, and terminate on the `right` edge. An explicit edge
+   * plus a corner-valued `preferredExit` enables the packed boundary channel.
+   */
+  exitEdge?: FanoutEdge
   /** Layers to which this bus is allowed to escape. */
   allowedLayers?: readonly string[]
   /**
@@ -246,6 +286,10 @@ export interface PreparedBus {
   busId: string
   direction: FanoutDirection
   preferredExit?: FanoutBorderTarget
+  /** Explicit final boundary edge. Omitted for legacy direction-based exits. */
+  exitEdge?: FanoutEdge
+  /** Total connection count sharing this explicit edge/corner band. */
+  cornerBandConnectionCount?: number
   /** Layers to which this bus is allowed to escape. */
   allowedLayers?: readonly string[]
   termination: FanoutBusTermination
@@ -287,7 +331,12 @@ export interface FanoutRoutePlan {
   targetPoint: ConnectionPoint
   targetLayer: string
   termination: FanoutBusTermination
+  /** Local pad escape direction. */
   direction: FanoutDirection
+  /** Explicit physical boundary edge used by a packed corner channel. */
+  exitEdge?: FanoutEdge
+  /** Lower/left or upper/right band reserved along `exitEdge`. */
+  cornerBandSide?: "minimum" | "maximum"
   exitPoint: Point2D
   trace: SimplifiedPcbTrace
   segments: RoutedSegment[]

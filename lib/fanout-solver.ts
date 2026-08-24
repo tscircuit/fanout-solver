@@ -1,10 +1,11 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import { getCornerBandSide } from "./boundary-exit"
 import { buildOutputSimpleRouteJson } from "./build-output"
 import {
-  completeOriginalEndpoints,
   type CompleteOriginalEndpointsResult,
+  completeOriginalEndpoints,
 } from "./complete-original-endpoints"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
 import {
@@ -12,14 +13,12 @@ import {
   resolveAvailableBoundaryRegions,
 } from "./prepare-buses"
 import {
+  type RouteBusStaticClearanceCache,
   routeBus,
   routeBusAlternatives,
-  type RouteBusStaticClearanceCache,
 } from "./route-bus"
 import { routeSingleLayerWithAdaptiveExits } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
-import { validateFanoutSolution } from "./validate-fanout-solution"
-import { visualizeSimpleRouteJson } from "./visualize-simple-route-json"
 import type {
   AssignmentAttempt,
   Bounds,
@@ -30,6 +29,8 @@ import type {
   FanoutSolverOutput,
   PreparedBus,
 } from "./types"
+import { validateFanoutSolution } from "./validate-fanout-solution"
+import { visualizeSimpleRouteJson } from "./visualize-simple-route-json"
 
 interface ResolvedFanoutConfig {
   traceWidth: number
@@ -143,6 +144,45 @@ function resolveConfig(
           ),
     balanceLayerLoadByConnectionCount:
       options.balanceLayerLoadByConnectionCount ?? false,
+  }
+}
+
+function validateCornerBandCapacities(
+  buses: readonly PreparedBus[],
+  config: ResolvedFanoutConfig,
+): void {
+  const checkedBands = new Set<string>()
+  const exitPitch = Math.max(
+    config.traceWidth + config.clearance,
+    config.viaDiameter + config.clearance,
+  )
+  // Keep the block clear of the physical end of the edge and leave one
+  // unoccupied via-pitch between the minimum and maximum quarter bands.
+  const endInset = Math.max(
+    config.viaDiameter / 2 + config.clearance,
+    exitPitch,
+  )
+
+  for (const bus of buses) {
+    const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+    if (!bus.exitEdge || !side) continue
+    const bandKey = `${bus.exitEdge}:${side}`
+    if (checkedBands.has(bandKey)) continue
+    checkedBands.add(bandKey)
+
+    const edgeLength =
+      bus.exitEdge === "left" || bus.exitEdge === "right"
+        ? bus.sharedBoundary.maxY - bus.sharedBoundary.minY
+        : bus.sharedBoundary.maxX - bus.sharedBoundary.minX
+    const connectionCount =
+      bus.cornerBandConnectionCount ?? bus.connections.length
+    const halfTrackSpan = ((connectionCount - 1) * exitPitch) / 2
+    const availableHalfTrackSpan = edgeLength / 4 - endInset
+    if (halfTrackSpan > availableHalfTrackSpan + 1e-6) {
+      throw new Error(
+        `FanoutSolver: ${side} band on the ${bus.exitEdge} edge cannot fit ${connectionCount} via-safe exits`,
+      )
+    }
   }
 }
 
@@ -411,6 +451,7 @@ export class FanoutSolver extends BaseSolver {
     }
     this.config = resolveConfig(inputSrj, options)
     this.preparedBuses = prepareFanoutBuses(this.routingSrj, options)
+    validateCornerBandCapacities(this.preparedBuses, this.config)
     for (const bus of this.preparedBuses) {
       for (const allowedLayer of bus.allowedLayers ?? []) {
         if (!this.config.layerNames.includes(allowedLayer)) {
@@ -566,7 +607,13 @@ export class FanoutSolver extends BaseSolver {
     let failedBusIds: string[] = []
     let blockingBusCounts = new Map<string, number>()
     const isSingleLayerFanout = this.config.escapeLayers.length === 1
-    if (isSingleLayerFanout && this.config.singleLayerPushAndShove) {
+    const useSingleLayerPushAndShove =
+      isSingleLayerFanout &&
+      this.config.singleLayerPushAndShove &&
+      !this.preparedBuses.some(
+        (bus) => bus.exitEdge && bus.preferredExit?.includes("-"),
+      )
+    if (useSingleLayerPushAndShove) {
       const singleLayerParams = {
         srj: this.routingSrj,
         buses: this.preparedBuses,
@@ -609,9 +656,7 @@ export class FanoutSolver extends BaseSolver {
     )
 
     let routingPrefixKey = `${routingStrategy}|`
-    for (const bus of isSingleLayerFanout && this.config.singleLayerPushAndShove
-      ? []
-      : busesInRoutingOrder) {
+    for (const bus of useSingleLayerPushAndShove ? [] : busesInRoutingOrder) {
       const targetLayer = busLayerAssignments[bus.busId]
       if (!targetLayer) {
         throw new Error(

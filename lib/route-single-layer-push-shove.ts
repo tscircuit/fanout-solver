@@ -3,12 +3,12 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import { createFanoutOutputIds } from "./fanout-output-ids"
 import {
   distance,
   distanceSegmentToObstacle,
   distanceSegmentToSegment,
 } from "./geometry"
-import { createFanoutOutputIds } from "./fanout-output-ids"
 import type {
   FanoutBorderDistribution,
   FanoutCorner,
@@ -768,6 +768,7 @@ function buildPlan(path: RoutedPath): FanoutRoutePlan {
     targetLayer: "top",
     termination: item.bus.termination,
     direction: item.direction,
+    ...(item.bus.exitEdge ? { exitEdge: item.bus.exitEdge } : {}),
     exitPoint: points.at(-1)!,
     trace: {
       type: "pcb_trace",

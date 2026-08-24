@@ -1,19 +1,8 @@
-export { FanoutSolver } from "./fanout-solver"
 export { completeOriginalEndpoints } from "./complete-original-endpoints"
+export { getFanoutExitPositionConfig } from "./fanout-exit-position"
+export { FanoutSolver } from "./fanout-solver"
 export { getCopperLayerColor } from "./layer-colors"
 export { getCopperLayerNames } from "./layer-names"
-export { validateOriginalEndpointConnectivity } from "./validate-original-endpoint-connectivity"
-export { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
-export { validateFanoutSolution } from "./validate-fanout-solution"
-export type {
-  OriginalEndpointConnectivityIssue,
-  OriginalEndpointConnectivityReport,
-} from "./validate-original-endpoint-connectivity"
-export type {
-  RoutedCopperDrcIssue,
-  RoutedCopperDrcIssueCode,
-  RoutedCopperDrcReport,
-} from "./validate-routed-copper-drc"
 export type {
   Bounds,
   FanoutAttemptSummary,
@@ -30,6 +19,8 @@ export type {
   FanoutDownstreamRouterOptions,
   FanoutEdge,
   FanoutEndpointCompletionReport,
+  FanoutExitPosition,
+  FanoutExitPositionConfig,
   FanoutPlaneConnectivity,
   FanoutPlaneTermination,
   FanoutRoutePlan,
@@ -41,3 +32,15 @@ export type {
   PreparedBus,
   SimpleRouteJsonWithFanoutPlanes,
 } from "./types"
+export { validateFanoutSolution } from "./validate-fanout-solution"
+export type {
+  OriginalEndpointConnectivityIssue,
+  OriginalEndpointConnectivityReport,
+} from "./validate-original-endpoint-connectivity"
+export { validateOriginalEndpointConnectivity } from "./validate-original-endpoint-connectivity"
+export type {
+  RoutedCopperDrcIssue,
+  RoutedCopperDrcIssueCode,
+  RoutedCopperDrcReport,
+} from "./validate-routed-copper-drc"
+export { validateRoutedCopperDrc } from "./validate-routed-copper-drc"

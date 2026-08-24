@@ -3,6 +3,7 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import { getCornerBandSide } from "./boundary-exit"
 import {
   distance,
   distancePointToObstacle,
@@ -11,13 +12,14 @@ import {
   distanceSegmentToSegment,
   segmentsAreClear,
 } from "./geometry"
+import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
 import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
 } from "./net-identity"
-import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
 import type {
   Bounds,
+  FanoutEdge,
   FanoutRoutePlan,
   FanoutValidationIssue,
   FanoutValidationReport,
@@ -71,6 +73,29 @@ function pointIsOnBoundary(point: Point2D, boundary: Bounds): boolean {
     Math.abs(point.y - boundary.minY) <= EPSILON ||
     Math.abs(point.y - boundary.maxY) <= EPSILON
   return inside && onEdge
+}
+
+function pointIsOnBoundaryEdge(
+  point: Point2D,
+  edge: FanoutEdge,
+  boundary: Bounds,
+): boolean {
+  const inside =
+    point.x >= boundary.minX - EPSILON &&
+    point.x <= boundary.maxX + EPSILON &&
+    point.y >= boundary.minY - EPSILON &&
+    point.y <= boundary.maxY + EPSILON
+  if (!inside) return false
+  switch (edge) {
+    case "left":
+      return Math.abs(point.x - boundary.minX) <= EPSILON
+    case "right":
+      return Math.abs(point.x - boundary.maxX) <= EPSILON
+    case "top":
+      return Math.abs(point.y - boundary.maxY) <= EPSILON
+    case "bottom":
+      return Math.abs(point.y - boundary.minY) <= EPSILON
+  }
 }
 
 function pointIsInsideBounds(point: Point2D, bounds: Bounds): boolean {
@@ -233,6 +258,31 @@ function validatePlanStructure(params: {
       issues,
       "termination-mismatch",
       `Plan ${plan.connectionName} does not use its bus termination`,
+      plan,
+    )
+  }
+  const expectedCornerBandSide = getCornerBandSide(
+    preparedBus?.exitEdge,
+    preparedBus?.preferredExit,
+  )
+  if (
+    preparedBus?.exitEdge !== plan.exitEdge ||
+    expectedCornerBandSide !== plan.cornerBandSide
+  ) {
+    addIssue(
+      issues,
+      "output-exit-mismatch",
+      `Plan ${plan.connectionName} does not retain its prepared boundary edge and band`,
+      plan,
+    )
+  } else if (
+    preparedBus?.exitEdge &&
+    !pointIsOnBoundaryEdge(plan.exitPoint, preparedBus.exitEdge, sharedBoundary)
+  ) {
+    addIssue(
+      issues,
+      "output-exit-mismatch",
+      `Plan ${plan.connectionName} does not terminate on its declared ${preparedBus.exitEdge} edge`,
       plan,
     )
   }

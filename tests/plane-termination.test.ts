@@ -126,4 +126,16 @@ test("plane targets validate their layer and cannot request a border exit", () =
         buses: [{ ...buses[0]!, preferredExit: "right" }],
       }),
   ).toThrow("cannot also specify preferredExit")
+  expect(
+    () =>
+      new FanoutSolver(simpleRouteJson, {
+        buses: [
+          {
+            ...buses[0]!,
+            direction: "up",
+            exitPosition: "rightside_top",
+          },
+        ],
+      }),
+  ).toThrow("cannot also specify preferredExit")
 })
