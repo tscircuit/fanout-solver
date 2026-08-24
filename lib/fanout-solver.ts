@@ -1244,18 +1244,23 @@ export class FanoutSolver extends BaseSolver {
     const finalTraceById = new Map(
       (finalSrj.traces ?? []).map((trace) => [trace.pcb_trace_id, trace]),
     )
+    const inputTraceIds = new Set(
+      (this.inputSrj.traces ?? []).map((trace) => trace.pcb_trace_id),
+    )
     return {
       simpleRouteJson:
         this.endpointCompletion?.simpleRouteJson ?? this.bestAttempt.outputSrj,
-      fanoutTraces: this.bestAttempt.plans.flatMap((plan) => [
-        finalTraceById.get(plan.trace.pcb_trace_id) ?? plan.trace,
-        ...(plan.planeEndpointTrace
-          ? [
-              finalTraceById.get(plan.planeEndpointTrace.pcb_trace_id) ??
-                plan.planeEndpointTrace,
-            ]
-          : []),
-      ]),
+      fanoutTraces: this.bestAttempt.plans
+        .flatMap((plan) => [
+          finalTraceById.get(plan.trace.pcb_trace_id) ?? plan.trace,
+          ...(plan.planeEndpointTrace
+            ? [
+                finalTraceById.get(plan.planeEndpointTrace.pcb_trace_id) ??
+                  plan.planeEndpointTrace,
+              ]
+            : []),
+        ])
+        .filter((trace) => !inputTraceIds.has(trace.pcb_trace_id)),
       completionTraces: this.endpointCompletion?.traces ?? [],
       ...(this.endpointCompletion
         ? { endpointCompletion: this.endpointCompletion.report }
