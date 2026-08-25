@@ -6,7 +6,7 @@ import {
   windingTargetOrder,
 } from "tests/fixtures/layered-winding-channel"
 
-test("layered paired exits preserve winding through an atomic switchbox", async () => {
+test("layered paired exits preserve winding without crossover vias", async () => {
   const { bus, sharedBoundary, simpleRouteJson } =
     createLayeredWindingChannelFixture({ includeTargetLayers: true })
   const solver = new FanoutSolver(simpleRouteJson, {
@@ -48,17 +48,16 @@ test("layered paired exits preserve winding through an atomic switchbox", async 
     const vias = trace.route.filter(
       (routePoint) => routePoint.route_type === "via",
     )
-    expect(vias).toHaveLength(3)
+    expect(vias).toHaveLength(1)
     expect(
       output.simpleRouteJson.obstacles.filter(
         (obstacle) =>
           obstacle.componentId === undefined &&
           obstacle.connectedTo.includes(trace.connection_name),
       ),
-    ).toHaveLength(3)
-    expect(vias.slice(1).map((via) => [via.from_layer, via.to_layer])).toEqual([
-      [assignedLayer, assignedLayer === "inner1" ? "inner2" : "inner1"],
-      [assignedLayer === "inner1" ? "inner2" : "inner1", assignedLayer],
+    ).toHaveLength(1)
+    expect(vias.map((via) => [via.from_layer, via.to_layer])).toEqual([
+      ["top", assignedLayer],
     ])
   }
 

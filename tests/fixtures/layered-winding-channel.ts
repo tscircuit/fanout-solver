@@ -24,7 +24,7 @@ const targetByConnection: Record<
   DATA3: { x: 8, y: 0, layer: "inner2" },
 }
 
-export const windingTargetOrder = ["DATA1", "DATA3", "DATA2", "DATA0"]
+export const windingTargetOrder = ["DATA1", "DATA3", "DATA0", "DATA2"]
 
 export function createLayeredWindingChannelFixture(params: {
   includeTargetLayers: boolean

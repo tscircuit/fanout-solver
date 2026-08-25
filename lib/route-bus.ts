@@ -22,6 +22,7 @@ import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
 } from "./net-identity"
+import { routeViaMinimalWinding } from "./route-via-minimal-winding"
 import type {
   Bounds,
   FanoutDirection,
@@ -91,11 +92,9 @@ function getLocalCornerSide(
 }
 
 function busUsesCoordinatedWindingChannel(bus: PreparedBus): boolean {
-  const routableLayers = bus.routableEscapeLayers ?? bus.allowedLayers
   return Boolean(
     bus.exitEdge &&
       bus.termination.type === "boundary" &&
-      (routableLayers?.length ?? 0) >= 2 &&
       bus.connections.length > 0 &&
       bus.connections.every(
         (connection) => connection.hasExplicitLayeredExitTarget === true,
@@ -132,19 +131,27 @@ function getWindingTargetRank(params: {
         second.exitTargetPoint ?? second.targetPoint,
         boundaryDirection,
       )
-    if (Math.abs(axisDifference) > 1e-9) return axisDifference
+    if (axisDifference !== 0) return axisDifference
 
-    const firstLayer = first.exitTargetPoint?.layer
-    const secondLayer = second.exitTargetPoint?.layer
-    const layerDifference =
-      layerNames.indexOf(firstLayer ?? "") -
-      layerNames.indexOf(secondLayer ?? "")
-    if (layerDifference !== 0) return layerDifference
+    // Equal target coordinates came from distinct target layers and do not
+    // impose a physical order after this bus is collapsed onto one escape
+    // layer. Keep that free choice independent of allowed-layer ordering so
+    // the local fanout can choose a deterministic, via-minimal permutation.
+    const identityDifference = first.connection.name.localeCompare(
+      second.connection.name,
+    )
+    if (identityDifference !== 0) return identityDifference
 
     const firstStableId = getStableConnectionIdentity(first.connection)
     const secondStableId = getStableConnectionIdentity(second.connection)
+    const stableIdentityDifference = firstStableId.localeCompare(secondStableId)
+    if (stableIdentityDifference !== 0) return stableIdentityDifference
+
+    const firstLayer = first.exitTargetPoint?.layer
+    const secondLayer = second.exitTargetPoint?.layer
     return (
-      firstStableId.localeCompare(secondStableId) ||
+      layerNames.indexOf(firstLayer ?? "") -
+        layerNames.indexOf(secondLayer ?? "") ||
       first.connectionIndex - second.connectionIndex
     )
   })
@@ -672,6 +679,57 @@ function chamferOrthogonalPolyline(
   return chamfered
 }
 
+function getInitialViaPoint(params: {
+  preparedConnection: PreparedConnection
+  bus: PreparedBus
+  targetLayer: string
+  traceWidth: number
+  viaDiameter: number
+  clearance: number
+  viaHandedness: ViaHandedness
+}): Point2D {
+  const {
+    preparedConnection,
+    bus,
+    targetLayer,
+    traceWidth,
+    viaDiameter,
+    clearance,
+    viaHandedness,
+  } = params
+  const sourcePoint = {
+    x: preparedConnection.sourcePoint.x,
+    y: preparedConnection.sourcePoint.y,
+  }
+  const targetUsesVia = targetLayer !== preparedConnection.sourceLayer
+  const directionalPitch = getDirectionalPitch(bus)
+  const perpendicularPitch = getPerpendicularPitch(bus)
+  const directionalPadSize = isHorizontal(bus.direction)
+    ? preparedConnection.sourceObstacle.width
+    : preparedConnection.sourceObstacle.height
+  const initialEscapeDistance =
+    targetUsesVia && !busIsOnOutwardComponentEdge(bus)
+      ? directionalPadSize >= directionalPitch
+        ? directionalPadSize / 2 + viaDiameter / 2 + clearance + 1e-3
+        : directionalPitch * 0.5
+      : !targetUsesVia
+        ? directionalPadSize / 2 + traceWidth / 2 + clearance + 1e-3
+        : Math.max(
+            directionalPitch * 0.5,
+            directionalPadSize / 2 +
+              (targetUsesVia ? viaDiameter : traceWidth) / 2 +
+              clearance +
+              1e-3,
+          )
+  const viaAxis =
+    getAxis(sourcePoint, bus.direction) +
+    directionSign(bus.direction) * initialEscapeDistance
+  const viaPerpendicularAxis =
+    getPerpendicularAxis(sourcePoint, bus.direction) +
+    viaHandedness * perpendicularPitch * 0.5
+  return makePoint(viaAxis, viaPerpendicularAxis, bus.direction)
+}
+
 function buildPlan(params: {
   preparedConnection: PreparedConnection
   bus: PreparedBus
@@ -724,34 +782,17 @@ function buildPlan(params: {
   const usesLayeredWindingChannel = Boolean(windingCrossoverLayer)
   const sign = directionSign(bus.direction)
   const directionalPitch = getDirectionalPitch(bus)
-  const perpendicularPitch = getPerpendicularPitch(bus)
-  const targetUsesVia = escapeLayer !== preparedConnection.sourceLayer
-  const directionalPadSize = isHorizontal(bus.direction)
-    ? preparedConnection.sourceObstacle.width
-    : preparedConnection.sourceObstacle.height
-  const initialEscapeDistance =
-    targetUsesVia && !busIsOnOutwardComponentEdge(bus)
-      ? directionalPadSize >= directionalPitch
-        ? directionalPadSize / 2 + viaDiameter / 2 + clearance + 1e-3
-        : directionalPitch * 0.5
-      : !targetUsesVia
-        ? directionalPadSize / 2 + traceWidth / 2 + clearance + 1e-3
-        : Math.max(
-            directionalPitch * 0.5,
-            directionalPadSize / 2 +
-              (targetUsesVia ? viaDiameter : traceWidth) / 2 +
-              clearance +
-              1e-3,
-          )
-  const viaAxis =
-    getAxis(sourcePoint, bus.direction) + sign * initialEscapeDistance
-  const sourcePerpendicularAxis = getPerpendicularAxis(
-    sourcePoint,
-    bus.direction,
-  )
-  const viaPerpendicularAxis =
-    sourcePerpendicularAxis + viaHandedness * perpendicularPitch * 0.5
-  const viaPoint = makePoint(viaAxis, viaPerpendicularAxis, bus.direction)
+  const viaPoint = getInitialViaPoint({
+    preparedConnection,
+    bus,
+    targetLayer,
+    traceWidth,
+    viaDiameter,
+    clearance,
+    viaHandedness,
+  })
+  const viaAxis = getAxis(viaPoint, bus.direction)
+  const viaPerpendicularAxis = getPerpendicularAxis(viaPoint, bus.direction)
   const spreadLaneDistance =
     viaDiameter / 2 +
     traceWidth / 2 +
@@ -1797,6 +1838,75 @@ export function routeBusAlternatives(
     if (seenAlternativeKeys.has(key)) return
     seenAlternativeKeys.add(key)
     alternatives.push(plans)
+  }
+
+  if (busUsesCoordinatedWindingChannel(bus) && bus.exitEdge) {
+    const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
+    const boundaryExitAxis = getExitAxis(bus, boundaryDirection)
+    const cornerSide = getCornerSide(bus)
+    for (const viaHandedness of viaHandednesses) {
+      const terminals = bus.connections.map((preparedConnection) => {
+        const boundaryTrack = cornerSide
+          ? getCornerTargetTrack({
+              bus,
+              connection: preparedConnection,
+              cornerExitLaneOffset: cornerLaneOffsets.exit,
+              traceWidth,
+              viaDiameter,
+              clearance,
+              layerNames,
+            })
+          : getPerpendicularAxis(
+              preparedConnection.exitTargetPoint ??
+                preparedConnection.targetPoint,
+              boundaryDirection,
+            )
+        return {
+          connection: preparedConnection,
+          viaPoint: getInitialViaPoint({
+            preparedConnection,
+            bus,
+            targetLayer,
+            traceWidth,
+            viaDiameter,
+            clearance,
+            viaHandedness,
+          }),
+          exitPoint: makePoint(
+            boundaryExitAxis,
+            boundaryTrack,
+            boundaryDirection,
+          ),
+        }
+      })
+      const viaMinimalPlans = routeViaMinimalWinding({
+        srj,
+        bus,
+        targetLayer,
+        terminals,
+        acceptedPlans,
+        layerNames,
+        traceWidth,
+        viaDiameter,
+        viaHoleDiameter,
+        clearance,
+        allowSameNetMerges,
+      })
+      if (
+        !viaMinimalPlans ||
+        !fanoutPlansAreClear({
+          plans: [...acceptedPlans, ...viaMinimalPlans],
+          srj,
+          sharedBoundary: bus.sharedBoundary,
+          clearance,
+          allowSameNetMerges,
+        })
+      ) {
+        continue
+      }
+      addAlternative(viaMinimalPlans)
+      if (alternatives.length >= maxAlternatives) return alternatives
+    }
   }
 
   const searchConnectionOrder = (

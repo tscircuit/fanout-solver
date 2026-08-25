@@ -258,6 +258,27 @@ function busUsesDestinationGuidedTracks(bus: PreparedBus): boolean {
   })
 }
 
+function getCommonExplicitExitTargetLayer(
+  bus: PreparedBus,
+): string | undefined {
+  if (
+    bus.connections.length === 0 ||
+    bus.connections.some(
+      (connection) =>
+        !connection.hasExplicitLayeredExitTarget ||
+        !connection.exitTargetPoint?.layer,
+    )
+  ) {
+    return undefined
+  }
+  const targetLayers = new Set(
+    bus.connections.map((connection) => connection.exitTargetPoint!.layer!),
+  )
+  if (targetLayers.size !== 1) return undefined
+  const [targetLayer] = targetLayers
+  return targetLayer
+}
+
 function busIsOnOutwardComponentEdge(bus: PreparedBus): boolean {
   const isHorizontal = bus.direction === "left" || bus.direction === "right"
   const directionalCoordinates = isHorizontal
@@ -328,7 +349,14 @@ function createInitialLayerAssignment(params: {
     const viaLayers = routableEscapeLayers.filter(
       (layer) => layer !== sourceLayer,
     )
+    const commonExitTargetLayer = getCommonExplicitExitTargetLayer(bus)
     if (
+      commonExitTargetLayer &&
+      routableEscapeLayers.includes(commonExitTargetLayer)
+    ) {
+      assignment[bus.busId] = commonExitTargetLayer
+    } else if (
+      !busUsesCoordinatedWinding(bus) &&
       routableEscapeLayers.includes(sourceLayer) &&
       (busUsesDestinationGuidedTracks(bus) || busIsOnOutwardComponentEdge(bus))
     ) {
@@ -369,6 +397,17 @@ function prioritizeLayerAssignment(params: {
   ].slice(0, maxAssignments)
 }
 
+function busUsesCoordinatedWinding(bus: PreparedBus): boolean {
+  return Boolean(
+    bus.exitEdge &&
+      bus.termination.type === "boundary" &&
+      bus.connections.length > 0 &&
+      bus.connections.every(
+        (connection) => connection.hasExplicitLayeredExitTarget === true,
+      ),
+  )
+}
+
 function getCandidateEscapeLayersForBus(params: {
   bus: PreparedBus
   srj: SimpleRouteJson
@@ -381,6 +420,10 @@ function getCandidateEscapeLayersForBus(params: {
     busAllowedLayers === undefined
       ? config.escapeLayers
       : config.escapeLayers.filter((layer) => busAllowedLayers.includes(layer))
+  // A coordinated winding route is deliberately planned with the other buses'
+  // committed escape vias present. Testing it in isolation is both expensive
+  // and can reject a layer whose shared via field guides a valid bus ordering.
+  if (busUsesCoordinatedWinding(bus)) return allowedEscapeLayers
   const individuallyRoutableLayers = allowedEscapeLayers.filter(
     (targetLayer) =>
       routeBus({
@@ -654,10 +697,22 @@ export class FanoutSolver extends BaseSolver {
         failedBusIds.push(...this.preparedBuses.map((bus) => bus.busId))
       }
     }
-    const busesInRoutingOrder = [...this.preparedBuses].sort(
-      (a, b) =>
+    const busesInRoutingOrder = [...this.preparedBuses].sort((a, b) => {
+      const aUsesCoordinatedWinding = busUsesCoordinatedWinding(a)
+      const bUsesCoordinatedWinding = busUsesCoordinatedWinding(b)
+      const aLayerIndex = this.config.layerNames.indexOf(
+        busLayerAssignments[a.busId] ?? "",
+      )
+      const bLayerIndex = this.config.layerNames.indexOf(
+        busLayerAssignments[b.busId] ?? "",
+      )
+      return (
         Number(b.termination.type === "plane") -
           Number(a.termination.type === "plane") ||
+        Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
+        (aUsesCoordinatedWinding && bUsesCoordinatedWinding
+          ? bLayerIndex - aLayerIndex
+          : 0) ||
         (routingStrategy === "group-by-layer"
           ? (busLayerAssignments[a.busId] ?? "").localeCompare(
               busLayerAssignments[b.busId] ?? "",
@@ -669,8 +724,9 @@ export class FanoutSolver extends BaseSolver {
           : b.connections.length - a.connections.length ||
             (routingStrategy === "deep-first"
               ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
-              : getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b))),
-    )
+              : getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b)))
+      )
+    })
 
     let routingPrefixKey = `${routingStrategy}|`
     for (const bus of useSingleLayerPushAndShove ? [] : busesInRoutingOrder) {
@@ -797,7 +853,8 @@ export class FanoutSolver extends BaseSolver {
     )
     if (
       bestAttempt.summary.routedConnectionCount ===
-      this.inputSrj.connections.length
+        this.inputSrj.connections.length &&
+      this.getCoordinatedAdditionalViaCount(bestAttempt.plans) === 0
     ) {
       return bestAttempt
     }
@@ -808,12 +865,13 @@ export class FanoutSolver extends BaseSolver {
         busLayerAssignments,
         routingStrategy,
       )
-      if (attempt.summary.score < bestAttempt.summary.score) {
+      if (this.isAttemptBetter(attempt, bestAttempt)) {
         bestAttempt = attempt
       }
       if (
         bestAttempt.summary.routedConnectionCount ===
-        this.inputSrj.connections.length
+          this.inputSrj.connections.length &&
+        this.getCoordinatedAdditionalViaCount(bestAttempt.plans) === 0
       ) {
         return bestAttempt
       }
@@ -846,7 +904,24 @@ export class FanoutSolver extends BaseSolver {
       return null
     }
 
+    const getMaximumViaSpan = (bus: PreparedBus): number => {
+      const sourceLayerIndex = this.config.layerNames.indexOf(
+        bus.connections[0]?.sourceLayer ?? "",
+      )
+      const candidateLayers =
+        bus.termination.type === "plane"
+          ? [bus.termination.layer]
+          : (this.escapeLayersByBusId[bus.busId] ?? this.config.escapeLayers)
+      return Math.max(
+        0,
+        ...candidateLayers.map((layer) =>
+          Math.abs(this.config.layerNames.indexOf(layer) - sourceLayerIndex),
+        ),
+      )
+    }
     const busesInSearchOrder = [...this.preparedBuses].sort((a, b) => {
+      const aUsesCoordinatedWinding = busUsesCoordinatedWinding(a)
+      const bUsesCoordinatedWinding = busUsesCoordinatedWinding(b)
       const aLayerCount =
         a.termination.type === "plane"
           ? 1
@@ -860,6 +935,10 @@ export class FanoutSolver extends BaseSolver {
       return (
         Number(b.termination.type === "plane") -
           Number(a.termination.type === "plane") ||
+        Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
+        (aUsesCoordinatedWinding && bUsesCoordinatedWinding
+          ? getMaximumViaSpan(b) - getMaximumViaSpan(a)
+          : 0) ||
         (groupByDirection ? a.direction.localeCompare(b.direction) : 0) ||
         aLayerCount - bLayerCount ||
         b.componentObstacles.length - a.componentObstacles.length ||
@@ -897,7 +976,9 @@ export class FanoutSolver extends BaseSolver {
             return count
           }
           const sourceLayer = bus.connections[0]?.sourceLayer
-          return state.assignment[bus.busId] === sourceLayer
+          const preferredLayer =
+            getCommonExplicitExitTargetLayer(bus) ?? sourceLayer
+          return state.assignment[bus.busId] === preferredLayer
             ? count
             : count + bus.connections.length
         },
@@ -937,10 +1018,13 @@ export class FanoutSolver extends BaseSolver {
           )
         }
         const sourceLayer = bus.connections[0]?.sourceLayer
+        const commonExitTargetLayer = getCommonExplicitExitTargetLayer(bus)
         const preferSourceLayer = busUsesDestinationGuidedTracks(bus)
         const orderedLayers = candidateLayers.toSorted(
           (first, second) =>
             (layerLoads.get(first) ?? 0) - (layerLoads.get(second) ?? 0) ||
+            Number(second === commonExitTargetLayer) -
+              Number(first === commonExitTargetLayer) ||
             (preferSourceLayer
               ? Number(second === sourceLayer) - Number(first === sourceLayer)
               : Number(first === sourceLayer) -
@@ -980,6 +1064,10 @@ export class FanoutSolver extends BaseSolver {
 
       if (nextStates.length === 0) return null
       nextStates.sort((first, second) => {
+        const additionalViaDifference =
+          this.getCoordinatedAdditionalViaCount(first.plans) -
+          this.getCoordinatedAdditionalViaCount(second.plans)
+        if (additionalViaDifference !== 0) return additionalViaDifference
         const scoreDifference = getStateScore(first) - getStateScore(second)
         if (Math.abs(scoreDifference) > 1e-9) return scoreDifference
         return JSON.stringify(first.assignment).localeCompare(
@@ -998,19 +1086,23 @@ export class FanoutSolver extends BaseSolver {
       }
     }
 
-    const bestState = states[0]
-    if (!bestState) return null
-    const outputSrj = buildOutputSimpleRouteJson({
-      inputSrj: this.inputSrj,
-      plans: bestState.plans,
-      layerNames: this.config.layerNames,
-    })
-    if (
-      bestState.plans.length === this.inputSrj.connections.length &&
-      !this.validateCompletePlans(bestState.plans, outputSrj).valid
-    ) {
-      return null
+    let bestState: GroupedBeamState | undefined
+    let outputSrj: SimpleRouteJson | undefined
+    for (const state of states) {
+      if (state.plans.length !== this.inputSrj.connections.length) continue
+      const candidateOutput = buildOutputSimpleRouteJson({
+        inputSrj: this.inputSrj,
+        plans: state.plans,
+        layerNames: this.config.layerNames,
+      })
+      if (!this.validateCompletePlans(state.plans, candidateOutput).valid) {
+        continue
+      }
+      bestState = state
+      outputSrj = candidateOutput
+      break
     }
+    if (!bestState || !outputSrj) return null
     const score =
       bestState.plans.length === this.inputSrj.connections.length
         ? bestState.plans.reduce((total, plan) => total + plan.length, 0) +
@@ -1133,6 +1225,66 @@ export class FanoutSolver extends BaseSolver {
     )
   }
 
+  private getCoordinatedAdditionalViaCount(
+    plans: readonly FanoutRoutePlan[],
+  ): number {
+    const coordinatedBusIds = new Set(
+      this.preparedBuses
+        .filter(busUsesCoordinatedWinding)
+        .map((bus) => bus.busId),
+    )
+    return plans.reduce(
+      (count, plan) =>
+        count +
+        (coordinatedBusIds.has(plan.busId)
+          ? (plan.additionalVias?.length ?? 0)
+          : 0),
+      0,
+    )
+  }
+
+  private isAttemptBetter(
+    candidate: AssignmentAttempt,
+    current: AssignmentAttempt,
+  ): boolean {
+    if (
+      candidate.summary.routedConnectionCount !==
+      current.summary.routedConnectionCount
+    ) {
+      return (
+        candidate.summary.routedConnectionCount >
+        current.summary.routedConnectionCount
+      )
+    }
+    if (candidate.summary.routedBusCount !== current.summary.routedBusCount) {
+      return candidate.summary.routedBusCount > current.summary.routedBusCount
+    }
+    const candidateAdditionalVias = this.getCoordinatedAdditionalViaCount(
+      candidate.plans,
+    )
+    const currentAdditionalVias = this.getCoordinatedAdditionalViaCount(
+      current.plans,
+    )
+    if (candidateAdditionalVias !== currentAdditionalVias) {
+      return candidateAdditionalVias < currentAdditionalVias
+    }
+    return candidate.summary.score < current.summary.score
+  }
+
+  private hasGloballyViaMinimalBestAttempt(): boolean {
+    if (!this.hasCompleteBestAttempt() || !this.bestAttempt) return false
+    if (
+      this.preparedBuses.length === 0 ||
+      !this.preparedBuses.every(busUsesCoordinatedWinding)
+    ) {
+      return false
+    }
+    return this.bestAttempt.plans.every(
+      (plan) =>
+        plan.via !== undefined && (plan.additionalVias?.length ?? 0) === 0,
+    )
+  }
+
   private shouldEvaluateGroupedBeam(): boolean {
     if (this.groupedBeamEvaluated || this.nextAssignmentIndex === 0) {
       return false
@@ -1147,6 +1299,14 @@ export class FanoutSolver extends BaseSolver {
   }
 
   override _step(): void {
+    if (
+      this.nextAssignmentIndex > 0 &&
+      this.hasGloballyViaMinimalBestAttempt()
+    ) {
+      this.completeBestAttemptEndpoints()
+      this.solved = true
+      return
+    }
     // Try the deterministic assignment and only its targeted repair queue
     // before paying for the grouped beam. If the beam cannot solve, continue
     // with the broader generated-assignment search below.
@@ -1160,7 +1320,7 @@ export class FanoutSolver extends BaseSolver {
         this.attempts.push(beamAttempt.summary)
         if (
           !this.bestAttempt ||
-          beamAttempt.summary.score < this.bestAttempt.summary.score
+          this.isAttemptBetter(beamAttempt, this.bestAttempt)
         ) {
           this.bestAttempt = beamAttempt
         }
@@ -1176,11 +1336,19 @@ export class FanoutSolver extends BaseSolver {
           failedBuses: "none",
           bestScore: bestSummary.score,
         }
-        this.completeBestAttemptEndpoints()
-        this.solved = true
-        return
+        if (
+          this.getCoordinatedAdditionalViaCount(this.bestAttempt.plans) === 0
+        ) {
+          this.completeBestAttemptEndpoints()
+          this.solved = true
+          return
+        }
       }
-      if (this.hasCompleteBestAttempt()) {
+      if (
+        this.hasCompleteBestAttempt() &&
+        this.bestAttempt &&
+        this.getCoordinatedAdditionalViaCount(this.bestAttempt.plans) === 0
+      ) {
         this.completeBestAttemptEndpoints()
         this.solved = true
         return
@@ -1254,10 +1422,7 @@ export class FanoutSolver extends BaseSolver {
       )
     }
     this.attempts.push(attempt.summary)
-    if (
-      !this.bestAttempt ||
-      attempt.summary.score < this.bestAttempt.summary.score
-    ) {
+    if (!this.bestAttempt || this.isAttemptBetter(attempt, this.bestAttempt)) {
       this.bestAttempt = attempt
     }
     this.stats = {
@@ -1270,7 +1435,9 @@ export class FanoutSolver extends BaseSolver {
     }
     if (
       this.groupedBeamEvaluated &&
-      attempt.summary.routedConnectionCount === this.inputSrj.connections.length
+      attempt.summary.routedConnectionCount ===
+        this.inputSrj.connections.length &&
+      this.getCoordinatedAdditionalViaCount(this.bestAttempt.plans) === 0
     ) {
       this.completeBestAttemptEndpoints()
       this.solved = true

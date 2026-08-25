@@ -109,4 +109,38 @@ test("layered winding buses sharing a corner reserve distinct boundary exits", (
       exits.flatMap((exit) => (exit.route_type === "wire" ? [exit.y] : [])),
     ).size,
   ).toBe(exits.length)
+
+  const sameLayerBuses: FanoutBusSpec[] = buses.map((bus) => ({
+    ...bus,
+    allowedLayers: ["inner1"],
+    connectionExitTargets: Object.fromEntries(
+      bus.connectionNames.map((connectionName) => [
+        connectionName,
+        {
+          ...(bus.connectionExitTargets?.[connectionName] ?? { x: 8, y: 0 }),
+          layer: "inner1",
+        },
+      ]),
+    ),
+  }))
+  const sameLayerSolver = new FanoutSolver(
+    { ...simpleRouteJson, buses: sameLayerBuses },
+    {
+      buses: sameLayerBuses,
+      sharedBoundary,
+      escapeLayers: ["inner1"],
+      compactBusTracks: true,
+    },
+  )
+
+  sameLayerSolver.solve()
+
+  expect(sameLayerSolver.failed).toBe(false)
+  const sameLayerOutput = sameLayerSolver.getOutput()
+  expect(sameLayerOutput.validation).toMatchObject({ valid: true, issues: [] })
+  for (const trace of sameLayerOutput.fanoutTraces) {
+    expect(
+      trace.route.filter((routePoint) => routePoint.route_type === "via"),
+    ).toHaveLength(1)
+  }
 })
