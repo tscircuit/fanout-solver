@@ -360,6 +360,19 @@ function validatePlanStructure(params: {
     }
   }
 
+  const measuredLength = [
+    ...plan.segments,
+    ...(plan.planeEndpointSegments ?? []),
+  ].reduce((total, segment) => total + distance(segment.start, segment.end), 0)
+  if (Math.abs(measuredLength - plan.length) > 1e-6) {
+    addIssue(
+      issues,
+      "plan-length-mismatch",
+      `Plan ${plan.connectionName} declares ${plan.length.toFixed(6)}mm but contains ${measuredLength.toFixed(6)}mm of routed copper`,
+      plan,
+    )
+  }
+
   const traceSegments = extractTraceSegments({
     trace: plan.trace,
     plan,
@@ -920,6 +933,21 @@ export function validateFanoutSolution(params: {
     const connectionPlans = plansByConnection.get(plan.connectionName) ?? []
     connectionPlans.push(plan)
     plansByConnection.set(plan.connectionName, connectionPlans)
+  }
+  for (const bus of preparedBuses) {
+    if (bus.maxLengthSkew === undefined) continue
+    const busPlans = plans.filter((plan) => plan.busId === bus.busId)
+    if (busPlans.length < 2) continue
+    const lengths = busPlans.map((plan) => plan.length)
+    const skew = Math.max(...lengths) - Math.min(...lengths)
+    if (skew > bus.maxLengthSkew + 1e-6) {
+      addIssue(
+        issues,
+        "bus-length-skew",
+        `Bus ${bus.busId} has ${skew.toFixed(6)}mm routed-length skew; ${bus.maxLengthSkew.toFixed(6)}mm is allowed`,
+        busPlans[0],
+      )
+    }
   }
 
   for (const connection of inputSrj.connections) {

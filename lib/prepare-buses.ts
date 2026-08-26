@@ -580,6 +580,19 @@ function resolveAllowedLayers(
   return [...new Set(allowedLayers)]
 }
 
+function resolveMaxLengthSkew(
+  busId: string,
+  value: number | undefined,
+): number | undefined {
+  if (value === undefined) return undefined
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(
+      `FanoutSolver: bus "${busId}" maxLengthSkew must be a finite non-negative number`,
+    )
+  }
+  return value
+}
+
 export function resolveAvailableBoundaryRegions(
   value: readonly FanoutAvailableCornerAndSideInput[] | undefined,
 ): AvailableBoundaryRegion[] | undefined {
@@ -667,6 +680,15 @@ function resolveBusSpecs(
       requestedBus.busId,
       (requestedBus as FanoutBusSpec).allowedLayers,
     )
+    const maxLengthSkew = resolveMaxLengthSkew(
+      requestedBus.busId,
+      requestedBus.maxLengthSkew,
+    )
+    if (termination.type === "plane" && maxLengthSkew !== undefined) {
+      throw new Error(
+        `FanoutSolver: plane-terminated bus "${requestedBus.busId}" cannot specify maxLengthSkew`,
+      )
+    }
     if (
       termination.type === "plane" &&
       resolvedExitFields.preferredExit !== undefined
@@ -682,6 +704,7 @@ function resolveBusSpecs(
         options.sourceComponentId,
       ...resolvedExitFields,
       ...(allowedLayers === undefined ? {} : { allowedLayers }),
+      ...(maxLengthSkew === undefined ? {} : { maxLengthSkew }),
       termination,
     })
   }
@@ -1248,6 +1271,9 @@ export function prepareFanoutBuses(
     }
     buses.push({
       busId: busSpec.busId,
+      ...(busSpec.maxLengthSkew === undefined
+        ? {}
+        : { maxLengthSkew: busSpec.maxLengthSkew }),
       direction: resolvedExit.direction,
       preferredExit: resolvedExit.preferredExit,
       ...(busSpec.exitEdge ? { exitEdge: busSpec.exitEdge } : {}),

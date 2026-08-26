@@ -73,6 +73,10 @@ and treats each bus-layer decision atomically.
   visibly continuous pad connections.
 - Chamfers orthogonal routing corners into 45° segments before validating and
   emitting the fanout.
+- Honors a boundary bus `maxLengthSkew` as a hard local-fanout constraint. It
+  adds straight/45° meanders only after the dense component escape, keeps the
+  original endpoints and vias, and atomically rejects an assignment when the
+  requested skew cannot fit inside that bus's shared boundary.
 - Verifies oriented-pad, via, trace, and already-routed fanout clearance on
   every complete candidate, independent of the routing strategy that produced
   it.
@@ -189,6 +193,7 @@ The canonical bus input is the current `SimpleRouteJson` bus structure:
       busId: "ddr",
       connectionNames: ["BUS_DDR_01", "BUS_DDR_02", "BUS_DDR_03"],
       preferredExit: "right",
+      maxLengthSkew: 0.25,
     },
   ],
 }
@@ -200,6 +205,13 @@ receive the same escape direction and target layer. If one connection cannot be
 routed cleanly, the solver rejects that bus for the current layer assignment and
 tries another combination. `busExitPreferences` provides the same override
 without modifying the input object.
+
+`maxLengthSkew` is measured in millimeters of planar routed copper within this
+fanout phase. It is supported for multi-connection boundary buses. A loose or
+omitted constraint leaves the routed geometry unchanged; an impossible
+constraint fails instead of returning a fanout that violates the declared skew.
+Plane-terminated buses reject `maxLengthSkew` because they do not have a
+boundary tuning corridor.
 
 `availableCornersAndSides` is a solver-wide hard constraint. Its directed
 corner names distinguish the two edges meeting at a corner: `top_left` exits
@@ -473,5 +485,7 @@ label.
 ## Scope
 
 This package owns the BGA pad-to-breakout prefix. It does not replace the
-board-level autorouter, length-match buses, or route arbitrary obstacles between
-the breakout boundary and the final destination.
+board-level autorouter or route arbitrary obstacles between the breakout
+boundary and the final destination. Its `maxLengthSkew` matching applies to the
+local fanout prefix; end-to-end delay matching across multiple routing phases
+still belongs to a board-level coordinator.

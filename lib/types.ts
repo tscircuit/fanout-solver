@@ -250,6 +250,8 @@ export interface FanoutValidationIssue {
     | "different-net-trace-clearance"
     | "different-net-trace-via-clearance"
     | "different-net-via-clearance"
+    | "plan-length-mismatch"
+    | "bus-length-skew"
   message: string
   connectionName?: string
   otherConnectionName?: string
@@ -291,6 +293,8 @@ export interface PreparedConnection {
 
 export interface PreparedBus {
   busId: string
+  /** Maximum permitted routed copper length difference in millimeters. */
+  maxLengthSkew?: number
   direction: FanoutDirection
   preferredExit?: FanoutBorderTarget
   /** Explicit final boundary edge. Omitted for legacy direction-based exits. */
