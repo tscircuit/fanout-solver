@@ -132,8 +132,11 @@ test("a source-only plane target dogbones to a through-all via", () => {
     y: 0.4,
     layer: "inner1",
   })
-  const viaObstacle = output.simpleRouteJson.obstacles.find((obstacle) =>
-    obstacle.obstacleId?.startsWith("fanout-via:"),
+  const viaObstacle = output.simpleRouteJson.obstacles.find(
+    (obstacle) =>
+      obstacle.center.x === via?.x &&
+      obstacle.center.y === via?.y &&
+      obstacle.connectedTo?.includes(trace.pcb_trace_id),
   )
   expect(viaObstacle?.layers).toEqual([
     "top",
