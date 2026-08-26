@@ -5,15 +5,8 @@ import type {
 } from "@tscircuit/capacity-autorouter"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 
-test("routed copper DRC accepts a via contained in its connected source pad", () => {
-  const connection = {
-    name: "POWER",
-    pointsToConnect: [
-      { x: 0, y: 0, layer: "top" as const, pointId: "power-source" },
-      { x: 2, y: 0, layer: "top" as const, pointId: "power-target" },
-    ],
-  }
-  const inputSrj: SimpleRouteJson = {
+test("routed copper DRC requires an explicit via-in-pad opt-in", () => {
+  const inputSrj: SimpleRouteJson & { allowViaInPad?: boolean } = {
     layerCount: 4,
     minTraceWidth: 0.1,
     minViaHoleDiameter: 0.12,
@@ -30,7 +23,15 @@ test("routed copper DRC accepts a via contained in its connected source pad", ()
         connectedTo: ["POWER", "power-source"],
       },
     ],
-    connections: [connection],
+    connections: [
+      {
+        name: "POWER",
+        pointsToConnect: [
+          { x: 0, y: 0, layer: "top", pointId: "power-source" },
+          { x: 2, y: 0, layer: "top", pointId: "power-target" },
+        ],
+      },
+    ],
     traces: [],
   }
   const trace: SimplifiedPcbTrace = {
@@ -53,11 +54,24 @@ test("routed copper DRC accepts a via contained in its connected source pad", ()
     ],
   }
 
+  const withoutOptIn = validateRoutedCopperDrc({
+    inputSrj,
+    routedSrj: { ...inputSrj, traces: [trace] },
+    clearance: 0.1,
+    allowBlindAndBuriedVias: false,
+  })
+  expect(withoutOptIn.valid).toBe(false)
+  expect(withoutOptIn.issues).toEqual([
+    expect.objectContaining({ code: "via-at-endpoint" }),
+  ])
+
+  const withOptInSrj = { ...inputSrj, allowViaInPad: true }
   expect(
     validateRoutedCopperDrc({
-      inputSrj,
-      routedSrj: { ...inputSrj, traces: [trace] },
+      inputSrj: withOptInSrj,
+      routedSrj: { ...withOptInSrj, traces: [trace] },
       clearance: 0.1,
+      allowBlindAndBuriedVias: false,
     }),
   ).toMatchObject({ valid: true, issues: [] })
 })

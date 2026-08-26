@@ -288,13 +288,15 @@ function validatePlanStructure(params: {
       plan,
     )
   }
-  const isViaInPadPlaneTermination =
+  const isAllowedViaInPadPlaneTermination =
+    (inputSrj as SimpleRouteJson & { allowViaInPad?: boolean })
+      .allowViaInPad === true &&
     plan.termination.type === "plane" &&
     plan.via !== undefined &&
     pointsMatch(plan.via.center, plan.sourcePoint) &&
     pointsMatch(plan.exitPoint, plan.sourcePoint)
   if (
-    !isViaInPadPlaneTermination &&
+    !isAllowedViaInPadPlaneTermination &&
     (plan.segments.length === 0 || plan.length <= EPSILON)
   ) {
     addIssue(
@@ -681,9 +683,10 @@ function validateClearances(params: {
   plans: readonly FanoutRoutePlan[]
   inputSrj: SimpleRouteJson
   clearance: number
+  allowBlindAndBuriedVias: boolean
   issues: FanoutValidationIssue[]
 }): void {
-  const { plans, inputSrj, clearance, issues } = params
+  const { plans, inputSrj, clearance, allowBlindAndBuriedVias, issues } = params
   for (const plan of plans) {
     const segments = getPlanSegments(plan)
     for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
@@ -745,7 +748,10 @@ function validateClearances(params: {
       }
     }
 
-    for (const traceCopper of getAllRoutedTraceCopper(inputSrj)) {
+    for (const traceCopper of getAllRoutedTraceCopper(
+      inputSrj,
+      allowBlindAndBuriedVias,
+    )) {
       if (
         plan.connectionName === traceCopper.connectionName ||
         connectionsShareElectricalNet(
@@ -931,6 +937,7 @@ export function validateFanoutSolution(params: {
   preparedBuses: readonly PreparedBus[]
   sharedBoundary: Bounds
   clearance: number
+  allowBlindAndBuriedVias?: boolean
 }): FanoutValidationReport {
   const {
     inputSrj,
@@ -939,6 +946,7 @@ export function validateFanoutSolution(params: {
     preparedBuses,
     sharedBoundary,
     clearance,
+    allowBlindAndBuriedVias = true,
   } = params
   const issues: FanoutValidationIssue[] = []
   const plansByConnection = new Map<string, FanoutRoutePlan[]>()
@@ -1010,7 +1018,13 @@ export function validateFanoutSolution(params: {
     sharedBoundary,
     issues,
   })
-  validateClearances({ plans, inputSrj, clearance, issues })
+  validateClearances({
+    plans,
+    inputSrj,
+    clearance,
+    allowBlindAndBuriedVias,
+    issues,
+  })
 
   return {
     valid: issues.length === 0,

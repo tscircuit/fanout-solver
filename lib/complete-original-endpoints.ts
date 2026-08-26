@@ -12,8 +12,8 @@ import {
 } from "./geometry"
 import { obstacleSharesElectricalNet } from "./net-identity"
 import type {
-  FanoutEndpointCompletionReport,
   FanoutDownstreamRouter,
+  FanoutEndpointCompletionReport,
   FanoutRoutePlan,
   Point2D,
 } from "./types"
@@ -267,6 +267,7 @@ function findLocalBranch(params: {
   viaDiameter: number
   viaHoleDiameter: number
   clearance: number
+  allowBlindAndBuriedVias: boolean
 }): {
   trace?: SimplifiedPcbTrace
   blockingConnectionNames: string[]
@@ -280,6 +281,7 @@ function findLocalBranch(params: {
     viaDiameter,
     viaHoleDiameter,
     clearance,
+    allowBlindAndBuriedVias,
   } = params
   const { outward, perpendicular } = getTerminalDirections({ inputSrj, plan })
   const branchStarts: Array<Point2D & { layer: string }> = [
@@ -414,6 +416,7 @@ function findLocalBranch(params: {
             inputSrj,
             routedSrj: candidateSrj,
             clearance,
+            allowBlindAndBuriedVias,
           })
           if (!drc.valid) {
             if (drc.issues.length < bestIssueCount) {
@@ -457,6 +460,7 @@ function runLocalCompletionPass(params: {
   viaDiameter: number
   viaHoleDiameter: number
   clearance: number
+  allowBlindAndBuriedVias: boolean
 }): CompletionAttempt {
   const {
     inputSrj,
@@ -466,6 +470,7 @@ function runLocalCompletionPass(params: {
     viaDiameter,
     viaHoleDiameter,
     clearance,
+    allowBlindAndBuriedVias,
   } = params
   const traces: SimplifiedPcbTrace[] = []
   const failedConnectionNames: string[] = []
@@ -480,6 +485,7 @@ function runLocalCompletionPass(params: {
       viaDiameter,
       viaHoleDiameter,
       clearance,
+      allowBlindAndBuriedVias,
     })
     if (result.trace) {
       traces.push(result.trace)
@@ -506,6 +512,7 @@ function runLocalCompletionPass(params: {
       inputSrj,
       routedSrj: simpleRouteJson,
       clearance,
+      allowBlindAndBuriedVias,
     }),
   }
 }
@@ -598,8 +605,16 @@ function acceptDownstreamTraces(params: {
   localTraces: SimplifiedPcbTrace[]
   candidates: SimplifiedPcbTrace[]
   clearance: number
+  allowBlindAndBuriedVias: boolean
 }): SimplifiedPcbTrace[] {
-  const { inputSrj, fanoutSrj, localTraces, candidates, clearance } = params
+  const {
+    inputSrj,
+    fanoutSrj,
+    localTraces,
+    candidates,
+    clearance,
+    allowBlindAndBuriedVias,
+  } = params
   const baselineTraces = [...(fanoutSrj.traces ?? []), ...localTraces]
   const baselineSrj = { ...fanoutSrj, traces: baselineTraces }
   const baselineConnectivity = validateOriginalEndpointConnectivity({
@@ -638,6 +653,7 @@ function acceptDownstreamTraces(params: {
       inputSrj,
       routedSrj: combinedSrj,
       clearance,
+      allowBlindAndBuriedVias,
     }).valid
   ) {
     return usefulCandidates
@@ -655,6 +671,7 @@ function acceptDownstreamTraces(params: {
       inputSrj,
       routedSrj: candidateSrj,
       clearance,
+      allowBlindAndBuriedVias,
     })
     if (!drc.valid) continue
     const before = validateOriginalEndpointConnectivity({
@@ -729,6 +746,7 @@ function findDownstreamTerminalBranch(params: {
   viaDiameter: number
   viaHoleDiameter: number
   clearance: number
+  allowBlindAndBuriedVias: boolean
 }): SimplifiedPcbTrace | undefined {
   const {
     inputSrj,
@@ -739,6 +757,7 @@ function findDownstreamTerminalBranch(params: {
     viaDiameter,
     viaHoleDiameter,
     clearance,
+    allowBlindAndBuriedVias,
   } = params
   const branchStart = {
     x: plan.exitPoint.x,
@@ -782,6 +801,7 @@ function findDownstreamTerminalBranch(params: {
         inputSrj,
         routedSrj: candidateSrj,
         clearance,
+        allowBlindAndBuriedVias,
       }).valid
     ) {
       return undefined
@@ -880,6 +900,7 @@ export function completeOriginalEndpoints(params: {
   viaDiameter: number
   viaHoleDiameter: number
   clearance: number
+  allowBlindAndBuriedVias?: boolean
   effort?: number
   routeDownstreamConnections?: FanoutDownstreamRouter
 }): CompleteOriginalEndpointsResult {
@@ -891,6 +912,7 @@ export function completeOriginalEndpoints(params: {
     viaDiameter,
     viaHoleDiameter,
     clearance,
+    allowBlindAndBuriedVias = true,
     effort = 1,
     routeDownstreamConnections,
   } = params
@@ -899,6 +921,7 @@ export function completeOriginalEndpoints(params: {
     inputSrj,
     routedSrj: fanoutSrj,
     clearance,
+    allowBlindAndBuriedVias,
   })
   const baselineConnectivity = validateOriginalEndpointConnectivity({
     inputSrj,
@@ -952,6 +975,7 @@ export function completeOriginalEndpoints(params: {
         viaDiameter,
         viaHoleDiameter,
         clearance,
+        allowBlindAndBuriedVias,
       })
       searchPassCount++
       if (
@@ -995,6 +1019,7 @@ export function completeOriginalEndpoints(params: {
         viaDiameter,
         viaHoleDiameter,
         clearance,
+        allowBlindAndBuriedVias,
       })
       if (terminalBranch) directDownstreamTraces.push(terminalBranch)
     }
@@ -1052,6 +1077,7 @@ export function completeOriginalEndpoints(params: {
           downstreamConnectionNames.has(trace.connection_name),
         ),
         clearance,
+        allowBlindAndBuriedVias,
       })
     } catch (error) {
       errors.push(
@@ -1102,6 +1128,7 @@ export function completeOriginalEndpoints(params: {
       viaDiameter,
       viaHoleDiameter,
       clearance,
+      allowBlindAndBuriedVias,
     })
     if (terminalBranch) traces.push(terminalBranch)
   }
@@ -1121,6 +1148,7 @@ export function completeOriginalEndpoints(params: {
     inputSrj,
     routedSrj: simpleRouteJson,
     clearance,
+    allowBlindAndBuriedVias,
   })
   if (!drc.valid) {
     errors.push("Final endpoint-completion output failed emitted-copper DRC")

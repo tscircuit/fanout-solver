@@ -154,6 +154,67 @@ function pointIsOutsideDenseBounds(
   )
 }
 
+function splitSegmentAtDenseBounds(params: {
+  segment: RoutedSegment
+  bounds: Bounds
+  margin: number
+}): RoutedSegment[] {
+  const { segment, bounds, margin } = params
+  const expandedBounds = {
+    minX: bounds.minX - margin,
+    maxX: bounds.maxX + margin,
+    minY: bounds.minY - margin,
+    maxY: bounds.maxY + margin,
+  }
+  const deltaX = segment.end.x - segment.start.x
+  const deltaY = segment.end.y - segment.start.y
+  const splitParameters = [0, 1]
+  const addSplitParameter = (parameter: number): void => {
+    if (parameter <= EPSILON || parameter >= 1 - EPSILON) return
+    const point = {
+      x: segment.start.x + deltaX * parameter,
+      y: segment.start.y + deltaY * parameter,
+    }
+    if (
+      point.x < expandedBounds.minX - EPSILON ||
+      point.x > expandedBounds.maxX + EPSILON ||
+      point.y < expandedBounds.minY - EPSILON ||
+      point.y > expandedBounds.maxY + EPSILON
+    ) {
+      return
+    }
+    splitParameters.push(parameter)
+  }
+  if (Math.abs(deltaX) > EPSILON) {
+    addSplitParameter((expandedBounds.minX - segment.start.x) / deltaX)
+    addSplitParameter((expandedBounds.maxX - segment.start.x) / deltaX)
+  }
+  if (Math.abs(deltaY) > EPSILON) {
+    addSplitParameter((expandedBounds.minY - segment.start.y) / deltaY)
+    addSplitParameter((expandedBounds.maxY - segment.start.y) / deltaY)
+  }
+  const parameters = splitParameters
+    .toSorted((first, second) => first - second)
+    .filter(
+      (parameter, index, values) =>
+        index === 0 || Math.abs(parameter - values[index - 1]!) > EPSILON,
+    )
+  return parameters.slice(1).map((endParameter, index) => {
+    const startParameter = parameters[index]!
+    return {
+      ...segment,
+      start: {
+        x: segment.start.x + deltaX * startParameter,
+        y: segment.start.y + deltaY * startParameter,
+      },
+      end: {
+        x: segment.start.x + deltaX * endParameter,
+        y: segment.start.y + deltaY * endParameter,
+      },
+    }
+  })
+}
+
 function getDenseCopperBounds(bus: PreparedBus): Bounds {
   return bus.componentObstacles.reduce<Bounds>(
     (bounds, obstacle) => ({
@@ -387,8 +448,16 @@ function createTunedPlanCandidates(params: {
   targetAddedLength: number
   clearance: number
   sharedBoundary: Bounds
+  denseBoundarySplitApplied?: boolean
 }): FanoutRoutePlan[] {
-  const { plan, bus, targetAddedLength, clearance, sharedBoundary } = params
+  const {
+    plan,
+    bus,
+    targetAddedLength,
+    clearance,
+    sharedBoundary,
+    denseBoundarySplitApplied = false,
+  } = params
   const candidates: FanoutRoutePlan[] = []
   const denseCopperBounds = getDenseCopperBounds(bus)
   const denseMargin = plan.segments[0]?.width
@@ -470,7 +539,22 @@ function createTunedPlanCandidates(params: {
       }
     }
   }
-  return candidates
+  if (denseBoundarySplitApplied) return candidates
+  const splitSegments = plan.segments.flatMap((segment) =>
+    splitSegmentAtDenseBounds({
+      segment,
+      bounds: denseCopperBounds,
+      margin: denseMargin,
+    }),
+  )
+  const splitPlan = createPlanWithSegments(plan, splitSegments)
+  if (!splitPlan) return candidates
+  const splitCandidates = createTunedPlanCandidates({
+    ...params,
+    plan: splitPlan,
+    denseBoundarySplitApplied: true,
+  })
+  return [...candidates, ...splitCandidates]
 }
 
 function getBusSkew(plans: readonly FanoutRoutePlan[]): number {
@@ -489,6 +573,7 @@ export function matchBusPlanLengths(params: {
   inputSrj: SimpleRouteJson
   sharedBoundary: Bounds
   clearance: number
+  allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
 }):
   | { plans: FanoutRoutePlan[]; failedBus?: never }
@@ -498,6 +583,7 @@ export function matchBusPlanLengths(params: {
     inputSrj,
     sharedBoundary,
     clearance,
+    allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
   } = params
   let matchedPlans = [...params.plans]
@@ -570,6 +656,7 @@ export function matchBusPlanLengths(params: {
               srj: inputSrj,
               sharedBoundary,
               clearance,
+              allowBlindAndBuriedVias,
               allowSameNetMerges,
             })
           ) {

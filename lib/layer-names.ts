@@ -34,6 +34,46 @@ export function getLayerSpan(
   return layerNames.slice(firstIndex, lastIndex + 1)
 }
 
+export function getViaSpanLayers(params: {
+  fromLayer: string
+  toLayer: string
+  layerNames: string[]
+  allowBlindAndBuriedVias: boolean
+}): string[] {
+  const { fromLayer, toLayer, layerNames, allowBlindAndBuriedVias } = params
+  const logicalSpan = getLayerSpan(fromLayer, toLayer, layerNames)
+  return allowBlindAndBuriedVias ? logicalSpan : [...layerNames]
+}
+
+export function getRouteViaSpanLayers(params: {
+  fromLayer: string
+  toLayer: string
+  layers?: readonly string[]
+  layerNames: string[]
+  allowBlindAndBuriedVias: boolean
+}): string[] {
+  const { fromLayer, toLayer, layers, layerNames, allowBlindAndBuriedVias } =
+    params
+  const configuredSpan = getViaSpanLayers({
+    fromLayer,
+    toLayer,
+    layerNames,
+    allowBlindAndBuriedVias,
+  })
+  if (!layers) return configuredSpan
+  if (
+    layers.length === 0 ||
+    !layers.includes(fromLayer) ||
+    !layers.includes(toLayer) ||
+    layers.some((layer) => !layerNames.includes(layer))
+  ) {
+    throw new Error(
+      `FanoutSolver: route via from "${fromLayer}" to "${toLayer}" has an invalid physical layer span`,
+    )
+  }
+  return [...layers]
+}
+
 export function generateLayerAssignments(params: {
   busIds: string[]
   layers: string[]

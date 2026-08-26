@@ -2,7 +2,7 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
-import { getCopperLayerNames, getLayerSpan } from "./layer-names"
+import { getCopperLayerNames, getRouteViaSpanLayers } from "./layer-names"
 import type { Point2D, RoutedSegment } from "./types"
 
 export interface RoutedTraceVia {
@@ -21,6 +21,7 @@ export interface RoutedTraceCopper {
 export function getRoutedTraceCopper(
   srj: SimpleRouteJson,
   trace: SimplifiedPcbTrace,
+  allowBlindAndBuriedVias = true,
 ): RoutedTraceCopper {
   const layerNames = getCopperLayerNames(srj.layerCount)
   const segments: RoutedSegment[] = []
@@ -39,11 +40,16 @@ export function getRoutedTraceCopper(
           srj.min_via_pad_diameter ??
           srj.minViaDiameter ??
           srj.minTraceWidth,
-        spanLayers: getLayerSpan(
-          routePoint.from_layer,
-          routePoint.to_layer,
+        spanLayers: getRouteViaSpanLayers({
+          fromLayer: routePoint.from_layer,
+          toLayer: routePoint.to_layer,
+          layers:
+            "layers" in routePoint && Array.isArray(routePoint.layers)
+              ? (routePoint.layers as string[])
+              : undefined,
           layerNames,
-        ),
+          allowBlindAndBuriedVias,
+        }),
       })
       previousWire = undefined
       continue
@@ -78,6 +84,9 @@ export function getRoutedTraceCopper(
 
 export function getAllRoutedTraceCopper(
   srj: SimpleRouteJson,
+  allowBlindAndBuriedVias = true,
 ): RoutedTraceCopper[] {
-  return (srj.traces ?? []).map((trace) => getRoutedTraceCopper(srj, trace))
+  return (srj.traces ?? []).map((trace) =>
+    getRoutedTraceCopper(srj, trace, allowBlindAndBuriedVias),
+  )
 }

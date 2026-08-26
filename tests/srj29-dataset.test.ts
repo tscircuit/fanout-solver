@@ -120,13 +120,16 @@ test("SRJ29 VCC and GND pins break out to dedicated planes", () => {
       inputConnection.netConnectionName === "VCC" ? "inner2" : "inner3",
     )
     expect(
-      inputConnection.pointsToConnect.some(
-        (endpoint) =>
-          Math.hypot(
-            planeTermination!.via.center.x - endpoint.x,
-            planeTermination!.via.center.y - endpoint.y,
-          ) <= 1e-6,
-      ),
+      output.fanoutTraces
+        .filter((trace) => trace.connection_name === inputConnection.name)
+        .flatMap((trace) => trace.route)
+        .filter((routePoint) => routePoint.route_type === "via")
+        .every((via) =>
+          inputConnection.pointsToConnect.every(
+            (endpoint) =>
+              Math.hypot(via.x - endpoint.x, via.y - endpoint.y) > 1e-6,
+          ),
+        ),
     ).toBe(true)
   }
 })

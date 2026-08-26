@@ -3,10 +3,10 @@ import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { FanoutSolver } from "lib/fanout-solver"
 import type { FanoutBusSpec } from "lib/types"
 
-test("same-net merging supports adjacent via-in-pad plane terminations", () => {
+test("same-net plane terminations use offset through-all vias", () => {
   const sources = [
-    { name: "GND_A", x: -0.1 },
-    { name: "GND_B", x: 0.1 },
+    { name: "GND_A", x: 0 },
+    { name: "GND_B", x: 0.5 },
   ]
   const buses: FanoutBusSpec[] = sources.map(({ name }) => ({
     busId: `plane-${name}`,
@@ -21,10 +21,10 @@ test("same-net merging supports adjacent via-in-pad plane terminations", () => {
     nominalTraceWidth: 0.1,
     minViaPadDiameter: 0.24,
     minViaHoleDiameter: 0.12,
-    minTraceToPadEdgeClearance: 0.1,
-    minViaEdgeToPadEdgeClearance: 0.1,
-    defaultObstacleMargin: 0.1,
-    bounds: { minX: -1, maxX: 1, minY: -1, maxY: 1 },
+    minTraceToPadEdgeClearance: 0.08128,
+    minViaEdgeToPadEdgeClearance: 0.08128,
+    defaultObstacleMargin: 0.08128,
+    bounds: { minX: -1, maxX: 1.5, minY: -1, maxY: 1 },
     connections: sources.map(({ name, x }) => ({
       name,
       netConnectionName: "GND",
@@ -35,8 +35,8 @@ test("same-net merging supports adjacent via-in-pad plane terminations", () => {
       componentId: "U1",
       type: "rect" as const,
       center: { x, y: 0 },
-      width: 0.3,
-      height: 0.3,
+      width: 0.25616,
+      height: 0.25616,
       layers: ["top"],
       connectedTo: [name, `${name}-source`],
     })),
@@ -46,6 +46,7 @@ test("same-net merging supports adjacent via-in-pad plane terminations", () => {
     buses,
     sharedBoundary: simpleRouteJson.bounds,
     escapeLayers: ["top", "bottom"],
+    allowBlindAndBuriedVias: false,
     allowSameNetMerges: true,
   })
 
@@ -55,9 +56,15 @@ test("same-net merging supports adjacent via-in-pad plane terminations", () => {
   const output = solver.getOutput()
   expect(output.validation).toMatchObject({ valid: true, issues: [] })
   expect(output.planeTerminations).toHaveLength(2)
-  expect(
-    output.planeTerminations
-      .map(({ via }) => via.center)
-      .toSorted((first, second) => first.x - second.x),
-  ).toEqual(sources.map(({ x }) => ({ x, y: 0 })))
+  for (const termination of output.planeTerminations) {
+    const source = sources.find(
+      ({ name }) => name === termination.connectionName,
+    )!
+    expect(termination.via.center).not.toEqual({ x: source.x, y: 0 })
+    expect(termination.via).toMatchObject({
+      fromLayer: "top",
+      toLayer: "inner1",
+      spanLayers: ["top", "inner1", "inner2", "bottom"],
+    })
+  }
 })

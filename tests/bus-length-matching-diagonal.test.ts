@@ -136,7 +136,7 @@ function createDiagonalPlan(params: {
   }
 }
 
-test("matches a diagonal bus without losing tuned via-in-pad endpoint metadata", () => {
+test("matches a diagonal bus without losing explicitly enabled via-in-pad endpoint metadata", () => {
   const fixtures: DiagonalConnectionFixture[] = [
     {
       name: "SHORT",
@@ -204,7 +204,8 @@ test("matches a diagonal bus without losing tuned via-in-pad endpoint metadata",
     pitchX: 2,
     pitchY: 4,
   }
-  const inputSrj: SimpleRouteJson = {
+  const inputSrj: SimpleRouteJson & { allowViaInPad?: boolean } = {
+    allowViaInPad: true,
     layerCount: 2,
     minTraceWidth: traceWidth,
     nominalTraceWidth: traceWidth,

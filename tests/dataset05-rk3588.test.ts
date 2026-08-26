@@ -123,8 +123,9 @@ test("Dataset 05 preserves the exact RK3588 map and completes plane-aware fanout
     const source = getExpectedCenter(ball)
     const dx = Math.abs(termination.via.center.x - source.x)
     const dy = Math.abs(termination.via.center.y - source.y)
-    expect(dx + dy).toBeCloseTo(0)
-    expect(termination.via.center).toEqual(source)
+    expect(dx + dy).toBeCloseTo(0.4)
+    expect(Math.min(dx, dy)).toBeCloseTo(0)
+    expect(termination.via.center).not.toEqual(source)
     expect(termination.layer).toBe(
       ball.categoryId === "ground" ? "inner1" : "inner2",
     )

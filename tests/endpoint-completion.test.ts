@@ -31,8 +31,11 @@ test("SRJ29 endpoint completion only retains physically connected DRC-clean copp
       ),
     ),
   ).toBe(true)
-  const routedEndpoints = output.simpleRouteJson.connections.flatMap(
-    (connection) => connection.pointsToConnect,
+  const originalAndRoutedEndpoints = [
+    sample.simpleRouteJson,
+    output.simpleRouteJson,
+  ].flatMap((srj) =>
+    srj.connections.flatMap((connection) => connection.pointsToConnect),
   )
   const emittedVias = [
     ...output.fanoutTraces,
@@ -44,7 +47,7 @@ test("SRJ29 endpoint completion only retains physically connected DRC-clean copp
   for (const via of emittedVias) {
     expect(
       Math.min(
-        ...routedEndpoints.map((endpoint) =>
+        ...originalAndRoutedEndpoints.map((endpoint) =>
           Math.hypot(via.x - endpoint.x, via.y - endpoint.y),
         ),
       ),
