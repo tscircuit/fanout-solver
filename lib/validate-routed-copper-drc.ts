@@ -3,6 +3,7 @@ import type {
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
 import {
+  circleFitsInsideObstacle,
   distance,
   distancePointToObstacle,
   distancePointToSegment,
@@ -10,7 +11,7 @@ import {
   pointIsInsideObstacle,
   segmentsAreClear,
 } from "./geometry"
-import { getCopperLayerNames, getLayerSpan } from "./layer-names"
+import { getCopperLayerNames, getRouteViaSpanLayers } from "./layer-names"
 import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
@@ -120,9 +121,17 @@ function extractTraceCopper(params: {
   trace: SimplifiedPcbTrace
   connectionName: string
   layerNames: string[]
+  allowBlindAndBuriedVias: boolean
   issues: RoutedCopperDrcIssue[]
 }): TraceCopper {
-  const { srj, trace, connectionName, layerNames, issues } = params
+  const {
+    srj,
+    trace,
+    connectionName,
+    layerNames,
+    allowBlindAndBuriedVias,
+    issues,
+  } = params
   const segments: RoutedSegment[] = []
   const vias: RoutedVia[] = []
   let previousWire:
@@ -134,11 +143,16 @@ function extractTraceCopper(params: {
 
   for (const routePoint of trace.route) {
     if (routePoint.route_type === "via") {
-      const spanLayers = getLayerSpan(
-        routePoint.from_layer,
-        routePoint.to_layer,
+      const spanLayers = getRouteViaSpanLayers({
+        fromLayer: routePoint.from_layer,
+        toLayer: routePoint.to_layer,
+        layers:
+          "layers" in routePoint && Array.isArray(routePoint.layers)
+            ? (routePoint.layers as string[])
+            : undefined,
         layerNames,
-      )
+        allowBlindAndBuriedVias,
+      })
       vias.push({
         center: { x: routePoint.x, y: routePoint.y },
         diameter:
@@ -231,8 +245,14 @@ export function validateRoutedCopperDrc(params: {
   inputSrj: SimpleRouteJson
   routedSrj: SimpleRouteJson
   clearance: number
+  allowBlindAndBuriedVias?: boolean
 }): RoutedCopperDrcReport {
-  const { inputSrj, routedSrj, clearance } = params
+  const {
+    inputSrj,
+    routedSrj,
+    clearance,
+    allowBlindAndBuriedVias = true,
+  } = params
   const issues: RoutedCopperDrcIssue[] = []
   const layerNames = getCopperLayerNames(routedSrj.layerCount)
   const traceCopper: TraceCopper[] = []
@@ -267,6 +287,7 @@ export function validateRoutedCopperDrc(params: {
         trace,
         connectionName,
         layerNames,
+        allowBlindAndBuriedVias,
         issues,
       }),
     )
@@ -309,7 +330,25 @@ export function validateRoutedCopperDrc(params: {
       const coincidentEndpoint = originalAndRoutedEndpoints.find(
         ({ point }) => distance(via.center, point) <= EPSILON,
       )
-      if (coincidentEndpoint) {
+      const isAllowedContainedViaInPad =
+        (inputSrj as SimpleRouteJson & { allowViaInPad?: boolean })
+          .allowViaInPad === true &&
+        inputSrj.obstacles.some(
+          (obstacle) =>
+            obstacle.layers.some((layer) => via.spanLayers.includes(layer)) &&
+            obstacleSharesElectricalNet(
+              inputSrj,
+              obstacle,
+              copper.connectionName,
+            ) &&
+            circleFitsInsideObstacle({
+              center: via.center,
+              diameter: via.diameter,
+              obstacle,
+              tolerance: EPSILON,
+            }),
+        )
+      if (coincidentEndpoint && !isAllowedContainedViaInPad) {
         addIssue(issues, {
           code: "via-at-endpoint",
           traceId: copper.trace.pcb_trace_id,

@@ -19,6 +19,7 @@ test("layered winding is ordered at the first escape without crossover vias", ()
     sharedBoundary,
     escapeLayers: ["inner1", "inner2"],
     compactBusTracks: true,
+    allowBlindAndBuriedVias: false,
   })
 
   solver.solve()
@@ -52,7 +53,14 @@ test("layered winding is ordered at the first escape without crossover vias", ()
     expect(vias[0]).toMatchObject({
       from_layer: "top",
       to_layer: assignedLayer,
+      layers: ["top", "inner1", "inner2", "bottom"],
     })
+    const viaObstacle = output.simpleRouteJson.obstacles.find(
+      (obstacle) =>
+        obstacle.componentId === undefined &&
+        obstacle.connectedTo.includes(trace.connection_name),
+    )
+    expect(viaObstacle?.layers).toEqual(["top", "inner1", "inner2", "bottom"])
 
     const sourceViaIndex = trace.route.indexOf(vias[0]!)
     expect(

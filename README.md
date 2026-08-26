@@ -86,6 +86,13 @@ and treats each bus-layer decision atomically.
 - `allowSameNetMerges` lets grouped branches such as VCC or GND reuse connected
   copper instead of reserving artificial clearance from one another. It is
   opt-in; different electrical nets remain hard obstacles.
+- `allowBlindAndBuriedVias` describes the host board's manufacturing rule. It
+  defaults to `true` for standalone compatibility; hosts that manufacture
+  through-all vias should pass `false`, which reserves every copper layer in
+  route planning and emitted-copper DRC while preserving each route's logical
+  layer transition.
+- Via-in-pad remains opt-in through `SimpleRouteJson.allowViaInPad === true`.
+  Undefined or false uses an offset dogbone, including plane terminations.
 - Audits route continuity, unique connection coverage, boundary exits, and
   retained downstream endpoints before marking a solution complete.
 - `completeOriginalEndpoints` adds a bounded fail-first completion stage after

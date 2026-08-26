@@ -42,21 +42,46 @@ function rebuildTraceRoute(
   const lastOriginalWire = plan.trace.route.findLast(
     (point) => point.route_type === "wire",
   )
+  const getWireMetadata = (
+    wire: typeof firstOriginalWire,
+  ): Partial<
+    Extract<SimplifiedPcbTrace["route"][number], { route_type: "wire" }>
+  > => {
+    if (wire?.route_type !== "wire") return {}
+    const metadata: Partial<
+      Extract<SimplifiedPcbTrace["route"][number], { route_type: "wire" }>
+    > = { ...wire }
+    delete metadata.route_type
+    delete metadata.x
+    delete metadata.y
+    delete metadata.width
+    delete metadata.layer
+    return metadata
+  }
+  const vias = getPlanVias(plan)
+  const startsWithSourceVia =
+    pointsMatch(firstSegment.start, plan.sourcePoint) &&
+    firstSegment.layer !== plan.sourceLayer &&
+    vias.some(
+      (via) =>
+        pointsMatch(via.center, firstSegment.start) &&
+        via.spanLayers.includes(plan.sourceLayer) &&
+        via.spanLayers.includes(firstSegment.layer),
+    )
+  const initialLayer = startsWithSourceVia
+    ? plan.sourceLayer
+    : firstSegment.layer
   const route: SimplifiedPcbTrace["route"] = [
     {
+      ...getWireMetadata(firstOriginalWire),
       route_type: "wire",
       ...firstSegment.start,
       width: firstSegment.width,
-      layer: firstSegment.layer,
-      ...(firstOriginalWire?.route_type === "wire" &&
-      firstOriginalWire.start_pcb_port_id
-        ? { start_pcb_port_id: firstOriginalWire.start_pcb_port_id }
-        : {}),
+      layer: initialLayer,
     },
   ]
   let currentPoint = firstSegment.start
-  let currentLayer = firstSegment.layer
-  const vias = getPlanVias(plan)
+  let currentLayer = initialLayer
 
   for (const [segmentIndex, segment] of segments.entries()) {
     if (!pointsMatch(currentPoint, segment.start)) return null
@@ -85,15 +110,13 @@ function rebuildTraceRoute(
       currentLayer = segment.layer
     }
     route.push({
+      ...(segmentIndex === segments.length - 1
+        ? getWireMetadata(lastOriginalWire)
+        : {}),
       route_type: "wire",
       ...segment.end,
       width: segment.width,
       layer: segment.layer,
-      ...(segmentIndex === segments.length - 1 &&
-      lastOriginalWire?.route_type === "wire" &&
-      lastOriginalWire.end_pcb_port_id
-        ? { end_pcb_port_id: lastOriginalWire.end_pcb_port_id }
-        : {}),
     })
     currentPoint = segment.end
   }
@@ -129,6 +152,67 @@ function pointIsOutsideDenseBounds(
     point.y < bounds.minY - margin ||
     point.y > bounds.maxY + margin
   )
+}
+
+function splitSegmentAtDenseBounds(params: {
+  segment: RoutedSegment
+  bounds: Bounds
+  margin: number
+}): RoutedSegment[] {
+  const { segment, bounds, margin } = params
+  const expandedBounds = {
+    minX: bounds.minX - margin,
+    maxX: bounds.maxX + margin,
+    minY: bounds.minY - margin,
+    maxY: bounds.maxY + margin,
+  }
+  const deltaX = segment.end.x - segment.start.x
+  const deltaY = segment.end.y - segment.start.y
+  const splitParameters = [0, 1]
+  const addSplitParameter = (parameter: number): void => {
+    if (parameter <= EPSILON || parameter >= 1 - EPSILON) return
+    const point = {
+      x: segment.start.x + deltaX * parameter,
+      y: segment.start.y + deltaY * parameter,
+    }
+    if (
+      point.x < expandedBounds.minX - EPSILON ||
+      point.x > expandedBounds.maxX + EPSILON ||
+      point.y < expandedBounds.minY - EPSILON ||
+      point.y > expandedBounds.maxY + EPSILON
+    ) {
+      return
+    }
+    splitParameters.push(parameter)
+  }
+  if (Math.abs(deltaX) > EPSILON) {
+    addSplitParameter((expandedBounds.minX - segment.start.x) / deltaX)
+    addSplitParameter((expandedBounds.maxX - segment.start.x) / deltaX)
+  }
+  if (Math.abs(deltaY) > EPSILON) {
+    addSplitParameter((expandedBounds.minY - segment.start.y) / deltaY)
+    addSplitParameter((expandedBounds.maxY - segment.start.y) / deltaY)
+  }
+  const parameters = splitParameters
+    .toSorted((first, second) => first - second)
+    .filter(
+      (parameter, index, values) =>
+        index === 0 || Math.abs(parameter - values[index - 1]!) > EPSILON,
+    )
+  return parameters.slice(1).map((endParameter, index) => {
+    const startParameter = parameters[index]!
+    return {
+      ...segment,
+      start: {
+        x: segment.start.x + deltaX * startParameter,
+        y: segment.start.y + deltaY * startParameter,
+      },
+      end: {
+        x: segment.start.x + deltaX * endParameter,
+        y: segment.start.y + deltaY * endParameter,
+      },
+    }
+  })
 }
 
 function getDenseCopperBounds(bus: PreparedBus): Bounds {
@@ -364,8 +448,16 @@ function createTunedPlanCandidates(params: {
   targetAddedLength: number
   clearance: number
   sharedBoundary: Bounds
+  denseBoundarySplitApplied?: boolean
 }): FanoutRoutePlan[] {
-  const { plan, bus, targetAddedLength, clearance, sharedBoundary } = params
+  const {
+    plan,
+    bus,
+    targetAddedLength,
+    clearance,
+    sharedBoundary,
+    denseBoundarySplitApplied = false,
+  } = params
   const candidates: FanoutRoutePlan[] = []
   const denseCopperBounds = getDenseCopperBounds(bus)
   const denseMargin = plan.segments[0]?.width
@@ -447,7 +539,22 @@ function createTunedPlanCandidates(params: {
       }
     }
   }
-  return candidates
+  if (denseBoundarySplitApplied) return candidates
+  const splitSegments = plan.segments.flatMap((segment) =>
+    splitSegmentAtDenseBounds({
+      segment,
+      bounds: denseCopperBounds,
+      margin: denseMargin,
+    }),
+  )
+  const splitPlan = createPlanWithSegments(plan, splitSegments)
+  if (!splitPlan) return candidates
+  const splitCandidates = createTunedPlanCandidates({
+    ...params,
+    plan: splitPlan,
+    denseBoundarySplitApplied: true,
+  })
+  return [...candidates, ...splitCandidates]
 }
 
 function getBusSkew(plans: readonly FanoutRoutePlan[]): number {
@@ -466,6 +573,7 @@ export function matchBusPlanLengths(params: {
   inputSrj: SimpleRouteJson
   sharedBoundary: Bounds
   clearance: number
+  allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
 }):
   | { plans: FanoutRoutePlan[]; failedBus?: never }
@@ -475,6 +583,7 @@ export function matchBusPlanLengths(params: {
     inputSrj,
     sharedBoundary,
     clearance,
+    allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
   } = params
   let matchedPlans = [...params.plans]
@@ -547,6 +656,7 @@ export function matchBusPlanLengths(params: {
               srj: inputSrj,
               sharedBoundary,
               clearance,
+              allowBlindAndBuriedVias,
               allowSameNetMerges,
             })
           ) {

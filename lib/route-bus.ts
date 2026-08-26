@@ -10,6 +10,7 @@ import {
 } from "./boundary-exit"
 import { createFanoutOutputIds } from "./fanout-output-ids"
 import {
+  circleFitsInsideObstacle,
   distance,
   distancePointToObstacle,
   distancePointToSegment,
@@ -17,12 +18,15 @@ import {
   segmentsAreClear,
 } from "./geometry"
 import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
-import { getLayerSpan } from "./layer-names"
+import { getViaSpanLayers } from "./layer-names"
 import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
 } from "./net-identity"
-import { routeViaMinimalWinding } from "./route-via-minimal-winding"
+import {
+  routeViaMinimalWindingAlternatives,
+  type ViaMinimalWindingReservedVia,
+} from "./route-via-minimal-winding"
 import type {
   Bounds,
   FanoutDirection,
@@ -47,9 +51,15 @@ export interface RouteBusParams {
   viaHoleDiameter: number
   clearance: number
   compactBusTracks: boolean
+  allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
   staticClearanceCache?: RouteBusStaticClearanceCache
   blockingBusCounts?: Map<string, number>
+  rejectedViaMinimalCandidates?: FanoutRoutePlan[][]
+  stopAfterFirstRejectedViaMinimalCandidate?: boolean
+  fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
+  reservedVias?: readonly ViaMinimalWindingReservedVia[]
+  viaMinimalOnly?: boolean
 }
 
 interface TrackCandidate {
@@ -58,6 +68,13 @@ interface TrackCandidate {
 }
 
 type ViaHandedness = -1 | 0 | 1
+
+function allowsViaInPad(srj: SimpleRouteJson): boolean {
+  return (
+    (srj as SimpleRouteJson & { allowViaInPad?: boolean }).allowViaInPad ===
+    true
+  )
+}
 
 function isHorizontal(direction: FanoutDirection): boolean {
   return direction === "left" || direction === "right"
@@ -293,6 +310,83 @@ function getDirectionalPitch(bus: PreparedBus): number {
 
 function getPerpendicularPitch(bus: PreparedBus): number {
   return isHorizontal(bus.direction) ? bus.pitchY : bus.pitchX
+}
+
+function chamferOrthogonalCorners(
+  points: readonly Point2D[],
+  requestedChamfer: number,
+): Point2D[] {
+  if (points.length < 3) return [...points]
+  const output: Point2D[] = [points[0]!]
+  for (let index = 1; index < points.length - 1; index++) {
+    const previous = points[index - 1]!
+    const current = points[index]!
+    const next = points[index + 1]!
+    const incoming = { x: current.x - previous.x, y: current.y - previous.y }
+    const outgoing = { x: next.x - current.x, y: next.y - current.y }
+    const incomingLength = Math.hypot(incoming.x, incoming.y)
+    const outgoingLength = Math.hypot(outgoing.x, outgoing.y)
+    const incomingIsAxisAligned =
+      Math.abs(incoming.x) <= 1e-9 || Math.abs(incoming.y) <= 1e-9
+    const outgoingIsAxisAligned =
+      Math.abs(outgoing.x) <= 1e-9 || Math.abs(outgoing.y) <= 1e-9
+    const isOrthogonal =
+      Math.abs(incoming.x * outgoing.x + incoming.y * outgoing.y) <= 1e-9
+    if (
+      incomingLength <= 1e-9 ||
+      outgoingLength <= 1e-9 ||
+      !incomingIsAxisAligned ||
+      !outgoingIsAxisAligned ||
+      !isOrthogonal
+    ) {
+      output.push(current)
+      continue
+    }
+    const chamfer = Math.min(
+      requestedChamfer,
+      incomingLength / 3,
+      outgoingLength / 3,
+    )
+    output.push({
+      x: current.x - (incoming.x / incomingLength) * chamfer,
+      y: current.y - (incoming.y / incomingLength) * chamfer,
+    })
+    output.push({
+      x: current.x + (outgoing.x / outgoingLength) * chamfer,
+      y: current.y + (outgoing.y / outgoingLength) * chamfer,
+    })
+  }
+  output.push(points.at(-1)!)
+  return output.filter(
+    (point, index) => index === 0 || distance(point, output[index - 1]!) > 1e-9,
+  )
+}
+
+function getStraightOr45ConnectorVariants(
+  start: Point2D,
+  end: Point2D,
+): Point2D[][] {
+  const deltaX = end.x - start.x
+  const deltaY = end.y - start.y
+  const absoluteX = Math.abs(deltaX)
+  const absoluteY = Math.abs(deltaY)
+  if (
+    absoluteX <= 1e-9 ||
+    absoluteY <= 1e-9 ||
+    Math.abs(absoluteX - absoluteY) <= 1e-9
+  ) {
+    return [[start, end]]
+  }
+  if (absoluteX > absoluteY) {
+    return [
+      [start, { x: start.x + Math.sign(deltaX) * absoluteY, y: end.y }, end],
+      [start, { x: end.x - Math.sign(deltaX) * absoluteY, y: start.y }, end],
+    ]
+  }
+  return [
+    [start, { x: end.x, y: start.y + Math.sign(deltaY) * absoluteX }, end],
+    [start, { x: start.x, y: end.y - Math.sign(deltaY) * absoluteX }, end],
+  ]
 }
 
 function getDepthInRows(bus: PreparedBus): number {
@@ -748,6 +842,9 @@ function buildPlan(params: {
   cornerBoundaryChannelLaneOffset: number
   clearance: number
   terminateAtVia: boolean
+  allowBlindAndBuriedVias: boolean
+  initialViaPoint?: Point2D
+  sourceEscapePath?: readonly Point2D[]
 }): FanoutRoutePlan {
   const {
     preparedConnection,
@@ -767,6 +864,9 @@ function buildPlan(params: {
     cornerBoundaryChannelLaneOffset,
     clearance,
     terminateAtVia,
+    allowBlindAndBuriedVias,
+    initialViaPoint,
+    sourceEscapePath,
   } = params
   const sourcePoint = {
     x: preparedConnection.sourcePoint.x,
@@ -782,15 +882,33 @@ function buildPlan(params: {
   const usesLayeredWindingChannel = Boolean(windingCrossoverLayer)
   const sign = directionSign(bus.direction)
   const directionalPitch = getDirectionalPitch(bus)
-  const viaPoint = getInitialViaPoint({
-    preparedConnection,
-    bus,
-    targetLayer,
-    traceWidth,
-    viaDiameter,
-    clearance,
-    viaHandedness,
-  })
+  const requestedViaPoint = sourceEscapePath?.at(-1)
+  const viaPoint =
+    requestedViaPoint !== undefined
+      ? { x: requestedViaPoint.x, y: requestedViaPoint.y }
+      : initialViaPoint === undefined
+        ? getInitialViaPoint({
+            preparedConnection,
+            bus,
+            targetLayer,
+            traceWidth,
+            viaDiameter,
+            clearance,
+            viaHandedness,
+          })
+        : { x: initialViaPoint.x, y: initialViaPoint.y }
+  const resolvedSourceEscapePath = sourceEscapePath
+    ? sourceEscapePath.map((point) => ({ x: point.x, y: point.y }))
+    : [sourcePoint, viaPoint]
+  if (
+    resolvedSourceEscapePath.length < 2 ||
+    distance(resolvedSourceEscapePath[0]!, sourcePoint) > 1e-9 ||
+    distance(resolvedSourceEscapePath.at(-1)!, viaPoint) > 1e-9
+  ) {
+    throw new Error(
+      `FanoutSolver: source escape path for "${preparedConnection.connection.name}" must run from its source point to its via`,
+    )
+  }
   const viaAxis = getAxis(viaPoint, bus.direction)
   const viaPerpendicularAxis = getPerpendicularAxis(viaPoint, bus.direction)
   const spreadLaneDistance =
@@ -899,28 +1017,38 @@ function buildPlan(params: {
     layer: preparedConnection.sourceLayer,
     start_pcb_port_id: preparedConnection.sourcePoint.pcb_port_id,
   })
-  appendSegment(
-    segments,
-    sourcePoint,
-    viaPoint,
-    traceWidth,
-    preparedConnection.sourceLayer,
-  )
-  route.push({
-    route_type: "wire",
-    x: viaPoint.x,
-    y: viaPoint.y,
-    width: traceWidth,
-    layer: preparedConnection.sourceLayer,
-  })
+  for (
+    let pointIndex = 1;
+    pointIndex < resolvedSourceEscapePath.length;
+    pointIndex++
+  ) {
+    const previousPoint = resolvedSourceEscapePath[pointIndex - 1]!
+    const point = resolvedSourceEscapePath[pointIndex]!
+    appendSegment(
+      segments,
+      previousPoint,
+      point,
+      traceWidth,
+      preparedConnection.sourceLayer,
+    )
+    if (distance(previousPoint, point) <= 1e-9) continue
+    route.push({
+      route_type: "wire",
+      x: point.x,
+      y: point.y,
+      width: traceWidth,
+      layer: preparedConnection.sourceLayer,
+    })
+  }
 
   let via: FanoutRoutePlan["via"]
   if (targetLayer !== preparedConnection.sourceLayer) {
-    const spanLayers = getLayerSpan(
-      preparedConnection.sourceLayer,
-      targetLayer,
+    const spanLayers = getViaSpanLayers({
+      fromLayer: preparedConnection.sourceLayer,
+      toLayer: targetLayer,
       layerNames,
-    )
+      allowBlindAndBuriedVias,
+    })
     via = {
       center: viaPoint,
       diameter: viaDiameter,
@@ -990,7 +1118,12 @@ function buildPlan(params: {
         holeDiameter: viaHoleDiameter,
         fromLayer,
         toLayer,
-        spanLayers: getLayerSpan(fromLayer, toLayer, layerNames),
+        spanLayers: getViaSpanLayers({
+          fromLayer,
+          toLayer,
+          layerNames,
+          allowBlindAndBuriedVias,
+        }),
       })
       route.push({
         route_type: "via",
@@ -1066,7 +1199,7 @@ function buildPlan(params: {
     sourceObstacle: preparedConnection.sourceObstacle,
     sourceLayer: preparedConnection.sourceLayer,
     targetPoint: preparedConnection.targetPoint,
-    targetLayer: escapeLayer,
+    targetLayer,
     termination: bus.termination,
     direction: bus.direction,
     ...(bus.exitEdge ? { exitEdge: bus.exitEdge } : {}),
@@ -1190,6 +1323,7 @@ function addPlaneEndpointTerminal(params: {
   traceWidth: number
   viaDiameter: number
   viaHoleDiameter: number
+  allowBlindAndBuriedVias: boolean
 }): FanoutRoutePlan {
   const {
     plan,
@@ -1200,13 +1334,19 @@ function addPlaneEndpointTerminal(params: {
     traceWidth,
     viaDiameter,
     viaHoleDiameter,
+    allowBlindAndBuriedVias,
   } = params
   const targetPoint = {
     x: preparedConnection.targetPoint.x,
     y: preparedConnection.targetPoint.y,
   }
   const targetEndpointLayer = getPointLayer(preparedConnection.targetPoint)
-  const spanLayers = getLayerSpan(planeLayer, targetEndpointLayer, layerNames)
+  const spanLayers = getViaSpanLayers({
+    fromLayer: planeLayer,
+    toLayer: targetEndpointLayer,
+    layerNames,
+    allowBlindAndBuriedVias,
+  })
   if (!spanLayers.includes(planeLayer)) {
     throw new Error(
       `FanoutSolver: via for "${preparedConnection.connection.name}" does not cross plane ${planeLayer}`,
@@ -1354,14 +1494,36 @@ function getPlanVias(plan: FanoutRoutePlan) {
   ].filter((via): via is NonNullable<FanoutRoutePlan["via"]> => Boolean(via))
 }
 
+function viaFitsInsidePlanSourcePad(
+  plan: FanoutRoutePlan,
+  via: NonNullable<FanoutRoutePlan["via"]>,
+): boolean {
+  return (
+    distance(via.center, plan.sourcePoint) <= 1e-9 &&
+    circleFitsInsideObstacle({
+      center: via.center,
+      diameter: via.diameter,
+      obstacle: plan.sourceObstacle,
+    })
+  )
+}
+
 function planIsStaticallyClear(params: {
   plan: FanoutRoutePlan
   srj: SimpleRouteJson
   sharedBoundary: Bounds
   clearance: number
+  allowBlindAndBuriedVias: boolean
   allowSameNetMerges: boolean
 }): boolean {
-  const { plan, srj, sharedBoundary, clearance, allowSameNetMerges } = params
+  const {
+    plan,
+    srj,
+    sharedBoundary,
+    clearance,
+    allowBlindAndBuriedVias,
+    allowSameNetMerges,
+  } = params
   const routableBounds = getRoutableBounds(srj.bounds, sharedBoundary)
   if (
     !pointIsInsideBounds(plan.exitPoint, routableBounds) ||
@@ -1391,6 +1553,13 @@ function planIsStaticallyClear(params: {
   }
   for (const via of getPlanVias(plan)) {
     for (const obstacle of srj.obstacles) {
+      if (
+        allowsViaInPad(srj) &&
+        obstacle === plan.sourceObstacle &&
+        viaFitsInsidePlanSourcePad(plan, via)
+      ) {
+        continue
+      }
       if (!obstacle.layers.some((layer) => via.spanLayers.includes(layer))) {
         continue
       }
@@ -1409,7 +1578,10 @@ function planIsStaticallyClear(params: {
     }
   }
 
-  for (const traceCopper of getAllRoutedTraceCopper(srj)) {
+  for (const traceCopper of getAllRoutedTraceCopper(
+    srj,
+    allowBlindAndBuriedVias,
+  )) {
     if (
       plan.connectionName === traceCopper.connectionName ||
       (allowSameNetMerges &&
@@ -1575,6 +1747,7 @@ function planIsClear(params: {
   srj: SimpleRouteJson
   sharedBoundary: Bounds
   clearance: number
+  allowBlindAndBuriedVias: boolean
   allowSameNetMerges: boolean
 }): boolean {
   const {
@@ -1586,6 +1759,7 @@ function planIsClear(params: {
     srj,
     sharedBoundary,
     clearance,
+    allowBlindAndBuriedVias,
     allowSameNetMerges,
   } = params
   let staticallyClear = staticClearanceCache?.get(cacheKey)
@@ -1595,6 +1769,7 @@ function planIsClear(params: {
       srj,
       sharedBoundary,
       clearance,
+      allowBlindAndBuriedVias,
       allowSameNetMerges,
     })
     staticClearanceCache?.set(cacheKey, staticallyClear)
@@ -1622,6 +1797,7 @@ export function fanoutPlansAreClear(params: {
   srj: SimpleRouteJson
   sharedBoundary: Bounds
   clearance: number
+  allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
 }): boolean {
   const {
@@ -1629,6 +1805,7 @@ export function fanoutPlansAreClear(params: {
     srj,
     sharedBoundary,
     clearance,
+    allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
   } = params
   for (let index = 0; index < plans.length; index++) {
@@ -1639,15 +1816,17 @@ export function fanoutPlansAreClear(params: {
         srj,
         sharedBoundary,
         clearance,
+        allowBlindAndBuriedVias,
         allowSameNetMerges,
       })
     ) {
       return false
     }
+    const otherPlans = plans.filter((_, otherIndex) => otherIndex !== index)
     if (
       !planIsClearOfPlans({
         plan,
-        otherPlans: plans.filter((_, otherIndex) => otherIndex !== index),
+        otherPlans,
         srj,
         allowSameNetMerges,
         clearance,
@@ -1674,12 +1853,162 @@ function routePlaneTerminatedBus(
     clearance,
     staticClearanceCache,
     blockingBusCounts,
+    allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
+    fixedViaPointsByConnectionIndex,
   } = params
   const sourceObstacle = bus.connections[0]?.sourceObstacle
   if (!sourceObstacle || bus.termination.type !== "plane") return null
   const sourceLayer = bus.connections[0]!.sourceLayer
   if (targetLayer === sourceLayer) return null
+
+  if (fixedViaPointsByConnectionIndex) {
+    const fixedPlans: FanoutRoutePlan[] = []
+    for (const preparedConnection of bus.connections) {
+      const fixedViaPoint = fixedViaPointsByConnectionIndex.get(
+        preparedConnection.connectionIndex,
+      )
+      if (!fixedViaPoint) return null
+      const sourcePoint = {
+        x: preparedConnection.sourcePoint.x,
+        y: preparedConnection.sourcePoint.y,
+      }
+      const basePlan = buildPlan({
+        preparedConnection,
+        bus,
+        targetLayer,
+        track: getPerpendicularAxis(sourcePoint, bus.direction),
+        exitAxis: getExitAxis(bus),
+        layerNames,
+        traceWidth,
+        viaDiameter,
+        viaHoleDiameter,
+        viaHandedness: 0,
+        interstitialEscape: false,
+        spreadLaneIndex: 0,
+        cornerExitLaneOffset: 0,
+        cornerLocalChannelLaneOffset: 0,
+        cornerBoundaryChannelLaneOffset: 0,
+        clearance,
+        terminateAtVia: true,
+        allowBlindAndBuriedVias,
+        initialViaPoint: fixedViaPoint,
+        sourceEscapePath: [sourcePoint, fixedViaPoint],
+      })
+      const endpointViaCandidates = getPlaneEndpointViaCandidates({
+        preparedConnection,
+        bus,
+        viaDiameter,
+        clearance,
+      })
+      const plansToTry = [
+        ...endpointViaCandidates.map((viaPoint) =>
+          addPlaneEndpointTerminal({
+            plan: basePlan,
+            preparedConnection,
+            planeLayer: targetLayer,
+            viaPoint,
+            layerNames,
+            traceWidth,
+            viaDiameter,
+            viaHoleDiameter,
+            allowBlindAndBuriedVias,
+          }),
+        ),
+        basePlan,
+      ]
+      const clearPlan = plansToTry.find((candidatePlan, candidateIndex) =>
+        planIsClear({
+          plan: candidatePlan,
+          otherPlans: [...acceptedPlans, ...fixedPlans],
+          staticClearanceCache,
+          blockingBusCounts,
+          cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${candidateIndex}`,
+          srj,
+          sharedBoundary: bus.sharedBoundary,
+          clearance,
+          allowBlindAndBuriedVias,
+          allowSameNetMerges,
+        }),
+      )
+      if (!clearPlan) return null
+      fixedPlans.push(clearPlan)
+    }
+    return fixedPlans
+  }
+
+  if (
+    allowsViaInPad(srj) &&
+    bus.connections.length === 1 &&
+    circleFitsInsideObstacle({
+      center: bus.connections[0]!.sourcePoint,
+      diameter: viaDiameter,
+      obstacle: sourceObstacle,
+    })
+  ) {
+    const preparedConnection = bus.connections[0]!
+    const viaInPadPlan = buildPlan({
+      preparedConnection,
+      bus,
+      targetLayer,
+      track: getPerpendicularAxis(
+        preparedConnection.sourcePoint,
+        bus.direction,
+      ),
+      exitAxis: getExitAxis(bus),
+      layerNames,
+      traceWidth,
+      viaDiameter,
+      viaHoleDiameter,
+      viaHandedness: 0,
+      interstitialEscape: false,
+      spreadLaneIndex: 0,
+      cornerExitLaneOffset: 0,
+      cornerLocalChannelLaneOffset: 0,
+      cornerBoundaryChannelLaneOffset: 0,
+      clearance,
+      terminateAtVia: true,
+      allowBlindAndBuriedVias,
+      initialViaPoint: preparedConnection.sourcePoint,
+    })
+    const endpointViaCandidates = getPlaneEndpointViaCandidates({
+      preparedConnection,
+      bus,
+      viaDiameter,
+      clearance,
+    })
+    const plansToTry = [
+      ...endpointViaCandidates.map((viaPoint) =>
+        addPlaneEndpointTerminal({
+          plan: viaInPadPlan,
+          preparedConnection,
+          planeLayer: targetLayer,
+          viaPoint,
+          layerNames,
+          traceWidth,
+          viaDiameter,
+          viaHoleDiameter,
+          allowBlindAndBuriedVias,
+        }),
+      ),
+      viaInPadPlan,
+    ]
+    const clearPlan = plansToTry.find((candidatePlan, candidateIndex) =>
+      planIsClear({
+        plan: candidatePlan,
+        otherPlans: acceptedPlans,
+        staticClearanceCache,
+        blockingBusCounts,
+        cacheKey: `plane-via-in-pad:${bus.busId}:${targetLayer}:${candidateIndex}`,
+        srj,
+        sharedBoundary: bus.sharedBoundary,
+        clearance,
+        allowBlindAndBuriedVias,
+        allowSameNetMerges,
+      }),
+    )
+    if (clearPlan) return [clearPlan]
+  }
 
   const candidateDirections: FanoutDirection[] = [
     bus.direction,
@@ -1709,59 +2038,194 @@ function routePlaneTerminatedBus(
             preparedConnection.sourcePoint,
             direction,
           )
-          const basePlan = buildPlan({
+          const adjacentViaPoint = getInitialViaPoint({
             preparedConnection,
             bus: directionalBus,
             targetLayer,
-            track: sourceTrack,
-            exitAxis: getExitAxis(directionalBus),
-            layerNames,
             traceWidth,
             viaDiameter,
-            viaHoleDiameter,
+            clearance,
             viaHandedness,
-            interstitialEscape: !pairChannelFitsVia,
-            spreadLaneIndex: 0,
-            cornerExitLaneOffset: 0,
-            cornerLocalChannelLaneOffset: 0,
-            cornerBoundaryChannelLaneOffset: 0,
-            clearance,
-            terminateAtVia: true,
           })
-          const endpointViaCandidates = getPlaneEndpointViaCandidates({
-            preparedConnection,
-            bus: directionalBus,
-            viaDiameter,
-            clearance,
-          })
-          const plansToTry = [
-            ...endpointViaCandidates.map((viaPoint) =>
-              addPlaneEndpointTerminal({
-                plan: basePlan,
-                preparedConnection,
-                planeLayer: targetLayer,
-                viaPoint,
-                layerNames,
-                traceWidth,
-                viaDiameter,
-                viaHoleDiameter,
-              }),
-            ),
-            basePlan,
-          ]
-          const plan = plansToTry.find((candidatePlan, candidateIndex) =>
-            planIsClear({
-              plan: candidatePlan,
-              otherPlans: [...acceptedPlans, ...candidatePlans],
-              staticClearanceCache,
-              blockingBusCounts,
-              cacheKey: `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${candidateIndex}`,
-              srj,
-              sharedBoundary: bus.sharedBoundary,
-              clearance,
-              allowSameNetMerges,
-            }),
+          const directionPitch = getDirectionalPitch(directionalBus)
+          const sign = directionSign(direction)
+          const boundaryAxis = getExitAxis(directionalBus, direction)
+          const availableTravel =
+            sign * (boundaryAxis - getAxis(adjacentViaPoint, direction)) -
+            (viaDiameter / 2 + clearance)
+          const maximumEscapeSteps = Math.max(
+            0,
+            Math.floor(availableTravel / directionPitch),
           )
+          const sourcePoint = {
+            x: preparedConnection.sourcePoint.x,
+            y: preparedConnection.sourcePoint.y,
+          }
+          const adjacentAxis = getAxis(adjacentViaPoint, direction)
+          const adjacentPerpendicularAxis = getPerpendicularAxis(
+            adjacentViaPoint,
+            direction,
+          )
+          const perpendicularPitch = getPerpendicularPitch(directionalBus)
+          const sourceEscapePaths: Point2D[][] = []
+          const maximumCandidatePaths = 32
+          for (
+            let totalSteps = 0;
+            totalSteps <= maximumEscapeSteps &&
+            sourceEscapePaths.length < maximumCandidatePaths;
+            totalSteps++
+          ) {
+            const straightViaPoint = makePoint(
+              adjacentAxis + sign * totalSteps * directionPitch,
+              adjacentPerpendicularAxis,
+              direction,
+            )
+            if (totalSteps === 0) {
+              sourceEscapePaths.push([sourcePoint, adjacentViaPoint])
+            } else {
+              for (const connector of getStraightOr45ConnectorVariants(
+                sourcePoint,
+                straightViaPoint,
+              )) {
+                sourceEscapePaths.push(connector)
+                if (sourceEscapePaths.length >= maximumCandidatePaths) break
+              }
+              if (sourceEscapePaths.length < maximumCandidatePaths) {
+                sourceEscapePaths.push([
+                  sourcePoint,
+                  adjacentViaPoint,
+                  straightViaPoint,
+                ])
+              }
+            }
+
+            for (
+              let lateralSteps = 1;
+              lateralSteps <= Math.min(3, totalSteps - 1) &&
+              sourceEscapePaths.length < maximumCandidatePaths;
+              lateralSteps++
+            ) {
+              const outwardSteps = totalSteps - lateralSteps
+              if (outwardSteps < 1 || outwardSteps > maximumEscapeSteps) {
+                continue
+              }
+              for (const lateralSign of [-1, 1] as const) {
+                const lateralAxis =
+                  adjacentPerpendicularAxis +
+                  lateralSign * lateralSteps * perpendicularPitch
+                const lateralPoint = makePoint(
+                  adjacentAxis,
+                  lateralAxis,
+                  direction,
+                )
+                const outwardPoint = makePoint(
+                  adjacentAxis + sign * outwardSteps * directionPitch,
+                  adjacentPerpendicularAxis,
+                  direction,
+                )
+                const detourViaPoint = makePoint(
+                  adjacentAxis + sign * outwardSteps * directionPitch,
+                  lateralAxis,
+                  direction,
+                )
+                const chamfer =
+                  Math.min(directionPitch, perpendicularPitch) * 0.2
+                for (const connector of getStraightOr45ConnectorVariants(
+                  sourcePoint,
+                  detourViaPoint,
+                )) {
+                  sourceEscapePaths.push(connector)
+                  if (sourceEscapePaths.length >= maximumCandidatePaths) break
+                }
+                if (sourceEscapePaths.length >= maximumCandidatePaths) break
+                sourceEscapePaths.push(
+                  chamferOrthogonalCorners(
+                    [
+                      sourcePoint,
+                      adjacentViaPoint,
+                      lateralPoint,
+                      detourViaPoint,
+                    ],
+                    chamfer,
+                  ),
+                  chamferOrthogonalCorners(
+                    [
+                      sourcePoint,
+                      adjacentViaPoint,
+                      outwardPoint,
+                      detourViaPoint,
+                    ],
+                    chamfer,
+                  ),
+                )
+                if (sourceEscapePaths.length >= maximumCandidatePaths) break
+              }
+            }
+          }
+          let plan: FanoutRoutePlan | undefined
+          for (const [
+            pathIndex,
+            sourceEscapePath,
+          ] of sourceEscapePaths.entries()) {
+            const basePlan = buildPlan({
+              preparedConnection,
+              bus: directionalBus,
+              targetLayer,
+              track: sourceTrack,
+              exitAxis: getExitAxis(directionalBus),
+              layerNames,
+              traceWidth,
+              viaDiameter,
+              viaHoleDiameter,
+              viaHandedness,
+              interstitialEscape: !pairChannelFitsVia,
+              spreadLaneIndex: 0,
+              cornerExitLaneOffset: 0,
+              cornerLocalChannelLaneOffset: 0,
+              cornerBoundaryChannelLaneOffset: 0,
+              clearance,
+              terminateAtVia: true,
+              allowBlindAndBuriedVias,
+              sourceEscapePath,
+            })
+            const endpointViaCandidates = getPlaneEndpointViaCandidates({
+              preparedConnection,
+              bus: directionalBus,
+              viaDiameter,
+              clearance,
+            })
+            const plansToTry = [
+              ...endpointViaCandidates.map((viaPoint) =>
+                addPlaneEndpointTerminal({
+                  plan: basePlan,
+                  preparedConnection,
+                  planeLayer: targetLayer,
+                  viaPoint,
+                  layerNames,
+                  traceWidth,
+                  viaDiameter,
+                  viaHoleDiameter,
+                  allowBlindAndBuriedVias,
+                }),
+              ),
+              basePlan,
+            ]
+            plan = plansToTry.find((candidatePlan, candidateIndex) =>
+              planIsClear({
+                plan: candidatePlan,
+                otherPlans: [...acceptedPlans, ...candidatePlans],
+                staticClearanceCache,
+                blockingBusCounts,
+                cacheKey: `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}:${candidateIndex}`,
+                srj,
+                sharedBoundary: bus.sharedBoundary,
+                clearance,
+                allowBlindAndBuriedVias,
+                allowSameNetMerges,
+              }),
+            )
+            if (plan) break
+          }
           if (!plan) {
             orderIsClear = false
             break
@@ -1793,12 +2257,27 @@ export function routeBusAlternatives(
     compactBusTracks,
     staticClearanceCache,
     blockingBusCounts,
+    allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
+    rejectedViaMinimalCandidates,
+    stopAfterFirstRejectedViaMinimalCandidate = false,
+    fixedViaPointsByConnectionIndex,
+    reservedVias = [],
+    viaMinimalOnly = false,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
     throw new Error(
       `FanoutSolver: maxAlternatives must be a positive integer, received ${maxAlternatives}`,
     )
+  }
+  if (
+    fixedViaPointsByConnectionIndex &&
+    bus.connections.some(
+      (connection) =>
+        !fixedViaPointsByConnectionIndex.has(connection.connectionIndex),
+    )
+  ) {
+    return []
   }
   if (bus.termination.type === "plane") {
     const plan = routePlaneTerminatedBus(params)
@@ -1818,11 +2297,47 @@ export function routeBusAlternatives(
     viaDiameter / 2 + clearance - 1e-9
   const interstitialEscape =
     targetUsesVia && !outwardEdgeBus && !pairChannelFitsVia
-  const viaHandednesses: readonly ViaHandedness[] = targetUsesVia
+  const availableViaHandednesses: readonly ViaHandedness[] = targetUsesVia
     ? pairChannelFitsVia || outwardEdgeBus
       ? [0]
-      : [1, -1]
+      : allowBlindAndBuriedVias
+        ? [1, -1]
+        : [-1, 1]
     : [0]
+  const viaHandednesses: readonly ViaHandedness[] = (() => {
+    if (allowBlindAndBuriedVias) return availableViaHandednesses
+    if (
+      availableViaHandednesses.length !== 2 ||
+      !availableViaHandednesses.includes(-1) ||
+      !availableViaHandednesses.includes(1)
+    ) {
+      return availableViaHandednesses
+    }
+
+    // Prefer placing the dogbone via away from the boundary targets. This
+    // leaves the open routing chamber between the source field and the final
+    // exit band, which is especially important when physical barrels span
+    // every copper layer. The opposite hand remains an immediate fallback.
+    const meanSourceTrack =
+      bus.connections.reduce(
+        (sum, connection) =>
+          sum + getPerpendicularAxis(connection.sourcePoint, bus.direction),
+        0,
+      ) / bus.connections.length
+    const meanTargetTrack =
+      bus.connections.reduce(
+        (sum, connection) =>
+          sum +
+          getPerpendicularAxis(
+            connection.exitTargetPoint ?? connection.targetPoint,
+            bus.direction,
+          ),
+        0,
+      ) / bus.connections.length
+    if (meanTargetTrack > meanSourceTrack + 1e-9) return [-1, 1]
+    if (meanTargetTrack < meanSourceTrack - 1e-9) return [1, -1]
+    return availableViaHandednesses
+  })()
 
   const alternatives: FanoutRoutePlan[][] = []
   const seenAlternativeKeys = new Set<string>()
@@ -1844,8 +2359,204 @@ export function routeBusAlternatives(
     const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
     const boundaryExitAxis = getExitAxis(bus, boundaryDirection)
     const cornerSide = getCornerSide(bus)
-    for (const viaHandedness of viaHandednesses) {
+    const canUseViaInPadTerminals =
+      allowsViaInPad(srj) &&
+      bus.connections.every((preparedConnection) =>
+        circleFitsInsideObstacle({
+          center: preparedConnection.sourcePoint,
+          diameter: viaDiameter,
+          obstacle: preparedConnection.sourceObstacle,
+        }),
+      )
+    type CoordinatedTerminalPattern = {
+      label: string
+      useViaInPad: boolean
+      getViaHandedness: (
+        preparedConnection: PreparedConnection,
+      ) => ViaHandedness
+      getViaPoint?: (preparedConnection: PreparedConnection) => Point2D
+      maximumRouteOrderAttempts?: number
+    }
+    const maximumThroughAllRouteOrderAttempts = 24
+    const uniformDogboneTerminalPatterns: CoordinatedTerminalPattern[] =
+      viaHandednesses.map((viaHandedness) => ({
+        label: `uniform-${viaHandedness}`,
+        useViaInPad: false,
+        getViaHandedness: () => viaHandedness,
+        maximumRouteOrderAttempts: allowBlindAndBuriedVias
+          ? undefined
+          : maximumThroughAllRouteOrderAttempts,
+      }))
+    const connectionsBySourceTrack = bus.connections.toSorted(
+      (first, second) =>
+        getPerpendicularAxis(first.sourcePoint, bus.direction) -
+          getPerpendicularAxis(second.sourcePoint, bus.direction) ||
+        getAxis(first.sourcePoint, bus.direction) -
+          getAxis(second.sourcePoint, bus.direction) ||
+        first.connectionIndex - second.connectionIndex,
+    )
+    const sourceTrackRankByConnectionIndex = new Map(
+      connectionsBySourceTrack.map((connection, rank) => [
+        connection.connectionIndex,
+        rank,
+      ]),
+    )
+    const getTowardMedianHandedness = (rank: number): ViaHandedness =>
+      rank < connectionsBySourceTrack.length / 2 ? 1 : -1
+    const middleRank = Math.floor(connectionsBySourceTrack.length / 2)
+    const singleFlipRanks = [
+      0,
+      1,
+      middleRank,
+      middleRank + 1,
+      ...connectionsBySourceTrack.map((_, rank) => rank),
+    ].filter(
+      (rank, index, ranks) =>
+        rank >= 0 &&
+        rank < connectionsBySourceTrack.length &&
+        ranks.indexOf(rank) === index,
+    )
+    const towardMedianFlipRankSets = [
+      [middleRank],
+      [middleRank + 1],
+      [0],
+      [1],
+      [0, middleRank + 1],
+      [1, middleRank],
+      [0, middleRank],
+      [1, middleRank + 1],
+      [0, 1],
+      [middleRank, middleRank + 1],
+      ...singleFlipRanks.map((rank) => [rank]),
+    ]
+      .map((ranks) =>
+        ranks
+          .filter((rank) => rank >= 0 && rank < connectionsBySourceTrack.length)
+          .toSorted((first, second) => first - second),
+      )
+      .filter(
+        (ranks, index, rankSets) =>
+          ranks.length > 0 &&
+          rankSets.findIndex(
+            (candidate) => candidate.join(",") === ranks.join(","),
+          ) === index,
+      )
+    const mixedDogboneTerminalPatterns: CoordinatedTerminalPattern[] =
+      !allowBlindAndBuriedVias &&
+      (reservedVias.length > 0 ||
+        acceptedPlans.some((plan) => plan.termination.type === "plane")) &&
+      viaHandednesses.includes(-1) &&
+      viaHandednesses.includes(1)
+        ? [
+            {
+              label: "toward-source-median",
+              useViaInPad: false,
+              maximumRouteOrderAttempts: maximumThroughAllRouteOrderAttempts,
+              getViaHandedness: (connection) =>
+                getTowardMedianHandedness(
+                  sourceTrackRankByConnectionIndex.get(
+                    connection.connectionIndex,
+                  ) ?? 0,
+                ),
+            },
+            ...towardMedianFlipRankSets.slice(0, 12).map((flippedRanks) => ({
+              label: `toward-source-median-with-ranks-${flippedRanks.join("-")}-flipped`,
+              useViaInPad: false,
+              maximumRouteOrderAttempts: 6,
+              getViaHandedness: (connection: PreparedConnection) => {
+                const rank =
+                  sourceTrackRankByConnectionIndex.get(
+                    connection.connectionIndex,
+                  ) ?? 0
+                const towardMedian = getTowardMedianHandedness(rank)
+                return flippedRanks.includes(rank)
+                  ? (-towardMedian as ViaHandedness)
+                  : towardMedian
+              },
+            })),
+            {
+              label: "alternating-source-grid-a",
+              useViaInPad: false,
+              maximumRouteOrderAttempts: 3,
+              getViaHandedness: (connection) =>
+                (sourceTrackRankByConnectionIndex.get(
+                  connection.connectionIndex,
+                ) ?? 0) %
+                  2 ===
+                0
+                  ? -1
+                  : 1,
+            },
+            {
+              label: "alternating-source-grid-b",
+              useViaInPad: false,
+              maximumRouteOrderAttempts: 3,
+              getViaHandedness: (connection) =>
+                (sourceTrackRankByConnectionIndex.get(
+                  connection.connectionIndex,
+                ) ?? 0) %
+                  2 ===
+                0
+                  ? 1
+                  : -1,
+            },
+            {
+              label: "away-from-source-median",
+              useViaInPad: false,
+              maximumRouteOrderAttempts: maximumThroughAllRouteOrderAttempts,
+              getViaHandedness: (connection) =>
+                (sourceTrackRankByConnectionIndex.get(
+                  connection.connectionIndex,
+                ) ?? 0) <
+                connectionsBySourceTrack.length / 2
+                  ? -1
+                  : 1,
+            },
+          ]
+        : []
+    const viaInPadTerminalPattern = {
+      label: "via-in-pad",
+      useViaInPad: true,
+      getViaHandedness: () => 0 as const,
+    }
+    const fixedViaTerminalPattern: CoordinatedTerminalPattern | undefined =
+      fixedViaPointsByConnectionIndex
+        ? {
+            label: "component-matched-vias",
+            useViaInPad: false,
+            getViaHandedness: () => 0,
+            getViaPoint: (connection) =>
+              fixedViaPointsByConnectionIndex.get(connection.connectionIndex)!,
+            // A fixed component-wide dogbone assignment is a bounded fast
+            // path. Keep enough order/bias attempts for the eight-lane DDR
+            // cases without allowing route-order rotations to grow with an
+            // arbitrarily wide bus.
+            maximumRouteOrderAttempts: maximumThroughAllRouteOrderAttempts,
+          }
+        : undefined
+    const planeTerminationsAlreadyOccupyTheFanout = acceptedPlans.some(
+      (plan) => plan.termination.type === "plane",
+    )
+    const acceptedBoundaryPlansExist = acceptedPlans.some(
+      (plan) => plan.termination.type === "boundary",
+    )
+    const dogboneTerminalPatterns =
+      acceptedBoundaryPlansExist && !allowBlindAndBuriedVias
+        ? [...mixedDogboneTerminalPatterns, ...uniformDogboneTerminalPatterns]
+        : [...uniformDogboneTerminalPatterns, ...mixedDogboneTerminalPatterns]
+    const terminalPatterns: CoordinatedTerminalPattern[] =
+      fixedViaTerminalPattern
+        ? [fixedViaTerminalPattern]
+        : canUseViaInPadTerminals
+          ? planeTerminationsAlreadyOccupyTheFanout
+            ? [viaInPadTerminalPattern, ...dogboneTerminalPatterns]
+            : [...dogboneTerminalPatterns, viaInPadTerminalPattern]
+          : dogboneTerminalPatterns
+    const seenTerminalSignatures = new Set<string>()
+    for (const terminalPattern of terminalPatterns) {
       const terminals = bus.connections.map((preparedConnection) => {
+        const viaHandedness =
+          terminalPattern.getViaHandedness(preparedConnection)
         const boundaryTrack = cornerSide
           ? getCornerTargetTrack({
               bus,
@@ -1863,15 +2574,22 @@ export function routeBusAlternatives(
             )
         return {
           connection: preparedConnection,
-          viaPoint: getInitialViaPoint({
-            preparedConnection,
-            bus,
-            targetLayer,
-            traceWidth,
-            viaDiameter,
-            clearance,
-            viaHandedness,
-          }),
+          viaPoint: terminalPattern.getViaPoint
+            ? terminalPattern.getViaPoint(preparedConnection)
+            : terminalPattern.useViaInPad
+              ? {
+                  x: preparedConnection.sourcePoint.x,
+                  y: preparedConnection.sourcePoint.y,
+                }
+              : getInitialViaPoint({
+                  preparedConnection,
+                  bus,
+                  targetLayer,
+                  traceWidth,
+                  viaDiameter,
+                  clearance,
+                  viaHandedness,
+                }),
           exitPoint: makePoint(
             boundaryExitAxis,
             boundaryTrack,
@@ -1879,35 +2597,75 @@ export function routeBusAlternatives(
           ),
         }
       })
-      const viaMinimalPlans = routeViaMinimalWinding({
-        srj,
-        bus,
-        targetLayer,
-        terminals,
-        acceptedPlans,
-        layerNames,
-        traceWidth,
-        viaDiameter,
-        viaHoleDiameter,
-        clearance,
-        allowSameNetMerges,
-      })
-      if (
-        !viaMinimalPlans ||
-        !fanoutPlansAreClear({
+      const terminalSignature = terminals
+        .map(
+          (terminal) =>
+            `${terminal.connection.connectionIndex}:${terminal.viaPoint.x}:${terminal.viaPoint.y}`,
+        )
+        .join("|")
+      if (seenTerminalSignatures.has(terminalSignature)) continue
+      seenTerminalSignatures.add(terminalSignature)
+      const viaMinimalAlternatives = routeViaMinimalWindingAlternatives(
+        {
+          srj,
+          bus,
+          targetLayer,
+          terminals,
+          acceptedPlans,
+          layerNames,
+          traceWidth,
+          viaDiameter,
+          viaHoleDiameter,
+          clearance,
+          allowBlindAndBuriedVias,
+          allowSameNetMerges,
+          maximumRouteOrderAttempts: terminalPattern.maximumRouteOrderAttempts,
+          reservedVias,
+          gridStepDivisor:
+            fixedViaPointsByConnectionIndex &&
+            Math.min(bus.pitchX, bus.pitchY) -
+              2 * (viaDiameter / 2 + traceWidth / 2 + clearance) <
+              traceWidth + clearance
+              ? 2
+              : 1,
+        },
+        terminalPattern.maximumRouteOrderAttempts === undefined
+          ? Math.min(2, maxAlternatives - alternatives.length)
+          : 2,
+      )
+      for (const viaMinimalPlans of viaMinimalAlternatives) {
+        const combinedPlansAreClear = fanoutPlansAreClear({
           plans: [...acceptedPlans, ...viaMinimalPlans],
           srj,
           sharedBoundary: bus.sharedBoundary,
           clearance,
+          allowBlindAndBuriedVias,
           allowSameNetMerges,
         })
-      ) {
-        continue
+        if (!combinedPlansAreClear) {
+          const candidateIsInternallyClear = fanoutPlansAreClear({
+            plans: viaMinimalPlans,
+            srj,
+            sharedBoundary: bus.sharedBoundary,
+            clearance,
+            allowBlindAndBuriedVias,
+            allowSameNetMerges,
+          })
+          if (candidateIsInternallyClear && rejectedViaMinimalCandidates) {
+            rejectedViaMinimalCandidates.push(viaMinimalPlans)
+            if (stopAfterFirstRejectedViaMinimalCandidate) {
+              return alternatives
+            }
+          }
+          continue
+        }
+        addAlternative(viaMinimalPlans)
+        if (alternatives.length >= maxAlternatives) return alternatives
       }
-      addAlternative(viaMinimalPlans)
-      if (alternatives.length >= maxAlternatives) return alternatives
     }
   }
+
+  if (viaMinimalOnly) return alternatives
 
   const searchConnectionOrder = (
     connectionOrder: PreparedConnection[],
@@ -1987,6 +2745,7 @@ export function routeBusAlternatives(
         cornerBoundaryChannelLaneOffset: cornerLaneOffsets.boundaryChannel,
         clearance,
         terminateAtVia: false,
+        allowBlindAndBuriedVias,
       })
       if (
         !planIsClear({
@@ -1998,6 +2757,7 @@ export function routeBusAlternatives(
           srj,
           sharedBoundary: bus.sharedBoundary,
           clearance,
+          allowBlindAndBuriedVias,
           allowSameNetMerges,
         })
       ) {

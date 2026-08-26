@@ -1,4 +1,5 @@
 import type {
+  Obstacle,
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
@@ -11,7 +12,7 @@ import {
   distanceSegmentToSegment,
 } from "./geometry"
 import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
-import { getLayerSpan } from "./layer-names"
+import { getViaSpanLayers } from "./layer-names"
 import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
@@ -37,6 +38,11 @@ export interface ViaMinimalWindingTerminal {
   exitPoint: Point2D
 }
 
+export interface ViaMinimalWindingReservedVia {
+  connectionName: string
+  via: Pick<RoutedVia, "center" | "diameter" | "spanLayers">
+}
+
 export interface RouteViaMinimalWindingParams {
   srj: SimpleRouteJson
   bus: PreparedBus
@@ -48,7 +54,12 @@ export interface RouteViaMinimalWindingParams {
   viaDiameter: number
   viaHoleDiameter: number
   clearance: number
+  allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
+  maximumRouteOrderAttempts?: number
+  reservedVias?: readonly ViaMinimalWindingReservedVia[]
+  /** Use a finer uniform grid for narrow channels between reserved vias. */
+  gridStepDivisor?: 1 | 2
 }
 
 interface GridNode {
@@ -72,6 +83,157 @@ interface BlockingSegment {
 interface BlockingVia {
   connectionName: string
   via: Pick<RoutedVia, "center" | "diameter" | "spanLayers">
+}
+
+interface IndexedObstacle {
+  obstacle: Obstacle
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+  xRadius: number
+}
+
+type ShapeAwareObstacle = Obstacle & {
+  shape?: "circle"
+  ccwRotationDegrees?: number
+}
+
+function getObstacleAxisAlignedBounds(
+  obstacle: Obstacle,
+): Omit<IndexedObstacle, "obstacle"> {
+  const shapeAwareObstacle = obstacle as ShapeAwareObstacle
+  if (shapeAwareObstacle.shape === "circle") {
+    const radius = obstacle.width / 2
+    return {
+      minX: obstacle.center.x - radius,
+      maxX: obstacle.center.x + radius,
+      minY: obstacle.center.y - radius,
+      maxY: obstacle.center.y + radius,
+      xRadius: radius,
+    }
+  }
+
+  const rotationRadians =
+    ((shapeAwareObstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
+  const absoluteCosine = Math.abs(Math.cos(rotationRadians))
+  const absoluteSine = Math.abs(Math.sin(rotationRadians))
+  const halfWidth = obstacle.width / 2
+  const halfHeight = obstacle.height / 2
+  const xRadius = absoluteCosine * halfWidth + absoluteSine * halfHeight
+  const yRadius = absoluteSine * halfWidth + absoluteCosine * halfHeight
+  return {
+    minX: obstacle.center.x - xRadius,
+    maxX: obstacle.center.x + xRadius,
+    minY: obstacle.center.y - yRadius,
+    maxY: obstacle.center.y + yRadius,
+    xRadius,
+  }
+}
+
+/**
+ * X-sorted broad phase for exact segment-to-obstacle clearance checks.
+ * Rotation-aware bounds make the query conservative; callers still use the
+ * shape-aware distance function to decide whether copper is actually blocked.
+ */
+export class ObstacleSpatialIndex {
+  private readonly obstaclesByCenterX: IndexedObstacle[]
+  private readonly maximumXRadius: number
+
+  constructor(obstacles: readonly Obstacle[]) {
+    this.obstaclesByCenterX = obstacles
+      .map((obstacle) => ({
+        obstacle,
+        ...getObstacleAxisAlignedBounds(obstacle),
+      }))
+      .toSorted(
+        (first, second) => first.obstacle.center.x - second.obstacle.center.x,
+      )
+    this.maximumXRadius = this.obstaclesByCenterX.reduce(
+      (maximum, obstacle) => Math.max(maximum, obstacle.xRadius),
+      0,
+    )
+  }
+
+  querySegment(segment: RoutedSegment, margin: number): Obstacle[] {
+    const segmentMinX = Math.min(segment.start.x, segment.end.x)
+    const segmentMaxX = Math.max(segment.start.x, segment.end.x)
+    const segmentMinY = Math.min(segment.start.y, segment.end.y)
+    const segmentMaxY = Math.max(segment.start.y, segment.end.y)
+    const minimumCenterX = segmentMinX - margin - this.maximumXRadius
+    const maximumCenterX = segmentMaxX + margin + this.maximumXRadius
+    let low = 0
+    let high = this.obstaclesByCenterX.length
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (this.obstaclesByCenterX[middle]!.obstacle.center.x < minimumCenterX) {
+        low = middle + 1
+      } else {
+        high = middle
+      }
+    }
+
+    const candidates: Obstacle[] = []
+    for (
+      let obstacleIndex = low;
+      obstacleIndex < this.obstaclesByCenterX.length;
+      obstacleIndex++
+    ) {
+      const indexedObstacle = this.obstaclesByCenterX[obstacleIndex]!
+      if (indexedObstacle.obstacle.center.x > maximumCenterX) break
+      if (
+        indexedObstacle.maxX < segmentMinX - margin ||
+        indexedObstacle.minX > segmentMaxX + margin ||
+        indexedObstacle.maxY < segmentMinY - margin ||
+        indexedObstacle.minY > segmentMaxY + margin
+      ) {
+        continue
+      }
+      candidates.push(indexedObstacle.obstacle)
+    }
+    return candidates
+  }
+}
+
+export function* iterateUniqueRouteOrders<T>(params: {
+  initialOrderFactories: ReadonlyArray<() => readonly T[]>
+  rotationBase: readonly T[]
+  getItemKey: (item: T) => string
+  maximumOrderCount?: number
+}): Generator<readonly T[]> {
+  const {
+    initialOrderFactories,
+    rotationBase,
+    getItemKey,
+    maximumOrderCount = Number.POSITIVE_INFINITY,
+  } = params
+  const seenOrderKeys = new Set<string>()
+  let yieldedOrderCount = 0
+  const getOrderKey = (order: readonly T[]): string =>
+    order.map(getItemKey).join("\u0000")
+
+  for (const createOrder of initialOrderFactories) {
+    if (yieldedOrderCount >= maximumOrderCount) return
+    const order = createOrder()
+    const key = getOrderKey(order)
+    if (seenOrderKeys.has(key)) continue
+    seenOrderKeys.add(key)
+    yieldedOrderCount++
+    yield order
+  }
+
+  for (let offset = 1; offset < rotationBase.length; offset++) {
+    if (yieldedOrderCount >= maximumOrderCount) return
+    const order = [
+      ...rotationBase.slice(offset),
+      ...rotationBase.slice(0, offset),
+    ]
+    const key = getOrderKey(order)
+    if (seenOrderKeys.has(key)) continue
+    seenOrderKeys.add(key)
+    yieldedOrderCount++
+    yield order
+  }
 }
 
 interface HeapEntry {
@@ -234,9 +396,13 @@ function getPlanVias(plan: FanoutRoutePlan): RoutedVia[] {
 function getBlockingCopper(params: {
   srj: SimpleRouteJson
   acceptedPlans: readonly FanoutRoutePlan[]
+  allowBlindAndBuriedVias: boolean
 }): { segments: BlockingSegment[]; vias: BlockingVia[] } {
-  const { srj, acceptedPlans } = params
-  const routedTraceCopper = getAllRoutedTraceCopper(srj)
+  const { srj, acceptedPlans, allowBlindAndBuriedVias } = params
+  const routedTraceCopper = getAllRoutedTraceCopper(
+    srj,
+    allowBlindAndBuriedVias,
+  )
   return {
     segments: [
       ...routedTraceCopper.flatMap((copper) =>
@@ -280,6 +446,7 @@ function buildPlan(params: {
   traceWidth: number
   viaDiameter: number
   viaHoleDiameter: number
+  allowBlindAndBuriedVias: boolean
 }): FanoutRoutePlan {
   const {
     bus,
@@ -290,6 +457,7 @@ function buildPlan(params: {
     traceWidth,
     viaDiameter,
     viaHoleDiameter,
+    allowBlindAndBuriedVias,
   } = params
   const connection = terminal.connection
   const sourcePoint = {
@@ -302,12 +470,14 @@ function buildPlan(params: {
     width: traceWidth,
     layer: connection.sourceLayer,
   }
+  const hasSourceDogbone = distance(sourcePoint, terminal.viaPoint) > EPSILON
   const targetSegments = getSegments(targetLayerPoints, traceWidth, targetLayer)
-  const spanLayers = getLayerSpan(
-    connection.sourceLayer,
-    targetLayer,
+  const spanLayers = getViaSpanLayers({
+    fromLayer: connection.sourceLayer,
+    toLayer: targetLayer,
     layerNames,
-  )
+    allowBlindAndBuriedVias,
+  })
   const via: RoutedVia = {
     center: terminal.viaPoint,
     diameter: viaDiameter,
@@ -326,12 +496,16 @@ function buildPlan(params: {
         ? { start_pcb_port_id: connection.sourcePoint.pcb_port_id }
         : {}),
     },
-    {
-      route_type: "wire",
-      ...terminal.viaPoint,
-      width: traceWidth,
-      layer: connection.sourceLayer,
-    },
+    ...(hasSourceDogbone
+      ? [
+          {
+            route_type: "wire" as const,
+            ...terminal.viaPoint,
+            width: traceWidth,
+            layer: connection.sourceLayer,
+          },
+        ]
+      : []),
     {
       route_type: "via",
       ...terminal.viaPoint,
@@ -357,7 +531,10 @@ function buildPlan(params: {
     connectionName: connection.connection.name,
     sourcePointIndex: connection.sourcePointIndex,
   })
-  const segments = [sourceSegment, ...targetSegments]
+  const segments = [
+    ...(hasSourceDogbone ? [sourceSegment] : []),
+    ...targetSegments,
+  ]
   const cornerBandSide = getCornerBandSide(bus.exitEdge, bus.preferredExit)
   return {
     busId: bus.busId,
@@ -398,9 +575,15 @@ function buildPlan(params: {
   }
 }
 
-export function routeViaMinimalWinding(
+export function routeViaMinimalWindingAlternatives(
   params: RouteViaMinimalWindingParams,
-): FanoutRoutePlan[] | null {
+  maximumAlternatives = 1,
+): FanoutRoutePlan[][] {
+  if (!Number.isInteger(maximumAlternatives) || maximumAlternatives < 1) {
+    throw new Error(
+      `FanoutSolver: maximum winding alternatives must be a positive integer, received ${maximumAlternatives}`,
+    )
+  }
   const {
     srj,
     bus,
@@ -412,8 +595,27 @@ export function routeViaMinimalWinding(
     viaDiameter,
     viaHoleDiameter,
     clearance,
+    allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
+    maximumRouteOrderAttempts,
+    reservedVias = [],
+    gridStepDivisor = 1,
   } = params
+  if (
+    maximumRouteOrderAttempts !== undefined &&
+    (!Number.isInteger(maximumRouteOrderAttempts) ||
+      maximumRouteOrderAttempts < 1)
+  ) {
+    throw new Error(
+      `FanoutSolver: maximumRouteOrderAttempts must be a positive integer, received ${maximumRouteOrderAttempts}`,
+    )
+  }
+
+  if (gridStepDivisor !== 1 && gridStepDivisor !== 2) {
+    throw new Error(
+      `FanoutSolver: gridStepDivisor must be 1 or 2, received ${gridStepDivisor}`,
+    )
+  }
   if (
     terminals.length === 0 ||
     !bus.exitEdge ||
@@ -421,17 +623,17 @@ export function routeViaMinimalWinding(
       (terminal) => terminal.connection.sourceLayer === targetLayer,
     )
   ) {
-    return null
+    return []
   }
 
-  const gridStep = traceWidth + clearance
-  if (!Number.isFinite(gridStep) || gridStep <= 0) return null
+  const gridStep = (traceWidth + clearance) / gridStepDivisor
+  if (!Number.isFinite(gridStep) || gridStep <= 0) return []
   const { minX, maxX, minY, maxY } = bus.sharedBoundary
   const columnCount = Math.floor((maxX - minX) / gridStep) + 1
   const rowCount = Math.floor((maxY - minY) / gridStep) + 1
   const nodeCount = columnCount * rowCount
   if (columnCount < 2 || rowCount < 2 || nodeCount > MAX_GRID_NODE_COUNT) {
-    return null
+    return []
   }
   const nodes: GridNode[] = Array.from({ length: nodeCount }, (_, index) => {
     const column = index % columnCount
@@ -445,7 +647,14 @@ export function routeViaMinimalWinding(
   const targetLayerObstacles = srj.obstacles.filter((obstacle) =>
     obstacle.layers.includes(targetLayer),
   )
-  const blockingCopper = getBlockingCopper({ srj, acceptedPlans })
+  const targetLayerObstacleIndex = new ObstacleSpatialIndex(
+    targetLayerObstacles,
+  )
+  const blockingCopper = getBlockingCopper({
+    srj,
+    acceptedPlans,
+    allowBlindAndBuriedVias,
+  })
   const blockingSegments = blockingCopper.segments.filter(({ segment }) => {
     if (segment.layer !== targetLayer) return false
     const margin = (segment.width + traceWidth) / 2 + clearance
@@ -466,22 +675,54 @@ export function routeViaMinimalWinding(
       via.center.y > maxY + margin
     )
   })
+  blockingVias.push(
+    ...reservedVias.filter(({ via }) => {
+      if (!via.spanLayers.includes(targetLayer)) return false
+      const margin = via.diameter / 2 + traceWidth / 2 + clearance
+      return !(
+        via.center.x < minX - margin ||
+        via.center.x > maxX + margin ||
+        via.center.y < minY - margin ||
+        via.center.y > maxY + margin
+      )
+    }),
+  )
   const terminalVias: BlockingVia[] = terminals.map((terminal) => ({
     connectionName: terminal.connection.connection.name,
     via: {
       center: terminal.viaPoint,
       diameter: viaDiameter,
-      spanLayers: getLayerSpan(
-        terminal.connection.sourceLayer,
-        targetLayer,
+      spanLayers: getViaSpanLayers({
+        fromLayer: terminal.connection.sourceLayer,
+        toLayer: targetLayer,
         layerNames,
-      ),
+        allowBlindAndBuriedVias,
+      }),
     },
   }))
   const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
   const sharesNet = (first: string, second: string): boolean =>
     first === second ||
     (allowSameNetMerges && connectionsShareElectricalNet(srj, first, second))
+  const allBlockingVias = [...blockingVias, ...terminalVias]
+  const maximumViaToTraceDistance = allBlockingVias.reduce(
+    (maximum, { via }) =>
+      Math.max(maximum, via.diameter / 2 + traceWidth / 2 + clearance),
+    traceWidth / 2 + clearance,
+  )
+  const viasByX = allBlockingVias.toSorted(
+    (first, second) => first.via.center.x - second.via.center.x,
+  )
+  const getFirstViaAtOrAfterX = (minimumX: number): number => {
+    let low = 0
+    let high = viasByX.length
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (viasByX[middle]!.via.center.x < minimumX) low = middle + 1
+      else high = middle
+    }
+    return low
+  }
 
   const segmentIsClear = (params: {
     segment: RoutedSegment
@@ -490,7 +731,11 @@ export function routeViaMinimalWinding(
   }): boolean => {
     const { segment, terminal, acceptedAttemptSegments } = params
     const connectionName = terminal.connection.connection.name
-    for (const obstacle of targetLayerObstacles) {
+    const requiredObstacleClearance = segment.width / 2 + clearance
+    for (const obstacle of targetLayerObstacleIndex.querySegment(
+      segment,
+      requiredObstacleClearance,
+    )) {
       if (
         obstacle.connectedTo.includes(connectionName) ||
         (allowSameNetMerges &&
@@ -500,7 +745,7 @@ export function routeViaMinimalWinding(
       }
       if (
         distanceSegmentToObstacle(segment, obstacle) <
-        segment.width / 2 + clearance - EPSILON
+        requiredObstacleClearance - EPSILON
       ) {
         return false
       }
@@ -533,20 +778,35 @@ export function routeViaMinimalWinding(
         return false
       }
     }
-    for (const blocker of blockingVias) {
-      if (sharesNet(connectionName, blocker.connectionName)) continue
-      if (
-        distancePointToSegment(blocker.via.center, segment.start, segment.end) <
-        blocker.via.diameter / 2 + segment.width / 2 + clearance - EPSILON
-      ) {
-        return false
+    const segmentMinX = Math.min(segment.start.x, segment.end.x)
+    const segmentMaxX = Math.max(segment.start.x, segment.end.x)
+    const segmentMinY = Math.min(segment.start.y, segment.end.y)
+    const segmentMaxY = Math.max(segment.start.y, segment.end.y)
+    for (
+      let viaIndex = getFirstViaAtOrAfterX(
+        segmentMinX - maximumViaToTraceDistance,
+      );
+      viaIndex < viasByX.length;
+      viaIndex++
+    ) {
+      const blocker = viasByX[viaIndex]!
+      if (blocker.via.center.x > segmentMaxX + maximumViaToTraceDistance) {
+        break
       }
-    }
-    for (const blocker of terminalVias) {
       if (sharesNet(connectionName, blocker.connectionName)) continue
+      const requiredDistance =
+        blocker.via.diameter / 2 + segment.width / 2 + clearance
+      if (
+        blocker.via.center.x < segmentMinX - requiredDistance ||
+        blocker.via.center.x > segmentMaxX + requiredDistance ||
+        blocker.via.center.y < segmentMinY - requiredDistance ||
+        blocker.via.center.y > segmentMaxY + requiredDistance
+      ) {
+        continue
+      }
       if (
         distancePointToSegment(blocker.via.center, segment.start, segment.end) <
-        blocker.via.diameter / 2 + segment.width / 2 + clearance - EPSILON
+        requiredDistance - EPSILON
       ) {
         return false
       }
@@ -807,48 +1067,83 @@ export function routeViaMinimalWinding(
       )
     )
   })
-  const routeOrderCandidates: ViaMinimalWindingTerminal[][] = [
-    targetOrderedTerminals,
-    [...targetOrderedTerminals].reverse(),
-    terminals.toSorted(
-      (first, second) =>
-        first.viaPoint.x - second.viaPoint.x ||
-        first.viaPoint.y - second.viaPoint.y,
-    ),
-    terminals.toSorted(
-      (first, second) =>
-        second.viaPoint.x - first.viaPoint.x ||
-        second.viaPoint.y - first.viaPoint.y,
-    ),
-    terminals.toSorted(
-      (first, second) =>
-        first.viaPoint.y - second.viaPoint.y ||
-        first.viaPoint.x - second.viaPoint.x,
-    ),
-    terminals.toSorted(
-      (first, second) =>
-        second.viaPoint.y - first.viaPoint.y ||
-        second.viaPoint.x - first.viaPoint.x,
-    ),
-  ]
-  for (let offset = 1; offset < targetOrderedTerminals.length; offset++) {
-    routeOrderCandidates.push([
-      ...targetOrderedTerminals.slice(offset),
-      ...targetOrderedTerminals.slice(0, offset),
+  const viaTracks = terminals.map((terminal) =>
+    getPerpendicularAxis(terminal.viaPoint, boundaryDirection),
+  )
+  const targetTracks = targetOrderedTerminals.map((terminal) =>
+    getPerpendicularAxis(terminal.exitPoint, boundaryDirection),
+  )
+  const viasAreBeforeTargets =
+    Math.max(...viaTracks) < Math.min(...targetTracks) - EPSILON
+  const viasAreAfterTargets =
+    Math.min(...viaTracks) > Math.max(...targetTracks) + EPSILON
+  const laneBiases = viasAreBeforeTargets
+    ? ([1, 0, -1] as const)
+    : viasAreAfterTargets
+      ? ([-1, 0, 1] as const)
+      : ([0, 1, -1] as const)
+  const initialRouteOrderFactories: Array<
+    () => readonly ViaMinimalWindingTerminal[]
+  > = []
+  if (viasAreBeforeTargets) {
+    initialRouteOrderFactories.push(() => [
+      ...targetOrderedTerminals.slice(1),
+      targetOrderedTerminals[0]!,
     ])
+  } else if (viasAreAfterTargets) {
+    initialRouteOrderFactories.push(() => [...targetOrderedTerminals].reverse())
   }
-  const seenRouteOrders = new Set<string>()
-  const routeOrders = routeOrderCandidates.filter((routeOrder) => {
-    const key = routeOrder
-      .map((terminal) => terminal.connection.connection.name)
-      .join("\u0000")
-    if (seenRouteOrders.has(key)) return false
-    seenRouteOrders.add(key)
-    return true
+  initialRouteOrderFactories.push(
+    () => targetOrderedTerminals,
+    () => [...targetOrderedTerminals].reverse(),
+    () =>
+      terminals.toSorted(
+        (first, second) =>
+          first.viaPoint.x - second.viaPoint.x ||
+          first.viaPoint.y - second.viaPoint.y,
+      ),
+    () =>
+      terminals.toSorted(
+        (first, second) =>
+          second.viaPoint.x - first.viaPoint.x ||
+          second.viaPoint.y - first.viaPoint.y,
+      ),
+    () =>
+      terminals.toSorted(
+        (first, second) =>
+          first.viaPoint.y - second.viaPoint.y ||
+          first.viaPoint.x - second.viaPoint.x,
+      ),
+    () =>
+      terminals.toSorted(
+        (first, second) =>
+          second.viaPoint.y - first.viaPoint.y ||
+          second.viaPoint.x - first.viaPoint.x,
+      ),
+  )
+  const maximumRouteOrderCount =
+    maximumRouteOrderAttempts === undefined
+      ? undefined
+      : Math.ceil(maximumRouteOrderAttempts / laneBiases.length)
+  const routeOrders = iterateUniqueRouteOrders({
+    initialOrderFactories: initialRouteOrderFactories,
+    rotationBase: targetOrderedTerminals,
+    getItemKey: (terminal) => terminal.connection.connection.name,
+    maximumOrderCount: maximumRouteOrderCount,
   })
 
+  const alternatives: FanoutRoutePlan[][] = []
+  const seenAlternativeKeys = new Set<string>()
+  let routeOrderAttemptCount = 0
   for (const routeOrder of routeOrders) {
-    for (const laneBias of [0, 1, -1] as const) {
+    for (const laneBias of laneBiases) {
+      if (
+        maximumRouteOrderAttempts !== undefined &&
+        routeOrderAttemptCount >= maximumRouteOrderAttempts
+      ) {
+        return alternatives
+      }
+      routeOrderAttemptCount++
       const acceptedAttemptSegments: BlockingSegment[] = []
       const routedPointsByConnectionName = new Map<string, Point2D[]>()
       let failed = false
@@ -872,7 +1167,7 @@ export function routeViaMinimalWinding(
         )
       }
       if (failed) continue
-      return terminals.map((terminal) => {
+      const plans = terminals.map((terminal) => {
         const targetLayerPoints = routedPointsByConnectionName.get(
           terminal.connection.connection.name,
         )
@@ -890,9 +1185,30 @@ export function routeViaMinimalWinding(
           traceWidth,
           viaDiameter,
           viaHoleDiameter,
+          allowBlindAndBuriedVias,
         })
       })
+      const alternativeKey = plans
+        .map((plan) =>
+          plan.segments
+            .map(
+              (segment) =>
+                `${segment.start.x},${segment.start.y},${segment.end.x},${segment.end.y},${segment.layer}`,
+            )
+            .join(";"),
+        )
+        .join("|")
+      if (seenAlternativeKeys.has(alternativeKey)) continue
+      seenAlternativeKeys.add(alternativeKey)
+      alternatives.push(plans)
+      if (alternatives.length >= maximumAlternatives) return alternatives
     }
   }
-  return null
+  return alternatives
+}
+
+export function routeViaMinimalWinding(
+  params: RouteViaMinimalWindingParams,
+): FanoutRoutePlan[] | null {
+  return routeViaMinimalWindingAlternatives(params, 1)[0] ?? null
 }

@@ -1,19 +1,27 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
-import { getCornerBandSide } from "./boundary-exit"
+import { addViaLayerMetadataToSrj } from "./add-via-layer-metadata"
+import { getCornerBandSide, getExitEdgeForDirection } from "./boundary-exit"
 import { buildOutputSimpleRouteJson } from "./build-output"
 import {
   type CompleteOriginalEndpointsResult,
   completeOriginalEndpoints,
 } from "./complete-original-endpoints"
-import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
+import {
+  generateLayerAssignments,
+  getCopperLayerNames,
+  getViaSpanLayers,
+} from "./layer-names"
 import { matchBusPlanLengths } from "./match-bus-lengths"
+import { matchComponentDogboneViaSites } from "./match-component-dogbone-via-sites"
+import { connectionsShareElectricalNet } from "./net-identity"
 import {
   prepareFanoutBuses,
   resolveAvailableBoundaryRegions,
 } from "./prepare-buses"
 import {
+  fanoutPlansAreClear,
   type RouteBusStaticClearanceCache,
   routeBus,
   routeBusAlternatives,
@@ -30,6 +38,7 @@ import type {
   FanoutSolverOutput,
   FanoutValidationIssue,
   PreparedBus,
+  SimpleRouteJsonWithFanoutPlanes,
 } from "./types"
 import { validateFanoutSolution } from "./validate-fanout-solution"
 import { visualizeSimpleRouteJson } from "./visualize-simple-route-json"
@@ -40,6 +49,7 @@ interface ResolvedFanoutConfig {
   viaHoleDiameter: number
   clearance: number
   compactBusTracks: boolean
+  allowBlindAndBuriedVias: boolean
   allowSameNetMerges: boolean
   singleLayerPushAndShove: boolean
   singleLayerAdaptiveExits: boolean
@@ -57,6 +67,11 @@ interface EvaluatedAssignment extends AssignmentAttempt {
 interface GroupedBeamState {
   assignment: Readonly<Record<string, string>>
   plans: FanoutRoutePlan[]
+}
+
+interface MixedTerminationState {
+  plans: FanoutRoutePlan[]
+  failedBusIds: string[]
 }
 
 type RoutingStrategy = "default" | "group-by-layer" | "deep-first"
@@ -131,6 +146,7 @@ function resolveConfig(
     viaHoleDiameter,
     clearance,
     compactBusTracks: options.compactBusTracks ?? false,
+    allowBlindAndBuriedVias: options.allowBlindAndBuriedVias ?? true,
     allowSameNetMerges: options.allowSameNetMerges ?? false,
     singleLayerPushAndShove: options.singleLayerPushAndShove ?? false,
     singleLayerAdaptiveExits: options.singleLayerAdaptiveExits ?? false,
@@ -214,6 +230,17 @@ function assignmentLoadPenalty(
 
 function getLayerLoadPenaltyWeight(config: ResolvedFanoutConfig): number {
   return config.balanceLayerLoadByConnectionCount ? 0.25 : 0.01
+}
+
+function comparePlaneRoutingPriority(
+  first: PreparedBus,
+  second: PreparedBus,
+  allowBlindAndBuriedVias: boolean,
+): number {
+  const planeDifference =
+    Number(first.termination.type === "plane") -
+    Number(second.termination.type === "plane")
+  return allowBlindAndBuriedVias ? -planeDifference : planeDifference
 }
 
 function getPlanViaCount(plans: readonly FanoutRoutePlan[]): number {
@@ -439,6 +466,7 @@ function getCandidateEscapeLayersForBus(params: {
         viaHoleDiameter: config.viaHoleDiameter,
         clearance: config.clearance,
         compactBusTracks: config.compactBusTracks,
+        allowBlindAndBuriedVias: config.allowBlindAndBuriedVias,
         allowSameNetMerges: config.allowSameNetMerges,
         staticClearanceCache,
       }) !== null,
@@ -486,6 +514,10 @@ export class FanoutSolver extends BaseSolver {
   private bestAttempt: AssignmentAttempt | null = null
   private lengthMatchingFailure: FanoutValidationIssue | null = null
   private endpointCompletion: CompleteOriginalEndpointsResult | null = null
+  private denseDogboneViaPoints:
+    | Map<number, { x: number; y: number }>
+    | null
+    | undefined
 
   constructor(
     public readonly inputSrj: SimpleRouteJson,
@@ -627,6 +659,7 @@ export class FanoutSolver extends BaseSolver {
       viaDiameter: this.config.viaDiameter,
       viaHoleDiameter: this.config.viaHoleDiameter,
       clearance: this.config.clearance,
+      allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
       effort: this.options.endpointCompletionEffort,
       routeDownstreamConnections: this.options.routeDownstreamConnections,
     })
@@ -658,6 +691,7 @@ export class FanoutSolver extends BaseSolver {
       preparedBuses: this.preparedBuses,
       sharedBoundary: this.getValidationBoundary(),
       clearance: this.config.clearance,
+      allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
     })
   }
 
@@ -670,8 +704,569 @@ export class FanoutSolver extends BaseSolver {
       inputSrj: this.inputSrj,
       sharedBoundary: this.getValidationBoundary(),
       clearance: this.config.clearance,
+      allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
       allowSameNetMerges: this.config.allowSameNetMerges,
     })
+  }
+
+  /**
+   * Through-all source vias from a wide boundary bus can consume the only
+   * legal dogbone channel for nearby plane pads. Conversely, routing hundreds
+   * of singleton plane drops first can strand the boundary bus. Search a tiny
+   * number of whole-bus boundary alternatives, then fill the remaining plane
+   * dogbones. This is intentionally bounded independently of the number of
+   * plane drops so dense power fields cannot explode the general beam search.
+   */
+  private routeDenseThroughAllMixedTerminations(params: {
+    busLayerAssignments: Readonly<Record<string, string>>
+    busesInRoutingOrder: readonly PreparedBus[]
+  }): MixedTerminationState | null {
+    if (this.config.allowBlindAndBuriedVias) return null
+
+    const boundaryBuses = params.busesInRoutingOrder.filter(
+      (bus) => bus.termination.type === "boundary",
+    )
+    // Preserve the caller/input order for the dense singleton fill. The
+    // general routing sort is useful for heterogeneous buses, but ordering a
+    // regular BGA power field by obstacle depth creates artificial local
+    // dead-ends and needlessly triggers the widened boundary beam. The local
+    // rip-up/retry below handles the genuinely constrained drops.
+    const planeBuses = this.preparedBuses.filter(
+      (bus) => bus.termination.type === "plane",
+    )
+    if (
+      boundaryBuses.length === 0 ||
+      boundaryBuses.length > 4 ||
+      planeBuses.length < 8 ||
+      boundaryBuses.some((bus) => !busUsesCoordinatedWinding(bus)) ||
+      planeBuses.some((bus) => bus.connections.length !== 1) ||
+      boundaryBuses.length + planeBuses.length !==
+        params.busesInRoutingOrder.length
+    ) {
+      return null
+    }
+
+    const connectionNameByIndex = new Map(
+      this.preparedBuses.flatMap((bus) =>
+        bus.connections.map(
+          (connection) =>
+            [connection.connectionIndex, connection.connection.name] as const,
+        ),
+      ),
+    )
+    const preferredBoundaryPerpendicularSideByBusId = new Map(
+      boundaryBuses.map((bus) => [bus.busId, 1 as const]),
+    )
+    const preferBoundaryOutwardByBusId = new Map(
+      boundaryBuses.map((bus) => [
+        bus.busId,
+        getExitEdgeForDirection(bus.direction) !== bus.exitEdge,
+      ]),
+    )
+    if (this.denseDogboneViaPoints === undefined) {
+      this.denseDogboneViaPoints = matchComponentDogboneViaSites(
+        this.preparedBuses,
+        {
+          viaDiameter: this.config.viaDiameter,
+          viaHoleDiameter: this.config.viaHoleDiameter,
+          traceWidth: this.config.traceWidth,
+          clearance: this.config.clearance,
+          maximumSearchStates: 20_000,
+          preferredBoundaryPerpendicularSideByBusId,
+          preferBoundaryOutwardByBusId,
+          canShareCopper: (firstConnectionIndex, secondConnectionIndex) => {
+            if (!this.config.allowSameNetMerges) return false
+            const firstConnectionName =
+              connectionNameByIndex.get(firstConnectionIndex)
+            const secondConnectionName = connectionNameByIndex.get(
+              secondConnectionIndex,
+            )
+            return Boolean(
+              firstConnectionName &&
+                secondConnectionName &&
+                connectionsShareElectricalNet(
+                  this.routingSrj,
+                  firstConnectionName,
+                  secondConnectionName,
+                ),
+            )
+          },
+        },
+      )
+    }
+    const fixedViaPointsByConnectionIndex = this.denseDogboneViaPoints
+    if (fixedViaPointsByConnectionIndex) {
+      const reservedViasByComponentId = new Map<
+        string,
+        Array<{
+          connectionName: string
+          via: {
+            center: { x: number; y: number }
+            diameter: number
+            spanLayers: string[]
+          }
+        }>
+      >()
+      for (const bus of this.preparedBuses) {
+        const targetLayer = params.busLayerAssignments[bus.busId]
+        if (!targetLayer) continue
+        const componentReservedVias =
+          reservedViasByComponentId.get(bus.componentId) ?? []
+        for (const connection of bus.connections) {
+          const center = fixedViaPointsByConnectionIndex.get(
+            connection.connectionIndex,
+          )
+          if (!center) continue
+          componentReservedVias.push({
+            connectionName: connection.connection.name,
+            via: {
+              center,
+              diameter: this.config.viaDiameter,
+              spanLayers: getViaSpanLayers({
+                fromLayer: connection.sourceLayer,
+                toLayer: targetLayer,
+                layerNames: this.config.layerNames,
+                allowBlindAndBuriedVias: false,
+              }),
+            },
+          })
+        }
+        reservedViasByComponentId.set(bus.componentId, componentReservedVias)
+      }
+
+      const matchedPlans: FanoutRoutePlan[] = []
+      let matchedRoutingSucceeded = true
+      for (const bus of boundaryBuses) {
+        const targetLayer = params.busLayerAssignments[bus.busId]
+        if (!targetLayer) {
+          matchedRoutingSucceeded = false
+          break
+        }
+        const currentConnectionNames = new Set(
+          bus.connections.map((connection) => connection.connection.name),
+        )
+        const reservedVias = (
+          reservedViasByComponentId.get(bus.componentId) ?? []
+        ).filter(
+          ({ connectionName }) => !currentConnectionNames.has(connectionName),
+        )
+        const busPlans = routeBusAlternatives(
+          {
+            srj: this.routingSrj,
+            bus,
+            targetLayer,
+            acceptedPlans: matchedPlans,
+            layerNames: this.config.layerNames,
+            traceWidth: this.config.traceWidth,
+            viaDiameter: this.config.viaDiameter,
+            viaHoleDiameter: this.config.viaHoleDiameter,
+            clearance: this.config.clearance,
+            compactBusTracks: this.config.compactBusTracks,
+            allowBlindAndBuriedVias: false,
+            allowSameNetMerges: this.config.allowSameNetMerges,
+            staticClearanceCache: this.routeStaticClearanceCache,
+            fixedViaPointsByConnectionIndex,
+            reservedVias,
+            viaMinimalOnly: true,
+          },
+          1,
+        )[0]
+        if (!busPlans) {
+          matchedRoutingSucceeded = false
+          break
+        }
+        matchedPlans.push(...busPlans)
+      }
+      if (matchedRoutingSucceeded) {
+        for (const bus of planeBuses) {
+          const targetLayer = params.busLayerAssignments[bus.busId]
+          const busPlans = targetLayer
+            ? routeBus({
+                srj: this.routingSrj,
+                bus,
+                targetLayer,
+                acceptedPlans: matchedPlans,
+                layerNames: this.config.layerNames,
+                traceWidth: this.config.traceWidth,
+                viaDiameter: this.config.viaDiameter,
+                viaHoleDiameter: this.config.viaHoleDiameter,
+                clearance: this.config.clearance,
+                compactBusTracks: this.config.compactBusTracks,
+                allowBlindAndBuriedVias: false,
+                allowSameNetMerges: this.config.allowSameNetMerges,
+                staticClearanceCache: this.routeStaticClearanceCache,
+                fixedViaPointsByConnectionIndex,
+              })
+            : null
+          if (!busPlans) {
+            matchedRoutingSucceeded = false
+            break
+          }
+          matchedPlans.push(...busPlans)
+        }
+      }
+      if (
+        matchedRoutingSucceeded &&
+        fanoutPlansAreClear({
+          plans: matchedPlans,
+          srj: this.routingSrj,
+          sharedBoundary: boundaryBuses[0]!.sharedBoundary,
+          clearance: this.config.clearance,
+          allowBlindAndBuriedVias: false,
+          allowSameNetMerges: this.config.allowSameNetMerges,
+        })
+      ) {
+        return { plans: matchedPlans, failedBusIds: [] }
+      }
+    }
+
+    const maximumStates = 8
+    const getBoundaryStates = (
+      alternativesPerBoundaryBus: number,
+      initialPlans: readonly FanoutRoutePlan[] = [],
+    ): MixedTerminationState[] | null => {
+      let states: MixedTerminationState[] = [
+        { plans: [...initialPlans], failedBusIds: [] },
+      ]
+      for (const bus of boundaryBuses) {
+        const targetLayer = params.busLayerAssignments[bus.busId]
+        if (!targetLayer) return null
+        const nextStates: MixedTerminationState[] = []
+        const alternativesByState = states.map((state) => ({
+          state,
+          alternatives: routeBusAlternatives(
+            {
+              srj: this.routingSrj,
+              bus,
+              targetLayer,
+              acceptedPlans: state.plans,
+              layerNames: this.config.layerNames,
+              traceWidth: this.config.traceWidth,
+              viaDiameter: this.config.viaDiameter,
+              viaHoleDiameter: this.config.viaHoleDiameter,
+              clearance: this.config.clearance,
+              compactBusTracks: this.config.compactBusTracks,
+              allowBlindAndBuriedVias: false,
+              allowSameNetMerges: this.config.allowSameNetMerges,
+              staticClearanceCache: this.routeStaticClearanceCache,
+            },
+            alternativesPerBoundaryBus,
+          ),
+        }))
+        for (
+          let alternativeIndex = 0;
+          alternativeIndex < alternativesPerBoundaryBus;
+          alternativeIndex++
+        ) {
+          for (const { state, alternatives } of alternativesByState) {
+            const alternative = alternatives[alternativeIndex]
+            if (!alternative) continue
+            nextStates.push({
+              plans: [...state.plans, ...alternative],
+              failedBusIds: [],
+            })
+            if (nextStates.length >= maximumStates) break
+          }
+          if (nextStates.length >= maximumStates) break
+        }
+        if (nextStates.length === 0) return null
+        states = nextStates
+      }
+      return states
+    }
+
+    const getJointReservedBoundaryState = (
+      initialPlans: readonly FanoutRoutePlan[],
+    ): MixedTerminationState | null => {
+      if (boundaryBuses.length !== 2) return null
+      const [firstBus, secondBus] = boundaryBuses
+      if (!firstBus || !secondBus) return null
+      const routeBoundaryBus = (
+        bus: PreparedBus,
+        acceptedPlans: FanoutRoutePlan[],
+        rejectedViaMinimalCandidates?: FanoutRoutePlan[][],
+      ): FanoutRoutePlan[] | null => {
+        const targetLayer = params.busLayerAssignments[bus.busId]
+        if (!targetLayer) return null
+        return (
+          routeBusAlternatives(
+            {
+              srj: this.routingSrj,
+              bus,
+              targetLayer,
+              acceptedPlans,
+              layerNames: this.config.layerNames,
+              traceWidth: this.config.traceWidth,
+              viaDiameter: this.config.viaDiameter,
+              viaHoleDiameter: this.config.viaHoleDiameter,
+              clearance: this.config.clearance,
+              compactBusTracks: this.config.compactBusTracks,
+              allowBlindAndBuriedVias: false,
+              allowSameNetMerges: this.config.allowSameNetMerges,
+              staticClearanceCache: this.routeStaticClearanceCache,
+              rejectedViaMinimalCandidates,
+              stopAfterFirstRejectedViaMinimalCandidate:
+                rejectedViaMinimalCandidates !== undefined,
+            },
+            1,
+          )[0] ?? null
+        )
+      }
+
+      const firstPlans = routeBoundaryBus(firstBus, [...initialPlans])
+      if (!firstPlans) return null
+      const rejectedSecondCandidates: FanoutRoutePlan[][] = []
+      const secondPlans = routeBoundaryBus(
+        secondBus,
+        [...initialPlans, ...firstPlans],
+        rejectedSecondCandidates,
+      )
+      if (secondPlans) {
+        return {
+          plans: [...initialPlans, ...firstPlans, ...secondPlans],
+          failedBusIds: [],
+        }
+      }
+
+      const rejectedSecondPlans = rejectedSecondCandidates[0]
+      if (!rejectedSecondPlans) return null
+      // Keep the candidate's exact copper/vias as immutable blockers while
+      // rerouting the earlier bus, but exclude it from corner-slot allocation.
+      const reservedSecondPlans = rejectedSecondPlans.map((plan) => ({
+        ...plan,
+        termination: {
+          type: "plane" as const,
+          layer: plan.targetLayer,
+        },
+      }))
+      const reroutedFirstPlans = routeBoundaryBus(firstBus, [
+        ...initialPlans,
+        ...reservedSecondPlans,
+      ])
+      if (!reroutedFirstPlans) return null
+      const combinedPlans = [
+        ...initialPlans,
+        ...reroutedFirstPlans,
+        ...rejectedSecondPlans,
+      ]
+      if (
+        !fanoutPlansAreClear({
+          plans: combinedPlans,
+          srj: this.routingSrj,
+          sharedBoundary: firstBus.sharedBoundary,
+          clearance: this.config.clearance,
+          allowBlindAndBuriedVias: false,
+          allowSameNetMerges: this.config.allowSameNetMerges,
+        })
+      ) {
+        return null
+      }
+      return { plans: combinedPlans, failedBusIds: [] }
+    }
+
+    const planeBusById = new Map(planeBuses.map((bus) => [bus.busId, bus]))
+    const routePlaneBus = (
+      bus: PreparedBus,
+      acceptedPlans: FanoutRoutePlan[],
+      blockingBusCounts?: Map<string, number>,
+    ): FanoutRoutePlan[] | null => {
+      const targetLayer = params.busLayerAssignments[bus.busId]
+      if (!targetLayer) return null
+      return routeBus({
+        srj: this.routingSrj,
+        bus,
+        targetLayer,
+        acceptedPlans,
+        layerNames: this.config.layerNames,
+        traceWidth: this.config.traceWidth,
+        viaDiameter: this.config.viaDiameter,
+        viaHoleDiameter: this.config.viaHoleDiameter,
+        clearance: this.config.clearance,
+        compactBusTracks: this.config.compactBusTracks,
+        allowBlindAndBuriedVias: false,
+        allowSameNetMerges: this.config.allowSameNetMerges,
+        staticClearanceCache: this.routeStaticClearanceCache,
+        blockingBusCounts,
+      })
+    }
+
+    const routePlaneOrder = (
+      boundaryPlans: readonly FanoutRoutePlan[],
+      planeOrder: readonly PreparedBus[],
+    ): MixedTerminationState => {
+      const state: MixedTerminationState = {
+        plans: [...boundaryPlans],
+        failedBusIds: [],
+      }
+      for (const bus of planeOrder) {
+        const blockingBusCounts = new Map<string, number>()
+        let busPlans = routePlaneBus(bus, state.plans, blockingBusCounts)
+
+        // A plane dogbone can lose its only local channel to one or two
+        // earlier singleton drops. Rip up only the strongest local blockers,
+        // route the constrained drop first, then put the displaced drops back.
+        // Boundary buses are immutable here and the search is capped at 36
+        // blocker pairs, so dense fields remain predictable.
+        if (!busPlans) {
+          const blockerIds = [...blockingBusCounts.entries()]
+            .filter(([busId]) =>
+              state.plans.some((plan) => plan.busId === busId),
+            )
+            .filter(([busId]) => planeBusById.has(busId))
+            .toSorted(
+              ([, firstCount], [, secondCount]) => secondCount - firstCount,
+            )
+            .slice(0, 8)
+            .map(([busId]) => busId)
+          const ripupSets = [
+            ...blockerIds.map((busId) => [busId]),
+            ...blockerIds.flatMap((first, firstIndex) =>
+              blockerIds.slice(firstIndex + 1).map((second) => [first, second]),
+            ),
+          ]
+          for (const ripupIds of ripupSets) {
+            const ripupIdSet = new Set(ripupIds)
+            const candidatePlans = state.plans.filter(
+              (plan) => !ripupIdSet.has(plan.busId),
+            )
+            const constrainedPlans = routePlaneBus(bus, candidatePlans)
+            if (!constrainedPlans) continue
+            candidatePlans.push(...constrainedPlans)
+            let repairSucceeded = true
+            for (const blockerId of ripupIds) {
+              const blockerBus = planeBusById.get(blockerId)
+              const replacementPlans = blockerBus
+                ? routePlaneBus(blockerBus, candidatePlans)
+                : null
+              if (!replacementPlans) {
+                repairSucceeded = false
+                break
+              }
+              candidatePlans.push(...replacementPlans)
+            }
+            if (!repairSucceeded) continue
+            state.plans = candidatePlans
+            busPlans = []
+            break
+          }
+        }
+
+        if (busPlans) state.plans.push(...busPlans)
+        else state.failedBusIds.push(bus.busId)
+      }
+      return state
+    }
+
+    let bestState: MixedTerminationState | null = null
+    let mostRecentBoundaryBestState: MixedTerminationState | null = null
+    const evaluateBoundaryStates = (
+      states: readonly MixedTerminationState[],
+      initialPlaneOrder: readonly PreparedBus[],
+    ): MixedTerminationState | null => {
+      let localBestState: MixedTerminationState | null = null
+      for (const boundaryState of states) {
+        let planeOrder = [...initialPlaneOrder]
+        const seenPlaneOrders = new Set<string>()
+        for (let retryIndex = 0; retryIndex < 3; retryIndex++) {
+          const orderKey = planeOrder.map((bus) => bus.busId).join("\u0000")
+          if (seenPlaneOrders.has(orderKey)) break
+          seenPlaneOrders.add(orderKey)
+          const state = routePlaneOrder(boundaryState.plans, planeOrder)
+          if (
+            !bestState ||
+            state.plans.length > bestState.plans.length ||
+            (state.plans.length === bestState.plans.length &&
+              state.failedBusIds.length < bestState.failedBusIds.length)
+          ) {
+            bestState = state
+          }
+          if (
+            !localBestState ||
+            state.plans.length > localBestState.plans.length ||
+            (state.plans.length === localBestState.plans.length &&
+              state.failedBusIds.length < localBestState.failedBusIds.length)
+          ) {
+            localBestState = state
+          }
+          if (state.failedBusIds.length === 0) return state
+          const failedBusIds = new Set(state.failedBusIds)
+          planeOrder = [
+            ...state.failedBusIds.flatMap((busId) => {
+              const bus = planeBusById.get(busId)
+              return bus ? [bus] : []
+            }),
+            ...planeOrder.filter((bus) => !failedBusIds.has(bus.busId)),
+          ]
+        }
+      }
+      mostRecentBoundaryBestState = localBestState
+      return null
+    }
+
+    // Most dense packages route with the first deterministic boundary choice.
+    // Try that cheap path before widening the beam; eagerly generating four
+    // complete A* variants per state can otherwise dominate runtime and memory.
+    for (const alternativesPerBoundaryBus of [1, 4]) {
+      const states = getBoundaryStates(alternativesPerBoundaryBus)
+      if (!states) continue
+      const completeState = evaluateBoundaryStates(states, planeBuses)
+      if (completeState) return completeState
+
+      // If a completed signal escape encloses one especially constrained
+      // power pad, seed just that failed singleton first and recompute the
+      // small boundary-bus set around its physical through barrel. This keeps
+      // the search local without routing hundreds of plane drops before the
+      // signal buses.
+      const seedFailureIds = (
+        bestState as MixedTerminationState | null
+      )?.failedBusIds.slice(0, 3)
+      if (alternativesPerBoundaryBus === 1 && seedFailureIds) {
+        for (const failedBusId of seedFailureIds) {
+          const seededPlanePlans: FanoutRoutePlan[] = []
+          const seededPlaneBusIds = new Set<string>()
+          let nextFailedBusId: string | undefined = failedBusId
+          for (
+            let seedDepth = 0;
+            seedDepth < 3 && nextFailedBusId;
+            seedDepth++
+          ) {
+            const failedPlaneBus = planeBusById.get(nextFailedBusId)
+            if (!failedPlaneBus) break
+            const nextSeedPlans = routePlaneBus(
+              failedPlaneBus,
+              seededPlanePlans,
+            )
+            if (!nextSeedPlans) break
+            seededPlanePlans.push(...nextSeedPlans)
+            seededPlaneBusIds.add(nextFailedBusId)
+            const jointReservedBoundaryState =
+              getJointReservedBoundaryState(seededPlanePlans)
+            if (!jointReservedBoundaryState) break
+            const jointCompleteState = evaluateBoundaryStates(
+              [jointReservedBoundaryState],
+              planeBuses.filter((bus) => !seededPlaneBusIds.has(bus.busId)),
+            )
+            if (jointCompleteState) return jointCompleteState
+            const recentFailedBusIds = (
+              mostRecentBoundaryBestState as MixedTerminationState | null
+            )?.failedBusIds
+            nextFailedBusId = recentFailedBusIds?.find(
+              (busId) => !seededPlaneBusIds.has(busId),
+            )
+          }
+          if (seededPlanePlans.length === 0) continue
+          const seededBoundaryStates = getBoundaryStates(1, seededPlanePlans)
+          if (!seededBoundaryStates) continue
+          const seededCompleteState = evaluateBoundaryStates(
+            seededBoundaryStates,
+            planeBuses.filter((bus) => !seededPlaneBusIds.has(bus.busId)),
+          )
+          if (seededCompleteState) return seededCompleteState
+        }
+      }
+    }
+
+    return bestState
   }
 
   private evaluateAssignmentWithStrategy(
@@ -723,8 +1318,11 @@ export class FanoutSolver extends BaseSolver {
         busLayerAssignments[b.busId] ?? "",
       )
       return (
-        Number(b.termination.type === "plane") -
-          Number(a.termination.type === "plane") ||
+        comparePlaneRoutingPriority(
+          a,
+          b,
+          this.config.allowBlindAndBuriedVias,
+        ) ||
         Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
         (aUsesCoordinatedWinding && bUsesCoordinatedWinding
           ? bLayerIndex - aLayerIndex
@@ -744,8 +1342,23 @@ export class FanoutSolver extends BaseSolver {
       )
     })
 
+    const mixedTerminationState =
+      !useSingleLayerPushAndShove && routingStrategy === "default"
+        ? this.routeDenseThroughAllMixedTerminations({
+            busLayerAssignments,
+            busesInRoutingOrder,
+          })
+        : null
+
+    if (mixedTerminationState) {
+      plans = mixedTerminationState.plans
+      failedBusIds = mixedTerminationState.failedBusIds
+    }
+
     let routingPrefixKey = `${routingStrategy}|`
-    for (const bus of useSingleLayerPushAndShove ? [] : busesInRoutingOrder) {
+    for (const bus of useSingleLayerPushAndShove || mixedTerminationState
+      ? []
+      : busesInRoutingOrder) {
       const targetLayer = busLayerAssignments[bus.busId]
       if (!targetLayer) {
         throw new Error(
@@ -777,6 +1390,7 @@ export class FanoutSolver extends BaseSolver {
         viaHoleDiameter: this.config.viaHoleDiameter,
         clearance: this.config.clearance,
         compactBusTracks: this.config.compactBusTracks,
+        allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
         allowSameNetMerges: this.config.allowSameNetMerges,
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
@@ -870,7 +1484,6 @@ export class FanoutSolver extends BaseSolver {
       score,
       ...(validationIssues ? { validationIssues } : {}),
     }
-
     return {
       summary,
       plans,
@@ -972,8 +1585,11 @@ export class FanoutSolver extends BaseSolver {
           : (this.escapeLayersByBusId[b.busId]?.length ??
             this.config.escapeLayers.length)
       return (
-        Number(b.termination.type === "plane") -
-          Number(a.termination.type === "plane") ||
+        comparePlaneRoutingPriority(
+          a,
+          b,
+          this.config.allowBlindAndBuriedVias,
+        ) ||
         Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
         (aUsesCoordinatedWinding && bUsesCoordinatedWinding
           ? getMaximumViaSpan(b) - getMaximumViaSpan(a)
@@ -1084,6 +1700,7 @@ export class FanoutSolver extends BaseSolver {
               viaHoleDiameter: this.config.viaHoleDiameter,
               clearance: this.config.clearance,
               compactBusTracks: this.config.compactBusTracks,
+              allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
               allowSameNetMerges: this.config.allowSameNetMerges,
               staticClearanceCache: this.routeStaticClearanceCache,
             },
@@ -1534,14 +2151,17 @@ export class FanoutSolver extends BaseSolver {
         `FanoutSolver: completed output failed validation: ${validation.issues[0]?.message ?? "unknown validation error"}`,
       )
     }
-    const finalSrj =
-      this.endpointCompletion?.simpleRouteJson ?? this.bestAttempt.outputSrj
+    const finalSrj = addViaLayerMetadataToSrj({
+      srj:
+        this.endpointCompletion?.simpleRouteJson ?? this.bestAttempt.outputSrj,
+      layerNames: this.config.layerNames,
+      allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
+    })
     const finalTraceById = new Map(
       (finalSrj.traces ?? []).map((trace) => [trace.pcb_trace_id, trace]),
     )
     return {
-      simpleRouteJson:
-        this.endpointCompletion?.simpleRouteJson ?? this.bestAttempt.outputSrj,
+      simpleRouteJson: finalSrj,
       fanoutTraces: this.bestAttempt.plans.flatMap((plan) => [
         finalTraceById.get(plan.trace.pcb_trace_id) ?? plan.trace,
         ...(plan.planeEndpointTrace
@@ -1551,7 +2171,9 @@ export class FanoutSolver extends BaseSolver {
             ]
           : []),
       ]),
-      completionTraces: this.endpointCompletion?.traces ?? [],
+      completionTraces: (this.endpointCompletion?.traces ?? []).map(
+        (trace) => finalTraceById.get(trace.pcb_trace_id) ?? trace,
+      ),
       ...(this.endpointCompletion
         ? { endpointCompletion: this.endpointCompletion.report }
         : {}),
@@ -1576,7 +2198,7 @@ export class FanoutSolver extends BaseSolver {
     }
   }
 
-  getOutputSimpleRouteJson(): SimpleRouteJson {
+  getOutputSimpleRouteJson(): SimpleRouteJsonWithFanoutPlanes {
     return this.getOutput().simpleRouteJson
   }
 

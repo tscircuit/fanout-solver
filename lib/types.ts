@@ -9,6 +9,24 @@ import type {
 import type { OriginalEndpointConnectivityReport } from "./validate-original-endpoint-connectivity"
 import type { RoutedCopperDrcReport } from "./validate-routed-copper-drc"
 
+type CapacityRoutePoint = SimplifiedPcbTrace["route"][number]
+
+export type FanoutViaRoutePoint = Extract<
+  CapacityRoutePoint,
+  { route_type: "via" }
+> & {
+  /** Physical copper layers occupied by the via barrel. */
+  layers?: string[]
+}
+
+export type FanoutRoutePoint =
+  | Exclude<CapacityRoutePoint, { route_type: "via" }>
+  | FanoutViaRoutePoint
+
+export type FanoutSimplifiedPcbTrace = Omit<SimplifiedPcbTrace, "route"> & {
+  route: FanoutRoutePoint[]
+}
+
 export type FanoutDirection = "left" | "right" | "up" | "down"
 
 export type FanoutEdge = "left" | "right" | "top" | "bottom"
@@ -171,6 +189,12 @@ export interface FanoutSolverOptions {
   viaHoleDiameter?: number
   clearance?: number
   compactBusTracks?: boolean
+  /**
+   * Permit vias whose physical barrel only spans their logical route-layer
+   * transition. Defaults to true for compatibility. Set false for boards that
+   * manufacture every routed via through the complete copper stack.
+   */
+  allowBlindAndBuriedVias?: boolean
   /** Allow branches belonging to the same electrical net to share copper. */
   allowSameNetMerges?: boolean
   singleLayerPushAndShove?: boolean
@@ -207,9 +231,9 @@ export interface FanoutAttemptSummary {
 }
 
 export interface FanoutSolverOutput {
-  simpleRouteJson: SimpleRouteJson
-  fanoutTraces: SimplifiedPcbTrace[]
-  completionTraces: SimplifiedPcbTrace[]
+  simpleRouteJson: SimpleRouteJsonWithFanoutPlanes
+  fanoutTraces: FanoutSimplifiedPcbTrace[]
+  completionTraces: FanoutSimplifiedPcbTrace[]
   endpointCompletion?: FanoutEndpointCompletionReport
   planeTerminations: FanoutPlaneTermination[]
   busLayerAssignments: Readonly<Record<string, string>>
@@ -351,13 +375,13 @@ export interface FanoutRoutePlan {
   /** Lower/left or upper/right band reserved along `exitEdge`. */
   cornerBandSide?: "minimum" | "maximum"
   exitPoint: Point2D
-  trace: SimplifiedPcbTrace
+  trace: FanoutSimplifiedPcbTrace
   segments: RoutedSegment[]
   via?: RoutedVia
   /** Additional layer transitions used by an explicit winding channel. */
   additionalVias?: RoutedVia[]
   /** Optional capacitor-side dogbone reserved and emitted with a plane escape. */
-  planeEndpointTrace?: SimplifiedPcbTrace
+  planeEndpointTrace?: FanoutSimplifiedPcbTrace
   planeEndpointSegments?: RoutedSegment[]
   planeEndpointVia?: RoutedVia
   length: number
@@ -380,12 +404,16 @@ export interface FanoutPlaneConnectivity {
   layer: string
 }
 
-export type SimpleRouteJsonWithFanoutPlanes = SimpleRouteJson & {
+export type SimpleRouteJsonWithFanoutPlanes = Omit<
+  SimpleRouteJson,
+  "traces"
+> & {
+  traces?: FanoutSimplifiedPcbTrace[]
   fanoutPlaneConnectivity?: FanoutPlaneConnectivity[]
 }
 
 export interface AssignmentAttempt {
   summary: FanoutAttemptSummary
   plans: FanoutRoutePlan[]
-  outputSrj: SimpleRouteJson
+  outputSrj: SimpleRouteJsonWithFanoutPlanes
 }

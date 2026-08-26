@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test"
+import { datasetDistManifest } from "@tsci/tscircuit.dataset-srj29-bga-decoupling"
 import { FanoutSolver } from "lib/fanout-solver"
 import {
   createSrj29FanoutInput,
   SRJ29_FANOUT_LAYER_COUNT,
   srj29FanoutSamples,
 } from "../datasets/srj29"
-import { datasetDistManifest } from "@tsci/tscircuit.dataset-srj29-bga-decoupling"
 
 test("SRJ29 exposes independently routed power pins and directional signal buses", () => {
   expect(datasetDistManifest).toMatchObject({

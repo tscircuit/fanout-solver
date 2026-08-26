@@ -3,8 +3,8 @@ import { FanoutSolver } from "lib/fanout-solver"
 import type { Bounds, FanoutDirection } from "lib/types"
 import {
   fanoutDataset05,
-  rk3588BallAssignments,
   type Rk3588BallAssignment,
+  rk3588BallAssignments,
 } from "../datasets/dataset05"
 
 function getExpectedCenter(ball: Rk3588BallAssignment): {
