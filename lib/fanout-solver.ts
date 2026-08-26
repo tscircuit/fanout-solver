@@ -8,6 +8,7 @@ import {
   completeOriginalEndpoints,
 } from "./complete-original-endpoints"
 import { generateLayerAssignments, getCopperLayerNames } from "./layer-names"
+import { matchBusPlanLengths } from "./match-bus-lengths"
 import {
   prepareFanoutBuses,
   resolveAvailableBoundaryRegions,
@@ -27,6 +28,7 @@ import type {
   FanoutRoutePlan,
   FanoutSolverOptions,
   FanoutSolverOutput,
+  FanoutValidationIssue,
   PreparedBus,
 } from "./types"
 import { validateFanoutSolution } from "./validate-fanout-solution"
@@ -482,6 +484,7 @@ export class FanoutSolver extends BaseSolver {
   private nextAssignmentIndex = 0
   private nextGeneratedAssignmentIndex = 0
   private bestAttempt: AssignmentAttempt | null = null
+  private lengthMatchingFailure: FanoutValidationIssue | null = null
   private endpointCompletion: CompleteOriginalEndpointsResult | null = null
 
   constructor(
@@ -658,6 +661,19 @@ export class FanoutSolver extends BaseSolver {
     })
   }
 
+  private matchCompletePlanLengths(
+    plans: readonly FanoutRoutePlan[],
+  ): ReturnType<typeof matchBusPlanLengths> {
+    return matchBusPlanLengths({
+      plans,
+      preparedBuses: this.preparedBuses,
+      inputSrj: this.inputSrj,
+      sharedBoundary: this.getValidationBoundary(),
+      clearance: this.config.clearance,
+      allowSameNetMerges: this.config.allowSameNetMerges,
+    })
+  }
+
   private evaluateAssignmentWithStrategy(
     assignmentIndex: number,
     busLayerAssignments: Readonly<Record<string, string>>,
@@ -784,6 +800,29 @@ export class FanoutSolver extends BaseSolver {
     }
 
     let validationIssues: FanoutAttemptSummary["validationIssues"]
+    if (plans.length === this.inputSrj.connections.length) {
+      const lengthMatching = this.matchCompletePlanLengths(plans)
+      if (lengthMatching.plans) {
+        plans = lengthMatching.plans
+      } else {
+        const constrainedBus = lengthMatching.failedBus
+        const lengthMatchingIssue: FanoutValidationIssue = {
+          code: "bus-length-skew",
+          message: `Bus ${constrainedBus.busId} could not satisfy its ${constrainedBus.maxLengthSkew!.toFixed(6)}mm routed-length skew within the fanout boundary`,
+          busId: constrainedBus.busId,
+        }
+        validationIssues = [lengthMatchingIssue]
+        this.lengthMatchingFailure ??= lengthMatchingIssue
+        plans = []
+        failedBusIds = [
+          constrainedBus.busId,
+          ...this.preparedBuses
+            .map((bus) => bus.busId)
+            .filter((busId) => busId !== constrainedBus.busId),
+        ]
+        blockingBusCounts.clear()
+      }
+    }
     let outputSrj = buildOutputSimpleRouteJson({
       inputSrj: this.inputSrj,
       plans,
@@ -1088,32 +1127,54 @@ export class FanoutSolver extends BaseSolver {
 
     let bestState: GroupedBeamState | undefined
     let outputSrj: SimpleRouteJson | undefined
+    let bestMatchedScore = Number.POSITIVE_INFINITY
+    let bestAdditionalViaCount = Number.POSITIVE_INFINITY
+    const getCompleteStateScore = (state: GroupedBeamState): number =>
+      state.plans.reduce((total, plan) => total + plan.length, 0) +
+      getPlanViaCount(state.plans) * 0.1 +
+      assignmentLoadPenalty(
+        state.assignment,
+        this.preparedBuses,
+        this.config.balanceLayerLoadByConnectionCount,
+      ) *
+        getLayerLoadPenaltyWeight(this.config)
+    const hasLengthConstraints = this.preparedBuses.some(
+      (bus) => bus.maxLengthSkew !== undefined,
+    )
     for (const state of states) {
       if (state.plans.length !== this.inputSrj.connections.length) continue
+      const lengthMatching = this.matchCompletePlanLengths(state.plans)
+      if (!lengthMatching.plans) continue
+      const lengthMatchedPlans = lengthMatching.plans
       const candidateOutput = buildOutputSimpleRouteJson({
         inputSrj: this.inputSrj,
-        plans: state.plans,
+        plans: lengthMatchedPlans,
         layerNames: this.config.layerNames,
       })
-      if (!this.validateCompletePlans(state.plans, candidateOutput).valid) {
+      if (
+        !this.validateCompletePlans(lengthMatchedPlans, candidateOutput).valid
+      ) {
         continue
       }
-      bestState = state
-      outputSrj = candidateOutput
-      break
+      const candidateState = { ...state, plans: lengthMatchedPlans }
+      const candidateAdditionalViaCount =
+        this.getCoordinatedAdditionalViaCount(lengthMatchedPlans)
+      const candidateScore = getCompleteStateScore(candidateState)
+      if (
+        !bestState ||
+        candidateAdditionalViaCount < bestAdditionalViaCount ||
+        (candidateAdditionalViaCount === bestAdditionalViaCount &&
+          candidateScore < bestMatchedScore)
+      ) {
+        bestState = candidateState
+        outputSrj = candidateOutput
+        bestMatchedScore = candidateScore
+        bestAdditionalViaCount = candidateAdditionalViaCount
+      }
+      if (!hasLengthConstraints) break
     }
     if (!bestState || !outputSrj) return null
-    const score =
-      bestState.plans.length === this.inputSrj.connections.length
-        ? bestState.plans.reduce((total, plan) => total + plan.length, 0) +
-          getPlanViaCount(bestState.plans) * 0.1 +
-          assignmentLoadPenalty(
-            bestState.assignment,
-            this.preparedBuses,
-            this.config.balanceLayerLoadByConnectionCount,
-          ) *
-            getLayerLoadPenaltyWeight(this.config)
-        : Number.POSITIVE_INFINITY
+    const score = bestMatchedScore
     if (!Number.isFinite(score)) return null
 
     const summary: FanoutAttemptSummary = {
@@ -1397,9 +1458,14 @@ export class FanoutSolver extends BaseSolver {
         this.solved = true
       } else {
         this.failed = true
-        this.error = this.bestAttempt
-          ? `FanoutSolver: best layer assignment routed ${this.bestAttempt.summary.routedConnectionCount}/${this.inputSrj.connections.length} connections`
-          : "FanoutSolver: no layer assignment could be evaluated"
+        const validationMessage =
+          this.lengthMatchingFailure?.message ??
+          this.bestAttempt?.summary.validationIssues?.[0]?.message
+        this.error = validationMessage
+          ? `FanoutSolver: ${validationMessage}`
+          : this.bestAttempt
+            ? `FanoutSolver: best layer assignment routed ${this.bestAttempt.summary.routedConnectionCount}/${this.inputSrj.connections.length} connections`
+            : "FanoutSolver: no layer assignment could be evaluated"
       }
       return
     }
