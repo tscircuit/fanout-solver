@@ -3,6 +3,7 @@ import type {
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
 import {
+  circleFitsInsideObstacle,
   distance,
   distancePointToObstacle,
   distancePointToSegment,
@@ -309,7 +310,22 @@ export function validateRoutedCopperDrc(params: {
       const coincidentEndpoint = originalAndRoutedEndpoints.find(
         ({ point }) => distance(via.center, point) <= EPSILON,
       )
-      if (coincidentEndpoint) {
+      const isContainedInConnectedPad = inputSrj.obstacles.some(
+        (obstacle) =>
+          obstacle.layers.some((layer) => via.spanLayers.includes(layer)) &&
+          obstacleSharesElectricalNet(
+            inputSrj,
+            obstacle,
+            copper.connectionName,
+          ) &&
+          circleFitsInsideObstacle({
+            center: via.center,
+            diameter: via.diameter,
+            obstacle,
+            tolerance: EPSILON,
+          }),
+      )
+      if (coincidentEndpoint && !isContainedInConnectedPad) {
         addIssue(issues, {
           code: "via-at-endpoint",
           traceId: copper.trace.pcb_trace_id,

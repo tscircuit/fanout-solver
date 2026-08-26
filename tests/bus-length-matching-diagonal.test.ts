@@ -41,6 +41,7 @@ function createDiagonalPlan(params: {
   sourceObstacle: Obstacle
 }): FanoutRoutePlan {
   const { fixture, connection, connectionIndex, sourceObstacle } = params
+  const sourceEndpoint = connection.pointsToConnect[0]!
   const sourceSegment: RoutedSegment = {
     start: fixture.source,
     end: fixture.via,
@@ -53,7 +54,8 @@ function createDiagonalPlan(params: {
     width: traceWidth,
     layer: "bottom",
   }
-  const segments = [sourceSegment, targetSegment]
+  const hasSourceDogbone = distance(fixture.source, fixture.via) > 1e-6
+  const segments = [...(hasSourceDogbone ? [sourceSegment] : []), targetSegment]
   return {
     busId: "DIAGONAL_BUS",
     connectionName: fixture.name,
@@ -72,20 +74,29 @@ function createDiagonalPlan(params: {
       type: "pcb_trace",
       pcb_trace_id: `fanout:${fixture.name}`,
       connection_name: fixture.name,
-      connectsTo: [sourceObstacle.obstacleId!, `exit:${fixture.name}`],
+      connectsTo: [
+        sourceObstacle.obstacleId!,
+        sourceEndpoint.pcb_port_id!,
+        `exit:${fixture.name}`,
+      ],
       route: [
         {
           route_type: "wire",
           ...fixture.source,
           width: traceWidth,
           layer: "top",
+          start_pcb_port_id: sourceEndpoint.pcb_port_id,
         },
-        {
-          route_type: "wire",
-          ...fixture.via,
-          width: traceWidth,
-          layer: "top",
-        },
+        ...(hasSourceDogbone
+          ? [
+              {
+                route_type: "wire" as const,
+                ...fixture.via,
+                width: traceWidth,
+                layer: "top",
+              },
+            ]
+          : []),
         {
           route_type: "via",
           ...fixture.via,
@@ -105,6 +116,7 @@ function createDiagonalPlan(params: {
           ...fixture.exit,
           width: traceWidth,
           layer: "bottom",
+          end_pcb_port_id: `boundary-port:${fixture.name}`,
         },
       ],
     },
@@ -124,12 +136,12 @@ function createDiagonalPlan(params: {
   }
 }
 
-test("matches a bus whose tunable baseline is diagonal", () => {
+test("matches a diagonal bus without losing tuned via-in-pad endpoint metadata", () => {
   const fixtures: DiagonalConnectionFixture[] = [
     {
       name: "SHORT",
       source: { x: 1, y: 0 },
-      via: { x: 2, y: 1 },
+      via: { x: 1, y: 0 },
       exit: { x: 6, y: 5 },
       target: { x: 8, y: 7 },
     },
@@ -146,8 +158,8 @@ test("matches a bus whose tunable baseline is diagonal", () => {
     componentId: "source-component",
     type: "rect",
     center: fixture.source,
-    width: 0.2,
-    height: 0.2,
+    width: fixture.name === "SHORT" ? 0.4 : 0.2,
+    height: fixture.name === "SHORT" ? 0.4 : 0.2,
     layers: ["top"],
     connectedTo: [`pad:${fixture.name}`, fixture.name],
   }))
@@ -158,6 +170,7 @@ test("matches a bus whose tunable baseline is diagonal", () => {
         ...fixture.source,
         layer: "top",
         pointId: `pad:${fixture.name}`,
+        pcb_port_id: `port:${fixture.name}`,
       },
       { ...fixture.target, layer: "bottom" },
     ],
@@ -232,6 +245,42 @@ test("matches a bus whose tunable baseline is diagonal", () => {
     throw new Error("Expected diagonal length matching")
   }
   const matchedPlans = lengthMatching.plans
+
+  const matchedShortPlan = matchedPlans.find(
+    (plan) => plan.connectionName === "SHORT",
+  )!
+  expect(matchedShortPlan.length).toBeGreaterThan(baselinePlans[0]!.length)
+  expect(matchedShortPlan.sourcePoint).toMatchObject({
+    pointId: "pad:SHORT",
+    pcb_port_id: "port:SHORT",
+  })
+  const matchedShortFirstWire = matchedShortPlan.trace.route.find(
+    (point) => point.route_type === "wire",
+  )
+  expect(matchedShortFirstWire).toMatchObject({
+    route_type: "wire",
+    ...fixtures[0]!.source,
+    layer: "top",
+    start_pcb_port_id: "port:SHORT",
+  })
+  expect(
+    matchedShortPlan.trace.route.filter((point) => point.route_type === "via"),
+  ).toEqual([
+    expect.objectContaining({
+      ...fixtures[0]!.source,
+      from_layer: "top",
+      to_layer: "bottom",
+    }),
+  ])
+  expect(matchedShortPlan.trace.route.at(-1)).toMatchObject({
+    route_type: "wire",
+    end_pcb_port_id: "boundary-port:SHORT",
+  })
+  expect(matchedShortPlan.trace.connectsTo).toEqual([
+    "pad:SHORT",
+    "port:SHORT",
+    "exit:SHORT",
+  ])
 
   const lengths = matchedPlans.map((plan) => plan.length)
   expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThanOrEqual(

@@ -302,6 +302,7 @@ function buildPlan(params: {
     width: traceWidth,
     layer: connection.sourceLayer,
   }
+  const hasSourceDogbone = distance(sourcePoint, terminal.viaPoint) > EPSILON
   const targetSegments = getSegments(targetLayerPoints, traceWidth, targetLayer)
   const spanLayers = getLayerSpan(
     connection.sourceLayer,
@@ -326,12 +327,16 @@ function buildPlan(params: {
         ? { start_pcb_port_id: connection.sourcePoint.pcb_port_id }
         : {}),
     },
-    {
-      route_type: "wire",
-      ...terminal.viaPoint,
-      width: traceWidth,
-      layer: connection.sourceLayer,
-    },
+    ...(hasSourceDogbone
+      ? [
+          {
+            route_type: "wire" as const,
+            ...terminal.viaPoint,
+            width: traceWidth,
+            layer: connection.sourceLayer,
+          },
+        ]
+      : []),
     {
       route_type: "via",
       ...terminal.viaPoint,
@@ -357,7 +362,10 @@ function buildPlan(params: {
     connectionName: connection.connection.name,
     sourcePointIndex: connection.sourcePointIndex,
   })
-  const segments = [sourceSegment, ...targetSegments]
+  const segments = [
+    ...(hasSourceDogbone ? [sourceSegment] : []),
+    ...targetSegments,
+  ]
   const cornerBandSide = getCornerBandSide(bus.exitEdge, bus.preferredExit)
   return {
     busId: bus.busId,

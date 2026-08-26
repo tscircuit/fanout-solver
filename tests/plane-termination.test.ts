@@ -63,7 +63,7 @@ function createPlaneTerminationProblem(): {
   }
 }
 
-test("a source-only plane target ends locally at an escaped via", () => {
+test("a source-only plane target terminates with a via inside its pad", () => {
   const { simpleRouteJson, buses } = createPlaneTerminationProblem()
   const solver = new FanoutSolver(simpleRouteJson, {
     buses,
@@ -83,20 +83,25 @@ test("a source-only plane target ends locally at an escaped via", () => {
   const termination = output.planeTerminations[0]!
   expect(termination.connectionName).toBe("VSS_A1")
   expect(termination.layer).toBe("inner1")
-  expect(termination.via.center).toEqual({ x: 0, y: 0.4 })
+  expect(termination.via.center).toEqual({ x: -0.4, y: 0.4 })
   expect(termination.via.fromLayer).toBe("top")
   expect(termination.via.toLayer).toBe("inner1")
-  expect(termination.via.center.x).not.toBe(-0.4)
 
   const trace = output.fanoutTraces[0]!
   const via = trace.route.find((point) => point.route_type === "via")
   expect(via).toMatchObject({
     route_type: "via",
-    x: 0,
+    x: -0.4,
     y: 0.4,
     from_layer: "top",
     to_layer: "inner1",
   })
+  expect(trace.route).toHaveLength(3)
+  expect(trace.route.map((point) => point.route_type)).toEqual([
+    "wire",
+    "via",
+    "wire",
+  ])
   expect(
     trace.route.every(
       (point) =>

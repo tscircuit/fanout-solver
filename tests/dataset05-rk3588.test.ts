@@ -3,8 +3,8 @@ import { FanoutSolver } from "lib/fanout-solver"
 import type { Bounds, FanoutDirection } from "lib/types"
 import {
   fanoutDataset05,
-  rk3588BallAssignments,
   type Rk3588BallAssignment,
+  rk3588BallAssignments,
 } from "../datasets/dataset05"
 
 function getExpectedCenter(ball: Rk3588BallAssignment): {
@@ -123,9 +123,8 @@ test("Dataset 05 preserves the exact RK3588 map and completes plane-aware fanout
     const source = getExpectedCenter(ball)
     const dx = Math.abs(termination.via.center.x - source.x)
     const dy = Math.abs(termination.via.center.y - source.y)
-    expect(dx + dy).toBeCloseTo(0.4)
-    expect(Math.min(dx, dy)).toBeCloseTo(0)
-    expect(termination.via.center).not.toEqual(source)
+    expect(dx + dy).toBeCloseTo(0)
+    expect(termination.via.center).toEqual(source)
     expect(termination.layer).toBe(
       ball.categoryId === "ground" ? "inner1" : "inner2",
     )

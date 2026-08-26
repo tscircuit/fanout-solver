@@ -98,6 +98,27 @@ export function pointIsInsideObstacle(
   )
 }
 
+export function circleFitsInsideObstacle(params: {
+  center: Point2D
+  diameter: number
+  obstacle: Obstacle
+  tolerance?: number
+}): boolean {
+  const { center, diameter, obstacle, tolerance = EPSILON } = params
+  const radius = diameter / 2
+  if (obstacleIsCircular(obstacle)) {
+    return (
+      distance(center, obstacle.center) + radius <=
+      obstacle.width / 2 + tolerance
+    )
+  }
+  const localCenter = toObstacleLocalPoint(center, obstacle)
+  return (
+    Math.abs(localCenter.x) + radius <= obstacle.width / 2 + tolerance &&
+    Math.abs(localCenter.y) + radius <= obstacle.height / 2 + tolerance
+  )
+}
+
 export function distancePointToObstacle(
   point: Point2D,
   obstacle: Obstacle,

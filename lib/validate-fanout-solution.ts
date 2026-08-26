@@ -288,7 +288,15 @@ function validatePlanStructure(params: {
       plan,
     )
   }
-  if (plan.segments.length === 0 || plan.length <= EPSILON) {
+  const isViaInPadPlaneTermination =
+    plan.termination.type === "plane" &&
+    plan.via !== undefined &&
+    pointsMatch(plan.via.center, plan.sourcePoint) &&
+    pointsMatch(plan.exitPoint, plan.sourcePoint)
+  if (
+    !isViaInPadPlaneTermination &&
+    (plan.segments.length === 0 || plan.length <= EPSILON)
+  ) {
     addIssue(
       issues,
       "not-broken-out",
@@ -316,7 +324,10 @@ function validatePlanStructure(params: {
         plan,
       )
     }
-    if (!pointsMatch(plan.segments[0]!.start, plan.sourcePoint)) {
+    if (
+      plan.segments[0] &&
+      !pointsMatch(plan.segments[0].start, plan.sourcePoint)
+    ) {
       addIssue(
         issues,
         "disconnected-trace",
@@ -324,7 +335,10 @@ function validatePlanStructure(params: {
         plan,
       )
     }
-    if (!pointsMatch(plan.segments.at(-1)!.end, plan.exitPoint)) {
+    if (
+      plan.segments.at(-1) &&
+      !pointsMatch(plan.segments.at(-1)!.end, plan.exitPoint)
+    ) {
       addIssue(
         issues,
         "disconnected-trace",

@@ -42,21 +42,46 @@ function rebuildTraceRoute(
   const lastOriginalWire = plan.trace.route.findLast(
     (point) => point.route_type === "wire",
   )
+  const getWireMetadata = (
+    wire: typeof firstOriginalWire,
+  ): Partial<
+    Extract<SimplifiedPcbTrace["route"][number], { route_type: "wire" }>
+  > => {
+    if (wire?.route_type !== "wire") return {}
+    const metadata: Partial<
+      Extract<SimplifiedPcbTrace["route"][number], { route_type: "wire" }>
+    > = { ...wire }
+    delete metadata.route_type
+    delete metadata.x
+    delete metadata.y
+    delete metadata.width
+    delete metadata.layer
+    return metadata
+  }
+  const vias = getPlanVias(plan)
+  const startsWithSourceVia =
+    pointsMatch(firstSegment.start, plan.sourcePoint) &&
+    firstSegment.layer !== plan.sourceLayer &&
+    vias.some(
+      (via) =>
+        pointsMatch(via.center, firstSegment.start) &&
+        via.spanLayers.includes(plan.sourceLayer) &&
+        via.spanLayers.includes(firstSegment.layer),
+    )
+  const initialLayer = startsWithSourceVia
+    ? plan.sourceLayer
+    : firstSegment.layer
   const route: SimplifiedPcbTrace["route"] = [
     {
+      ...getWireMetadata(firstOriginalWire),
       route_type: "wire",
       ...firstSegment.start,
       width: firstSegment.width,
-      layer: firstSegment.layer,
-      ...(firstOriginalWire?.route_type === "wire" &&
-      firstOriginalWire.start_pcb_port_id
-        ? { start_pcb_port_id: firstOriginalWire.start_pcb_port_id }
-        : {}),
+      layer: initialLayer,
     },
   ]
   let currentPoint = firstSegment.start
-  let currentLayer = firstSegment.layer
-  const vias = getPlanVias(plan)
+  let currentLayer = initialLayer
 
   for (const [segmentIndex, segment] of segments.entries()) {
     if (!pointsMatch(currentPoint, segment.start)) return null
@@ -85,15 +110,13 @@ function rebuildTraceRoute(
       currentLayer = segment.layer
     }
     route.push({
+      ...(segmentIndex === segments.length - 1
+        ? getWireMetadata(lastOriginalWire)
+        : {}),
       route_type: "wire",
       ...segment.end,
       width: segment.width,
       layer: segment.layer,
-      ...(segmentIndex === segments.length - 1 &&
-      lastOriginalWire?.route_type === "wire" &&
-      lastOriginalWire.end_pcb_port_id
-        ? { end_pcb_port_id: lastOriginalWire.end_pcb_port_id }
-        : {}),
     })
     currentPoint = segment.end
   }

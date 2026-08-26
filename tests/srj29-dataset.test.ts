@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test"
+import { datasetDistManifest } from "@tsci/tscircuit.dataset-srj29-bga-decoupling"
 import { FanoutSolver } from "lib/fanout-solver"
 import {
   createSrj29FanoutInput,
   SRJ29_FANOUT_LAYER_COUNT,
   srj29FanoutSamples,
 } from "../datasets/srj29"
-import { datasetDistManifest } from "@tsci/tscircuit.dataset-srj29-bga-decoupling"
 
 test("SRJ29 exposes independently routed power pins and directional signal buses", () => {
   expect(datasetDistManifest).toMatchObject({
@@ -120,16 +120,13 @@ test("SRJ29 VCC and GND pins break out to dedicated planes", () => {
       inputConnection.netConnectionName === "VCC" ? "inner2" : "inner3",
     )
     expect(
-      output.fanoutTraces
-        .filter((trace) => trace.connection_name === inputConnection.name)
-        .flatMap((trace) => trace.route)
-        .filter((routePoint) => routePoint.route_type === "via")
-        .every((via) =>
-          inputConnection.pointsToConnect.every(
-            (endpoint) =>
-              Math.hypot(via.x - endpoint.x, via.y - endpoint.y) > 1e-6,
-          ),
-        ),
+      inputConnection.pointsToConnect.some(
+        (endpoint) =>
+          Math.hypot(
+            planeTermination!.via.center.x - endpoint.x,
+            planeTermination!.via.center.y - endpoint.y,
+          ) <= 1e-6,
+      ),
     ).toBe(true)
   }
 })
