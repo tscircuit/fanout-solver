@@ -155,6 +155,31 @@ test("routes the AM62L three-bus fanout around through-all plane dogbones", asyn
   ).toHaveLength(5)
   expect(planeBuses.every((bus) => bus.connectionNames.length === 1)).toBe(true)
 
+  const connectionByName = new Map(
+    inputSrj.connections.map((connection) => [connection.name, connection]),
+  )
+  expect(
+    inputSrj.connections.filter(
+      (connection) => connection.netConnectionName === "GND",
+    ),
+  ).toHaveLength(97)
+  expect(
+    inputSrj.connections.filter(
+      (connection) => connection.netConnectionName === "VDD_LPDDR4",
+    ),
+  ).toHaveLength(5)
+  for (const connectionName of signalConnectionNames) {
+    expect(connectionByName.get(connectionName)?.netConnectionName).toBe(
+      connectionName,
+    )
+  }
+  for (const bus of planeBuses) {
+    if (bus.termination?.type !== "plane") continue
+    expect(
+      connectionByName.get(bus.connectionNames[0]!)?.netConnectionName,
+    ).toBe(bus.termination.layer === "inner1" ? "GND" : "VDD_LPDDR4")
+  }
+
   const solver = new FanoutSolver(
     structuredClone(inputSrj),
     structuredClone(options),
