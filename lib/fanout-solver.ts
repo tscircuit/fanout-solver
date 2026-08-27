@@ -722,48 +722,60 @@ export class FanoutSolver extends BaseSolver {
   }): MixedTerminationState | null {
     if (this.config.allowBlindAndBuriedVias) return null
 
-    const boundaryBuses = params.busesInRoutingOrder
-      .filter((bus) => bus.termination.type === "boundary")
-      .toSorted((first, second) => {
-        const cornerBandDifference =
-          Number(
-            Boolean(getCornerBandSide(second.exitEdge, second.preferredExit)),
-          ) -
-          Number(
-            Boolean(getCornerBandSide(first.exitEdge, first.preferredExit)),
+    const unsortedBoundaryBuses = params.busesInRoutingOrder.filter(
+      (bus) => bus.termination.type === "boundary",
+    )
+    const useJointFourBusReservation =
+      unsortedBoundaryBuses.length === 4 &&
+      new Set(unsortedBoundaryBuses.map((bus) => bus.connections.length)).size >
+        1
+    const boundaryBuses = unsortedBoundaryBuses.toSorted((first, second) => {
+      // Reserve the dense escape field for the widest buses first. Small
+      // control groups can usually route around their copper, while routing
+      // a two-line corner bus first can consume a critical channel needed by
+      // an eight-line winding bus and force the expensive fallback search.
+      if (useJointFourBusReservation) {
+        const connectionCountDifference =
+          second.connections.length - first.connections.length
+        if (connectionCountDifference !== 0) return connectionCountDifference
+      }
+      const cornerBandDifference =
+        Number(
+          Boolean(getCornerBandSide(second.exitEdge, second.preferredExit)),
+        ) -
+        Number(Boolean(getCornerBandSide(first.exitEdge, first.preferredExit)))
+      if (cornerBandDifference !== 0) return cornerBandDifference
+      const firstIsCorner = Boolean(
+        getCornerBandSide(first.exitEdge, first.preferredExit),
+      )
+      if (!firstIsCorner) {
+        const getSourceSpan = (bus: PreparedBus): number => {
+          const xCoordinates = bus.connections.map(
+            (connection) => connection.sourcePoint.x,
           )
-        if (cornerBandDifference !== 0) return cornerBandDifference
-        const firstIsCorner = Boolean(
-          getCornerBandSide(first.exitEdge, first.preferredExit),
-        )
-        if (!firstIsCorner) {
-          const getSourceSpan = (bus: PreparedBus): number => {
-            const xCoordinates = bus.connections.map(
-              (connection) => connection.sourcePoint.x,
-            )
-            const yCoordinates = bus.connections.map(
-              (connection) => connection.sourcePoint.y,
-            )
-            return (
-              Math.max(...xCoordinates) -
-              Math.min(...xCoordinates) +
-              Math.max(...yCoordinates) -
-              Math.min(...yCoordinates)
-            )
-          }
-          const sourceSpanDifference =
-            getSourceSpan(second) - getSourceSpan(first)
-          if (Math.abs(sourceSpanDifference) > 1e-9) {
-            return sourceSpanDifference
-          }
+          const yCoordinates = bus.connections.map(
+            (connection) => connection.sourcePoint.y,
+          )
+          return (
+            Math.max(...xCoordinates) -
+            Math.min(...xCoordinates) +
+            Math.max(...yCoordinates) -
+            Math.min(...yCoordinates)
+          )
         }
-        const firstLayer = params.busLayerAssignments[first.busId]
-        const secondLayer = params.busLayerAssignments[second.busId]
-        const layerDifference =
-          this.config.layerNames.indexOf(firstLayer ?? "") -
-          this.config.layerNames.indexOf(secondLayer ?? "")
-        return -layerDifference
-      })
+        const sourceSpanDifference =
+          getSourceSpan(second) - getSourceSpan(first)
+        if (Math.abs(sourceSpanDifference) > 1e-9) {
+          return sourceSpanDifference
+        }
+      }
+      const firstLayer = params.busLayerAssignments[first.busId]
+      const secondLayer = params.busLayerAssignments[second.busId]
+      const layerDifference =
+        this.config.layerNames.indexOf(firstLayer ?? "") -
+        this.config.layerNames.indexOf(secondLayer ?? "")
+      return -layerDifference
+    })
     // Preserve the caller/input order for the dense singleton fill. The
     // general routing sort is useful for heterogeneous buses, but ordering a
     // regular BGA power field by obstacle depth creates artificial local
@@ -821,9 +833,26 @@ export class FanoutSolver extends BaseSolver {
           ),
       )
     }
-    const seedViaPoints = matchComponentDogboneViaSites(
-      [...planeBuses, boundaryBuses[0]!],
-      {
+    // Four boundary buses leave too little slack for incremental site
+    // allocation: a valid early trace can consume the last dogbone site of a
+    // later narrow bus. Reserve every physical barrel before routing copper.
+    // Plane sites remain provisional and are rematched around the completed
+    // boundary plans below.
+    const jointViaPoints = useJointFourBusReservation
+      ? matchComponentDogboneViaSites([...planeBuses, ...boundaryBuses], {
+          viaDiameter: this.config.viaDiameter,
+          viaHoleDiameter: this.config.viaHoleDiameter,
+          traceWidth: this.config.traceWidth,
+          clearance: this.config.clearance,
+          maximumSearchStates: 100_000,
+          preferredBoundaryPerpendicularSideByBusId,
+          preferBoundaryOutwardByBusId,
+          canShareCopper,
+        })
+      : null
+    const seedViaPoints =
+      jointViaPoints ??
+      matchComponentDogboneViaSites([...planeBuses, boundaryBuses[0]!], {
         viaDiameter: this.config.viaDiameter,
         viaHoleDiameter: this.config.viaHoleDiameter,
         traceWidth: this.config.traceWidth,
@@ -832,8 +861,7 @@ export class FanoutSolver extends BaseSolver {
         preferredBoundaryPerpendicularSideByBusId,
         preferBoundaryOutwardByBusId,
         canShareCopper,
-      },
-    )
+      })
     if (seedViaPoints) {
       let fixedViaPointsByConnectionIndex: ReadonlyMap<
         number,
@@ -948,21 +976,27 @@ export class FanoutSolver extends BaseSolver {
           candidateIndex++
         ) {
           const candidateBus = remainingBoundaryBuses[candidateIndex]!
-          const extendedViaPoints = matchComponentDogboneViaSites(
-            [...planeBuses, ...routedBoundaryBuses, candidateBus],
-            {
-              viaDiameter: this.config.viaDiameter,
-              viaHoleDiameter: this.config.viaHoleDiameter,
-              traceWidth: this.config.traceWidth,
-              clearance: this.config.clearance,
-              maximumSearchStates: 100_000,
-              preferredBoundaryPerpendicularSideByBusId,
-              preferBoundaryOutwardByBusId,
-              fixedViaPointsByConnectionIndex: fixedViaPointsByConnectionIndex,
-              blockingSegments,
-              canShareCopper,
-            },
-          )
+          const extendedViaPoints = jointViaPoints
+            ? // The joint map is deliberately kept intact so getReservedVias()
+              // blocks every future through-barrel during A*. Plane dogbones are
+              // validated/rematched once the boundary copper is complete.
+              new Map(fixedViaPointsByConnectionIndex)
+            : matchComponentDogboneViaSites(
+                [...planeBuses, ...routedBoundaryBuses, candidateBus],
+                {
+                  viaDiameter: this.config.viaDiameter,
+                  viaHoleDiameter: this.config.viaHoleDiameter,
+                  traceWidth: this.config.traceWidth,
+                  clearance: this.config.clearance,
+                  maximumSearchStates: 100_000,
+                  preferredBoundaryPerpendicularSideByBusId,
+                  preferBoundaryOutwardByBusId,
+                  fixedViaPointsByConnectionIndex:
+                    fixedViaPointsByConnectionIndex,
+                  blockingSegments,
+                  canShareCopper,
+                },
+              )
           if (!extendedViaPoints) continue
           const previousFixedViaPoints = fixedViaPointsByConnectionIndex
           const previousPlanCount = matchedPlans.length
