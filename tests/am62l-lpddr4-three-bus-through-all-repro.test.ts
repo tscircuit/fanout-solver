@@ -105,6 +105,12 @@ test("routes the AM62L three-bus fanout around through-all plane dogbones", asyn
   ])
   expect(inputSrj.connections).toHaveLength(126)
   expect(inputSrj.obstacles).toHaveLength(373)
+  expect(
+    inputSrj.obstacles.every((obstacle) => obstacle.connectedTo.length > 0),
+  ).toBe(true)
+  expect(
+    inputSrj.obstacles.filter((obstacle) => obstacle.connectedTo.length === 1),
+  ).toHaveLength(247)
   expect(inputSrj.allowBlindAndBuriedVias).toBe(false)
   expect(options.allowBlindAndBuriedVias).toBe(false)
   expect(inputSrj.allowViaInPad).not.toBe(true)
