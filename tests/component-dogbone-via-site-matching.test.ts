@@ -164,6 +164,31 @@ test("component-wide dogbone matching assigns deterministic legal interstitial v
       ).toBe(true)
     }
   }
+
+  const fixedPoint = matching!.get(0)!
+  const preserved = matchComponentDogboneViaSites(fixture.buses, {
+    ...rules,
+    fixedViaPointsByConnectionIndex: new Map([[0, fixedPoint]]),
+  })
+  expect(preserved?.get(0)).toEqual(fixedPoint)
+
+  expect(
+    matchComponentDogboneViaSites(fixture.buses, {
+      ...rules,
+      fixedViaPointsByConnectionIndex: new Map([[0, fixedPoint]]),
+      blockingSegments: [
+        {
+          connectionIndex: 99,
+          segment: {
+            start: { x: fixedPoint.x - 0.25, y: fixedPoint.y },
+            end: { x: fixedPoint.x + 0.25, y: fixedPoint.y },
+            width: rules.traceWidth,
+            layer: "top",
+          },
+        },
+      ],
+    }),
+  ).toBeNull()
 })
 
 test("component-wide dogbone matching fails within geometry and search bounds", () => {

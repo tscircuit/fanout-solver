@@ -448,6 +448,7 @@ function createTunedPlanCandidates(params: {
   targetAddedLength: number
   clearance: number
   sharedBoundary: Bounds
+  allowInsideDenseBounds?: boolean
   denseBoundarySplitApplied?: boolean
 }): FanoutRoutePlan[] {
   const {
@@ -456,6 +457,7 @@ function createTunedPlanCandidates(params: {
     targetAddedLength,
     clearance,
     sharedBoundary,
+    allowInsideDenseBounds = false,
     denseBoundarySplitApplied = false,
   } = params
   const candidates: FanoutRoutePlan[] = []
@@ -497,6 +499,7 @@ function createTunedPlanCandidates(params: {
             continue
           }
           if (
+            !allowInsideDenseBounds &&
             points
               .slice(1, -1)
               .some(
@@ -575,6 +578,17 @@ export function matchBusPlanLengths(params: {
   clearance: number
   allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
+  /**
+   * Allows tuning on target-layer copper inside the component pad envelope.
+   * Intended only for coordinated dense routing whose complete copper is
+   * revalidated and whose remaining dogbone capacity is checked atomically.
+   */
+  allowMatchingInsideDenseBounds?: boolean
+  /**
+   * Rejects a geometrically clear candidate when it would make a caller-owned
+   * downstream assignment (such as pending plane dogbones) infeasible.
+   */
+  candidatePlansAreFeasible?: (plans: readonly FanoutRoutePlan[]) => boolean
 }):
   | { plans: FanoutRoutePlan[]; failedBus?: never }
   | { plans: null; failedBus: PreparedBus } {
@@ -585,6 +599,8 @@ export function matchBusPlanLengths(params: {
     clearance,
     allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
+    allowMatchingInsideDenseBounds = false,
+    candidatePlansAreFeasible,
   } = params
   let matchedPlans = [...params.plans]
   const constrainedBuses = preparedBuses.filter(
@@ -633,6 +649,95 @@ export function matchBusPlanLengths(params: {
         )
         .toSorted((first, second) => first - second)
       let acceptedPlans: FanoutRoutePlan[] | null = null
+      const acceptCandidate = (
+        candidate: FanoutRoutePlan,
+      ): FanoutRoutePlan[] | null => {
+        const nextPlans = matchedPlans.map((plan) =>
+          plan === shortest ? candidate : plan,
+        )
+        const nextBusPlans = nextPlans.filter(
+          (plan) => plan.busId === bus.busId,
+        )
+        if (getBusSkew(nextBusPlans) > skew + EPSILON) return null
+        if (
+          !fanoutPlansAreClear({
+            plans: nextPlans,
+            srj: inputSrj,
+            sharedBoundary,
+            clearance,
+            allowBlindAndBuriedVias,
+            allowSameNetMerges,
+          })
+        ) {
+          return null
+        }
+        if (
+          candidatePlansAreFeasible &&
+          !candidatePlansAreFeasible(nextPlans)
+        ) {
+          return null
+        }
+        return nextPlans
+      }
+      const findMultiSpanCandidate = (
+        targetAddedLength: number,
+      ): FanoutRoutePlan[] | null => {
+        const maximumSearchStates = 320
+        const maximumCandidatesPerState = 48
+        let searchedStateCount = 0
+        const sampleCandidates = (
+          candidates: readonly FanoutRoutePlan[],
+        ): FanoutRoutePlan[] => {
+          if (candidates.length <= maximumCandidatesPerState) {
+            return [...candidates]
+          }
+          return Array.from(
+            { length: maximumCandidatesPerState },
+            (_, sampleIndex) =>
+              candidates[
+                Math.floor(
+                  (sampleIndex * candidates.length) / maximumCandidatesPerState,
+                )
+              ]!,
+          )
+        }
+        const search = (
+          currentPlan: FanoutRoutePlan,
+          stagesRemaining: number,
+        ): FanoutRoutePlan[] | null => {
+          const addedLength = currentPlan.length - shortest.length
+          const remainingAddition = targetAddedLength - addedLength
+          if (remainingAddition <= EPSILON) {
+            return acceptCandidate(currentPlan)
+          }
+          if (stagesRemaining <= 0) return null
+          const stageAddedLength = remainingAddition / stagesRemaining
+          const candidates = sampleCandidates(
+            createTunedPlanCandidates({
+              plan: currentPlan,
+              bus,
+              targetAddedLength: stageAddedLength,
+              clearance,
+              sharedBoundary: bus.sharedBoundary,
+              allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+            }),
+          )
+          for (const candidate of candidates) {
+            searchedStateCount++
+            if (searchedStateCount > maximumSearchStates) return null
+            if (!acceptCandidate(candidate)) continue
+            const result = search(candidate, stagesRemaining - 1)
+            if (result) return result
+          }
+          return null
+        }
+        for (let stageCount = 2; stageCount <= 8; stageCount++) {
+          const result = search(shortest, stageCount)
+          if (result) return result
+          if (searchedStateCount > maximumSearchStates) break
+        }
+        return null
+      }
       for (const targetAddedLength of targetAddedLengths) {
         const candidates = createTunedPlanCandidates({
           plan: shortest,
@@ -640,30 +745,18 @@ export function matchBusPlanLengths(params: {
           targetAddedLength,
           clearance,
           sharedBoundary: bus.sharedBoundary,
+          allowInsideDenseBounds: allowMatchingInsideDenseBounds,
         })
         for (const candidate of candidates) {
-          const nextPlans = matchedPlans.map((plan) =>
-            plan === shortest ? candidate : plan,
-          )
-          const nextBusPlans = nextPlans.filter(
-            (plan) => plan.busId === bus.busId,
-          )
-          const nextSkew = getBusSkew(nextBusPlans)
-          if (nextSkew > skew + EPSILON) continue
-          if (
-            !fanoutPlansAreClear({
-              plans: nextPlans,
-              srj: inputSrj,
-              sharedBoundary,
-              clearance,
-              allowBlindAndBuriedVias,
-              allowSameNetMerges,
-            })
-          ) {
-            continue
-          }
-          acceptedPlans = nextPlans
+          acceptedPlans = acceptCandidate(candidate)
+          if (!acceptedPlans) continue
           break
+        }
+        if (
+          !acceptedPlans &&
+          Math.abs(targetAddedLength - minimumRequiredAddition) <= EPSILON
+        ) {
+          acceptedPlans = findMultiSpanCandidate(targetAddedLength)
         }
         if (acceptedPlans) break
       }

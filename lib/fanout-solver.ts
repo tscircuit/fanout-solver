@@ -14,7 +14,10 @@ import {
   getViaSpanLayers,
 } from "./layer-names"
 import { matchBusPlanLengths } from "./match-bus-lengths"
-import { matchComponentDogboneViaSites } from "./match-component-dogbone-via-sites"
+import {
+  getComponentDogboneViaSiteCandidates,
+  matchComponentDogboneViaSites,
+} from "./match-component-dogbone-via-sites"
 import { connectionsShareElectricalNet } from "./net-identity"
 import {
   prepareFanoutBuses,
@@ -514,10 +517,6 @@ export class FanoutSolver extends BaseSolver {
   private bestAttempt: AssignmentAttempt | null = null
   private lengthMatchingFailure: FanoutValidationIssue | null = null
   private endpointCompletion: CompleteOriginalEndpointsResult | null = null
-  private denseDogboneViaPoints:
-    | Map<number, { x: number; y: number }>
-    | null
-    | undefined
 
   constructor(
     public readonly inputSrj: SimpleRouteJson,
@@ -723,9 +722,48 @@ export class FanoutSolver extends BaseSolver {
   }): MixedTerminationState | null {
     if (this.config.allowBlindAndBuriedVias) return null
 
-    const boundaryBuses = params.busesInRoutingOrder.filter(
-      (bus) => bus.termination.type === "boundary",
-    )
+    const boundaryBuses = params.busesInRoutingOrder
+      .filter((bus) => bus.termination.type === "boundary")
+      .toSorted((first, second) => {
+        const cornerBandDifference =
+          Number(
+            Boolean(getCornerBandSide(second.exitEdge, second.preferredExit)),
+          ) -
+          Number(
+            Boolean(getCornerBandSide(first.exitEdge, first.preferredExit)),
+          )
+        if (cornerBandDifference !== 0) return cornerBandDifference
+        const firstIsCorner = Boolean(
+          getCornerBandSide(first.exitEdge, first.preferredExit),
+        )
+        if (!firstIsCorner) {
+          const getSourceSpan = (bus: PreparedBus): number => {
+            const xCoordinates = bus.connections.map(
+              (connection) => connection.sourcePoint.x,
+            )
+            const yCoordinates = bus.connections.map(
+              (connection) => connection.sourcePoint.y,
+            )
+            return (
+              Math.max(...xCoordinates) -
+              Math.min(...xCoordinates) +
+              Math.max(...yCoordinates) -
+              Math.min(...yCoordinates)
+            )
+          }
+          const sourceSpanDifference =
+            getSourceSpan(second) - getSourceSpan(first)
+          if (Math.abs(sourceSpanDifference) > 1e-9) {
+            return sourceSpanDifference
+          }
+        }
+        const firstLayer = params.busLayerAssignments[first.busId]
+        const secondLayer = params.busLayerAssignments[second.busId]
+        const layerDifference =
+          this.config.layerNames.indexOf(firstLayer ?? "") -
+          this.config.layerNames.indexOf(secondLayer ?? "")
+        return -layerDifference
+      })
     // Preserve the caller/input order for the dense singleton fill. The
     // general routing sort is useful for heterogeneous buses, but ordering a
     // regular BGA power field by obstacle depth creates artificial local
@@ -763,119 +801,350 @@ export class FanoutSolver extends BaseSolver {
         getExitEdgeForDirection(bus.direction) !== bus.exitEdge,
       ]),
     )
-    if (this.denseDogboneViaPoints === undefined) {
-      this.denseDogboneViaPoints = matchComponentDogboneViaSites(
-        this.preparedBuses,
-        {
-          viaDiameter: this.config.viaDiameter,
-          viaHoleDiameter: this.config.viaHoleDiameter,
-          traceWidth: this.config.traceWidth,
-          clearance: this.config.clearance,
-          maximumSearchStates: 20_000,
-          preferredBoundaryPerpendicularSideByBusId,
-          preferBoundaryOutwardByBusId,
-          canShareCopper: (firstConnectionIndex, secondConnectionIndex) => {
-            if (!this.config.allowSameNetMerges) return false
-            const firstConnectionName =
-              connectionNameByIndex.get(firstConnectionIndex)
-            const secondConnectionName = connectionNameByIndex.get(
-              secondConnectionIndex,
-            )
-            return Boolean(
-              firstConnectionName &&
-                secondConnectionName &&
-                connectionsShareElectricalNet(
-                  this.routingSrj,
-                  firstConnectionName,
-                  secondConnectionName,
-                ),
-            )
-          },
-        },
+    const canShareCopper = (
+      firstConnectionIndex: number,
+      secondConnectionIndex: number,
+    ): boolean => {
+      if (!this.config.allowSameNetMerges) return false
+      const firstConnectionName =
+        connectionNameByIndex.get(firstConnectionIndex)
+      const secondConnectionName = connectionNameByIndex.get(
+        secondConnectionIndex,
+      )
+      return Boolean(
+        firstConnectionName &&
+          secondConnectionName &&
+          connectionsShareElectricalNet(
+            this.routingSrj,
+            firstConnectionName,
+            secondConnectionName,
+          ),
       )
     }
-    const fixedViaPointsByConnectionIndex = this.denseDogboneViaPoints
-    if (fixedViaPointsByConnectionIndex) {
-      const reservedViasByComponentId = new Map<
-        string,
-        Array<{
-          connectionName: string
-          via: {
-            center: { x: number; y: number }
-            diameter: number
-            spanLayers: string[]
-          }
-        }>
-      >()
-      for (const bus of this.preparedBuses) {
-        const targetLayer = params.busLayerAssignments[bus.busId]
-        if (!targetLayer) continue
-        const componentReservedVias =
-          reservedViasByComponentId.get(bus.componentId) ?? []
-        for (const connection of bus.connections) {
-          const center = fixedViaPointsByConnectionIndex.get(
-            connection.connectionIndex,
-          )
-          if (!center) continue
-          componentReservedVias.push({
-            connectionName: connection.connection.name,
-            via: {
-              center,
-              diameter: this.config.viaDiameter,
-              spanLayers: getViaSpanLayers({
-                fromLayer: connection.sourceLayer,
-                toLayer: targetLayer,
-                layerNames: this.config.layerNames,
-                allowBlindAndBuriedVias: false,
-              }),
-            },
-          })
-        }
-        reservedViasByComponentId.set(bus.componentId, componentReservedVias)
-      }
-
-      const matchedPlans: FanoutRoutePlan[] = []
+    const seedViaPoints = matchComponentDogboneViaSites(
+      [...planeBuses, boundaryBuses[0]!],
+      {
+        viaDiameter: this.config.viaDiameter,
+        viaHoleDiameter: this.config.viaHoleDiameter,
+        traceWidth: this.config.traceWidth,
+        clearance: this.config.clearance,
+        maximumSearchStates: 20_000,
+        preferredBoundaryPerpendicularSideByBusId,
+        preferBoundaryOutwardByBusId,
+        canShareCopper,
+      },
+    )
+    if (seedViaPoints) {
+      let fixedViaPointsByConnectionIndex: ReadonlyMap<
+        number,
+        { x: number; y: number }
+      > = seedViaPoints
+      let matchedPlans: FanoutRoutePlan[] = []
       let matchedRoutingSucceeded = true
-      for (const bus of boundaryBuses) {
-        const targetLayer = params.busLayerAssignments[bus.busId]
-        if (!targetLayer) {
-          matchedRoutingSucceeded = false
-          break
-        }
+      const getReservedVias = (bus: PreparedBus) => {
         const currentConnectionNames = new Set(
           bus.connections.map((connection) => connection.connection.name),
         )
-        const reservedVias = (
-          reservedViasByComponentId.get(bus.componentId) ?? []
-        ).filter(
-          ({ connectionName }) => !currentConnectionNames.has(connectionName),
-        )
-        const busPlans = routeBusAlternatives(
-          {
-            srj: this.routingSrj,
-            bus,
-            targetLayer,
-            acceptedPlans: matchedPlans,
-            layerNames: this.config.layerNames,
-            traceWidth: this.config.traceWidth,
-            viaDiameter: this.config.viaDiameter,
-            viaHoleDiameter: this.config.viaHoleDiameter,
-            clearance: this.config.clearance,
-            compactBusTracks: this.config.compactBusTracks,
-            allowBlindAndBuriedVias: false,
-            allowSameNetMerges: this.config.allowSameNetMerges,
-            staticClearanceCache: this.routeStaticClearanceCache,
-            fixedViaPointsByConnectionIndex,
-            reservedVias,
-            viaMinimalOnly: true,
-          },
-          1,
-        )[0]
+        return this.preparedBuses.flatMap((preparedBus) => {
+          const targetLayer = params.busLayerAssignments[preparedBus.busId]
+          if (!targetLayer) return []
+          return preparedBus.connections.flatMap((connection) => {
+            if (currentConnectionNames.has(connection.connection.name))
+              return []
+            const center = fixedViaPointsByConnectionIndex.get(
+              connection.connectionIndex,
+            )
+            if (!center) return []
+            return [
+              {
+                connectionName: connection.connection.name,
+                via: {
+                  center,
+                  diameter: this.config.viaDiameter,
+                  spanLayers: getViaSpanLayers({
+                    fromLayer: connection.sourceLayer,
+                    toLayer: targetLayer,
+                    layerNames: this.config.layerNames,
+                    allowBlindAndBuriedVias: false,
+                  }),
+                },
+              },
+            ]
+          })
+        })
+      }
+      const routeMatchedBoundaryBus = (bus: PreparedBus): boolean => {
+        const targetLayer = params.busLayerAssignments[bus.busId]
+        if (!targetLayer) {
+          return false
+        }
+        const routeParams = {
+          srj: this.routingSrj,
+          bus,
+          targetLayer,
+          acceptedPlans: matchedPlans,
+          layerNames: this.config.layerNames,
+          traceWidth: this.config.traceWidth,
+          viaDiameter: this.config.viaDiameter,
+          viaHoleDiameter: this.config.viaHoleDiameter,
+          clearance: this.config.clearance,
+          compactBusTracks: this.config.compactBusTracks,
+          allowBlindAndBuriedVias: false,
+          allowSameNetMerges: this.config.allowSameNetMerges,
+          staticClearanceCache: this.routeStaticClearanceCache,
+          fixedViaPointsByConnectionIndex,
+          reservedVias: getReservedVias(bus),
+          viaMinimalOnly: true,
+        } as const
+        let busPlans = routeBusAlternatives(routeParams, 1)[0]
+        if (busPlans && bus.maxLengthSkew !== undefined) {
+          const lengths = busPlans.map((plan) => plan.length)
+          const rawSkew = Math.max(...lengths) - Math.min(...lengths)
+          const needsRouteDiversity =
+            rawSkew - bus.maxLengthSkew > Math.max(1, bus.maxLengthSkew * 0.25)
+          // Only pay for additional A* variants when the first topology is so
+          // skewed that compact meanders are unlikely to absorb the deficit.
+          // This keeps already-near-matched buses on the single-attempt path.
+          if (needsRouteDiversity) {
+            busPlans = routeBusAlternatives(routeParams, 3).toSorted(
+              (first, second) => {
+                const firstLengths = first.map((plan) => plan.length)
+                const secondLengths = second.map((plan) => plan.length)
+                return (
+                  Math.max(...firstLengths) -
+                  Math.min(...firstLengths) -
+                  (Math.max(...secondLengths) - Math.min(...secondLengths))
+                )
+              },
+            )[0]
+          }
+        }
         if (!busPlans) {
+          return false
+        }
+        matchedPlans.push(...busPlans)
+        return true
+      }
+
+      const firstBoundaryBus = boundaryBuses[0]!
+      const routedBoundaryBuses: PreparedBus[] = []
+      if (routeMatchedBoundaryBus(firstBoundaryBus)) {
+        routedBoundaryBuses.push(firstBoundaryBus)
+      } else {
+        matchedRoutingSucceeded = false
+      }
+      const remainingBoundaryBuses = boundaryBuses.slice(1)
+      while (matchedRoutingSucceeded && remainingBoundaryBuses.length > 0) {
+        const blockingSegments = matchedPlans.flatMap((plan) =>
+          plan.segments.map((segment) => ({
+            connectionIndex: plan.connectionIndex,
+            segment,
+          })),
+        )
+        let selectedBusIndex = -1
+        for (
+          let candidateIndex = 0;
+          candidateIndex < remainingBoundaryBuses.length;
+          candidateIndex++
+        ) {
+          const candidateBus = remainingBoundaryBuses[candidateIndex]!
+          const extendedViaPoints = matchComponentDogboneViaSites(
+            [...planeBuses, ...routedBoundaryBuses, candidateBus],
+            {
+              viaDiameter: this.config.viaDiameter,
+              viaHoleDiameter: this.config.viaHoleDiameter,
+              traceWidth: this.config.traceWidth,
+              clearance: this.config.clearance,
+              maximumSearchStates: 100_000,
+              preferredBoundaryPerpendicularSideByBusId,
+              preferBoundaryOutwardByBusId,
+              fixedViaPointsByConnectionIndex: fixedViaPointsByConnectionIndex,
+              blockingSegments,
+              canShareCopper,
+            },
+          )
+          if (!extendedViaPoints) continue
+          const previousFixedViaPoints = fixedViaPointsByConnectionIndex
+          const previousPlanCount = matchedPlans.length
+          const laterBuses = remainingBoundaryBuses.filter(
+            (_, laterIndex) => laterIndex !== candidateIndex,
+          )
+          let candidateFixedViaPoints: ReadonlyMap<
+            number,
+            { x: number; y: number }
+          > = extendedViaPoints
+          if (laterBuses.length === 1) {
+            const laterBus = laterBuses[0]!
+            const futureAssignment = matchComponentDogboneViaSites(
+              [...planeBuses, ...routedBoundaryBuses, candidateBus, laterBus],
+              {
+                viaDiameter: this.config.viaDiameter,
+                viaHoleDiameter: this.config.viaHoleDiameter,
+                traceWidth: this.config.traceWidth,
+                clearance: this.config.clearance,
+                maximumSearchStates: 100_000,
+                preferredBoundaryPerpendicularSideByBusId,
+                preferBoundaryOutwardByBusId,
+                fixedViaPointsByConnectionIndex: extendedViaPoints,
+                blockingSegments,
+                canShareCopper,
+              },
+            )
+            if (futureAssignment) {
+              const candidateCountByConnectionIndex = new Map<number, number>()
+              for (const candidate of getComponentDogboneViaSiteCandidates(
+                [laterBus],
+                {
+                  viaDiameter: this.config.viaDiameter,
+                  viaHoleDiameter: this.config.viaHoleDiameter,
+                  traceWidth: this.config.traceWidth,
+                  clearance: this.config.clearance,
+                  blockingSegments,
+                  canShareCopper,
+                },
+              )) {
+                candidateCountByConnectionIndex.set(
+                  candidate.connectionIndex,
+                  (candidateCountByConnectionIndex.get(
+                    candidate.connectionIndex,
+                  ) ?? 0) + 1,
+                )
+              }
+              const constrainedConnections = laterBus.connections.toSorted(
+                (first, second) =>
+                  (candidateCountByConnectionIndex.get(first.connectionIndex) ??
+                    0) -
+                    (candidateCountByConnectionIndex.get(
+                      second.connectionIndex,
+                    ) ?? 0) || first.connectionIndex - second.connectionIndex,
+              )
+              const repairedViaPoints = new Map(extendedViaPoints)
+              for (const connection of constrainedConnections) {
+                const criticalPoint = futureAssignment.get(
+                  connection.connectionIndex,
+                )
+                if (criticalPoint) {
+                  repairedViaPoints.set(
+                    connection.connectionIndex,
+                    criticalPoint,
+                  )
+                }
+              }
+              candidateFixedViaPoints = repairedViaPoints
+            }
+          }
+          fixedViaPointsByConnectionIndex = candidateFixedViaPoints
+          if (routeMatchedBoundaryBus(candidateBus)) {
+            const candidateLeavesAFeasibleExtension =
+              laterBuses.length === 0 ||
+              laterBuses.some((laterBus) => {
+                const lookaheadBlockingSegments = matchedPlans.flatMap((plan) =>
+                  plan.segments.map((segment) => ({
+                    connectionIndex: plan.connectionIndex,
+                    segment,
+                  })),
+                )
+                return Boolean(
+                  matchComponentDogboneViaSites(
+                    [
+                      ...planeBuses,
+                      ...routedBoundaryBuses,
+                      candidateBus,
+                      laterBus,
+                    ],
+                    {
+                      viaDiameter: this.config.viaDiameter,
+                      viaHoleDiameter: this.config.viaHoleDiameter,
+                      traceWidth: this.config.traceWidth,
+                      clearance: this.config.clearance,
+                      maximumSearchStates: 100_000,
+                      preferredBoundaryPerpendicularSideByBusId,
+                      preferBoundaryOutwardByBusId,
+                      fixedViaPointsByConnectionIndex:
+                        fixedViaPointsByConnectionIndex,
+                      blockingSegments: lookaheadBlockingSegments,
+                      canShareCopper,
+                    },
+                  ),
+                )
+              })
+            if (candidateLeavesAFeasibleExtension) {
+              selectedBusIndex = candidateIndex
+              routedBoundaryBuses.push(candidateBus)
+              break
+            }
+            matchedPlans.splice(previousPlanCount)
+          }
+          fixedViaPointsByConnectionIndex = previousFixedViaPoints
+        }
+        if (selectedBusIndex < 0) {
           matchedRoutingSucceeded = false
           break
         }
-        matchedPlans.push(...busPlans)
+        remainingBoundaryBuses.splice(selectedBusIndex, 1)
+      }
+      if (matchedRoutingSucceeded) {
+        let feasibleViaPoints: Map<number, { x: number; y: number }> | null =
+          null
+        const matchViaPointsAroundPlans = (
+          candidatePlans: readonly FanoutRoutePlan[],
+        ): Map<number, { x: number; y: number }> | null => {
+          const fixedBoundaryViaPoints = new Map(
+            candidatePlans.flatMap((plan) =>
+              plan.via
+                ? [[plan.connectionIndex, plan.via.center] as const]
+                : [],
+            ),
+          )
+          return matchComponentDogboneViaSites(
+            [...planeBuses, ...boundaryBuses],
+            {
+              viaDiameter: this.config.viaDiameter,
+              viaHoleDiameter: this.config.viaHoleDiameter,
+              traceWidth: this.config.traceWidth,
+              clearance: this.config.clearance,
+              maximumSearchStates: 100_000,
+              preferredBoundaryPerpendicularSideByBusId,
+              preferBoundaryOutwardByBusId,
+              fixedViaPointsByConnectionIndex: fixedBoundaryViaPoints,
+              blockingSegments: candidatePlans.flatMap((plan) =>
+                plan.segments.map((segment) => ({
+                  connectionIndex: plan.connectionIndex,
+                  segment,
+                })),
+              ),
+              canShareCopper,
+            },
+          )
+        }
+        const matchedLengthResult = matchBusPlanLengths({
+          plans: matchedPlans,
+          preparedBuses: this.preparedBuses,
+          inputSrj: this.inputSrj,
+          sharedBoundary: this.getValidationBoundary(),
+          clearance: this.config.clearance,
+          allowBlindAndBuriedVias: false,
+          allowSameNetMerges: this.config.allowSameNetMerges,
+          allowMatchingInsideDenseBounds: true,
+          candidatePlansAreFeasible: (candidatePlans) => {
+            const candidateViaPoints = matchViaPointsAroundPlans(candidatePlans)
+            if (!candidateViaPoints) return false
+            feasibleViaPoints = candidateViaPoints
+            return true
+          },
+        })
+        if (matchedLengthResult.plans) {
+          matchedPlans = matchedLengthResult.plans
+          const rematchedViaPoints =
+            feasibleViaPoints ?? matchViaPointsAroundPlans(matchedPlans)
+          if (rematchedViaPoints) {
+            fixedViaPointsByConnectionIndex = rematchedViaPoints
+          } else {
+            matchedRoutingSucceeded = false
+          }
+        } else {
+          matchedRoutingSucceeded = false
+        }
       }
       if (matchedRoutingSucceeded) {
         for (const bus of planeBuses) {

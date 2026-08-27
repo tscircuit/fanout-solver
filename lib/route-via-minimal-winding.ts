@@ -60,6 +60,8 @@ export interface RouteViaMinimalWindingParams {
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
   /** Use a finer uniform grid for narrow channels between reserved vias. */
   gridStepDivisor?: 1 | 2
+  /** Bias bounded fixed-site searches toward the remote target band. */
+  preferTargetDirectedLaneBias?: boolean
 }
 
 interface GridNode {
@@ -600,6 +602,7 @@ export function routeViaMinimalWindingAlternatives(
     maximumRouteOrderAttempts,
     reservedVias = [],
     gridStepDivisor = 1,
+    preferTargetDirectedLaneBias = false,
   } = params
   if (
     maximumRouteOrderAttempts !== undefined &&
@@ -723,7 +726,6 @@ export function routeViaMinimalWindingAlternatives(
     }
     return low
   }
-
   const segmentIsClear = (params: {
     segment: RoutedSegment
     terminal: ViaMinimalWindingTerminal
@@ -842,7 +844,7 @@ export function routeViaMinimalWindingAlternatives(
           nodeIndex,
           points,
           radialDistance: connectorDistance,
-          length: getSegments(points, traceWidth, targetLayer).reduce(
+          length: segments.reduce(
             (total, segment) => total + distance(segment.start, segment.end),
             0,
           ),
@@ -1073,15 +1075,31 @@ export function routeViaMinimalWindingAlternatives(
   const targetTracks = targetOrderedTerminals.map((terminal) =>
     getPerpendicularAxis(terminal.exitPoint, boundaryDirection),
   )
+  const meanViaTrack =
+    viaTracks.reduce((sum, track) => sum + track, 0) / viaTracks.length
+  const meanTargetTrack =
+    targetTracks.reduce((sum, track) => sum + track, 0) / targetTracks.length
   const viasAreBeforeTargets =
     Math.max(...viaTracks) < Math.min(...targetTracks) - EPSILON
   const viasAreAfterTargets =
     Math.min(...viaTracks) > Math.max(...targetTracks) + EPSILON
-  const laneBiases = viasAreBeforeTargets
-    ? ([1, 0, -1] as const)
-    : viasAreAfterTargets
-      ? ([-1, 0, 1] as const)
-      : ([0, 1, -1] as const)
+  const laneBiases = preferTargetDirectedLaneBias
+    ? viasAreBeforeTargets
+      ? ([0, 1, -1] as const)
+      : viasAreAfterTargets
+        ? ([0, -1, 1] as const)
+        : bus.direction === boundaryDirection &&
+            meanTargetTrack > meanViaTrack + EPSILON
+          ? ([1, 0, -1] as const)
+          : bus.direction === boundaryDirection &&
+              meanTargetTrack < meanViaTrack - EPSILON
+            ? ([-1, 0, 1] as const)
+            : ([0, 1, -1] as const)
+    : viasAreBeforeTargets
+      ? ([1, 0, -1] as const)
+      : viasAreAfterTargets
+        ? ([-1, 0, 1] as const)
+        : ([0, 1, -1] as const)
   const initialRouteOrderFactories: Array<
     () => readonly ViaMinimalWindingTerminal[]
   > = []
@@ -1094,8 +1112,19 @@ export function routeViaMinimalWindingAlternatives(
     initialRouteOrderFactories.push(() => [...targetOrderedTerminals].reverse())
   }
   initialRouteOrderFactories.push(
-    () => targetOrderedTerminals,
-    () => [...targetOrderedTerminals].reverse(),
+    ...(preferTargetDirectedLaneBias &&
+    bus.direction === boundaryDirection &&
+    meanTargetTrack < meanViaTrack - EPSILON &&
+    !viasAreBeforeTargets &&
+    !viasAreAfterTargets
+      ? [
+          () => [...targetOrderedTerminals].reverse(),
+          () => targetOrderedTerminals,
+        ]
+      : [
+          () => targetOrderedTerminals,
+          () => [...targetOrderedTerminals].reverse(),
+        ]),
     () =>
       terminals.toSorted(
         (first, second) =>
@@ -1201,7 +1230,9 @@ export function routeViaMinimalWindingAlternatives(
       if (seenAlternativeKeys.has(alternativeKey)) continue
       seenAlternativeKeys.add(alternativeKey)
       alternatives.push(plans)
-      if (alternatives.length >= maximumAlternatives) return alternatives
+      if (alternatives.length >= maximumAlternatives) {
+        return alternatives
+      }
     }
   }
   return alternatives
