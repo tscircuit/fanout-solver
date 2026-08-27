@@ -131,14 +131,22 @@ function getStableConnectionIdentity(
   return connection.name
 }
 
-function getWindingTargetRank(params: {
+function getWindingTargetOrders(params: {
   bus: PreparedBus
-  connection: PreparedConnection
   boundaryDirection: FanoutDirection
   layerNames: readonly string[]
-}): { rank: number; connectionCount: number } {
-  const { bus, connection, boundaryDirection, layerNames } = params
-  const orderedConnections = bus.connections.toSorted((first, second) => {
+  targetLayer: string
+}): {
+  orders: PreparedConnection[][]
+  legacyOrder: PreparedConnection[]
+} {
+  const { bus, boundaryDirection, layerNames, targetLayer } = params
+  const getTargetLayer = (candidate: PreparedConnection): string =>
+    candidate.exitTargetPoint?.layer ?? getPointLayer(candidate.targetPoint)
+  const compareWithinLayer = (
+    first: PreparedConnection,
+    second: PreparedConnection,
+  ): number => {
     const axisDifference =
       getPerpendicularAxis(
         first.exitTargetPoint ?? first.targetPoint,
@@ -150,28 +158,114 @@ function getWindingTargetRank(params: {
       )
     if (axisDifference !== 0) return axisDifference
 
-    // Equal target coordinates came from distinct target layers and do not
-    // impose a physical order after this bus is collapsed onto one escape
-    // layer. Keep that free choice independent of allowed-layer ordering so
-    // the local fanout can choose a deterministic, via-minimal permutation.
-    const identityDifference = first.connection.name.localeCompare(
-      second.connection.name,
-    )
-    if (identityDifference !== 0) return identityDifference
-
     const firstStableId = getStableConnectionIdentity(first.connection)
     const secondStableId = getStableConnectionIdentity(second.connection)
     const stableIdentityDifference = firstStableId.localeCompare(secondStableId)
     if (stableIdentityDifference !== 0) return stableIdentityDifference
 
-    const firstLayer = first.exitTargetPoint?.layer
-    const secondLayer = second.exitTargetPoint?.layer
     return (
-      layerNames.indexOf(firstLayer ?? "") -
-        layerNames.indexOf(secondLayer ?? "") ||
+      first.connection.name.localeCompare(second.connection.name) ||
+      first.connectionIndex - second.connectionIndex
+    )
+  }
+  const legacyOrderedConnections = bus.connections.toSorted((first, second) => {
+    const axisDifference =
+      getPerpendicularAxis(
+        first.exitTargetPoint ?? first.targetPoint,
+        boundaryDirection,
+      ) -
+      getPerpendicularAxis(
+        second.exitTargetPoint ?? second.targetPoint,
+        boundaryDirection,
+      )
+    if (axisDifference !== 0) return axisDifference
+    return (
+      first.connection.name.localeCompare(second.connection.name) ||
+      getStableConnectionIdentity(first.connection).localeCompare(
+        getStableConnectionIdentity(second.connection),
+      ) ||
+      layerNames.indexOf(getTargetLayer(first)) -
+        layerNames.indexOf(getTargetLayer(second)) ||
       first.connectionIndex - second.connectionIndex
     )
   })
+  const connectionsByLayer = new Map<string, PreparedConnection[]>()
+  for (const candidate of bus.connections) {
+    const layer = getTargetLayer(candidate)
+    const layerConnections = connectionsByLayer.get(layer) ?? []
+    layerConnections.push(candidate)
+    connectionsByLayer.set(layer, layerConnections)
+  }
+  const orderedLayers = [...connectionsByLayer.keys()].toSorted(
+    (first, second) =>
+      Number(second === targetLayer) - Number(first === targetLayer) ||
+      layerNames.indexOf(first) - layerNames.indexOf(second) ||
+      first.localeCompare(second),
+  )
+  const layerOrderByName = new Map(
+    orderedLayers.map((layer, layerOrder) => [layer, layerOrder]),
+  )
+  const rankWithinLayerByConnectionIndex = new Map<number, number>()
+  for (const layer of orderedLayers) {
+    for (const [rank, candidate] of connectionsByLayer
+      .get(layer)!
+      .toSorted(compareWithinLayer)
+      .entries()) {
+      rankWithinLayerByConnectionIndex.set(candidate.connectionIndex, rank)
+    }
+  }
+  // Winding targets define an order within each copper layer. Their absolute
+  // offsets across different layers are not an ordering constraint: unrelated
+  // buses can move those layer bands without changing this bus's topology.
+  // Build a canonical interleave plus its adjacent linear extensions so a
+  // via-minimal search can choose a locally routable merge without violating
+  // any same-layer winding order.
+  const canonicalOrderedConnections = bus.connections.toSorted(
+    (first, second) =>
+      (rankWithinLayerByConnectionIndex.get(first.connectionIndex) ?? 0) -
+        (rankWithinLayerByConnectionIndex.get(second.connectionIndex) ?? 0) ||
+      (layerOrderByName.get(getTargetLayer(first)) ?? 0) -
+        (layerOrderByName.get(getTargetLayer(second)) ?? 0) ||
+      compareWithinLayer(first, second),
+  )
+  const candidateOrders: PreparedConnection[][] = [canonicalOrderedConnections]
+  for (let index = 0; index + 1 < canonicalOrderedConnections.length; index++) {
+    const first = canonicalOrderedConnections[index]!
+    const second = canonicalOrderedConnections[index + 1]!
+    if (getTargetLayer(first) === getTargetLayer(second)) continue
+    const adjacentExtension = [...canonicalOrderedConnections]
+    adjacentExtension[index] = second
+    adjacentExtension[index + 1] = first
+    candidateOrders.push(adjacentExtension)
+  }
+  // Retain the coordinate-total-order behavior as a compatibility fallback,
+  // but do not let sub-nanometer noise between unrelated layer bands choose
+  // the primary topology.
+  candidateOrders.push(legacyOrderedConnections)
+  const seenOrders = new Set<string>()
+  const orders = candidateOrders.filter((order) => {
+    const key = order.map((candidate) => candidate.connectionIndex).join(",")
+    if (seenOrders.has(key)) return false
+    seenOrders.add(key)
+    return true
+  })
+  return { orders, legacyOrder: legacyOrderedConnections }
+}
+
+function getWindingTargetRank(params: {
+  bus: PreparedBus
+  connection: PreparedConnection
+  boundaryDirection: FanoutDirection
+  layerNames: readonly string[]
+  targetLayer: string
+  windingOrderIndex?: number
+}): { rank: number; connectionCount: number } {
+  const { connection, windingOrderIndex = 0 } = params
+  const { orders, legacyOrder } = getWindingTargetOrders(params)
+  const orderedConnections =
+    params.windingOrderIndex === undefined
+      ? legacyOrder
+      : (orders[windingOrderIndex] ?? orders[0] ?? legacyOrder)
   const rank = orderedConnections.findIndex(
     (candidate) => candidate.connectionIndex === connection.connectionIndex,
   )
@@ -201,6 +295,8 @@ function getCornerTargetTrack(params: {
   viaDiameter: number
   clearance: number
   layerNames: readonly string[]
+  targetLayer: string
+  windingOrderIndex?: number
 }): number {
   const {
     bus,
@@ -210,6 +306,8 @@ function getCornerTargetTrack(params: {
     viaDiameter,
     clearance,
     layerNames,
+    targetLayer,
+    windingOrderIndex,
   } = params
   const side = getCornerSide(bus)
   if (!side || !bus.exitEdge) {
@@ -235,6 +333,8 @@ function getCornerTargetTrack(params: {
         connection,
         boundaryDirection,
         layerNames,
+        targetLayer,
+        windingOrderIndex,
       })
     : undefined
   const bandConnectionCount = Math.max(
@@ -947,6 +1047,7 @@ function buildPlan(params: {
           viaDiameter,
           clearance,
           layerNames,
+          targetLayer,
         })
       : usesLayeredWindingChannel
         ? getPerpendicularAxis(
@@ -2376,8 +2477,18 @@ export function routeBusAlternatives(
       ) => ViaHandedness
       getViaPoint?: (preparedConnection: PreparedConnection) => Point2D
       maximumRouteOrderAttempts?: number
+      windingOrderIndex?: number
+      preferTargetDirectedLaneBias?: boolean
     }
     const maximumThroughAllRouteOrderAttempts = 24
+    const windingTargetOrderCount = cornerSide
+      ? getWindingTargetOrders({
+          bus,
+          boundaryDirection,
+          layerNames,
+          targetLayer,
+        }).orders.length
+      : 1
     const uniformDogboneTerminalPatterns: CoordinatedTerminalPattern[] =
       viaHandednesses.map((viaHandedness) => ({
         label: `uniform-${viaHandedness}`,
@@ -2519,21 +2630,40 @@ export function routeBusAlternatives(
       useViaInPad: true,
       getViaHandedness: () => 0 as const,
     }
-    const fixedViaTerminalPattern: CoordinatedTerminalPattern | undefined =
+    const fixedViaTerminalPatterns: CoordinatedTerminalPattern[] =
       fixedViaPointsByConnectionIndex
-        ? {
-            label: "component-matched-vias",
-            useViaInPad: false,
-            getViaHandedness: () => 0,
-            getViaPoint: (connection) =>
-              fixedViaPointsByConnectionIndex.get(connection.connectionIndex)!,
-            // A fixed component-wide dogbone assignment is a bounded fast
-            // path. Keep enough order/bias attempts for the eight-lane DDR
-            // cases without allowing route-order rotations to grow with an
-            // arbitrarily wide bus.
-            maximumRouteOrderAttempts: maximumThroughAllRouteOrderAttempts,
-          }
-        : undefined
+        ? [
+            ...Array.from(
+              { length: windingTargetOrderCount },
+              (_, windingOrderIndex) => ({
+                label: `component-matched-vias-winding-${windingOrderIndex}`,
+                useViaInPad: false,
+                getViaHandedness: () => 0 as const,
+                getViaPoint: (connection: PreparedConnection) =>
+                  fixedViaPointsByConnectionIndex.get(
+                    connection.connectionIndex,
+                  )!,
+                maximumRouteOrderAttempts: 1,
+                windingOrderIndex,
+                preferTargetDirectedLaneBias: true,
+              }),
+            ),
+            {
+              label: "component-matched-vias-fallback",
+              useViaInPad: false,
+              getViaHandedness: () => 0,
+              getViaPoint: (connection) =>
+                fixedViaPointsByConnectionIndex.get(
+                  connection.connectionIndex,
+                )!,
+              // Preserve the existing bounded search after every inexpensive
+              // layer-interleave candidate has had one deterministic attempt.
+              maximumRouteOrderAttempts: maximumThroughAllRouteOrderAttempts,
+              windingOrderIndex: 0,
+              preferTargetDirectedLaneBias: true,
+            },
+          ]
+        : []
     const planeTerminationsAlreadyOccupyTheFanout = acceptedPlans.some(
       (plan) => plan.termination.type === "plane",
     )
@@ -2545,8 +2675,8 @@ export function routeBusAlternatives(
         ? [...mixedDogboneTerminalPatterns, ...uniformDogboneTerminalPatterns]
         : [...uniformDogboneTerminalPatterns, ...mixedDogboneTerminalPatterns]
     const terminalPatterns: CoordinatedTerminalPattern[] =
-      fixedViaTerminalPattern
-        ? [fixedViaTerminalPattern]
+      fixedViaTerminalPatterns.length > 0
+        ? fixedViaTerminalPatterns
         : canUseViaInPadTerminals
           ? planeTerminationsAlreadyOccupyTheFanout
             ? [viaInPadTerminalPattern, ...dogboneTerminalPatterns]
@@ -2566,6 +2696,8 @@ export function routeBusAlternatives(
               viaDiameter,
               clearance,
               layerNames,
+              targetLayer,
+              windingOrderIndex: terminalPattern.windingOrderIndex,
             })
           : getPerpendicularAxis(
               preparedConnection.exitTargetPoint ??
@@ -2597,12 +2729,12 @@ export function routeBusAlternatives(
           ),
         }
       })
-      const terminalSignature = terminals
+      const terminalSignature = `${terminals
         .map(
           (terminal) =>
-            `${terminal.connection.connectionIndex}:${terminal.viaPoint.x}:${terminal.viaPoint.y}`,
+            `${terminal.connection.connectionIndex}:${terminal.viaPoint.x}:${terminal.viaPoint.y}:${terminal.exitPoint.x}:${terminal.exitPoint.y}`,
         )
-        .join("|")
+        .join("|")}:${terminalPattern.maximumRouteOrderAttempts ?? "all"}`
       if (seenTerminalSignatures.has(terminalSignature)) continue
       seenTerminalSignatures.add(terminalSignature)
       const viaMinimalAlternatives = routeViaMinimalWindingAlternatives(
@@ -2628,10 +2760,14 @@ export function routeBusAlternatives(
               traceWidth + clearance
               ? 2
               : 1,
+          preferTargetDirectedLaneBias:
+            terminalPattern.preferTargetDirectedLaneBias,
         },
-        terminalPattern.maximumRouteOrderAttempts === undefined
-          ? Math.min(2, maxAlternatives - alternatives.length)
-          : 2,
+        fixedViaPointsByConnectionIndex && viaMinimalOnly
+          ? Math.min(2, Math.max(1, maxAlternatives - alternatives.length))
+          : terminalPattern.maximumRouteOrderAttempts === undefined
+            ? Math.min(2, maxAlternatives - alternatives.length)
+            : 2,
       )
       for (const viaMinimalPlans of viaMinimalAlternatives) {
         const combinedPlansAreClear = fanoutPlansAreClear({

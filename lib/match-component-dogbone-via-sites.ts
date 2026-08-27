@@ -33,6 +33,13 @@ export interface DogboneViaSiteGeometryRules {
   preferredBoundaryPerpendicularSideByBusId?: ReadonlyMap<string, -1 | 1>
   /** Prefer the local outward or inward half-pitch row for a boundary bus. */
   preferBoundaryOutwardByBusId?: ReadonlyMap<string, boolean>
+  /** Existing assignments that must be preserved while matching other pads. */
+  fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
+  /** Routed copper that every newly assigned through-via/dogbone must clear. */
+  blockingSegments?: readonly {
+    connectionIndex: number
+    segment: RoutedSegment
+  }[]
   /** True only when the two connections are allowed to merge copper. */
   canShareCopper?: (
     firstConnectionIndex: number,
@@ -67,6 +74,11 @@ interface ViaSiteCandidate {
 interface ConnectionCandidates {
   connection: ComponentConnection
   candidates: ViaSiteCandidate[]
+}
+
+export interface ComponentDogboneViaSiteCandidate {
+  connectionIndex: number
+  point: Point2D
 }
 
 function assertGeometryRules(rules: DogboneViaSiteGeometryRules): number {
@@ -340,9 +352,13 @@ function getConnectionCandidates(params: {
       uniquePoints.push(point)
     }
   }
+  const fixedViaPoint = rules.fixedViaPointsByConnectionIndex?.get(
+    preparedConnection.connectionIndex,
+  )
+  const candidatePoints = fixedViaPoint ? [fixedViaPoint] : uniquePoints
 
   const candidates: ViaSiteCandidate[] = []
-  for (const point of uniquePoints) {
+  for (const point of candidatePoints) {
     if (
       connection.terminationType === "plane" &&
       !directSegmentIsStraightOr45(source, point)
@@ -375,6 +391,38 @@ function getConnectionCandidates(params: {
     ) {
       continue
     }
+    const candidateClearsRoutedCopper = (rules.blockingSegments ?? []).every(
+      (blocker) => {
+        if (blocker.connectionIndex === preparedConnection.connectionIndex) {
+          return true
+        }
+        if (
+          rules.canShareCopper?.(
+            preparedConnection.connectionIndex,
+            blocker.connectionIndex,
+          )
+        ) {
+          return true
+        }
+        const viaToTraceClearance =
+          rules.viaDiameter / 2 + blocker.segment.width / 2 + rules.clearance
+        if (
+          distancePointToSegment(
+            point,
+            blocker.segment.start,
+            blocker.segment.end,
+          ) <
+          viaToTraceClearance - EPSILON
+        ) {
+          return false
+        }
+        return (
+          blocker.segment.layer !== sourceSegment.layer ||
+          segmentsAreClear(sourceSegment, blocker.segment, rules.clearance)
+        )
+      },
+    )
+    if (!candidateClearsRoutedCopper) continue
     candidates.push({
       connectionIndex: preparedConnection.connectionIndex,
       point,
@@ -581,4 +629,27 @@ export function matchComponentDogboneViaSites(
     }
   }
   return result
+}
+
+/**
+ * Enumerates the same statically legal sites used by the component matcher.
+ * This is useful to preserve future dogbone capacity while another bus is
+ * being routed; callers must still run the full matcher afterward because
+ * these candidates are not mutually assigned.
+ */
+export function getComponentDogboneViaSiteCandidates(
+  preparedBuses: readonly PreparedBus[],
+  rules: DogboneViaSiteGeometryRules,
+): ComponentDogboneViaSiteCandidate[] {
+  assertGeometryRules(rules)
+  return getComponentMatchingInputs(preparedBuses).flatMap((component) =>
+    component.connections.flatMap((connection) =>
+      getConnectionCandidates({ connection, component, rules }).map(
+        (candidate) => ({
+          connectionIndex: candidate.connectionIndex,
+          point: { ...candidate.point },
+        }),
+      ),
+    ),
+  )
 }
