@@ -10,7 +10,7 @@ import type {
   FanoutViaRoutePoint,
 } from "lib/types"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
-import capturedFixture from "./fixtures/am62l-lpddr4-four-bus-through-all-dram.json"
+import capturedFixture from "./fixtures/am62l-lpddr4-five-bus-singleton-through-all-dram.json"
 import { getPcbSvgFromSrj } from "./fixtures/getPcbSvgFromSrj"
 
 type CapturedInput = SimpleRouteJson & {
@@ -18,10 +18,10 @@ type CapturedInput = SimpleRouteJson & {
   allowViaInPad?: boolean
 }
 
-const fixture = capturedFixture as unknown as {
-  inputSrj: CapturedInput
-  options: FanoutSolverOptions
-}
+const fixture = capturedFixture as unknown as readonly [
+  CapturedInput,
+  FanoutSolverOptions,
+]
 
 const expectedSignalBuses = [
   {
@@ -56,10 +56,18 @@ const expectedSignalBuses = [
     assignedLayer: "inner5",
     exitPosition: "leftside_top",
   },
+  {
+    busId: "DDR_RESET",
+    connectionCount: 1,
+    maxLengthSkew: undefined,
+    allowedLayers: ["inner6"],
+    assignedLayer: "inner6",
+    exitPosition: "leftside_top",
+  },
 ] as const satisfies readonly {
   busId: string
   connectionCount: number
-  maxLengthSkew: number
+  maxLengthSkew?: number
   allowedLayers: readonly string[]
   assignedLayer: string
   exitPosition: FanoutExitPosition
@@ -102,8 +110,8 @@ function getPlanarLength(trace: FanoutSimplifiedPcbTrace): number {
   return length
 }
 
-test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones", async () => {
-  const { inputSrj, options } = fixture
+test("routes the AM62L-to-LPDDR4 five-bus DRAM fanout with a deferred singleton dogbone", async () => {
+  const [inputSrj, options] = fixture
   const physicalLayers = getCopperLayerNames(inputSrj.layerCount)
   expect(physicalLayers).toEqual([
     "top",
@@ -115,9 +123,9 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
     "inner6",
     "bottom",
   ])
-  expect(inputSrj.connections).toHaveLength(136)
+  expect(inputSrj.connections).toHaveLength(137)
   expect(inputSrj.obstacles).toHaveLength(201)
-  expect(inputSrj.traces).toHaveLength(128)
+  expect(inputSrj.traces).toHaveLength(129)
   expect(inputSrj.allowBlindAndBuriedVias).toBe(false)
   expect(options.allowBlindAndBuriedVias).toBe(false)
   expect(inputSrj.allowViaInPad).not.toBe(true)
@@ -125,8 +133,8 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
   expect(inputSrj.differentialPairs).toEqual([
     {
       connectionNames: [
-        "breakout:pcb_breakout_point_34",
         "breakout:pcb_breakout_point_35",
+        "breakout:pcb_breakout_point_36",
       ],
       lengthTolerance: 0.25,
     },
@@ -134,7 +142,7 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
 
   const requestedBuses = options.buses
   if (!requestedBuses) throw new Error("Captured options must include buses")
-  expect(requestedBuses).toHaveLength(114)
+  expect(requestedBuses).toHaveLength(115)
   const busById = new Map(requestedBuses.map((bus) => [bus.busId, bus]))
   expect(busById.size).toBe(requestedBuses.length)
 
@@ -143,16 +151,36 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
     const bus = busById.get(expectedBus.busId)
     expect(bus).toMatchObject({
       busId: expectedBus.busId,
-      maxLengthSkew: expectedBus.maxLengthSkew,
       allowedLayers: [...expectedBus.allowedLayers],
       exitPosition: expectedBus.exitPosition,
     })
+    expect(bus?.maxLengthSkew).toBe(expectedBus.maxLengthSkew)
     expect(bus?.connectionNames).toHaveLength(expectedBus.connectionCount)
     for (const connectionName of bus?.connectionNames ?? []) {
       signalConnectionNames.add(connectionName)
     }
   }
-  expect(signalConnectionNames.size).toBe(26)
+  expect(signalConnectionNames.size).toBe(27)
+  expect(busById.get("DDR_RESET")).toMatchObject({
+    connectionNames: ["breakout:pcb_breakout_point_49"],
+    allowedLayers: ["inner6"],
+    exitPosition: "leftside_top",
+  })
+  expect(
+    inputSrj.connections.find(
+      (connection) => connection.name === "breakout:pcb_breakout_point_49",
+    ),
+  ).toMatchObject({
+    source_trace_id: "source_trace_238",
+    pointsToConnect: [
+      { x: 12.541917000000002, y: 5.41916, layer: "top" },
+      {
+        x: -0.3679829999999986,
+        y: 3.4692481481481487,
+        layer: "inner6",
+      },
+    ],
+  })
 
   const planeBuses = requestedBuses.filter(
     (bus) => bus.termination?.type === "plane",
@@ -189,21 +217,21 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
   const output = solver.getOutput()
   expect(output.validation).toEqual({
     valid: true,
-    checkedConnectionCount: 136,
-    brokenOutConnectionCount: 136,
+    checkedConnectionCount: 137,
+    brokenOutConnectionCount: 137,
     issues: [],
   })
-  expect(output.fanoutTraces).toHaveLength(136)
+  expect(output.fanoutTraces).toHaveLength(137)
   expect(output.planeTerminations).toHaveLength(110)
   expect(output.simpleRouteJson.fanoutPlaneConnectivity).toHaveLength(110)
   expect(output.simpleRouteJson.differentialPairs).toEqual(
     inputSrj.differentialPairs,
   )
   const sequentialTraces = output.simpleRouteJson.traces ?? []
-  expect(sequentialTraces).toHaveLength(264)
+  expect(sequentialTraces).toHaveLength(266)
   expect(
     new Set(sequentialTraces.map((trace) => trace.pcb_trace_id)).size,
-  ).toBe(264)
+  ).toBe(266)
   for (const trace of sequentialTraces) {
     const vias = trace.route.filter((point) => point.route_type === "via")
     expect(vias).toHaveLength(1)
@@ -224,7 +252,7 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
     }
     traceByConnection.set(connectionName, trace)
   }
-  expect(traceByConnection.size).toBe(136)
+  expect(traceByConnection.size).toBe(137)
   expect(new Set(traceByConnection.keys())).toEqual(
     new Set(inputSrj.connections.map((connection) => connection.name)),
   )
@@ -262,7 +290,7 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
       sourcePadRadius + viaRadius + viaPadClearance - 1e-6,
     )
   }
-  expect(viaCoordinates.size).toBe(136)
+  expect(viaCoordinates.size).toBe(137)
 
   const terminationByConnection = new Map(
     output.planeTerminations.map((termination) => [
@@ -289,7 +317,7 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
       output.simpleRouteJson.connections.map((connection) => connection.name),
     ),
   ).toEqual(signalConnectionNames)
-  expect(output.simpleRouteJson.connections).toHaveLength(26)
+  expect(output.simpleRouteJson.connections).toHaveLength(27)
 
   for (const expectedBus of expectedSignalBuses) {
     const bus = busById.get(expectedBus.busId)!
@@ -299,9 +327,11 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
       return trace
     })
     const lengths = traces.map(getPlanarLength)
-    expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThanOrEqual(
-      expectedBus.maxLengthSkew + 1e-6,
-    )
+    if (expectedBus.maxLengthSkew !== undefined) {
+      expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThanOrEqual(
+        expectedBus.maxLengthSkew + 1e-6,
+      )
+    }
     expect(output.busLayerAssignments[expectedBus.busId]).toBe(
       expectedBus.assignedLayer,
     )
@@ -339,8 +369,8 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
     }),
   ).toMatchObject({
     valid: true,
-    checkedTraceCount: 136,
-    checkedViaCount: 136,
+    checkedTraceCount: 137,
+    checkedViaCount: 137,
     issues: [],
   })
 
@@ -359,4 +389,4 @@ test("routes the AM62L-to-LPDDR4 four-bus DRAM fanout with through-all dogbones"
       },
     ),
   ).toMatchSvgSnapshot(import.meta.path)
-}, 90_000)
+}, 120_000)

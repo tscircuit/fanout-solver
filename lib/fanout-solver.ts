@@ -440,6 +440,36 @@ function busUsesCoordinatedWinding(bus: PreparedBus): boolean {
   )
 }
 
+export function shouldUseJointBoundaryViaReservation(
+  boundaryBusConnectionCounts: readonly number[],
+): boolean {
+  return (
+    boundaryBusConnectionCounts.length === 5 ||
+    (boundaryBusConnectionCounts.length === 4 &&
+      new Set(boundaryBusConnectionCounts).size > 1)
+  )
+}
+
+export function shouldDeferSingletonBoundaryViaReservation(
+  boundaryBusConnectionCounts: readonly number[],
+): boolean {
+  return (
+    boundaryBusConnectionCounts.length === 5 &&
+    boundaryBusConnectionCounts.filter((count) => count === 1).length === 1
+  )
+}
+
+export function shouldSearchAdditionalBoundaryRouteTopologies(params: {
+  boundaryBusCount: number
+  rawSkew: number
+  maximumSkew: number
+}): boolean {
+  if (params.boundaryBusCount >= 5) return false
+  return (
+    params.rawSkew - params.maximumSkew > Math.max(1, params.maximumSkew * 0.25)
+  )
+}
+
 function getCandidateEscapeLayersForBus(params: {
   bus: PreparedBus
   srj: SimpleRouteJson
@@ -725,16 +755,15 @@ export class FanoutSolver extends BaseSolver {
     const unsortedBoundaryBuses = params.busesInRoutingOrder.filter(
       (bus) => bus.termination.type === "boundary",
     )
-    const useJointFourBusReservation =
-      unsortedBoundaryBuses.length === 4 &&
-      new Set(unsortedBoundaryBuses.map((bus) => bus.connections.length)).size >
-        1
+    const useJointBoundaryViaReservation = shouldUseJointBoundaryViaReservation(
+      unsortedBoundaryBuses.map((bus) => bus.connections.length),
+    )
     const boundaryBuses = unsortedBoundaryBuses.toSorted((first, second) => {
       // Reserve the dense escape field for the widest buses first. Small
       // control groups can usually route around their copper, while routing
       // a two-line corner bus first can consume a critical channel needed by
       // an eight-line winding bus and force the expensive fallback search.
-      if (useJointFourBusReservation) {
+      if (useJointBoundaryViaReservation) {
         const connectionCountDifference =
           second.connections.length - first.connections.length
         if (connectionCountDifference !== 0) return connectionCountDifference
@@ -786,7 +815,7 @@ export class FanoutSolver extends BaseSolver {
     )
     if (
       boundaryBuses.length === 0 ||
-      boundaryBuses.length > 4 ||
+      boundaryBuses.length > 5 ||
       planeBuses.length < 8 ||
       boundaryBuses.some((bus) => !busUsesCoordinatedWinding(bus)) ||
       planeBuses.some((bus) => bus.connections.length !== 1) ||
@@ -833,22 +862,37 @@ export class FanoutSolver extends BaseSolver {
           ),
       )
     }
-    // Four boundary buses leave too little slack for incremental site
-    // allocation: a valid early trace can consume the last dogbone site of a
-    // later narrow bus. Reserve every physical barrel before routing copper.
-    // Plane sites remain provisional and are rematched around the completed
-    // boundary plans below.
-    const jointViaPoints = useJointFourBusReservation
-      ? matchComponentDogboneViaSites([...planeBuses, ...boundaryBuses], {
-          viaDiameter: this.config.viaDiameter,
-          viaHoleDiameter: this.config.viaHoleDiameter,
-          traceWidth: this.config.traceWidth,
-          clearance: this.config.clearance,
-          maximumSearchStates: 100_000,
-          preferredBoundaryPerpendicularSideByBusId,
-          preferBoundaryOutwardByBusId,
-          canShareCopper,
-        })
+    // Five boundary buses, and heterogeneous four-bus groups, leave too little
+    // slack for incremental site allocation: a valid early trace can consume
+    // the last dogbone site of a later narrow bus. Reserve the multi-line bus
+    // barrels before routing copper. A single one-line bus stays provisional
+    // because its flexible site can be rematched around the wide-bus copper.
+    // Plane sites are likewise rematched around completed boundary plans.
+    const boundaryBusConnectionCounts = boundaryBuses.map(
+      (bus) => bus.connections.length,
+    )
+    const provisionalSingletonBus = shouldDeferSingletonBoundaryViaReservation(
+      boundaryBusConnectionCounts,
+    )
+      ? boundaryBuses.find((bus) => bus.connections.length === 1)
+      : undefined
+    const initiallyMatchedBoundaryBuses = provisionalSingletonBus
+      ? boundaryBuses.filter((bus) => bus !== provisionalSingletonBus)
+      : boundaryBuses
+    const jointViaPoints = useJointBoundaryViaReservation
+      ? matchComponentDogboneViaSites(
+          [...planeBuses, ...initiallyMatchedBoundaryBuses],
+          {
+            viaDiameter: this.config.viaDiameter,
+            viaHoleDiameter: this.config.viaHoleDiameter,
+            traceWidth: this.config.traceWidth,
+            clearance: this.config.clearance,
+            maximumSearchStates: 100_000,
+            preferredBoundaryPerpendicularSideByBusId,
+            preferBoundaryOutwardByBusId,
+            canShareCopper,
+          },
+        )
       : null
     const seedViaPoints =
       jointViaPoints ??
@@ -929,7 +973,11 @@ export class FanoutSolver extends BaseSolver {
           const lengths = busPlans.map((plan) => plan.length)
           const rawSkew = Math.max(...lengths) - Math.min(...lengths)
           const needsRouteDiversity =
-            rawSkew - bus.maxLengthSkew > Math.max(1, bus.maxLengthSkew * 0.25)
+            shouldSearchAdditionalBoundaryRouteTopologies({
+              boundaryBusCount: boundaryBuses.length,
+              rawSkew,
+              maximumSkew: bus.maxLengthSkew,
+            })
           // Only pay for additional A* variants when the first topology is so
           // skewed that compact meanders are unlikely to absorb the deficit.
           // This keeps already-near-matched buses on the single-attempt path.
@@ -976,27 +1024,32 @@ export class FanoutSolver extends BaseSolver {
           candidateIndex++
         ) {
           const candidateBus = remainingBoundaryBuses[candidateIndex]!
-          const extendedViaPoints = jointViaPoints
-            ? // The joint map is deliberately kept intact so getReservedVias()
-              // blocks every future through-barrel during A*. Plane dogbones are
-              // validated/rematched once the boundary copper is complete.
-              new Map(fixedViaPointsByConnectionIndex)
-            : matchComponentDogboneViaSites(
-                [...planeBuses, ...routedBoundaryBuses, candidateBus],
-                {
-                  viaDiameter: this.config.viaDiameter,
-                  viaHoleDiameter: this.config.viaHoleDiameter,
-                  traceWidth: this.config.traceWidth,
-                  clearance: this.config.clearance,
-                  maximumSearchStates: 100_000,
-                  preferredBoundaryPerpendicularSideByBusId,
-                  preferBoundaryOutwardByBusId,
-                  fixedViaPointsByConnectionIndex:
-                    fixedViaPointsByConnectionIndex,
-                  blockingSegments,
-                  canShareCopper,
-                },
-              )
+          const candidateHasFixedViaPoints = candidateBus.connections.every(
+            (connection) =>
+              fixedViaPointsByConnectionIndex.has(connection.connectionIndex),
+          )
+          const extendedViaPoints =
+            jointViaPoints && candidateHasFixedViaPoints
+              ? // The joint map is deliberately kept intact so getReservedVias()
+                // blocks every already-reserved future through-barrel during A*.
+                // Provisional singleton and plane dogbones are rematched later.
+                new Map(fixedViaPointsByConnectionIndex)
+              : matchComponentDogboneViaSites(
+                  [...planeBuses, ...routedBoundaryBuses, candidateBus],
+                  {
+                    viaDiameter: this.config.viaDiameter,
+                    viaHoleDiameter: this.config.viaHoleDiameter,
+                    traceWidth: this.config.traceWidth,
+                    clearance: this.config.clearance,
+                    maximumSearchStates: 100_000,
+                    preferredBoundaryPerpendicularSideByBusId,
+                    preferBoundaryOutwardByBusId,
+                    fixedViaPointsByConnectionIndex:
+                      fixedViaPointsByConnectionIndex,
+                    blockingSegments,
+                    canShareCopper,
+                  },
+                )
           if (!extendedViaPoints) continue
           const previousFixedViaPoints = fixedViaPointsByConnectionIndex
           const previousPlanCount = matchedPlans.length
