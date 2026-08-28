@@ -24,6 +24,8 @@ export type FanoutRoutePoint =
   | FanoutViaRoutePoint
 
 export type FanoutSimplifiedPcbTrace = Omit<SimplifiedPcbTrace, "route"> & {
+  /** Stable Circuit JSON trace identity carried across routing phases. */
+  source_trace_id?: string
   route: FanoutRoutePoint[]
 }
 

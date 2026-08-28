@@ -19,9 +19,13 @@ function getSourceTraceId(connection: SimpleRouteConnection): string {
   return connection.source_trace_id
 }
 
-test("AM62L HDMI U5 fanout drops source trace identities", async () => {
+test("AM62L HDMI U5 fanout preserves source trace identities", async () => {
   const inputSrj = capturedInput as SimpleRouteJson
-  const sourceTraceIds = inputSrj.connections.map(getSourceTraceId)
+  const sourceTraceIdByConnectionName = new Map(
+    inputSrj.connections.map(
+      (connection) => [connection.name, getSourceTraceId(connection)] as const,
+    ),
+  )
   const solver = new FanoutSolver(inputSrj, {
     busDirections: Object.fromEntries(
       inputSrj.buses!.map((bus) => [bus.busId, "right"] as const),
@@ -34,7 +38,7 @@ test("AM62L HDMI U5 fanout drops source trace identities", async () => {
   const output = solver.getOutput()
   expect(output.validation).toMatchObject({ valid: true, issues: [] })
   expect(output.fanoutTraces).toHaveLength(8)
-  expect(sourceTraceIds).toEqual([
+  expect([...sourceTraceIdByConnectionName.values()]).toEqual([
     "source_trace_31",
     "source_trace_30",
     "source_trace_29",
@@ -45,8 +49,13 @@ test("AM62L HDMI U5 fanout drops source trace identities", async () => {
     "source_trace_24",
   ])
   for (const trace of output.fanoutTraces) {
-    expect(trace).not.toHaveProperty("source_trace_id")
-    expect(trace.connectsTo).not.toEqual(expect.arrayContaining(sourceTraceIds))
+    const sourceTraceId = sourceTraceIdByConnectionName.get(
+      trace.connection_name,
+    )
+    expect(trace.source_trace_id).toBe(sourceTraceId)
+    expect(trace.connectsTo).toContain(sourceTraceId)
+    expect(trace.connectsTo?.at(-2)).toBe(sourceTraceId)
+    expect(trace.connectsTo?.at(-1)).toMatch(/^fanout-exit:/)
   }
 
   await expect(

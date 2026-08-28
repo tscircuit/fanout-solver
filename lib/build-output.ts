@@ -1,4 +1,5 @@
 import type { Obstacle, SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import { addSourceTraceIdentity } from "./add-source-trace-identity"
 import { createFanoutOutputIds } from "./fanout-output-ids"
 import type { FanoutRoutePlan, SimpleRouteJsonWithFanoutPlanes } from "./types"
 
@@ -94,10 +95,20 @@ export function buildOutputSimpleRouteJson(params: {
       if (endpointViaObstacle) viaObstacles.push(endpointViaObstacle)
     }
   }
-  const planTraces = plans.flatMap((plan) => [
-    plan.trace,
-    ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
-  ])
+  const planTraces = plans.flatMap((plan) => {
+    const connection = inputSrj.connections[plan.connectionIndex]!
+    return [
+      addSourceTraceIdentity({ trace: plan.trace, connection }),
+      ...(plan.planeEndpointTrace
+        ? [
+            addSourceTraceIdentity({
+              trace: plan.planeEndpointTrace,
+              connection,
+            }),
+          ]
+        : []),
+    ]
+  })
   const coordinateRoutePoints = planTraces.flatMap((trace) =>
     trace.route.filter(
       (

@@ -4,6 +4,7 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import { addSourceTraceIdentity } from "./add-source-trace-identity"
 import { createFanoutCompletionTraceId } from "./fanout-output-ids"
 import {
   distance,
@@ -1132,13 +1133,20 @@ export function completeOriginalEndpoints(params: {
     })
     if (terminalBranch) traces.push(terminalBranch)
   }
+  const connectionByName = new Map(
+    inputSrj.connections.map((connection) => [connection.name, connection]),
+  )
+  const completionTraces = traces.map((trace) => {
+    const connection = connectionByName.get(trace.connection_name)
+    return connection ? addSourceTraceIdentity({ trace, connection }) : trace
+  })
   const untrimmedSimpleRouteJson = {
     ...fanoutSrj,
-    traces: [...(fanoutSrj.traces ?? []), ...traces],
+    traces: [...(fanoutSrj.traces ?? []), ...completionTraces],
   }
   const simpleRouteJson = trimCompletedFanoutTails({
     fanoutSrj: untrimmedSimpleRouteJson,
-    completionTraces: traces,
+    completionTraces,
   })
   const connectivity = validateOriginalEndpointConnectivity({
     inputSrj,
@@ -1171,7 +1179,7 @@ export function completeOriginalEndpoints(params: {
   }
   return {
     simpleRouteJson,
-    traces,
+    traces: completionTraces,
     report: {
       attemptedLocalConnectionCount: localPlans.length,
       attemptedDownstreamConnectionCount: downstreamPlans.length,
