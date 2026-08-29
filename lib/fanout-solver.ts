@@ -445,6 +445,7 @@ export function shouldUseJointBoundaryViaReservation(
 ): boolean {
   return (
     boundaryBusConnectionCounts.length === 5 ||
+    boundaryBusConnectionCounts.length === 6 ||
     (boundaryBusConnectionCounts.length === 4 &&
       new Set(boundaryBusConnectionCounts).size > 1)
   )
@@ -454,17 +455,32 @@ export function shouldDeferSingletonBoundaryViaReservation(
   boundaryBusConnectionCounts: readonly number[],
 ): boolean {
   return (
-    boundaryBusConnectionCounts.length === 5 &&
+    (boundaryBusConnectionCounts.length === 5 ||
+      boundaryBusConnectionCounts.length === 6) &&
     boundaryBusConnectionCounts.filter((count) => count === 1).length === 1
   )
 }
 
 export function shouldSearchAdditionalBoundaryRouteTopologies(params: {
   boundaryBusCount: number
+  connectionCount: number
   rawSkew: number
   maximumSkew: number
 }): boolean {
-  if (params.boundaryBusCount >= 5) return false
+  if (params.boundaryBusCount === 5 || params.boundaryBusCount > 6) {
+    return false
+  }
+  if (params.boundaryBusCount === 6) {
+    // A sixth bus removes enough meander space that a severely skewed wide
+    // topology can be impossible to tune. Keep the retry away from narrow
+    // differential/control groups and from modest deficits that the atomic
+    // length matcher can absorb directly.
+    return (
+      params.connectionCount > 2 &&
+      params.rawSkew - params.maximumSkew >
+        Math.max(1, params.maximumSkew * 0.5)
+    )
+  }
   return (
     params.rawSkew - params.maximumSkew > Math.max(1, params.maximumSkew * 0.25)
   )
@@ -803,7 +819,14 @@ export class FanoutSolver extends BaseSolver {
       const layerDifference =
         this.config.layerNames.indexOf(firstLayer ?? "") -
         this.config.layerNames.indexOf(secondLayer ?? "")
-      return -layerDifference
+      if (layerDifference !== 0) return -layerDifference
+      if (unsortedBoundaryBuses.length !== 6) return 0
+      // The general routing order can differ across the two components as a
+      // function of local pad geometry. Keep otherwise-equivalent corner buses
+      // in one deterministic order for the six-bus path so their boundary
+      // lanes do not swap between the two ends of a direct interconnect. Leave
+      // the released four- and five-bus tie behavior unchanged.
+      return first.busId.localeCompare(second.busId)
     })
     // Preserve the caller/input order for the dense singleton fill. The
     // general routing sort is useful for heterogeneous buses, but ordering a
@@ -815,7 +838,7 @@ export class FanoutSolver extends BaseSolver {
     )
     if (
       boundaryBuses.length === 0 ||
-      boundaryBuses.length > 5 ||
+      boundaryBuses.length > 6 ||
       planeBuses.length < 8 ||
       boundaryBuses.some((bus) => !busUsesCoordinatedWinding(bus)) ||
       planeBuses.some((bus) => bus.connections.length !== 1) ||
@@ -862,7 +885,7 @@ export class FanoutSolver extends BaseSolver {
           ),
       )
     }
-    // Five boundary buses, and heterogeneous four-bus groups, leave too little
+    // Five or six boundary buses, and heterogeneous four-bus groups, leave too little
     // slack for incremental site allocation: a valid early trace can consume
     // the last dogbone site of a later narrow bus. Reserve the multi-line bus
     // barrels before routing copper. A single one-line bus stays provisional
@@ -975,6 +998,7 @@ export class FanoutSolver extends BaseSolver {
           const needsRouteDiversity =
             shouldSearchAdditionalBoundaryRouteTopologies({
               boundaryBusCount: boundaryBuses.length,
+              connectionCount: bus.connections.length,
               rawSkew,
               maximumSkew: bus.maxLengthSkew,
             })
