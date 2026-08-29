@@ -93,6 +93,16 @@ const expectedSignalBuses = [
     exitPosition: "rightside_top",
   },
   {
+    busId: "DDR_DQS1",
+    connectionNames: [
+      "breakout:pcb_breakout_point_29",
+      "breakout:pcb_breakout_point_30",
+    ],
+    maxLengthSkew: 0.25,
+    allowedLayers: ["inner5"],
+    exitPosition: "rightside_center",
+  },
+  {
     busId: "DDR_RESET",
     connectionNames: ["breakout:pcb_breakout_point_24"],
     maxLengthSkew: undefined,
@@ -119,6 +129,13 @@ const expectedDifferentialPairs = [
     connectionNames: [
       "breakout:pcb_breakout_point_15",
       "breakout:pcb_breakout_point_14",
+    ],
+    lengthTolerance: 0.25,
+  },
+  {
+    connectionNames: [
+      "breakout:pcb_breakout_point_29",
+      "breakout:pcb_breakout_point_30",
     ],
     lengthTolerance: 0.25,
   },
@@ -161,7 +178,7 @@ function getPlanarLength(trace: FanoutSimplifiedPcbTrace): number {
   return length
 }
 
-test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
+test("routes the AM62L seven-bus SoC fanout with DQS1", async () => {
   const { inputSrj, options } = fixture
   const physicalLayers = getCopperLayerNames(inputSrj.layerCount)
   expect(physicalLayers).toEqual([
@@ -174,11 +191,11 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
     "inner6",
     "bottom",
   ])
-  expect(inputSrj.connections).toHaveLength(131)
+  expect(inputSrj.connections).toHaveLength(133)
   expect(inputSrj.connections.map((connection) => connection.name)).toEqual([
     ...Array.from({ length: 102 }, (_, index) => `source_trace_${index}`),
     ...Array.from(
-      { length: 29 },
+      { length: 31 },
       (_, index) => `breakout:pcb_breakout_point_${index}`,
     ),
   ])
@@ -222,21 +239,35 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
     ).size,
   ).toBe(373)
   expect(
+    inputSrj.obstacles.filter(
+      (obstacle) => obstacle.componentId === "pcb_component_0",
+    ),
+  ).toHaveLength(373)
+  expect(
+    inputSrj.obstacles.filter(
+      (obstacle) => obstacle.componentId === "pcb_component_1",
+    ),
+  ).toHaveLength(0)
+  expect(
     inputSrj.obstacles.filter((obstacle) => obstacle.connectedTo.length === 1),
-  ).toHaveLength(242)
+  ).toHaveLength(240)
   expect(
     inputSrj.obstacles.filter((obstacle) => obstacle.connectedTo.length === 4),
-  ).toHaveLength(131)
+  ).toHaveLength(133)
 
+  expect(inputSrj.differentialPairs).toHaveLength(3)
   expect(inputSrj.differentialPairs).toEqual(expectedDifferentialPairs)
 
   const requestedBuses = options.buses
   if (!requestedBuses) throw new Error("Captured options must include buses")
-  expect(requestedBuses).toHaveLength(108)
+  expect(requestedBuses).toHaveLength(109)
   const busById = new Map(requestedBuses.map((bus) => [bus.busId, bus]))
   expect(busById.size).toBe(requestedBuses.length)
 
   const signalConnectionNames = new Set<string>()
+  expect(expectedSignalBuses.map((bus) => bus.connectionNames.length)).toEqual([
+    8, 8, 8, 2, 2, 2, 1,
+  ])
   for (const expectedBus of expectedSignalBuses) {
     const bus = busById.get(expectedBus.busId)
     expect(bus).toMatchObject({
@@ -250,12 +281,15 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
       signalConnectionNames.add(connectionName)
     }
   }
-  expect(signalConnectionNames.size).toBe(29)
+  expect(signalConnectionNames.size).toBe(31)
   expect(busById.get("DDR_CLOCK")?.connectionNames).toEqual(
     expectedDifferentialPairs[0].connectionNames,
   )
   expect(busById.get("DDR_DQS0")?.connectionNames).toEqual(
     expectedDifferentialPairs[1].connectionNames,
+  )
+  expect(busById.get("DDR_DQS1")?.connectionNames).toEqual(
+    expectedDifferentialPairs[2].connectionNames,
   )
 
   const planeBuses = requestedBuses.filter(
@@ -275,6 +309,17 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
     ),
   ).toHaveLength(5)
   expect(planeBuses.every((bus) => bus.connectionNames.length === 1)).toBe(true)
+
+  const planeConnectionNames = new Set(
+    planeBuses.flatMap((bus) => bus.connectionNames),
+  )
+  expect(planeConnectionNames.size).toBe(102)
+  expect(
+    [...planeConnectionNames].filter((name) => signalConnectionNames.has(name)),
+  ).toHaveLength(0)
+  expect(new Set([...planeConnectionNames, ...signalConnectionNames])).toEqual(
+    new Set(inputSrj.connections.map((connection) => connection.name)),
+  )
 
   const connectionByName = new Map(
     inputSrj.connections.map((connection) => [connection.name, connection]),
@@ -301,6 +346,20 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
       bus.termination.layer === "inner1" ? "GND" : "VDD_LPDDR4",
     )
   }
+
+  const sourceObstacleByPortId = new Map<
+    string,
+    (typeof obstaclesWithMetadata)[number]
+  >()
+  for (const obstacle of obstaclesWithMetadata) {
+    const portId = obstacle.circuitJsonMetadata?.pcb_port_id
+    if (!portId) throw new Error("Captured pad obstacle is missing a port id")
+    if (sourceObstacleByPortId.has(portId)) {
+      throw new Error(`Duplicate captured pad obstacle for ${portId}`)
+    }
+    sourceObstacleByPortId.set(portId, obstacle)
+  }
+  expect(sourceObstacleByPortId.size).toBe(373)
   for (const connection of inputSrj.connections) {
     const sourcePoint = connection.pointsToConnect[0]
     const sourcePointId =
@@ -308,11 +367,8 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
     if (typeof sourcePointId !== "string") {
       throw new Error(`Missing source point identity for ${connection.name}`)
     }
-    const sourceObstacles = inputSrj.obstacles.filter((obstacle) =>
-      obstacle.connectedTo.includes(sourcePointId),
-    )
-    expect(sourceObstacles).toHaveLength(1)
-    expect(sourceObstacles[0]?.connectedTo).toEqual(
+    const sourceObstacle = sourceObstacleByPortId.get(sourcePointId)
+    expect(sourceObstacle?.connectedTo).toEqual(
       expect.arrayContaining([
         connection.name,
         sourcePointId,
@@ -332,11 +388,11 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
   const output = solver.getOutput()
   expect(output.validation).toEqual({
     valid: true,
-    checkedConnectionCount: 131,
-    brokenOutConnectionCount: 131,
+    checkedConnectionCount: 133,
+    brokenOutConnectionCount: 133,
     issues: [],
   })
-  expect(output.fanoutTraces).toHaveLength(131)
+  expect(output.fanoutTraces).toHaveLength(133)
   expect(output.planeTerminations).toHaveLength(102)
   expect(output.simpleRouteJson.fanoutPlaneConnectivity).toHaveLength(102)
   expect(output.simpleRouteJson.differentialPairs).toEqual(
@@ -354,7 +410,7 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
     }
     traceByConnection.set(connectionName, trace)
   }
-  expect(traceByConnection.size).toBe(131)
+  expect(traceByConnection.size).toBe(133)
   expect(new Set(traceByConnection.keys())).toEqual(
     new Set(inputSrj.connections.map((connection) => connection.name)),
   )
@@ -393,7 +449,7 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
       sourcePadRadius + viaRadius + viaPadClearance - 1e-6,
     )
   }
-  expect(viaCoordinates.size).toBe(131)
+  expect(viaCoordinates.size).toBe(133)
 
   const terminationByConnection = new Map(
     output.planeTerminations.map((termination) => [
@@ -420,7 +476,7 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
       output.simpleRouteJson.connections.map((connection) => connection.name),
     ),
   ).toEqual(signalConnectionNames)
-  expect(output.simpleRouteJson.connections).toHaveLength(29)
+  expect(output.simpleRouteJson.connections).toHaveLength(31)
 
   for (const expectedBus of expectedSignalBuses) {
     const bus = busById.get(expectedBus.busId)!
@@ -470,7 +526,27 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
     .connectionNames.map(
       (connectionName) => getLastWire(traceByConnection.get(connectionName)!).y,
     )
+  const dqs1Traces = busById
+    .get("DDR_DQS1")!
+    .connectionNames.map(
+      (connectionName) => traceByConnection.get(connectionName)!,
+    )
+  const dqs1ExitYs = dqs1Traces.map((trace) => getLastWire(trace).y)
+  const dqs1Lengths = dqs1Traces.map(getPlanarLength)
+  expect(output.busLayerAssignments.DDR_DQS1).toBe("inner5")
+  expect(
+    Math.max(...dqs1Lengths) - Math.min(...dqs1Lengths),
+  ).toBeLessThanOrEqual(0.25 + 1e-6)
+  for (const trace of dqs1Traces) {
+    expect(getLastWire(trace)).toMatchObject({
+      x: options.sharedBoundary!.maxX,
+      layer: "inner5",
+    })
+  }
+  expect(dqs1ExitYs[0]!).toBeLessThan(dqs1ExitYs[1]!)
+  expect(Math.max(...dqs1ExitYs)).toBeLessThan(Math.min(...clockExitYs))
   expect(Math.max(...clockExitYs)).toBeLessThan(Math.min(...dqs0ExitYs))
+  expect(Math.max(...dqs1ExitYs)).toBeLessThan(Math.min(...dqs0ExitYs))
 
   const clearance =
     options.clearance ??
@@ -491,8 +567,8 @@ test("routes the AM62L six-bus SoC fanout with DQS0 and RESET", async () => {
     }),
   ).toMatchObject({
     valid: true,
-    checkedTraceCount: 131,
-    checkedViaCount: 131,
+    checkedTraceCount: 133,
+    checkedViaCount: 133,
     issues: [],
   })
 

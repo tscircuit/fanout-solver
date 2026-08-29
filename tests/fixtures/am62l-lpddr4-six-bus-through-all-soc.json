@@ -5563,7 +5563,12 @@
         },
         "width": 0.25616,
         "height": 0.25616,
-        "connectedTo": ["pcb_smtpad_271"]
+        "connectedTo": [
+          "pcb_smtpad_271",
+          "breakout:pcb_breakout_point_29",
+          "pcb_port_300",
+          "connectivity_net:breakout:pcb_breakout_point_29"
+        ]
       },
       {
         "circuitJsonMetadata": {
@@ -5581,7 +5586,12 @@
         },
         "width": 0.25616,
         "height": 0.25616,
-        "connectedTo": ["pcb_smtpad_272"]
+        "connectedTo": [
+          "pcb_smtpad_272",
+          "breakout:pcb_breakout_point_30",
+          "pcb_port_301",
+          "connectivity_net:breakout:pcb_breakout_point_30"
+        ]
       },
       {
         "circuitJsonMetadata": {
@@ -9228,7 +9238,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -1.3359786206896547,
+            "y": -1.610951612903225,
             "layer": "bottom",
             "pointId": "pcb_breakout_point_0"
           }
@@ -9251,7 +9261,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -0.8334186206896548,
+            "y": -1.1083916129032252,
             "layer": "bottom",
             "pointId": "pcb_breakout_point_1"
           }
@@ -9274,7 +9284,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -0.33085862068965477,
+            "y": -0.6058316129032252,
             "layer": "bottom",
             "pointId": "pcb_breakout_point_2"
           }
@@ -9297,7 +9307,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 0.17170137931034535,
+            "y": -0.10327161290322506,
             "layer": "bottom",
             "pointId": "pcb_breakout_point_3"
           }
@@ -9320,7 +9330,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -1.0846986206896547,
+            "y": -1.3596716129032251,
             "layer": "inner4",
             "pointId": "pcb_breakout_point_4"
           }
@@ -9343,7 +9353,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -0.5821386206896548,
+            "y": -0.8571116129032252,
             "layer": "inner4",
             "pointId": "pcb_breakout_point_5"
           }
@@ -9366,7 +9376,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -0.07957862068965477,
+            "y": -0.3545516129032252,
             "layer": "inner4",
             "pointId": "pcb_breakout_point_6"
           }
@@ -9389,7 +9399,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 0.42298137931034535,
+            "y": 0.14800838709677494,
             "layer": "inner4",
             "pointId": "pcb_breakout_point_7"
           }
@@ -9412,7 +9422,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -0.8334186206896548,
+            "y": -1.1083916129032252,
             "layer": "inner5",
             "pointId": "pcb_breakout_point_8"
           }
@@ -9435,7 +9445,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -0.33085862068965477,
+            "y": -0.6058316129032252,
             "layer": "inner5",
             "pointId": "pcb_breakout_point_9"
           }
@@ -9458,7 +9468,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 0.17170137931034524,
+            "y": -0.10327161290322517,
             "layer": "inner5",
             "pointId": "pcb_breakout_point_10"
           }
@@ -9481,7 +9491,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 0.6742613793103454,
+            "y": 0.39928838709677494,
             "layer": "inner5",
             "pointId": "pcb_breakout_point_11"
           }
@@ -9504,7 +9514,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 1.1768213793103453,
+            "y": 0.9018483870967748,
             "layer": "inner5",
             "pointId": "pcb_breakout_point_12"
           }
@@ -9527,7 +9537,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 1.6793813793103451,
+            "y": 1.4044083870967747,
             "layer": "inner5",
             "pointId": "pcb_breakout_point_13"
           }
@@ -9550,7 +9560,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 2.1819413793103455,
+            "y": 2.912088387096775,
             "layer": "inner5",
             "pointId": "pcb_breakout_point_14"
           }
@@ -9573,7 +9583,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 2.6845013793103454,
+            "y": 3.4146483870967748,
             "layer": "inner5",
             "pointId": "pcb_breakout_point_15"
           }
@@ -9596,7 +9606,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -0.5821386206896548,
+            "y": -0.8571116129032252,
             "layer": "inner6",
             "pointId": "pcb_breakout_point_16"
           }
@@ -9619,7 +9629,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -0.07957862068965477,
+            "y": -0.3545516129032252,
             "layer": "inner6",
             "pointId": "pcb_breakout_point_17"
           }
@@ -9642,7 +9652,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 0.42298137931034524,
+            "y": 0.14800838709677483,
             "layer": "inner6",
             "pointId": "pcb_breakout_point_18"
           }
@@ -9665,7 +9675,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 0.9255413793103453,
+            "y": 0.6505683870967749,
             "layer": "inner6",
             "pointId": "pcb_breakout_point_19"
           }
@@ -9688,7 +9698,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 1.4281013793103452,
+            "y": 1.1531283870967748,
             "layer": "inner6",
             "pointId": "pcb_breakout_point_20"
           }
@@ -9711,7 +9721,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 1.930661379310345,
+            "y": 1.6556883870967747,
             "layer": "inner6",
             "pointId": "pcb_breakout_point_21"
           }
@@ -9734,7 +9744,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 2.4332213793103454,
+            "y": 2.158248387096775,
             "layer": "inner6",
             "pointId": "pcb_breakout_point_22"
           }
@@ -9757,7 +9767,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 2.9357813793103453,
+            "y": 2.660808387096775,
             "layer": "inner6",
             "pointId": "pcb_breakout_point_23"
           }
@@ -9768,7 +9778,7 @@
       },
       {
         "name": "breakout:pcb_breakout_point_24",
-        "source_trace_id": "source_trace_240",
+        "source_trace_id": "source_trace_242",
         "routingPcbGroupId": "pcb_group_0",
         "pointsToConnect": [
           {
@@ -9780,7 +9790,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 3.4383413793103452,
+            "y": 3.163368387096775,
             "layer": "inner6",
             "pointId": "pcb_breakout_point_24"
           }
@@ -9803,7 +9813,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": -0.33085862068965477,
+            "y": -0.6058316129032252,
             "layer": "top",
             "pointId": "pcb_breakout_point_25"
           }
@@ -9826,7 +9836,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 0.17170137931034524,
+            "y": -0.10327161290322517,
             "layer": "top",
             "pointId": "pcb_breakout_point_26"
           }
@@ -9849,7 +9859,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 0.6742613793103452,
+            "y": 0.39928838709677483,
             "layer": "top",
             "pointId": "pcb_breakout_point_27"
           }
@@ -9872,7 +9882,7 @@
           },
           {
             "x": -0.8720199999999994,
-            "y": 1.1768213793103453,
+            "y": 0.901848387096775,
             "layer": "top",
             "pointId": "pcb_breakout_point_28"
           }
@@ -9880,6 +9890,52 @@
         "nominalTraceWidth": 0.08128,
         "width": 0.08128,
         "netConnectionName": "breakout:pcb_breakout_point_28"
+      },
+      {
+        "name": "breakout:pcb_breakout_point_29",
+        "source_trace_id": "source_trace_240",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -15,
+            "y": -3,
+            "layer": "top",
+            "pointId": "pcb_port_300",
+            "pcb_port_id": "pcb_port_300"
+          },
+          {
+            "x": -0.8720199999999994,
+            "y": 1.906968387096775,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_29"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128,
+        "netConnectionName": "breakout:pcb_breakout_point_29"
+      },
+      {
+        "name": "breakout:pcb_breakout_point_30",
+        "source_trace_id": "source_trace_241",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -14.5,
+            "y": -3,
+            "layer": "top",
+            "pointId": "pcb_port_301",
+            "pcb_port_id": "pcb_port_301"
+          },
+          {
+            "x": -0.8720199999999994,
+            "y": 2.409528387096775,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_30"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128,
+        "netConnectionName": "breakout:pcb_breakout_point_30"
       }
     ],
     "differentialPairs": [
@@ -9894,6 +9950,13 @@
         "connectionNames": [
           "breakout:pcb_breakout_point_15",
           "breakout:pcb_breakout_point_14"
+        ],
+        "lengthTolerance": 0.25
+      },
+      {
+        "connectionNames": [
+          "breakout:pcb_breakout_point_29",
+          "breakout:pcb_breakout_point_30"
         ],
         "lengthTolerance": 0.25
       }
@@ -10835,42 +10898,42 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_25": {
             "x": -0.3679829999999986,
-            "y": -0.33085862068965477,
+            "y": -0.6058316129032252,
             "layer": "top"
           },
           "breakout:pcb_breakout_point_4": {
             "x": -0.3679829999999986,
-            "y": -1.0846986206896547,
+            "y": -1.3596716129032251,
             "layer": "inner4"
           },
           "breakout:pcb_breakout_point_27": {
             "x": -0.3679829999999986,
-            "y": 0.6742613793103452,
+            "y": 0.39928838709677483,
             "layer": "top"
           },
           "breakout:pcb_breakout_point_26": {
             "x": -0.3679829999999986,
-            "y": 0.17170137931034524,
+            "y": -0.10327161290322517,
             "layer": "top"
           },
           "breakout:pcb_breakout_point_5": {
             "x": -0.3679829999999986,
-            "y": -0.5821386206896548,
+            "y": -0.8571116129032252,
             "layer": "inner4"
           },
           "breakout:pcb_breakout_point_6": {
             "x": -0.3679829999999986,
-            "y": -0.07957862068965477,
+            "y": -0.3545516129032252,
             "layer": "inner4"
           },
           "breakout:pcb_breakout_point_7": {
             "x": -0.3679829999999986,
-            "y": 0.42298137931034535,
+            "y": 0.14800838709677494,
             "layer": "inner4"
           },
           "breakout:pcb_breakout_point_28": {
             "x": -0.3679829999999986,
-            "y": 1.1768213793103453,
+            "y": 0.901848387096775,
             "layer": "top"
           }
         }
@@ -10893,42 +10956,42 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_13": {
             "x": -0.3679829999999986,
-            "y": 1.6793813793103451,
+            "y": 1.4044083870967747,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_0": {
             "x": -0.3679829999999986,
-            "y": -1.3359786206896547,
+            "y": -1.610951612903225,
             "layer": "bottom"
           },
           "breakout:pcb_breakout_point_10": {
             "x": -0.3679829999999986,
-            "y": 0.17170137931034524,
+            "y": -0.10327161290322517,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_11": {
             "x": -0.3679829999999986,
-            "y": 0.6742613793103454,
+            "y": 0.39928838709677494,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_12": {
             "x": -0.3679829999999986,
-            "y": 1.1768213793103453,
+            "y": 0.9018483870967748,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_3": {
             "x": -0.3679829999999986,
-            "y": 0.17170137931034535,
+            "y": -0.10327161290322506,
             "layer": "bottom"
           },
           "breakout:pcb_breakout_point_1": {
             "x": -0.3679829999999986,
-            "y": -0.8334186206896548,
+            "y": -1.1083916129032252,
             "layer": "bottom"
           },
           "breakout:pcb_breakout_point_2": {
             "x": -0.3679829999999986,
-            "y": -0.33085862068965477,
+            "y": -0.6058316129032252,
             "layer": "bottom"
           }
         }
@@ -10951,42 +11014,42 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_22": {
             "x": -0.3679829999999986,
-            "y": 2.4332213793103454,
+            "y": 2.158248387096775,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_16": {
             "x": -0.3679829999999986,
-            "y": -0.5821386206896548,
+            "y": -0.8571116129032252,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_21": {
             "x": -0.3679829999999986,
-            "y": 1.930661379310345,
+            "y": 1.6556883870967747,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_19": {
             "x": -0.3679829999999986,
-            "y": 0.9255413793103453,
+            "y": 0.6505683870967749,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_18": {
             "x": -0.3679829999999986,
-            "y": 0.42298137931034524,
+            "y": 0.14800838709677483,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_17": {
             "x": -0.3679829999999986,
-            "y": -0.07957862068965477,
+            "y": -0.3545516129032252,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_23": {
             "x": -0.3679829999999986,
-            "y": 2.9357813793103453,
+            "y": 2.660808387096775,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_20": {
             "x": -0.3679829999999986,
-            "y": 1.4281013793103452,
+            "y": 1.1531283870967748,
             "layer": "inner6"
           }
         }
@@ -11003,12 +11066,12 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_8": {
             "x": -0.3679829999999986,
-            "y": -0.8334186206896548,
+            "y": -1.1083916129032252,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_9": {
             "x": -0.3679829999999986,
-            "y": -0.33085862068965477,
+            "y": -0.6058316129032252,
             "layer": "inner5"
           }
         }
@@ -11025,12 +11088,34 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_15": {
             "x": -0.3679829999999986,
-            "y": 2.6845013793103454,
+            "y": 3.4146483870967748,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_14": {
             "x": -0.3679829999999986,
-            "y": 2.1819413793103455,
+            "y": 2.912088387096775,
+            "layer": "inner5"
+          }
+        }
+      },
+      {
+        "busId": "DDR_DQS1",
+        "name": "DDR_DQS1",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_29",
+          "breakout:pcb_breakout_point_30"
+        ],
+        "maxLengthSkew": 0.25,
+        "preferredLayers": ["inner5"],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_29": {
+            "x": -0.3679829999999986,
+            "y": 1.906968387096775,
+            "layer": "inner5"
+          },
+          "breakout:pcb_breakout_point_30": {
+            "x": -0.3679829999999986,
+            "y": 2.409528387096775,
             "layer": "inner5"
           }
         }
@@ -11043,7 +11128,7 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_24": {
             "x": -0.3679829999999986,
-            "y": 3.4383413793103452,
+            "y": 3.163368387096775,
             "layer": "inner6"
           }
         }
@@ -12003,42 +12088,42 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_25": {
             "x": -0.3679829999999986,
-            "y": -0.33085862068965477,
+            "y": -0.6058316129032252,
             "layer": "top"
           },
           "breakout:pcb_breakout_point_4": {
             "x": -0.3679829999999986,
-            "y": -1.0846986206896547,
+            "y": -1.3596716129032251,
             "layer": "inner4"
           },
           "breakout:pcb_breakout_point_27": {
             "x": -0.3679829999999986,
-            "y": 0.6742613793103452,
+            "y": 0.39928838709677483,
             "layer": "top"
           },
           "breakout:pcb_breakout_point_26": {
             "x": -0.3679829999999986,
-            "y": 0.17170137931034524,
+            "y": -0.10327161290322517,
             "layer": "top"
           },
           "breakout:pcb_breakout_point_5": {
             "x": -0.3679829999999986,
-            "y": -0.5821386206896548,
+            "y": -0.8571116129032252,
             "layer": "inner4"
           },
           "breakout:pcb_breakout_point_6": {
             "x": -0.3679829999999986,
-            "y": -0.07957862068965477,
+            "y": -0.3545516129032252,
             "layer": "inner4"
           },
           "breakout:pcb_breakout_point_7": {
             "x": -0.3679829999999986,
-            "y": 0.42298137931034535,
+            "y": 0.14800838709677494,
             "layer": "inner4"
           },
           "breakout:pcb_breakout_point_28": {
             "x": -0.3679829999999986,
-            "y": 1.1768213793103453,
+            "y": 0.901848387096775,
             "layer": "top"
           }
         },
@@ -12062,42 +12147,42 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_13": {
             "x": -0.3679829999999986,
-            "y": 1.6793813793103451,
+            "y": 1.4044083870967747,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_0": {
             "x": -0.3679829999999986,
-            "y": -1.3359786206896547,
+            "y": -1.610951612903225,
             "layer": "bottom"
           },
           "breakout:pcb_breakout_point_10": {
             "x": -0.3679829999999986,
-            "y": 0.17170137931034524,
+            "y": -0.10327161290322517,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_11": {
             "x": -0.3679829999999986,
-            "y": 0.6742613793103454,
+            "y": 0.39928838709677494,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_12": {
             "x": -0.3679829999999986,
-            "y": 1.1768213793103453,
+            "y": 0.9018483870967748,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_3": {
             "x": -0.3679829999999986,
-            "y": 0.17170137931034535,
+            "y": -0.10327161290322506,
             "layer": "bottom"
           },
           "breakout:pcb_breakout_point_1": {
             "x": -0.3679829999999986,
-            "y": -0.8334186206896548,
+            "y": -1.1083916129032252,
             "layer": "bottom"
           },
           "breakout:pcb_breakout_point_2": {
             "x": -0.3679829999999986,
-            "y": -0.33085862068965477,
+            "y": -0.6058316129032252,
             "layer": "bottom"
           }
         },
@@ -12121,42 +12206,42 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_22": {
             "x": -0.3679829999999986,
-            "y": 2.4332213793103454,
+            "y": 2.158248387096775,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_16": {
             "x": -0.3679829999999986,
-            "y": -0.5821386206896548,
+            "y": -0.8571116129032252,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_21": {
             "x": -0.3679829999999986,
-            "y": 1.930661379310345,
+            "y": 1.6556883870967747,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_19": {
             "x": -0.3679829999999986,
-            "y": 0.9255413793103453,
+            "y": 0.6505683870967749,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_18": {
             "x": -0.3679829999999986,
-            "y": 0.42298137931034524,
+            "y": 0.14800838709677483,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_17": {
             "x": -0.3679829999999986,
-            "y": -0.07957862068965477,
+            "y": -0.3545516129032252,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_23": {
             "x": -0.3679829999999986,
-            "y": 2.9357813793103453,
+            "y": 2.660808387096775,
             "layer": "inner6"
           },
           "breakout:pcb_breakout_point_20": {
             "x": -0.3679829999999986,
-            "y": 1.4281013793103452,
+            "y": 1.1531283870967748,
             "layer": "inner6"
           }
         },
@@ -12174,12 +12259,12 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_8": {
             "x": -0.3679829999999986,
-            "y": -0.8334186206896548,
+            "y": -1.1083916129032252,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_9": {
             "x": -0.3679829999999986,
-            "y": -0.33085862068965477,
+            "y": -0.6058316129032252,
             "layer": "inner5"
           }
         },
@@ -12197,16 +12282,39 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_15": {
             "x": -0.3679829999999986,
-            "y": 2.6845013793103454,
+            "y": 3.4146483870967748,
             "layer": "inner5"
           },
           "breakout:pcb_breakout_point_14": {
             "x": -0.3679829999999986,
-            "y": 2.1819413793103455,
+            "y": 2.912088387096775,
             "layer": "inner5"
           }
         },
         "exitPosition": "rightside_top",
+        "allowedLayers": ["inner5"]
+      },
+      {
+        "busId": "DDR_DQS1",
+        "name": "DDR_DQS1",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_29",
+          "breakout:pcb_breakout_point_30"
+        ],
+        "maxLengthSkew": 0.25,
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_29": {
+            "x": -0.3679829999999986,
+            "y": 1.906968387096775,
+            "layer": "inner5"
+          },
+          "breakout:pcb_breakout_point_30": {
+            "x": -0.3679829999999986,
+            "y": 2.409528387096775,
+            "layer": "inner5"
+          }
+        },
+        "exitPosition": "rightside_center",
         "allowedLayers": ["inner5"]
       },
       {
@@ -12216,7 +12324,7 @@
         "connectionExitTargets": {
           "breakout:pcb_breakout_point_24": {
             "x": -0.3679829999999986,
-            "y": 3.4383413793103452,
+            "y": 3.163368387096775,
             "layer": "inner6"
           }
         },
