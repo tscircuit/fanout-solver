@@ -446,6 +446,7 @@ export function shouldUseJointBoundaryViaReservation(
   return (
     boundaryBusConnectionCounts.length === 5 ||
     boundaryBusConnectionCounts.length === 6 ||
+    boundaryBusConnectionCounts.length === 7 ||
     (boundaryBusConnectionCounts.length === 4 &&
       new Set(boundaryBusConnectionCounts).size > 1)
   )
@@ -456,7 +457,8 @@ export function shouldDeferSingletonBoundaryViaReservation(
 ): boolean {
   return (
     (boundaryBusConnectionCounts.length === 5 ||
-      boundaryBusConnectionCounts.length === 6) &&
+      boundaryBusConnectionCounts.length === 6 ||
+      boundaryBusConnectionCounts.length === 7) &&
     boundaryBusConnectionCounts.filter((count) => count === 1).length === 1
   )
 }
@@ -467,11 +469,11 @@ export function shouldSearchAdditionalBoundaryRouteTopologies(params: {
   rawSkew: number
   maximumSkew: number
 }): boolean {
-  if (params.boundaryBusCount === 5 || params.boundaryBusCount > 6) {
+  if (params.boundaryBusCount === 5 || params.boundaryBusCount > 7) {
     return false
   }
-  if (params.boundaryBusCount === 6) {
-    // A sixth bus removes enough meander space that a severely skewed wide
+  if (params.boundaryBusCount === 6 || params.boundaryBusCount === 7) {
+    // Six or seven buses remove enough meander space that a severely skewed wide
     // topology can be impossible to tune. Keep the retry away from narrow
     // differential/control groups and from modest deficits that the atomic
     // length matcher can absorb directly.
@@ -483,6 +485,73 @@ export function shouldSearchAdditionalBoundaryRouteTopologies(params: {
   }
   return (
     params.rawSkew - params.maximumSkew > Math.max(1, params.maximumSkew * 0.25)
+  )
+}
+
+interface DensePairRoutingPriorityBus {
+  componentId: string
+  exitEdge?: PreparedBus["exitEdge"]
+  assignedLayer?: string
+  connections: readonly {
+    sourceLayer: string
+    sourcePoint: { x: number; y: number }
+    exitTargetPoint?: { x: number; y: number; layer?: string }
+  }[]
+}
+
+export function getDenseSevenBusPairRoutingPriorityKeys(params: {
+  boundaryBusCount: number
+  pairBuses: readonly DensePairRoutingPriorityBus[]
+}): number[] | null {
+  const { pairBuses } = params
+  const firstBus = pairBuses[0]
+  const firstSourceLayer = firstBus?.connections[0]?.sourceLayer
+  if (
+    params.boundaryBusCount !== 7 ||
+    pairBuses.length !== 3 ||
+    firstBus === undefined ||
+    firstBus.exitEdge === undefined ||
+    firstBus.assignedLayer === undefined ||
+    firstSourceLayer === undefined ||
+    pairBuses.some(
+      (bus) =>
+        bus.connections.length !== 2 ||
+        bus.componentId !== firstBus.componentId ||
+        bus.exitEdge !== firstBus.exitEdge ||
+        bus.assignedLayer !== firstBus.assignedLayer ||
+        bus.connections.some((connection) => {
+          const exitTarget = connection.exitTargetPoint
+          return (
+            connection.sourceLayer !== firstSourceLayer ||
+            exitTarget?.layer !== firstBus.assignedLayer ||
+            !Number.isFinite(connection.sourcePoint.x) ||
+            !Number.isFinite(connection.sourcePoint.y) ||
+            !Number.isFinite(exitTarget?.x) ||
+            !Number.isFinite(exitTarget?.y)
+          )
+        }),
+    )
+  ) {
+    return null
+  }
+
+  const getMeanSourceToExitTargetDistance = (
+    bus: DensePairRoutingPriorityBus,
+  ): number =>
+    bus.connections.reduce((total, connection) => {
+      const exitTarget = connection.exitTargetPoint!
+      return (
+        total +
+        Math.hypot(
+          exitTarget.x - connection.sourcePoint.x,
+          exitTarget.y - connection.sourcePoint.y,
+        )
+      )
+    }, 0) / bus.connections.length
+  // Quantize once so equality is transitive. An epsilon-based pairwise
+  // comparator can otherwise produce A = B, B = C, but A != C.
+  return pairBuses.map((bus) =>
+    Number(getMeanSourceToExitTargetDistance(bus).toFixed(9)),
   )
 }
 
@@ -774,6 +843,24 @@ export class FanoutSolver extends BaseSolver {
     const useJointBoundaryViaReservation = shouldUseJointBoundaryViaReservation(
       unsortedBoundaryBuses.map((bus) => bus.connections.length),
     )
+    const twoConnectionBoundaryBuses = unsortedBoundaryBuses.filter(
+      (bus) => bus.connections.length === 2,
+    )
+    const pairRoutingPriorityKeys = getDenseSevenBusPairRoutingPriorityKeys({
+      boundaryBusCount: unsortedBoundaryBuses.length,
+      pairBuses: twoConnectionBoundaryBuses.map((bus) => ({
+        ...bus,
+        assignedLayer: params.busLayerAssignments[bus.busId],
+      })),
+    })
+    const pairRoutingPriorityKeyByBusId = pairRoutingPriorityKeys
+      ? new Map(
+          twoConnectionBoundaryBuses.map((bus, index) => [
+            bus.busId,
+            pairRoutingPriorityKeys[index]!,
+          ]),
+        )
+      : null
     const boundaryBuses = unsortedBoundaryBuses.toSorted((first, second) => {
       // Reserve the dense escape field for the widest buses first. Small
       // control groups can usually route around their copper, while routing
@@ -783,6 +870,24 @@ export class FanoutSolver extends BaseSolver {
         const connectionCountDifference =
           second.connections.length - first.connections.length
         if (connectionCountDifference !== 0) return connectionCountDifference
+      }
+      const firstLayer = params.busLayerAssignments[first.busId]
+      const secondLayer = params.busLayerAssignments[second.busId]
+      const firstPairRoutingPriority = pairRoutingPriorityKeyByBusId?.get(
+        first.busId,
+      )
+      const secondPairRoutingPriority = pairRoutingPriorityKeyByBusId?.get(
+        second.busId,
+      )
+      if (
+        firstPairRoutingPriority !== undefined &&
+        secondPairRoutingPriority !== undefined &&
+        firstPairRoutingPriority !== secondPairRoutingPriority
+      ) {
+        // The third pair can be fenced off by two earlier pair windings. Let
+        // the pair with the shortest explicit boundary reach claim its channel
+        // first without relying on caller-specific bus identifiers.
+        return firstPairRoutingPriority - secondPairRoutingPriority
       }
       const cornerBandDifference =
         Number(
@@ -814,18 +919,22 @@ export class FanoutSolver extends BaseSolver {
           return sourceSpanDifference
         }
       }
-      const firstLayer = params.busLayerAssignments[first.busId]
-      const secondLayer = params.busLayerAssignments[second.busId]
       const layerDifference =
         this.config.layerNames.indexOf(firstLayer ?? "") -
         this.config.layerNames.indexOf(secondLayer ?? "")
       if (layerDifference !== 0) return -layerDifference
-      if (unsortedBoundaryBuses.length !== 6) return 0
+      if (
+        unsortedBoundaryBuses.length !== 6 &&
+        unsortedBoundaryBuses.length !== 7
+      ) {
+        return 0
+      }
       // The general routing order can differ across the two components as a
       // function of local pad geometry. Keep otherwise-equivalent corner buses
-      // in one deterministic order for the six-bus path so their boundary
-      // lanes do not swap between the two ends of a direct interconnect. Leave
-      // the released four- and five-bus tie behavior unchanged.
+      // in one deterministic order for the six- and seven-bus paths so their
+      // boundary lanes do not swap between the two ends of a direct
+      // interconnect. Leave the released four- and five-bus tie behavior
+      // unchanged.
       return first.busId.localeCompare(second.busId)
     })
     // Preserve the caller/input order for the dense singleton fill. The
@@ -838,7 +947,7 @@ export class FanoutSolver extends BaseSolver {
     )
     if (
       boundaryBuses.length === 0 ||
-      boundaryBuses.length > 6 ||
+      boundaryBuses.length > 7 ||
       planeBuses.length < 8 ||
       boundaryBuses.some((bus) => !busUsesCoordinatedWinding(bus)) ||
       planeBuses.some((bus) => bus.connections.length !== 1) ||
@@ -885,7 +994,7 @@ export class FanoutSolver extends BaseSolver {
           ),
       )
     }
-    // Five or six boundary buses, and heterogeneous four-bus groups, leave too little
+    // Five through seven boundary buses, and heterogeneous four-bus groups, leave too little
     // slack for incremental site allocation: a valid early trace can consume
     // the last dogbone site of a later narrow bus. Reserve the multi-line bus
     // barrels before routing copper. A single one-line bus stays provisional
