@@ -60,6 +60,8 @@ export interface RouteBusParams {
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
   viaMinimalOnly?: boolean
+  /** Dense corner-band phase that preserves existing lane centers when leading lanes are prepended. */
+  cornerBandTargetTrackOffset?: number
 }
 
 interface TrackCandidate {
@@ -287,6 +289,24 @@ function getWindingCrossoverLayer(params: {
   )
 }
 
+export function getBoundaryTargetTrack(params: {
+  bus: PreparedBus
+  connection: PreparedConnection
+  boundaryDirection: FanoutDirection
+}): number {
+  const requestedTrack = getPerpendicularAxis(
+    params.connection.exitTargetPoint ?? params.connection.targetPoint,
+    params.boundaryDirection,
+  )
+  const boundaryMinimum = isHorizontal(params.boundaryDirection)
+    ? params.bus.sharedBoundary.minY
+    : params.bus.sharedBoundary.minX
+  const boundaryMaximum = isHorizontal(params.boundaryDirection)
+    ? params.bus.sharedBoundary.maxY
+    : params.bus.sharedBoundary.maxX
+  return Math.max(boundaryMinimum, Math.min(boundaryMaximum, requestedTrack))
+}
+
 function getCornerTargetTrack(params: {
   bus: PreparedBus
   connection: PreparedConnection
@@ -297,6 +317,7 @@ function getCornerTargetTrack(params: {
   layerNames: readonly string[]
   targetLayer: string
   windingOrderIndex?: number
+  cornerBandTargetTrackOffset?: number
 }): number {
   const {
     bus,
@@ -308,6 +329,7 @@ function getCornerTargetTrack(params: {
     layerNames,
     targetLayer,
     windingOrderIndex,
+    cornerBandTargetTrackOffset = 0,
   } = params
   const side = getCornerSide(bus)
   if (!side || !bus.exitEdge) {
@@ -326,7 +348,8 @@ function getCornerTargetTrack(params: {
   const pitch = Math.max(traceWidth + clearance, viaDiameter + clearance)
   const baseBandCenter =
     boundaryMinimum +
-    (boundaryMaximum - boundaryMinimum) * (side === "minimum" ? 0.25 : 0.75)
+    (boundaryMaximum - boundaryMinimum) * (side === "minimum" ? 0.25 : 0.75) +
+    cornerBandTargetTrackOffset
   const windingTarget = busUsesCoordinatedWindingChannel(bus)
     ? getWindingTargetRank({
         bus,
@@ -945,6 +968,7 @@ function buildPlan(params: {
   allowBlindAndBuriedVias: boolean
   initialViaPoint?: Point2D
   sourceEscapePath?: readonly Point2D[]
+  cornerBandTargetTrackOffset?: number
 }): FanoutRoutePlan {
   const {
     preparedConnection,
@@ -967,6 +991,7 @@ function buildPlan(params: {
     allowBlindAndBuriedVias,
     initialViaPoint,
     sourceEscapePath,
+    cornerBandTargetTrackOffset,
   } = params
   const sourcePoint = {
     x: preparedConnection.sourcePoint.x,
@@ -1048,13 +1073,14 @@ function buildPlan(params: {
           clearance,
           layerNames,
           targetLayer,
+          cornerBandTargetTrackOffset,
         })
       : usesLayeredWindingChannel
-        ? getPerpendicularAxis(
-            preparedConnection.exitTargetPoint ??
-              preparedConnection.targetPoint,
+        ? getBoundaryTargetTrack({
+            bus,
+            connection: preparedConnection,
             boundaryDirection,
-          )
+          })
         : track
   const connectionRank = getConnectionRank(bus, preparedConnection)
   const localCornerSide = getLocalCornerSide(bus)
@@ -2365,6 +2391,7 @@ export function routeBusAlternatives(
     fixedViaPointsByConnectionIndex,
     reservedVias = [],
     viaMinimalOnly = false,
+    cornerBandTargetTrackOffset,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
     throw new Error(
@@ -2698,12 +2725,13 @@ export function routeBusAlternatives(
               layerNames,
               targetLayer,
               windingOrderIndex: terminalPattern.windingOrderIndex,
+              cornerBandTargetTrackOffset,
             })
-          : getPerpendicularAxis(
-              preparedConnection.exitTargetPoint ??
-                preparedConnection.targetPoint,
+          : getBoundaryTargetTrack({
+              bus,
+              connection: preparedConnection,
               boundaryDirection,
-            )
+            })
         return {
           connection: preparedConnection,
           viaPoint: terminalPattern.getViaPoint
@@ -2882,6 +2910,7 @@ export function routeBusAlternatives(
         clearance,
         terminateAtVia: false,
         allowBlindAndBuriedVias,
+        cornerBandTargetTrackOffset,
       })
       if (
         !planIsClear({
@@ -2889,7 +2918,7 @@ export function routeBusAlternatives(
           otherPlans: [...acceptedPlans, ...candidatePlans],
           staticClearanceCache,
           blockingBusCounts,
-          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}`,
+          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}`,
           srj,
           sharedBoundary: bus.sharedBoundary,
           clearance,

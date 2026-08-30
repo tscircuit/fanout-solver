@@ -30,14 +30,14 @@ const expectedSignalBuses = [
   {
     busId: "DDR_BYTE0",
     connectionNames: [
-      "breakout:pcb_breakout_point_60",
-      "breakout:pcb_breakout_point_36",
       "breakout:pcb_breakout_point_62",
-      "breakout:pcb_breakout_point_61",
       "breakout:pcb_breakout_point_37",
+      "breakout:pcb_breakout_point_64",
+      "breakout:pcb_breakout_point_63",
       "breakout:pcb_breakout_point_38",
       "breakout:pcb_breakout_point_39",
-      "breakout:pcb_breakout_point_63",
+      "breakout:pcb_breakout_point_40",
+      "breakout:pcb_breakout_point_65",
     ],
     maxLengthSkew: 8,
     allowedLayers: ["top", "inner4"],
@@ -47,14 +47,14 @@ const expectedSignalBuses = [
   {
     busId: "DDR_BYTE1",
     connectionNames: [
-      "breakout:pcb_breakout_point_45",
-      "breakout:pcb_breakout_point_32",
-      "breakout:pcb_breakout_point_42",
+      "breakout:pcb_breakout_point_46",
+      "breakout:pcb_breakout_point_33",
       "breakout:pcb_breakout_point_43",
       "breakout:pcb_breakout_point_44",
-      "breakout:pcb_breakout_point_35",
-      "breakout:pcb_breakout_point_33",
+      "breakout:pcb_breakout_point_45",
+      "breakout:pcb_breakout_point_36",
       "breakout:pcb_breakout_point_34",
+      "breakout:pcb_breakout_point_35",
     ],
     maxLengthSkew: 14.5,
     allowedLayers: ["inner5", "bottom"],
@@ -64,14 +64,14 @@ const expectedSignalBuses = [
   {
     busId: "DDR_ADDR_CTRL",
     connectionNames: [
-      "breakout:pcb_breakout_point_57",
-      "breakout:pcb_breakout_point_51",
-      "breakout:pcb_breakout_point_56",
-      "breakout:pcb_breakout_point_54",
+      "breakout:pcb_breakout_point_59",
       "breakout:pcb_breakout_point_53",
-      "breakout:pcb_breakout_point_52",
       "breakout:pcb_breakout_point_58",
+      "breakout:pcb_breakout_point_56",
       "breakout:pcb_breakout_point_55",
+      "breakout:pcb_breakout_point_54",
+      "breakout:pcb_breakout_point_60",
+      "breakout:pcb_breakout_point_57",
     ],
     maxLengthSkew: 15,
     allowedLayers: ["inner6"],
@@ -81,8 +81,8 @@ const expectedSignalBuses = [
   {
     busId: "DDR_CLOCK",
     connectionNames: [
-      "breakout:pcb_breakout_point_40",
       "breakout:pcb_breakout_point_41",
+      "breakout:pcb_breakout_point_42",
     ],
     maxLengthSkew: 0.25,
     allowedLayers: ["inner5"],
@@ -92,8 +92,8 @@ const expectedSignalBuses = [
   {
     busId: "DDR_DQS0",
     connectionNames: [
-      "breakout:pcb_breakout_point_50",
-      "breakout:pcb_breakout_point_49",
+      "breakout:pcb_breakout_point_52",
+      "breakout:pcb_breakout_point_51",
     ],
     maxLengthSkew: 0.25,
     allowedLayers: ["inner5"],
@@ -103,8 +103,8 @@ const expectedSignalBuses = [
   {
     busId: "DDR_DQS1",
     connectionNames: [
-      "breakout:pcb_breakout_point_46",
       "breakout:pcb_breakout_point_47",
+      "breakout:pcb_breakout_point_48",
     ],
     maxLengthSkew: 0.25,
     allowedLayers: ["inner5"],
@@ -113,7 +113,7 @@ const expectedSignalBuses = [
   },
   {
     busId: "DDR_RESET",
-    connectionNames: ["breakout:pcb_breakout_point_59"],
+    connectionNames: ["breakout:pcb_breakout_point_61"],
     maxLengthSkew: undefined,
     allowedLayers: ["inner6"],
     assignedLayer: "inner6",
@@ -121,11 +121,19 @@ const expectedSignalBuses = [
   },
   {
     busId: "DDR_DMI0",
-    connectionNames: ["breakout:pcb_breakout_point_48"],
+    connectionNames: ["breakout:pcb_breakout_point_50"],
     maxLengthSkew: undefined,
     allowedLayers: ["inner5"],
     assignedLayer: "inner5",
     exitPosition: "leftside_top",
+  },
+  {
+    busId: "DDR_DMI1",
+    connectionNames: ["breakout:pcb_breakout_point_49"],
+    maxLengthSkew: undefined,
+    allowedLayers: ["inner5"],
+    assignedLayer: "inner5",
+    exitPosition: "leftside_center",
   },
 ] as const satisfies readonly {
   busId: string
@@ -139,22 +147,22 @@ const expectedSignalBuses = [
 const expectedDifferentialPairs = [
   {
     connectionNames: [
-      "breakout:pcb_breakout_point_40",
       "breakout:pcb_breakout_point_41",
+      "breakout:pcb_breakout_point_42",
     ],
     lengthTolerance: 0.25,
   },
   {
     connectionNames: [
-      "breakout:pcb_breakout_point_50",
-      "breakout:pcb_breakout_point_49",
+      "breakout:pcb_breakout_point_52",
+      "breakout:pcb_breakout_point_51",
     ],
     lengthTolerance: 0.25,
   },
   {
     connectionNames: [
-      "breakout:pcb_breakout_point_46",
       "breakout:pcb_breakout_point_47",
+      "breakout:pcb_breakout_point_48",
     ],
     lengthTolerance: 0.25,
   },
@@ -197,7 +205,7 @@ function getPlanarLength(trace: FanoutSimplifiedPcbTrace): number {
   return length
 }
 
-test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
+test("routes the AM62L nine-bus DRAM fanout with DMI1", async () => {
   const { inputSrj, options } = fixture
   const physicalLayers = getCopperLayerNames(inputSrj.layerCount)
   expect(physicalLayers).toEqual([
@@ -210,16 +218,16 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
     "inner6",
     "bottom",
   ])
-  expect(inputSrj.connections).toHaveLength(142)
+  expect(inputSrj.connections).toHaveLength(143)
   expect(inputSrj.connections.map((connection) => connection.name)).toEqual([
     ...Array.from({ length: 110 }, (_, index) => `source_trace_${index + 102}`),
     ...Array.from(
-      { length: 32 },
-      (_, index) => `breakout:pcb_breakout_point_${index + 32}`,
+      { length: 33 },
+      (_, index) => `breakout:pcb_breakout_point_${index + 33}`,
     ),
   ])
   expect(inputSrj.obstacles).toHaveLength(201)
-  expect(inputSrj.traces).toHaveLength(134)
+  expect(inputSrj.traces).toHaveLength(135)
   expect(inputSrj.allowBlindAndBuriedVias).toBe(false)
   expect(options.allowBlindAndBuriedVias).toBe(false)
   expect(inputSrj.allowViaInPad).not.toBe(true)
@@ -283,23 +291,23 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
   ).toHaveLength(1)
   expect(
     inputSrj.obstacles.filter((obstacle) => obstacle.connectedTo.length === 1),
-  ).toHaveLength(58)
+  ).toHaveLength(57)
   expect(
     inputSrj.obstacles.filter((obstacle) => obstacle.connectedTo.length === 4),
-  ).toHaveLength(142)
+  ).toHaveLength(143)
 
   expect(inputSrj.differentialPairs).toHaveLength(3)
   expect(inputSrj.differentialPairs).toEqual(expectedDifferentialPairs)
 
   const requestedBuses = options.buses
   if (!requestedBuses) throw new Error("Captured options must include buses")
-  expect(requestedBuses).toHaveLength(118)
+  expect(requestedBuses).toHaveLength(119)
   const busById = new Map(requestedBuses.map((bus) => [bus.busId, bus]))
   expect(busById.size).toBe(requestedBuses.length)
 
   const signalConnectionNames = new Set<string>()
   expect(expectedSignalBuses.map((bus) => bus.connectionNames.length)).toEqual([
-    8, 8, 8, 2, 2, 2, 1, 1,
+    8, 8, 8, 2, 2, 2, 1, 1, 1,
   ])
   for (const expectedBus of expectedSignalBuses) {
     const bus = busById.get(expectedBus.busId)
@@ -314,7 +322,7 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
       signalConnectionNames.add(connectionName)
     }
   }
-  expect(signalConnectionNames.size).toBe(32)
+  expect(signalConnectionNames.size).toBe(33)
   expect(busById.get("DDR_CLOCK")?.connectionNames).toEqual(
     expectedDifferentialPairs[0].connectionNames,
   )
@@ -325,15 +333,26 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
     expectedDifferentialPairs[2].connectionNames,
   )
   expect(busById.get("DDR_DMI0")?.connectionNames).toEqual([
-    "breakout:pcb_breakout_point_48",
+    "breakout:pcb_breakout_point_50",
   ])
   const dmi0Connection = inputSrj.connections.find(
-    (connection) => connection.name === "breakout:pcb_breakout_point_48",
+    (connection) => connection.name === "breakout:pcb_breakout_point_50",
   )
   expect(dmi0Connection?.source_trace_id).toBe("source_trace_243")
   expect(dmi0Connection?.pointsToConnect[0]).toMatchObject({
     pointId: "pcb_port_498",
     pcb_port_id: "pcb_port_498",
+  })
+  expect(busById.get("DDR_DMI1")?.connectionNames).toEqual([
+    "breakout:pcb_breakout_point_49",
+  ])
+  const dmi1Connection = inputSrj.connections.find(
+    (connection) => connection.name === "breakout:pcb_breakout_point_49",
+  )
+  expect(dmi1Connection?.source_trace_id).toBe("source_trace_244")
+  expect(dmi1Connection?.pointsToConnect[0]).toMatchObject({
+    pointId: "pcb_port_499",
+    pcb_port_id: "pcb_port_499",
   })
 
   const planeBuses = requestedBuses.filter(
@@ -434,6 +453,9 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
   expect(
     sourceObstacleByPortId.get("pcb_port_498")?.circuitJsonMetadata,
   ).toMatchObject({ source_port_name: "C3" })
+  expect(
+    sourceObstacleByPortId.get("pcb_port_499")?.circuitJsonMetadata,
+  ).toMatchObject({ source_port_name: "C10" })
   for (const connection of inputSrj.connections) {
     const sourcePoint = connection.pointsToConnect[0]
     const sourcePointId =
@@ -461,6 +483,9 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
     structuredClone(inputSrj),
     structuredClone(options),
   )
+  const sharedBoundary = solver.preparedBuses[0]?.sharedBoundary
+  expect(sharedBoundary).toEqual(options.sharedBoundary!)
+  if (!sharedBoundary) throw new Error("Missing DRAM fanout boundary")
   solver.solve()
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
@@ -468,21 +493,21 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
   const output = solver.getOutput()
   expect(output.validation).toEqual({
     valid: true,
-    checkedConnectionCount: 142,
-    brokenOutConnectionCount: 142,
+    checkedConnectionCount: 143,
+    brokenOutConnectionCount: 143,
     issues: [],
   })
-  expect(output.fanoutTraces).toHaveLength(142)
+  expect(output.fanoutTraces).toHaveLength(143)
   expect(output.planeTerminations).toHaveLength(110)
   expect(output.simpleRouteJson.fanoutPlaneConnectivity).toHaveLength(110)
   expect(output.simpleRouteJson.differentialPairs).toEqual(
     inputSrj.differentialPairs,
   )
   const sequentialTraces = output.simpleRouteJson.traces ?? []
-  expect(sequentialTraces).toHaveLength(276)
+  expect(sequentialTraces).toHaveLength(278)
   expect(
     new Set(sequentialTraces.map((trace) => trace.pcb_trace_id)).size,
-  ).toBe(276)
+  ).toBe(278)
   for (const trace of sequentialTraces) {
     const vias = trace.route.filter((point) => point.route_type === "via")
     expect(vias).toHaveLength(1)
@@ -503,7 +528,7 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
     }
     traceByConnection.set(connectionName, trace)
   }
-  expect(traceByConnection.size).toBe(142)
+  expect(traceByConnection.size).toBe(143)
   expect(new Set(traceByConnection.keys())).toEqual(
     new Set(inputSrj.connections.map((connection) => connection.name)),
   )
@@ -542,7 +567,7 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
       sourcePadRadius + viaRadius + viaPadClearance - 1e-6,
     )
   }
-  expect(viaCoordinates.size).toBe(142)
+  expect(viaCoordinates.size).toBe(143)
 
   const terminationByConnection = new Map(
     output.planeTerminations.map((termination) => [
@@ -569,7 +594,7 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
       output.simpleRouteJson.connections.map((connection) => connection.name),
     ),
   ).toEqual(signalConnectionNames)
-  expect(output.simpleRouteJson.connections).toHaveLength(32)
+  expect(output.simpleRouteJson.connections).toHaveLength(33)
 
   for (const expectedBus of expectedSignalBuses) {
     const bus = busById.get(expectedBus.busId)!
@@ -600,11 +625,11 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
     )
     for (const exitWire of exitWires) {
       expect(exitWire).toMatchObject({
-        x: options.sharedBoundary!.minX,
+        x: sharedBoundary.minX,
         layer: expectedBus.assignedLayer,
       })
-      expect(exitWire.y).toBeGreaterThanOrEqual(options.sharedBoundary!.minY)
-      expect(exitWire.y).toBeLessThanOrEqual(options.sharedBoundary!.maxY)
+      expect(exitWire.y).toBeGreaterThanOrEqual(sharedBoundary.minY)
+      expect(exitWire.y).toBeLessThanOrEqual(sharedBoundary.maxY)
     }
   }
 
@@ -615,6 +640,11 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
     )
   const dqs0ExitYs = busById
     .get("DDR_DQS0")!
+    .connectionNames.map(
+      (connectionName) => getLastWire(traceByConnection.get(connectionName)!).y,
+    )
+  const byte1ExitYs = busById
+    .get("DDR_BYTE1")!
     .connectionNames.map(
       (connectionName) => getLastWire(traceByConnection.get(connectionName)!).y,
     )
@@ -631,7 +661,7 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
   ).toBeLessThanOrEqual(0.25 + 1e-6)
   for (const trace of dqs1Traces) {
     expect(getLastWire(trace)).toMatchObject({
-      x: options.sharedBoundary!.minX,
+      x: sharedBoundary.minX,
       layer: "inner5",
     })
   }
@@ -643,10 +673,19 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
   const dmi0Trace = traceByConnection.get(dmi0ConnectionName)!
   expect(output.busLayerAssignments.DDR_DMI0).toBe("inner5")
   expect(getLastWire(dmi0Trace)).toMatchObject({
-    x: options.sharedBoundary!.minX,
+    x: sharedBoundary.minX,
     layer: "inner5",
   })
   expect(getLastWire(dmi0Trace).y).toBeGreaterThan(Math.max(...dqs0ExitYs))
+  const dmi1ConnectionName = busById.get("DDR_DMI1")!.connectionNames[0]!
+  const dmi1Trace = traceByConnection.get(dmi1ConnectionName)!
+  expect(output.busLayerAssignments.DDR_DMI1).toBe("inner5")
+  expect(getLastWire(dmi1Trace)).toMatchObject({
+    x: sharedBoundary.minX,
+    y: sharedBoundary.minY,
+    layer: "inner5",
+  })
+  expect(getLastWire(dmi1Trace).y).toBeLessThan(Math.min(...byte1ExitYs))
 
   const clearance =
     options.clearance ??
@@ -667,8 +706,8 @@ test("routes the AM62L eight-bus DRAM fanout with DMI0", async () => {
     }),
   ).toMatchObject({
     valid: true,
-    checkedTraceCount: 142,
-    checkedViaCount: 142,
+    checkedTraceCount: 143,
+    checkedViaCount: 143,
     issues: [],
   })
 

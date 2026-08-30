@@ -448,6 +448,7 @@ export function shouldUseJointBoundaryViaReservation(
     boundaryBusConnectionCounts.length === 6 ||
     boundaryBusConnectionCounts.length === 7 ||
     boundaryBusConnectionCounts.length === 8 ||
+    boundaryBusConnectionCounts.length === 9 ||
     (boundaryBusConnectionCounts.length === 4 &&
       new Set(boundaryBusConnectionCounts).size > 1)
   )
@@ -466,8 +467,78 @@ export function shouldDeferSingletonBoundaryViaReservation(
       boundaryBusCount === 7) &&
       singletonBusCount === 1) ||
     (boundaryBusCount === 8 &&
-      (singletonBusCount === 1 || singletonBusCount === 2))
+      (singletonBusCount === 1 || singletonBusCount === 2)) ||
+    (boundaryBusCount === 9 && singletonBusCount >= 1 && singletonBusCount <= 3)
   )
+}
+
+export function getDenseSingletonDeferralCandidateCount(
+  boundaryBusConnectionCounts: readonly number[],
+): number {
+  if (
+    !shouldDeferSingletonBoundaryViaReservation(boundaryBusConnectionCounts)
+  ) {
+    return 0
+  }
+  const singletonBusCount = boundaryBusConnectionCounts.filter(
+    (count) => count === 1,
+  ).length
+  return Math.max(1, singletonBusCount - 1)
+}
+
+interface DenseSourceFieldBus {
+  componentId: string
+  exitEdge?: PreparedBus["exitEdge"]
+  allowedLayers?: readonly string[]
+  routableEscapeLayers?: readonly string[]
+  connections: readonly { sourcePoint: { x: number; y: number } }[]
+}
+
+export function isDenseSingletonEmbeddedInMultiLayerWideBus(params: {
+  singletonBus: DenseSourceFieldBus
+  singletonTargetLayer: string
+  wideBuses: readonly DenseSourceFieldBus[]
+}): boolean {
+  const sourcePoint = params.singletonBus.connections[0]?.sourcePoint
+  if (params.singletonBus.connections.length !== 1 || !sourcePoint) return false
+  return params.wideBuses.some((wideBus) => {
+    const wideLayers =
+      wideBus.routableEscapeLayers ?? wideBus.allowedLayers ?? []
+    if (
+      wideBus.connections.length < 8 ||
+      wideBus.componentId !== params.singletonBus.componentId ||
+      wideBus.exitEdge !== params.singletonBus.exitEdge ||
+      wideLayers.length < 2 ||
+      !wideLayers.includes(params.singletonTargetLayer)
+    ) {
+      return false
+    }
+    const sourceXs = wideBus.connections.map(
+      (connection) => connection.sourcePoint.x,
+    )
+    const sourceYs = wideBus.connections.map(
+      (connection) => connection.sourcePoint.y,
+    )
+    return (
+      sourcePoint.x >= Math.min(...sourceXs) - 1e-9 &&
+      sourcePoint.x <= Math.max(...sourceXs) + 1e-9 &&
+      sourcePoint.y >= Math.min(...sourceYs) - 1e-9 &&
+      sourcePoint.y <= Math.max(...sourceYs) + 1e-9
+    )
+  })
+}
+
+export function getDenseLeadingCornerBandTargetTrackOffset(params: {
+  leadingLaneCount: number
+  traceWidth: number
+  viaDiameter: number
+  clearance: number
+}): number {
+  const cornerPitch = Math.max(
+    params.traceWidth + params.clearance,
+    params.viaDiameter + params.clearance,
+  )
+  return (-params.leadingLaneCount * cornerPitch) / 2
 }
 
 export function shouldSearchAdditionalBoundaryRouteTopologies(params: {
@@ -476,15 +547,16 @@ export function shouldSearchAdditionalBoundaryRouteTopologies(params: {
   rawSkew: number
   maximumSkew: number
 }): boolean {
-  if (params.boundaryBusCount === 5 || params.boundaryBusCount > 8) {
+  if (params.boundaryBusCount === 5 || params.boundaryBusCount > 9) {
     return false
   }
   if (
     params.boundaryBusCount === 6 ||
     params.boundaryBusCount === 7 ||
-    params.boundaryBusCount === 8
+    params.boundaryBusCount === 8 ||
+    params.boundaryBusCount === 9
   ) {
-    // Six through eight buses remove enough meander space that a severely skewed wide
+    // Six through nine buses remove enough meander space that a severely skewed wide
     // topology can be impossible to tune. Keep the retry away from narrow
     // differential/control groups and from modest deficits that the atomic
     // length matcher can absorb directly.
@@ -543,6 +615,21 @@ export function compareDenseSingletonBoundaryDeferralPriority(
   return (
     Number(firstGeometry.isCorner) - Number(secondGeometry.isCorner) ||
     (firstGeometry.isCorner && secondGeometry.isCorner
+      ? firstGeometry.targetProjection - secondGeometry.targetProjection
+      : 0) ||
+    first.busId.localeCompare(second.busId)
+  )
+}
+
+function compareReleasedDenseSingletonBoundaryDeferralPriority(
+  first: DenseSingletonBoundaryGeometryBus,
+  second: DenseSingletonBoundaryGeometryBus,
+): number {
+  const firstGeometry = getDenseSingletonBoundaryGeometry(first)
+  const secondGeometry = getDenseSingletonBoundaryGeometry(second)
+  return (
+    Number(firstGeometry.isCorner) - Number(secondGeometry.isCorner) ||
+    (firstGeometry.isCorner && secondGeometry.isCorner
       ? Number(firstGeometry.targetProjection > 0) -
         Number(secondGeometry.targetProjection > 0)
       : 0) ||
@@ -569,7 +656,9 @@ export function getDenseBoundaryPairRoutingPriorityKeys(params: {
   const firstBus = pairBuses[0]
   const firstSourceLayer = firstBus?.connections[0]?.sourceLayer
   if (
-    (params.boundaryBusCount !== 7 && params.boundaryBusCount !== 8) ||
+    (params.boundaryBusCount !== 7 &&
+      params.boundaryBusCount !== 8 &&
+      params.boundaryBusCount !== 9) ||
     pairBuses.length !== 3 ||
     firstBus === undefined ||
     firstBus.exitEdge === undefined ||
@@ -989,13 +1078,14 @@ export class FanoutSolver extends BaseSolver {
       if (
         unsortedBoundaryBuses.length !== 6 &&
         unsortedBoundaryBuses.length !== 7 &&
-        unsortedBoundaryBuses.length !== 8
+        unsortedBoundaryBuses.length !== 8 &&
+        unsortedBoundaryBuses.length !== 9
       ) {
         return 0
       }
       // The general routing order can differ across the two components as a
       // function of local pad geometry. Keep otherwise-equivalent corner buses
-      // in one deterministic order for the six- through eight-bus paths so their
+      // in one deterministic order for the six- through nine-bus paths so their
       // boundary lanes do not swap between the two ends of a direct
       // interconnect. Leave the released four- and five-bus tie behavior
       // unchanged.
@@ -1011,7 +1101,7 @@ export class FanoutSolver extends BaseSolver {
     )
     if (
       boundaryBuses.length === 0 ||
-      boundaryBuses.length > 8 ||
+      boundaryBuses.length > 9 ||
       planeBuses.length < 8 ||
       boundaryBuses.some((bus) => !busUsesCoordinatedWinding(bus)) ||
       planeBuses.some((bus) => bus.connections.length !== 1) ||
@@ -1029,11 +1119,15 @@ export class FanoutSolver extends BaseSolver {
         ),
       ),
     )
-    const singletonBoundaryBusCount = boundaryBuses.filter(
-      (bus) => bus.connections.length === 1,
+    const boundaryBusConnectionCounts = boundaryBuses.map(
+      (bus) => bus.connections.length,
+    )
+    const singletonBoundaryBusCount = boundaryBusConnectionCounts.filter(
+      (connectionCount) => connectionCount === 1,
     ).length
     const useGeometryAwareSingletonOutwardPreference =
-      boundaryBuses.length === 8 && singletonBoundaryBusCount === 2
+      singletonBoundaryBusCount > 1 &&
+      shouldDeferSingletonBoundaryViaReservation(boundaryBusConnectionCounts)
     const preferredBoundaryPerpendicularSideByBusId = new Map(
       boundaryBuses.map((bus) => [bus.busId, 1 as const]),
     )
@@ -1067,29 +1161,93 @@ export class FanoutSolver extends BaseSolver {
           ),
       )
     }
-    // Five through eight boundary buses, and heterogeneous four-bus groups, leave too little
+    // Five through nine boundary buses, and heterogeneous four-bus groups, leave too little
     // slack for incremental site allocation: a valid early trace can consume
     // the last dogbone site of a later narrow bus. Reserve the multi-line bus
-    // barrels before routing copper. The least-constrained eligible one-line
-    // bus stays provisional because its flexible site can be rematched around
-    // the wide-bus copper. Prefer a centered singleton, then a corner singleton
-    // whose explicit target lies inward along its local escape direction.
+    // barrels before routing copper. Classify the least-constrained eligible
+    // one-line buses as deferral candidates, preferring a centered singleton,
+    // then a corner singleton whose explicit target lies inward along its local
+    // escape direction. A candidate embedded in a multi-layer wide-bus source
+    // field must instead reserve an outward dogbone and route before that wide
+    // bus; the remaining candidates stay provisional and can be rematched
+    // around completed copper.
     // Plane sites are likewise rematched around completed boundary plans.
-    const boundaryBusConnectionCounts = boundaryBuses.map(
-      (bus) => bus.connections.length,
-    )
     const singletonBoundaryBuses = boundaryBuses.filter(
       (bus) => bus.connections.length === 1,
     )
-    const provisionalSingletonBuses =
+    const singletonDeferralCandidates =
       shouldDeferSingletonBoundaryViaReservation(boundaryBusConnectionCounts)
         ? singletonBoundaryBuses
-            .toSorted(compareDenseSingletonBoundaryDeferralPriority)
-            .slice(0, 1)
+            .toSorted(
+              boundaryBuses.length === 9
+                ? compareDenseSingletonBoundaryDeferralPriority
+                : compareReleasedDenseSingletonBoundaryDeferralPriority,
+            )
+            .slice(
+              0,
+              getDenseSingletonDeferralCandidateCount(
+                boundaryBusConnectionCounts,
+              ),
+            )
         : []
-    const provisionalSingletonBusSet = new Set(provisionalSingletonBuses)
+    const leadingWideSingletonBuses =
+      boundaryBuses.length === 9
+        ? singletonDeferralCandidates.filter((singletonBus) => {
+            const singletonTargetLayer =
+              params.busLayerAssignments[singletonBus.busId]
+            return Boolean(
+              singletonTargetLayer &&
+                isDenseSingletonEmbeddedInMultiLayerWideBus({
+                  singletonBus,
+                  singletonTargetLayer,
+                  wideBuses: boundaryBuses,
+                }),
+            )
+          })
+        : []
+    const leadingLaneCountByWideCornerBand = new Map<string, number>()
+    if (boundaryBuses.length === 9 && leadingWideSingletonBuses.length > 0) {
+      for (const bus of leadingWideSingletonBuses) {
+        preferBoundaryOutwardByBusId.set(bus.busId, true)
+        const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+        if (!bus.exitEdge || !side) continue
+        const bandKey = `${bus.exitEdge}:${side}`
+        const sharesBandWithWideBus = boundaryBuses.some((candidate) => {
+          if (candidate === bus || candidate.connections.length < 8)
+            return false
+          return (
+            candidate.exitEdge === bus.exitEdge &&
+            getCornerBandSide(candidate.exitEdge, candidate.preferredExit) ===
+              side
+          )
+        })
+        if (!sharesBandWithWideBus) continue
+        leadingLaneCountByWideCornerBand.set(
+          bandKey,
+          (leadingLaneCountByWideCornerBand.get(bandKey) ?? 0) +
+            bus.connections.length,
+        )
+      }
+    }
+    const viaProvisionalSingletonBusSet = new Set(
+      singletonDeferralCandidates.filter(
+        (bus) => !leadingWideSingletonBuses.includes(bus),
+      ),
+    )
+    const getCornerBandTargetTrackOffset = (bus: PreparedBus): number => {
+      const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+      if (!bus.exitEdge || !side) return 0
+      const leadingLaneCount =
+        leadingLaneCountByWideCornerBand.get(`${bus.exitEdge}:${side}`) ?? 0
+      return getDenseLeadingCornerBandTargetTrackOffset({
+        leadingLaneCount,
+        traceWidth: this.config.traceWidth,
+        viaDiameter: this.config.viaDiameter,
+        clearance: this.config.clearance,
+      })
+    }
     const initiallyMatchedBoundaryBuses = boundaryBuses.filter(
-      (bus) => !provisionalSingletonBusSet.has(bus),
+      (bus) => !viaProvisionalSingletonBusSet.has(bus),
     )
     const jointViaPoints = useJointBoundaryViaReservation
       ? matchComponentDogboneViaSites(
@@ -1119,6 +1277,12 @@ export class FanoutSolver extends BaseSolver {
         canShareCopper,
       })
     if (seedViaPoints) {
+      const denseBoundaryBusesInRoutingOrder = [
+        ...leadingWideSingletonBuses,
+        ...boundaryBuses.filter(
+          (bus) => !leadingWideSingletonBuses.includes(bus),
+        ),
+      ]
       let fixedViaPointsByConnectionIndex: ReadonlyMap<
         number,
         { x: number; y: number }
@@ -1179,6 +1343,7 @@ export class FanoutSolver extends BaseSolver {
           fixedViaPointsByConnectionIndex,
           reservedVias: getReservedVias(bus),
           viaMinimalOnly: true,
+          cornerBandTargetTrackOffset: getCornerBandTargetTrackOffset(bus),
         } as const
         let busPlans = routeBusAlternatives(routeParams, 1)[0]
         if (busPlans && bus.maxLengthSkew !== undefined) {
@@ -1215,14 +1380,14 @@ export class FanoutSolver extends BaseSolver {
         return true
       }
 
-      const firstBoundaryBus = boundaryBuses[0]!
+      const firstBoundaryBus = denseBoundaryBusesInRoutingOrder[0]!
       const routedBoundaryBuses: PreparedBus[] = []
       if (routeMatchedBoundaryBus(firstBoundaryBus)) {
         routedBoundaryBuses.push(firstBoundaryBus)
       } else {
         matchedRoutingSucceeded = false
       }
-      const remainingBoundaryBuses = boundaryBuses.slice(1)
+      const remainingBoundaryBuses = denseBoundaryBusesInRoutingOrder.slice(1)
       while (matchedRoutingSucceeded && remainingBoundaryBuses.length > 0) {
         const blockingSegments = matchedPlans.flatMap((plan) =>
           plan.segments.map((segment) => ({

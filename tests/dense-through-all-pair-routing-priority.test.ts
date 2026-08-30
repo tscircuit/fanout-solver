@@ -112,7 +112,7 @@ test("orders all three dense pairs by one guarded, deterministic farthest-lane k
       .map(([busId]) => busId),
   ).toEqual(["DDR_DQS1", "DDR_DQS0", "DDR_CLOCK"])
 
-  for (const boundaryBusCount of [7, 8]) {
+  for (const boundaryBusCount of [7, 8, 9]) {
     expectEveryPermutationToSortAs(
       socPairs,
       ["DDR_CLOCK", "DDR_DQS0", "DDR_DQS1"],
@@ -141,7 +141,7 @@ test("disables pair-distance priority for the entire group when any guard fails"
     makePair({ distance: 11 }),
   ]
   expect(getPriorityKeys(validPairs, 6)).toBeNull()
-  expect(getPriorityKeys(validPairs, 9)).toBeNull()
+  expect(getPriorityKeys(validPairs, 10)).toBeNull()
   expect(getPriorityKeys(validPairs.slice(0, 2))).toBeNull()
   expect(
     getPriorityKeys([...validPairs, makePair({ distance: 14 })]),
