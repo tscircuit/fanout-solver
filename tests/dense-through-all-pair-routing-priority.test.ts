@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
-import { getDenseSevenBusPairRoutingPriorityKeys } from "../lib/fanout-solver"
+import { getDenseBoundaryPairRoutingPriorityKeys } from "../lib/fanout-solver"
 
 type PairInput = Parameters<
-  typeof getDenseSevenBusPairRoutingPriorityKeys
+  typeof getDenseBoundaryPairRoutingPriorityKeys
 >[0]["pairBuses"][number]
 
 const makePair = ({
@@ -13,20 +13,28 @@ const makePair = ({
   sourceLayer = "top",
 }: {
   componentId?: string
-  distance: number
+  distance: number | readonly [number, number]
   exitEdge?: "left" | "right" | "top" | "bottom"
   assignedLayer?: string
   sourceLayer?: string
-}): PairInput => ({
-  componentId,
-  exitEdge,
-  assignedLayer,
-  connections: [0, 1].map((lane) => ({
-    sourceLayer,
-    sourcePoint: { x: 0, y: lane },
-    exitTargetPoint: { x: distance, y: lane, layer: assignedLayer },
-  })),
-})
+}): PairInput => {
+  const laneDistances =
+    typeof distance === "number" ? [distance, distance] : distance
+  return {
+    componentId,
+    exitEdge,
+    assignedLayer,
+    connections: [0, 1].map((lane) => ({
+      sourceLayer,
+      sourcePoint: { x: 0, y: lane },
+      exitTargetPoint: {
+        x: laneDistances[lane]!,
+        y: lane,
+        layer: assignedLayer,
+      },
+    })),
+  }
+}
 
 const permutations = <T>([first, second, third]: [T, T, T]): [T, T, T][] => [
   [first, second, third],
@@ -41,7 +49,7 @@ const getPriorityKeys = (
   pairBuses: readonly PairInput[],
   boundaryBusCount = 7,
 ) =>
-  getDenseSevenBusPairRoutingPriorityKeys({
+  getDenseBoundaryPairRoutingPriorityKeys({
     boundaryBusCount,
     pairBuses,
   })
@@ -49,9 +57,13 @@ const getPriorityKeys = (
 const expectEveryPermutationToSortAs = (
   pairs: [[string, PairInput], [string, PairInput], [string, PairInput]],
   expectedOrder: string[],
+  boundaryBusCount = 7,
 ) => {
   for (const permutation of permutations(pairs)) {
-    const keys = getPriorityKeys(permutation.map(([, pair]) => pair))
+    const keys = getPriorityKeys(
+      permutation.map(([, pair]) => pair),
+      boundaryBusCount,
+    )
     expect(keys).not.toBeNull()
     expect(
       permutation
@@ -62,23 +74,56 @@ const expectEveryPermutationToSortAs = (
   }
 }
 
-test("orders all three dense pairs by one guarded, deterministic distance key", () => {
-  expectEveryPermutationToSortAs(
-    [
-      ["DDR_CLOCK", makePair({ distance: 14.3827 })],
-      ["DDR_DQS0", makePair({ distance: 14.3973 })],
-      ["DDR_DQS1", makePair({ distance: 15.2791 })],
-    ],
-    ["DDR_CLOCK", "DDR_DQS0", "DDR_DQS1"],
-  )
-  expectEveryPermutationToSortAs(
-    [
-      ["DDR_CLOCK", makePair({ distance: 9.0566, exitEdge: "left" })],
-      ["DDR_DQS0", makePair({ distance: 9.1048, exitEdge: "left" })],
-      ["DDR_DQS1", makePair({ distance: 6.4285, exitEdge: "left" })],
-    ],
-    ["DDR_DQS1", "DDR_CLOCK", "DDR_DQS0"],
-  )
+test("orders all three dense pairs by one guarded, deterministic farthest-lane key", () => {
+  const socPairs: [
+    [string, PairInput],
+    [string, PairInput],
+    [string, PairInput],
+  ] = [
+    ["DDR_CLOCK", makePair({ distance: 14.3827 })],
+    ["DDR_DQS0", makePair({ distance: 14.3973 })],
+    ["DDR_DQS1", makePair({ distance: 15.2791 })],
+  ]
+  const dramPairs: [
+    [string, PairInput],
+    [string, PairInput],
+    [string, PairInput],
+  ] = [
+    ["DDR_CLOCK", makePair({ distance: [9.0731, 8.9831], exitEdge: "left" })],
+    ["DDR_DQS0", makePair({ distance: [8.8962, 9.0847], exitEdge: "left" })],
+    ["DDR_DQS1", makePair({ distance: [6.3501, 6.7316], exitEdge: "left" })],
+  ]
+  const getMeanDistance = (pair: PairInput): number =>
+    pair.connections.reduce((total, connection) => {
+      const target = connection.exitTargetPoint!
+      return (
+        total +
+        Math.hypot(
+          target.x - connection.sourcePoint.x,
+          target.y - connection.sourcePoint.y,
+        )
+      )
+    }, 0) / pair.connections.length
+  expect(
+    dramPairs
+      .toSorted(([, first], [, second]) => {
+        return getMeanDistance(first) - getMeanDistance(second)
+      })
+      .map(([busId]) => busId),
+  ).toEqual(["DDR_DQS1", "DDR_DQS0", "DDR_CLOCK"])
+
+  for (const boundaryBusCount of [7, 8]) {
+    expectEveryPermutationToSortAs(
+      socPairs,
+      ["DDR_CLOCK", "DDR_DQS0", "DDR_DQS1"],
+      boundaryBusCount,
+    )
+    expectEveryPermutationToSortAs(
+      dramPairs,
+      ["DDR_DQS1", "DDR_CLOCK", "DDR_DQS0"],
+      boundaryBusCount,
+    )
+  }
 
   expect(
     getPriorityKeys([
@@ -96,7 +141,7 @@ test("disables pair-distance priority for the entire group when any guard fails"
     makePair({ distance: 11 }),
   ]
   expect(getPriorityKeys(validPairs, 6)).toBeNull()
-  expect(getPriorityKeys(validPairs, 8)).toBeNull()
+  expect(getPriorityKeys(validPairs, 9)).toBeNull()
   expect(getPriorityKeys(validPairs.slice(0, 2))).toBeNull()
   expect(
     getPriorityKeys([...validPairs, makePair({ distance: 14 })]),

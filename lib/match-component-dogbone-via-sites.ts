@@ -525,10 +525,43 @@ function matchComponent(params: {
     }),
   )
   if (entries.some((entry) => entry.candidates.length === 0)) return null
+  // Every solution must include each sole candidate. Seed and validate those
+  // forced choices once so recursive matching only explores genuine choices.
+  const forcedCandidates = entries.flatMap((entry) =>
+    entry.candidates.length === 1 ? [entry.candidates[0]!] : [],
+  )
+  for (
+    let candidateIndex = 0;
+    candidateIndex < forcedCandidates.length;
+    candidateIndex++
+  ) {
+    const candidate = forcedCandidates[candidateIndex]!
+    for (
+      let previousIndex = 0;
+      previousIndex < candidateIndex;
+      previousIndex++
+    ) {
+      if (
+        !candidatesAreMutuallyClear({
+          first: candidate,
+          second: forcedCandidates[previousIndex]!,
+          rules,
+        })
+      ) {
+        return null
+      }
+    }
+  }
 
-  const assignedCandidates = new Map<number, ViaSiteCandidate>()
+  const assignedCandidates = new Map(
+    forcedCandidates.map((candidate) => [candidate.connectionIndex, candidate]),
+  )
   const remaining = new Set(
-    entries.map((entry) => entry.connection.preparedConnection.connectionIndex),
+    entries.flatMap((entry) =>
+      entry.candidates.length > 1
+        ? [entry.connection.preparedConnection.connectionIndex]
+        : [],
+    ),
   )
   const entryByConnectionIndex = new Map(
     entries.map((entry) => [
@@ -536,6 +569,15 @@ function matchComponent(params: {
       entry,
     ]),
   )
+
+  if (remaining.size === 0) {
+    return new Map(
+      [...assignedCandidates.entries()].map(([connectionIndex, candidate]) => [
+        connectionIndex,
+        { ...candidate.point },
+      ]),
+    )
+  }
 
   const getViableCandidates = (
     entry: ConnectionCandidates,
