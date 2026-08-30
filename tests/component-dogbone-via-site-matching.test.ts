@@ -8,7 +8,10 @@ import {
   distancePointToObstacle,
   segmentsAreClear,
 } from "lib/geometry"
-import { matchComponentDogboneViaSites } from "lib/match-component-dogbone-via-sites"
+import {
+  getComponentDogboneViaSiteCandidates,
+  matchComponentDogboneViaSites,
+} from "lib/match-component-dogbone-via-sites"
 import type {
   Point2D,
   PreparedBus,
@@ -171,6 +174,62 @@ test("component-wide dogbone matching assigns deterministic legal interstitial v
     fixedViaPointsByConnectionIndex: new Map([[0, fixedPoint]]),
   })
   expect(preserved?.get(0)).toEqual(fixedPoint)
+
+  const allFixed = matchComponentDogboneViaSites(fixture.buses, {
+    ...rules,
+    maximumSearchStates: 1,
+    fixedViaPointsByConnectionIndex: matching!,
+  })
+  expect([...allFixed!.entries()]).toEqual([...matching!.entries()])
+
+  const oneVariableFixedPoints = new Map(matching)
+  oneVariableFixedPoints.delete(3)
+  const oneVariableCandidates = getComponentDogboneViaSiteCandidates(
+    fixture.buses,
+    {
+      ...rules,
+      fixedViaPointsByConnectionIndex: oneVariableFixedPoints,
+    },
+  )
+  expect(
+    oneVariableCandidates.filter(({ connectionIndex }) => connectionIndex < 3),
+  ).toHaveLength(3)
+  expect(
+    oneVariableCandidates.filter(({ connectionIndex }) => connectionIndex === 3)
+      .length,
+  ).toBeGreaterThan(1)
+  const oneVariable = matchComponentDogboneViaSites(fixture.buses, {
+    ...rules,
+    maximumSearchStates: 2,
+    fixedViaPointsByConnectionIndex: oneVariableFixedPoints,
+  })
+  expect(oneVariable).not.toBeNull()
+  expect(oneVariable!.size).toBe(matching!.size)
+  for (const [connectionIndex, point] of oneVariableFixedPoints) {
+    expect(oneVariable!.get(connectionIndex)).toEqual(point)
+  }
+
+  const conflictingFixedPoints = new Map(matching)
+  const sharedConflictPoint = { x: -0.5, y: 0.5 }
+  for (const connectionIndex of [0, 1]) {
+    expect(
+      matchComponentDogboneViaSites(fixture.buses, {
+        ...rules,
+        fixedViaPointsByConnectionIndex: new Map([
+          [connectionIndex, sharedConflictPoint],
+        ]),
+      }),
+    ).not.toBeNull()
+  }
+  conflictingFixedPoints.set(0, sharedConflictPoint)
+  conflictingFixedPoints.set(1, sharedConflictPoint)
+  expect(
+    matchComponentDogboneViaSites(fixture.buses, {
+      ...rules,
+      maximumSearchStates: 1,
+      fixedViaPointsByConnectionIndex: conflictingFixedPoints,
+    }),
+  ).toBeNull()
 
   expect(
     matchComponentDogboneViaSites(fixture.buses, {
