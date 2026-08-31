@@ -1,0 +1,1452 @@
+{
+  "inputSrj": {
+    "bounds": {
+      "minX": -8.62808,
+      "maxX": 8.62808,
+      "minY": -8.62808,
+      "maxY": 8.62808
+    },
+    "obstacles": [
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_90",
+          "pcb_port_id": "pcb_port_165",
+          "source_port_name": "F1"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5.5,
+          "y": 3
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_90",
+          "connectivity_net465",
+          "source_trace_230",
+          "source_port_165",
+          "source_port_508",
+          "pcb_smtpad_90",
+          "pcb_port_165",
+          "pcb_smtpad_414",
+          "pcb_port_508"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_91",
+          "pcb_port_id": "pcb_port_162",
+          "source_port_name": "F2"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5,
+          "y": 3
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_91",
+          "connectivity_net552",
+          "source_trace_259",
+          "source_port_162",
+          "source_port_498",
+          "pcb_smtpad_91",
+          "pcb_port_162",
+          "pcb_smtpad_395",
+          "pcb_port_498"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_92",
+          "pcb_port_id": "pcb_port_166",
+          "source_port_name": "F3"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -4.5,
+          "y": 3
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_92",
+          "connectivity_net462",
+          "source_trace_229",
+          "source_port_166",
+          "source_port_504",
+          "pcb_smtpad_92",
+          "pcb_port_166",
+          "pcb_smtpad_394",
+          "pcb_port_504"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_93",
+          "pcb_port_id": "pcb_port_167",
+          "source_port_name": "F4"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -4,
+          "y": 3
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_93",
+          "connectivity_net459",
+          "source_trace_228",
+          "source_port_167",
+          "source_port_500",
+          "pcb_smtpad_93",
+          "pcb_port_167",
+          "pcb_smtpad_384",
+          "pcb_port_500"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_102",
+          "pcb_port_id": "pcb_port_157",
+          "source_port_name": "G1"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5.5,
+          "y": 2.5
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_102",
+          "connectivity_net537",
+          "source_trace_254",
+          "source_port_157",
+          "source_port_493",
+          "pcb_smtpad_102",
+          "pcb_port_157",
+          "pcb_smtpad_405",
+          "pcb_port_493"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_103",
+          "pcb_port_id": "pcb_port_158",
+          "source_port_name": "G2"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5,
+          "y": 2.5
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_103",
+          "connectivity_net540",
+          "source_trace_255",
+          "source_port_158",
+          "source_port_494",
+          "pcb_smtpad_103",
+          "pcb_port_158",
+          "pcb_smtpad_415",
+          "pcb_port_494"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_124",
+          "pcb_port_id": "pcb_port_148",
+          "source_port_name": "H6"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -3,
+          "y": 2
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_124",
+          "connectivity_net510",
+          "source_trace_245",
+          "source_port_148",
+          "source_port_484",
+          "pcb_smtpad_124",
+          "pcb_port_148",
+          "pcb_smtpad_454",
+          "pcb_port_484"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_139",
+          "pcb_port_id": "pcb_port_161",
+          "source_port_name": "J2"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5,
+          "y": 1.5
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_139",
+          "connectivity_net549",
+          "source_trace_258",
+          "source_port_161",
+          "source_port_497",
+          "pcb_smtpad_139",
+          "pcb_port_161",
+          "pcb_smtpad_511",
+          "pcb_port_497"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_163",
+          "pcb_port_id": "pcb_port_147",
+          "source_port_name": "L5"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -3.5,
+          "y": 0.5
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_163",
+          "connectivity_net507",
+          "source_trace_244",
+          "source_port_147",
+          "source_port_483",
+          "pcb_smtpad_163",
+          "pcb_port_147",
+          "pcb_smtpad_444",
+          "pcb_port_483"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_164",
+          "pcb_port_id": "pcb_port_149",
+          "source_port_name": "L6"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -3,
+          "y": 0.5
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_164",
+          "connectivity_net513",
+          "source_trace_246",
+          "source_port_149",
+          "source_port_485",
+          "pcb_smtpad_164",
+          "pcb_port_149",
+          "pcb_smtpad_449",
+          "pcb_port_485"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_214",
+          "pcb_port_id": "pcb_port_155",
+          "source_port_name": "P1"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5.5,
+          "y": -1
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_214",
+          "connectivity_net531",
+          "source_trace_252",
+          "source_port_155",
+          "source_port_491",
+          "pcb_smtpad_214",
+          "pcb_port_155",
+          "pcb_smtpad_458",
+          "pcb_port_491"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_215",
+          "pcb_port_id": "pcb_port_156",
+          "source_port_name": "P2"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5,
+          "y": -1
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_215",
+          "connectivity_net534",
+          "source_trace_253",
+          "source_port_156",
+          "source_port_492",
+          "pcb_smtpad_215",
+          "pcb_port_156",
+          "pcb_smtpad_459",
+          "pcb_port_492"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_235",
+          "pcb_port_id": "pcb_port_172",
+          "source_port_name": "T1"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5.5,
+          "y": -2
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_235",
+          "connectivity_net489",
+          "source_trace_238",
+          "source_port_172",
+          "source_port_511",
+          "pcb_smtpad_235",
+          "pcb_port_172",
+          "pcb_smtpad_421",
+          "pcb_port_511"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_237",
+          "pcb_port_id": "pcb_port_173",
+          "source_port_name": "T3"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -4.5,
+          "y": -2
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_237",
+          "connectivity_net486",
+          "source_trace_237",
+          "source_port_173",
+          "source_port_507",
+          "pcb_smtpad_237",
+          "pcb_port_173",
+          "pcb_smtpad_401",
+          "pcb_port_507"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_271",
+          "pcb_port_id": "pcb_port_159",
+          "source_port_name": "V1"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5.5,
+          "y": -3
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_271",
+          "connectivity_net543",
+          "source_trace_256",
+          "source_port_159",
+          "source_port_495",
+          "pcb_smtpad_271",
+          "pcb_port_159",
+          "pcb_smtpad_410",
+          "pcb_port_495"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_272",
+          "pcb_port_id": "pcb_port_160",
+          "source_port_name": "V2"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5,
+          "y": -3
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_272",
+          "connectivity_net546",
+          "source_trace_257",
+          "source_port_160",
+          "source_port_496",
+          "pcb_smtpad_272",
+          "pcb_port_160",
+          "pcb_smtpad_420",
+          "pcb_port_496"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_274",
+          "pcb_port_id": "pcb_port_177",
+          "source_port_name": "V4"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -4,
+          "y": -3
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_274",
+          "connectivity_net483",
+          "source_trace_236",
+          "source_port_177",
+          "source_port_503",
+          "pcb_smtpad_274",
+          "pcb_port_177",
+          "pcb_smtpad_391",
+          "pcb_port_503"
+        ]
+      },
+      {
+        "circuitJsonMetadata": {
+          "pcb_smtpad_id": "pcb_smtpad_284",
+          "pcb_port_id": "pcb_port_163",
+          "source_port_name": "W2"
+        },
+        "componentId": "pcb_component_0",
+        "type": "rect",
+        "shape": "circle",
+        "layers": [
+          "top"
+        ],
+        "center": {
+          "x": -5,
+          "y": -3.5
+        },
+        "width": 0.25616,
+        "height": 0.25616,
+        "connectedTo": [
+          "pcb_smtpad_284",
+          "connectivity_net555",
+          "source_trace_260",
+          "source_port_163",
+          "source_port_499",
+          "pcb_smtpad_284",
+          "pcb_port_163",
+          "pcb_smtpad_400",
+          "pcb_port_499"
+        ]
+      }
+    ],
+    "connections": [
+      {
+        "name": "breakout:pcb_breakout_point_0",
+        "source_trace_id": "source_trace_237",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -4.5,
+            "y": -2,
+            "layer": "top",
+            "pointId": "pcb_port_173",
+            "pcb_port_id": "pcb_port_173"
+          },
+          {
+            "x": 8.62798,
+            "y": -3.0454278787878786,
+            "layer": "bottom",
+            "pointId": "pcb_breakout_point_0"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_4",
+        "source_trace_id": "source_trace_229",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -4.5,
+            "y": 3,
+            "layer": "top",
+            "pointId": "pcb_port_166",
+            "pcb_port_id": "pcb_port_166"
+          },
+          {
+            "x": 8.62798,
+            "y": -2.7941478787878786,
+            "layer": "inner4",
+            "pointId": "pcb_breakout_point_4"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_8",
+        "source_trace_id": "source_trace_252",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5.5,
+            "y": -1,
+            "layer": "top",
+            "pointId": "pcb_port_155",
+            "pcb_port_id": "pcb_port_155"
+          },
+          {
+            "x": 8.62798,
+            "y": -2.5428678787878787,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_8"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_9",
+        "source_trace_id": "source_trace_253",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5,
+            "y": -1,
+            "layer": "top",
+            "pointId": "pcb_port_156",
+            "pcb_port_id": "pcb_port_156"
+          },
+          {
+            "x": 8.62798,
+            "y": -2.040307878787879,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_9"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_10",
+        "source_trace_id": "source_trace_238",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5.5,
+            "y": -2,
+            "layer": "top",
+            "pointId": "pcb_port_172",
+            "pcb_port_id": "pcb_port_172"
+          },
+          {
+            "x": 8.62798,
+            "y": -1.5377478787878787,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_10"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_13",
+        "source_trace_id": "source_trace_236",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -4,
+            "y": -3,
+            "layer": "top",
+            "pointId": "pcb_port_177",
+            "pcb_port_id": "pcb_port_177"
+          },
+          {
+            "x": 8.62798,
+            "y": -0.030067878787878755,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_13"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_14",
+        "source_trace_id": "source_trace_256",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5.5,
+            "y": -3,
+            "layer": "top",
+            "pointId": "pcb_port_159",
+            "pcb_port_id": "pcb_port_159"
+          },
+          {
+            "x": 8.62798,
+            "y": 0.4724921212121216,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_14"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_15",
+        "source_trace_id": "source_trace_257",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5,
+            "y": -3,
+            "layer": "top",
+            "pointId": "pcb_port_160",
+            "pcb_port_id": "pcb_port_160"
+          },
+          {
+            "x": 8.62798,
+            "y": 0.9750521212121215,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_15"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_16",
+        "source_trace_id": "source_trace_260",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5,
+            "y": -3.5,
+            "layer": "top",
+            "pointId": "pcb_port_163",
+            "pcb_port_id": "pcb_port_163"
+          },
+          {
+            "x": 8.62798,
+            "y": 1.4776121212121214,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_16"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_17",
+        "source_trace_id": "source_trace_259",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5,
+            "y": 3,
+            "layer": "top",
+            "pointId": "pcb_port_162",
+            "pcb_port_id": "pcb_port_162"
+          },
+          {
+            "x": 8.62798,
+            "y": 1.9801721212121213,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_17"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_18",
+        "source_trace_id": "source_trace_255",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5,
+            "y": 2.5,
+            "layer": "top",
+            "pointId": "pcb_port_158",
+            "pcb_port_id": "pcb_port_158"
+          },
+          {
+            "x": 8.62798,
+            "y": 2.482732121212121,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_18"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_19",
+        "source_trace_id": "source_trace_254",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5.5,
+            "y": 2.5,
+            "layer": "top",
+            "pointId": "pcb_port_157",
+            "pcb_port_id": "pcb_port_157"
+          },
+          {
+            "x": 8.62798,
+            "y": 2.985292121212121,
+            "layer": "inner5",
+            "pointId": "pcb_breakout_point_19"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_20",
+        "source_trace_id": "source_trace_245",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -3,
+            "y": 2,
+            "layer": "top",
+            "pointId": "pcb_port_148",
+            "pcb_port_id": "pcb_port_148"
+          },
+          {
+            "x": 8.62798,
+            "y": -2.2915878787878787,
+            "layer": "inner6",
+            "pointId": "pcb_breakout_point_20"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_25",
+        "source_trace_id": "source_trace_246",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -3,
+            "y": 0.5,
+            "layer": "top",
+            "pointId": "pcb_port_149",
+            "pcb_port_id": "pcb_port_149"
+          },
+          {
+            "x": 8.62798,
+            "y": 0.22121212121212125,
+            "layer": "inner6",
+            "pointId": "pcb_breakout_point_25"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_26",
+        "source_trace_id": "source_trace_244",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -3.5,
+            "y": 0.5,
+            "layer": "top",
+            "pointId": "pcb_port_147",
+            "pcb_port_id": "pcb_port_147"
+          },
+          {
+            "x": 8.62798,
+            "y": 0.7237721212121215,
+            "layer": "inner6",
+            "pointId": "pcb_breakout_point_26"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_28",
+        "source_trace_id": "source_trace_258",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5,
+            "y": 1.5,
+            "layer": "top",
+            "pointId": "pcb_port_161",
+            "pcb_port_id": "pcb_port_161"
+          },
+          {
+            "x": 8.62798,
+            "y": 1.7288921212121213,
+            "layer": "inner6",
+            "pointId": "pcb_breakout_point_28"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_29",
+        "source_trace_id": "source_trace_228",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -4,
+            "y": 3,
+            "layer": "top",
+            "pointId": "pcb_port_167",
+            "pcb_port_id": "pcb_port_167"
+          },
+          {
+            "x": 8.62798,
+            "y": -2.040307878787879,
+            "layer": "top",
+            "pointId": "pcb_breakout_point_29"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      },
+      {
+        "name": "breakout:pcb_breakout_point_31",
+        "source_trace_id": "source_trace_230",
+        "routingPcbGroupId": "pcb_group_0",
+        "pointsToConnect": [
+          {
+            "x": -5.5,
+            "y": 3,
+            "layer": "top",
+            "pointId": "pcb_port_165",
+            "pcb_port_id": "pcb_port_165"
+          },
+          {
+            "x": 8.62798,
+            "y": -1.0351878787878785,
+            "layer": "top",
+            "pointId": "pcb_breakout_point_31"
+          }
+        ],
+        "nominalTraceWidth": 0.08128,
+        "width": 0.08128
+      }
+    ],
+    "differentialPairs": [
+      {
+        "connectionNames": [
+          "breakout:pcb_breakout_point_8",
+          "breakout:pcb_breakout_point_9"
+        ],
+        "lengthTolerance": 0.25
+      },
+      {
+        "connectionNames": [
+          "breakout:pcb_breakout_point_19",
+          "breakout:pcb_breakout_point_18"
+        ],
+        "lengthTolerance": 0.25
+      },
+      {
+        "connectionNames": [
+          "breakout:pcb_breakout_point_14",
+          "breakout:pcb_breakout_point_15"
+        ],
+        "lengthTolerance": 0.25
+      }
+    ],
+    "buses": [
+      {
+        "busId": "DDR_BYTE0",
+        "name": "DDR_BYTE0",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_29",
+          "breakout:pcb_breakout_point_4",
+          "breakout:pcb_breakout_point_31"
+        ],
+        "maxLengthSkew": 8,
+        "preferredLayers": [
+          "top",
+          "inner4"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_29": {
+            "x": 20.0151,
+            "y": -2.040307878787879,
+            "layer": "top"
+          },
+          "breakout:pcb_breakout_point_4": {
+            "x": 20.0151,
+            "y": -2.7941478787878786,
+            "layer": "inner4"
+          },
+          "breakout:pcb_breakout_point_31": {
+            "x": 20.0151,
+            "y": -1.0351878787878785,
+            "layer": "top"
+          }
+        }
+      },
+      {
+        "busId": "DDR_BYTE1",
+        "name": "DDR_BYTE1",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_13",
+          "breakout:pcb_breakout_point_0",
+          "breakout:pcb_breakout_point_10"
+        ],
+        "maxLengthSkew": 14.5,
+        "preferredLayers": [
+          "inner5",
+          "bottom"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_13": {
+            "x": 20.0151,
+            "y": -0.030067878787878755,
+            "layer": "inner5"
+          },
+          "breakout:pcb_breakout_point_0": {
+            "x": 20.0151,
+            "y": -3.0454278787878786,
+            "layer": "bottom"
+          },
+          "breakout:pcb_breakout_point_10": {
+            "x": 20.0151,
+            "y": -1.5377478787878787,
+            "layer": "inner5"
+          }
+        }
+      },
+      {
+        "busId": "DDR_ADDR_CTRL",
+        "name": "DDR_ADDR_CTRL",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_26",
+          "breakout:pcb_breakout_point_20",
+          "breakout:pcb_breakout_point_25"
+        ],
+        "maxLengthSkew": 15,
+        "preferredLayers": [
+          "inner6"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_26": {
+            "x": 20.0151,
+            "y": 0.7237721212121215,
+            "layer": "inner6"
+          },
+          "breakout:pcb_breakout_point_20": {
+            "x": 20.0151,
+            "y": -2.2915878787878787,
+            "layer": "inner6"
+          },
+          "breakout:pcb_breakout_point_25": {
+            "x": 20.0151,
+            "y": 0.22121212121212125,
+            "layer": "inner6"
+          }
+        }
+      },
+      {
+        "busId": "DDR_CLOCK",
+        "name": "DDR_CLOCK",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_8",
+          "breakout:pcb_breakout_point_9"
+        ],
+        "maxLengthSkew": 0.25,
+        "preferredLayers": [
+          "inner5"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_8": {
+            "x": 20.0151,
+            "y": -2.5428678787878787,
+            "layer": "inner5"
+          },
+          "breakout:pcb_breakout_point_9": {
+            "x": 20.0151,
+            "y": -2.040307878787879,
+            "layer": "inner5"
+          }
+        }
+      },
+      {
+        "busId": "DDR_DQS0",
+        "name": "DDR_DQS0",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_19",
+          "breakout:pcb_breakout_point_18"
+        ],
+        "maxLengthSkew": 0.25,
+        "preferredLayers": [
+          "inner5"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_19": {
+            "x": 20.0151,
+            "y": 2.985292121212121,
+            "layer": "inner5"
+          },
+          "breakout:pcb_breakout_point_18": {
+            "x": 20.0151,
+            "y": 2.482732121212121,
+            "layer": "inner5"
+          }
+        }
+      },
+      {
+        "busId": "DDR_DQS1",
+        "name": "DDR_DQS1",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_14",
+          "breakout:pcb_breakout_point_15"
+        ],
+        "maxLengthSkew": 0.25,
+        "preferredLayers": [
+          "inner5"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_14": {
+            "x": 20.0151,
+            "y": 0.4724921212121216,
+            "layer": "inner5"
+          },
+          "breakout:pcb_breakout_point_15": {
+            "x": 20.0151,
+            "y": 0.9750521212121215,
+            "layer": "inner5"
+          }
+        }
+      },
+      {
+        "busId": "DDR_RESET",
+        "name": "DDR_RESET",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_28"
+        ],
+        "preferredLayers": [
+          "inner6"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_28": {
+            "x": 20.0151,
+            "y": 1.7288921212121213,
+            "layer": "inner6"
+          }
+        }
+      },
+      {
+        "busId": "DDR_DMI0",
+        "name": "DDR_DMI0",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_17"
+        ],
+        "preferredLayers": [
+          "inner5"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_17": {
+            "x": 20.0151,
+            "y": 1.9801721212121213,
+            "layer": "inner5"
+          }
+        }
+      },
+      {
+        "busId": "DDR_DMI1",
+        "name": "DDR_DMI1",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_16"
+        ],
+        "preferredLayers": [
+          "inner5"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_16": {
+            "x": 20.0151,
+            "y": 1.4776121212121214,
+            "layer": "inner5"
+          }
+        }
+      }
+    ],
+    "traces": [],
+    "layerCount": 8,
+    "allowBlindAndBuriedVias": false,
+    "minTraceWidth": 0.08128,
+    "minViaDiameter": 0.24,
+    "minViaHoleDiameter": 0.15,
+    "minViaPadDiameter": 0.24,
+    "min_via_hole_diameter": 0.15,
+    "min_via_pad_diameter": 0.24,
+    "minTraceToPadEdgeClearance": 0.05,
+    "minViaEdgeToPadEdgeClearance": 0.08128,
+    "minViaHoleEdgeToViaHoleEdgeClearance": 0.1016,
+    "minPlatedHoleDrillEdgeToDrillEdgeClearance": 0.15,
+    "minPadEdgeToPadEdgeClearance": 0.1,
+    "minBoardEdgeClearance": 0.2,
+    "nominalTraceWidth": 0.08128
+  },
+  "options": {
+    "buses": [
+      {
+        "busId": "DDR_BYTE0",
+        "name": "DDR_BYTE0",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_29",
+          "breakout:pcb_breakout_point_4",
+          "breakout:pcb_breakout_point_31"
+        ],
+        "maxLengthSkew": 8,
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_29": {
+            "x": 20.0151,
+            "y": -2.040307878787879,
+            "layer": "top"
+          },
+          "breakout:pcb_breakout_point_4": {
+            "x": 20.0151,
+            "y": -2.7941478787878786,
+            "layer": "inner4"
+          },
+          "breakout:pcb_breakout_point_31": {
+            "x": 20.0151,
+            "y": -1.0351878787878785,
+            "layer": "top"
+          }
+        },
+        "exitPosition": "rightside_top",
+        "allowedLayers": [
+          "top",
+          "inner4"
+        ]
+      },
+      {
+        "busId": "DDR_BYTE1",
+        "name": "DDR_BYTE1",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_13",
+          "breakout:pcb_breakout_point_0",
+          "breakout:pcb_breakout_point_10"
+        ],
+        "maxLengthSkew": 14.5,
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_13": {
+            "x": 20.0151,
+            "y": -0.030067878787878755,
+            "layer": "inner5"
+          },
+          "breakout:pcb_breakout_point_0": {
+            "x": 20.0151,
+            "y": -3.0454278787878786,
+            "layer": "bottom"
+          },
+          "breakout:pcb_breakout_point_10": {
+            "x": 20.0151,
+            "y": -1.5377478787878787,
+            "layer": "inner5"
+          }
+        },
+        "exitPosition": "rightside_bottom",
+        "allowedLayers": [
+          "inner5",
+          "bottom"
+        ]
+      },
+      {
+        "busId": "DDR_ADDR_CTRL",
+        "name": "DDR_ADDR_CTRL",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_26",
+          "breakout:pcb_breakout_point_20",
+          "breakout:pcb_breakout_point_25"
+        ],
+        "maxLengthSkew": 15,
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_26": {
+            "x": 20.0151,
+            "y": 0.7237721212121215,
+            "layer": "inner6"
+          },
+          "breakout:pcb_breakout_point_20": {
+            "x": 20.0151,
+            "y": -2.2915878787878787,
+            "layer": "inner6"
+          },
+          "breakout:pcb_breakout_point_25": {
+            "x": 20.0151,
+            "y": 0.22121212121212125,
+            "layer": "inner6"
+          }
+        },
+        "exitPosition": "rightside_center",
+        "allowedLayers": [
+          "inner6"
+        ]
+      },
+      {
+        "busId": "DDR_CLOCK",
+        "name": "DDR_CLOCK",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_8",
+          "breakout:pcb_breakout_point_9"
+        ],
+        "maxLengthSkew": 0.25,
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_8": {
+            "x": 20.0151,
+            "y": -2.5428678787878787,
+            "layer": "inner5"
+          },
+          "breakout:pcb_breakout_point_9": {
+            "x": 20.0151,
+            "y": -2.040307878787879,
+            "layer": "inner5"
+          }
+        },
+        "exitPosition": "rightside_top",
+        "allowedLayers": [
+          "inner5"
+        ]
+      },
+      {
+        "busId": "DDR_DQS0",
+        "name": "DDR_DQS0",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_19",
+          "breakout:pcb_breakout_point_18"
+        ],
+        "maxLengthSkew": 0.25,
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_19": {
+            "x": 20.0151,
+            "y": 2.985292121212121,
+            "layer": "inner5"
+          },
+          "breakout:pcb_breakout_point_18": {
+            "x": 20.0151,
+            "y": 2.482732121212121,
+            "layer": "inner5"
+          }
+        },
+        "exitPosition": "rightside_top",
+        "allowedLayers": [
+          "inner5"
+        ]
+      },
+      {
+        "busId": "DDR_DQS1",
+        "name": "DDR_DQS1",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_14",
+          "breakout:pcb_breakout_point_15"
+        ],
+        "maxLengthSkew": 0.25,
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_14": {
+            "x": 20.0151,
+            "y": 0.4724921212121216,
+            "layer": "inner5"
+          },
+          "breakout:pcb_breakout_point_15": {
+            "x": 20.0151,
+            "y": 0.9750521212121215,
+            "layer": "inner5"
+          }
+        },
+        "exitPosition": "rightside_center",
+        "allowedLayers": [
+          "inner5"
+        ]
+      },
+      {
+        "busId": "DDR_RESET",
+        "name": "DDR_RESET",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_28"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_28": {
+            "x": 20.0151,
+            "y": 1.7288921212121213,
+            "layer": "inner6"
+          }
+        },
+        "exitPosition": "rightside_center",
+        "allowedLayers": [
+          "inner6"
+        ]
+      },
+      {
+        "busId": "DDR_DMI0",
+        "name": "DDR_DMI0",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_17"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_17": {
+            "x": 20.0151,
+            "y": 1.9801721212121213,
+            "layer": "inner5"
+          }
+        },
+        "exitPosition": "rightside_top",
+        "allowedLayers": [
+          "inner5"
+        ]
+      },
+      {
+        "busId": "DDR_DMI1",
+        "name": "DDR_DMI1",
+        "connectionNames": [
+          "breakout:pcb_breakout_point_16"
+        ],
+        "connectionExitTargets": {
+          "breakout:pcb_breakout_point_16": {
+            "x": 20.0151,
+            "y": 1.4776121212121214,
+            "layer": "inner5"
+          }
+        },
+        "exitPosition": "rightside_bottom",
+        "allowedLayers": [
+          "inner5"
+        ]
+      }
+    ],
+    "borderDistribution": "even",
+    "compactBusTracks": true,
+    "busDirections": {},
+    "escapeLayers": [
+      "top",
+      "inner4",
+      "inner5",
+      "inner6",
+      "bottom"
+    ],
+    "allowBlindAndBuriedVias": false,
+    "sharedBoundary": {
+      "minX": -8.62808,
+      "maxX": 8.62808,
+      "minY": -8.62808,
+      "maxY": 8.62808
+    },
+    "maxLayerCombinations": 1
+  }
+}
