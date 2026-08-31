@@ -1279,10 +1279,43 @@ export class FanoutSolver extends BaseSolver {
         canShareCopper,
       })
     if (seedViaPoints) {
+      const routePitch = Math.max(
+        this.config.traceWidth + this.config.clearance,
+        this.config.viaDiameter + this.config.clearance,
+      )
+      // In a nine-bus field, pair windings can fence off a fixed corner
+      // singleton whose target lies well inward of its source. Route that
+      // singleton after the wide buses have established their channels but
+      // before the pairs consume the remaining narrow corridor.
+      const earlyInwardSingletonBuses =
+        boundaryBuses.length === 9
+          ? boundaryBuses.filter((bus) => {
+              if (
+                bus.connections.length !== 1 ||
+                leadingWideSingletonBuses.includes(bus) ||
+                viaProvisionalSingletonBusSet.has(bus)
+              ) {
+                return false
+              }
+              const geometry = getDenseSingletonBoundaryGeometry(bus)
+              return (
+                geometry.isCorner && geometry.targetProjection < -routePitch
+              )
+            })
+          : []
       const denseBoundaryBusesInRoutingOrder = [
         ...leadingWideSingletonBuses,
         ...boundaryBuses.filter(
-          (bus) => !leadingWideSingletonBuses.includes(bus),
+          (bus) =>
+            !leadingWideSingletonBuses.includes(bus) &&
+            bus.connections.length > 2,
+        ),
+        ...earlyInwardSingletonBuses,
+        ...boundaryBuses.filter(
+          (bus) =>
+            !leadingWideSingletonBuses.includes(bus) &&
+            bus.connections.length <= 2 &&
+            !earlyInwardSingletonBuses.includes(bus),
         ),
       ]
       let fixedViaPointsByConnectionIndex: ReadonlyMap<
