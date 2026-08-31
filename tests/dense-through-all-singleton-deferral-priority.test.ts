@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test"
 import {
   compareDenseSingletonBoundaryDeferralPriority,
+  getDenseCornerTargetLaneOffsets,
   getDenseSingletonBoundaryGeometry,
+  isDenseCornerSingletonTargetLaneInwardOfPairs,
 } from "../lib/fanout-solver"
 
 type SingletonInput = Parameters<
@@ -130,4 +132,157 @@ test("prioritizes three singletons deterministically by centered then inward tar
       .toSorted(compareDenseSingletonBoundaryDeferralPriority)
       .map((bus) => bus.busId),
   ).toEqual(["DDR_DMI0", "DDR_RESET"])
+})
+
+type CornerTargetBus = Parameters<
+  typeof isDenseCornerSingletonTargetLaneInwardOfPairs
+>[0]["singletonBus"]
+
+const makeCornerTargetBus = ({
+  busId,
+  exitEdge,
+  preferredExit,
+  targetTracks,
+}: {
+  busId: string
+  exitEdge: NonNullable<CornerTargetBus["exitEdge"]>
+  preferredExit: NonNullable<CornerTargetBus["preferredExit"]>
+  targetTracks: number[]
+}): CornerTargetBus => ({
+  busId,
+  exitEdge,
+  preferredExit,
+  connections: targetTracks.map((targetTrack) => ({
+    exitTargetPoint:
+      exitEdge === "left" || exitEdge === "right"
+        ? { x: 0, y: targetTrack }
+        : { x: targetTrack, y: 0 },
+  })),
+})
+
+test("detects a corner singleton target lane inward of same-layer pairs", () => {
+  const singleton = makeCornerTargetBus({
+    busId: "singleton",
+    exitEdge: "left",
+    preferredExit: "top-left",
+    targetTracks: [4.9566],
+  })
+  const clockPair = makeCornerTargetBus({
+    busId: "clock-pair",
+    exitEdge: "left",
+    preferredExit: "top-left",
+    targetTracks: [5.92044, 6.24172],
+  })
+  const strobePair = makeCornerTargetBus({
+    busId: "strobe-pair",
+    exitEdge: "left",
+    preferredExit: "top-left",
+    targetTracks: [5.59916, 5.27788],
+  })
+  const assignedLayerByBusId = new Map([
+    ["singleton", "inner5"],
+    ["clock-pair", "inner5"],
+    ["strobe-pair", "inner5"],
+  ])
+
+  expect(
+    isDenseCornerSingletonTargetLaneInwardOfPairs({
+      singletonBus: singleton,
+      pairBuses: [clockPair, strobePair],
+      assignedLayerByBusId,
+      routePitch: 0.32128,
+    }),
+  ).toBe(true)
+
+  const rotatedSingleton = makeCornerTargetBus({
+    busId: "singleton",
+    exitEdge: "top",
+    preferredExit: "top-left",
+    targetTracks: [-4.9566],
+  })
+  const rotatedClockPair = makeCornerTargetBus({
+    busId: "clock-pair",
+    exitEdge: "top",
+    preferredExit: "top-left",
+    targetTracks: [-5.92044, -6.24172],
+  })
+  const rotatedStrobePair = makeCornerTargetBus({
+    busId: "strobe-pair",
+    exitEdge: "top",
+    preferredExit: "top-left",
+    targetTracks: [-5.59916, -5.27788],
+  })
+  expect(
+    isDenseCornerSingletonTargetLaneInwardOfPairs({
+      singletonBus: rotatedSingleton,
+      pairBuses: [rotatedClockPair, rotatedStrobePair],
+      assignedLayerByBusId,
+      routePitch: 0.32128,
+    }),
+  ).toBe(true)
+
+  expect(
+    isDenseCornerSingletonTargetLaneInwardOfPairs({
+      singletonBus: singleton,
+      pairBuses: [clockPair, strobePair],
+      assignedLayerByBusId: new Map([
+        ["singleton", "inner4"],
+        ["clock-pair", "inner5"],
+        ["strobe-pair", "inner5"],
+      ]),
+      routePitch: 0.32128,
+    }),
+  ).toBe(false)
+
+  expect(
+    isDenseCornerSingletonTargetLaneInwardOfPairs({
+      singletonBus: makeCornerTargetBus({
+        busId: "singleton",
+        exitEdge: "left",
+        preferredExit: "left",
+        targetTracks: [4.9566],
+      }),
+      pairBuses: [clockPair, strobePair],
+      assignedLayerByBusId,
+      routePitch: 0.32128,
+    }),
+  ).toBe(false)
+
+  expect(
+    getDenseCornerTargetLaneOffsets({
+      buses: [clockPair, strobePair, singleton],
+      assignedLayerByBusId,
+    }),
+  ).toEqual(
+    new Map([
+      ["singleton", 0],
+      ["strobe-pair", 1],
+      ["clock-pair", 3],
+    ]),
+  )
+  expect(
+    getDenseCornerTargetLaneOffsets({
+      buses: [rotatedClockPair, rotatedStrobePair, rotatedSingleton],
+      assignedLayerByBusId,
+    }),
+  ).toEqual(
+    new Map([
+      ["clock-pair", 0],
+      ["strobe-pair", 2],
+      ["singleton", 4],
+    ]),
+  )
+
+  const interleavedPair = makeCornerTargetBus({
+    busId: "clock-pair",
+    exitEdge: "left",
+    preferredExit: "top-left",
+    targetTracks: [4.8, 6.2],
+  })
+  expect(
+    getDenseCornerTargetLaneOffsets({
+      buses: [interleavedPair, strobePair, singleton],
+      assignedLayerByBusId,
+    }),
+  ).toEqual(new Map())
 })

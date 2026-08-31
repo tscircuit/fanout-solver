@@ -582,6 +582,147 @@ interface DenseSingletonBoundaryGeometryBus {
   }[]
 }
 
+interface DenseCornerTargetLaneBus {
+  busId: string
+  exitEdge?: PreparedBus["exitEdge"]
+  preferredExit?: PreparedBus["preferredExit"]
+  connections: readonly {
+    exitTargetPoint?: { x: number; y: number }
+  }[]
+}
+
+const getBoundaryTangentTargetTrack = (
+  bus: DenseCornerTargetLaneBus,
+  connectionIndex: number,
+): number | undefined => {
+  const target = bus.connections[connectionIndex]?.exitTargetPoint
+  if (!target || !bus.exitEdge) return undefined
+  return bus.exitEdge === "left" || bus.exitEdge === "right"
+    ? target.y
+    : target.x
+}
+
+export function isDenseCornerSingletonTargetLaneInwardOfPairs(params: {
+  singletonBus: DenseCornerTargetLaneBus
+  pairBuses: readonly DenseCornerTargetLaneBus[]
+  assignedLayerByBusId: ReadonlyMap<string, string>
+  routePitch: number
+}): boolean {
+  const { singletonBus, pairBuses, assignedLayerByBusId, routePitch } = params
+  if (singletonBus.connections.length !== 1 || !singletonBus.exitEdge) {
+    return false
+  }
+  const cornerSide = getCornerBandSide(
+    singletonBus.exitEdge,
+    singletonBus.preferredExit,
+  )
+  const singletonTargetTrack = getBoundaryTangentTargetTrack(singletonBus, 0)
+  const assignedLayer = assignedLayerByBusId.get(singletonBus.busId)
+  if (
+    !cornerSide ||
+    singletonTargetTrack === undefined ||
+    !assignedLayer ||
+    !Number.isFinite(routePitch) ||
+    routePitch <= 0
+  ) {
+    return false
+  }
+
+  const pairTargetTracks = pairBuses.flatMap((pairBus) => {
+    if (
+      pairBus.connections.length !== 2 ||
+      pairBus.exitEdge !== singletonBus.exitEdge ||
+      getCornerBandSide(pairBus.exitEdge, pairBus.preferredExit) !==
+        cornerSide ||
+      assignedLayerByBusId.get(pairBus.busId) !== assignedLayer
+    ) {
+      return []
+    }
+    const tracks = pairBus.connections.map((_, connectionIndex) =>
+      getBoundaryTangentTargetTrack(pairBus, connectionIndex),
+    )
+    return tracks.every((track): track is number => track !== undefined)
+      ? tracks
+      : []
+  })
+  if (pairTargetTracks.length === 0) return false
+
+  return cornerSide === "maximum"
+    ? singletonTargetTrack <= Math.min(...pairTargetTracks) - routePitch + 1e-9
+    : singletonTargetTrack >= Math.max(...pairTargetTracks) + routePitch - 1e-9
+}
+
+export function getDenseCornerTargetLaneOffsets(params: {
+  buses: readonly DenseCornerTargetLaneBus[]
+  assignedLayerByBusId: ReadonlyMap<string, string>
+}): ReadonlyMap<string, number> {
+  const { buses, assignedLayerByBusId } = params
+  const busesByCornerBand = new Map<string, DenseCornerTargetLaneBus[]>()
+  for (const bus of buses) {
+    const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+    if (!bus.exitEdge || !side) continue
+    const assignedLayer = assignedLayerByBusId.get(bus.busId)
+    if (!assignedLayer) continue
+    const key = `${bus.exitEdge}:${side}:${assignedLayer}`
+    const bandBuses = busesByCornerBand.get(key) ?? []
+    bandBuses.push(bus)
+    busesByCornerBand.set(key, bandBuses)
+  }
+
+  const laneOffsetByBusId = new Map<string, number>()
+  for (const bandBuses of busesByCornerBand.values()) {
+    const orderedConnections = bandBuses
+      .flatMap((bus) =>
+        bus.connections.map((_, connectionIndex) => ({
+          bus,
+          connectionIndex,
+          targetTrack: getBoundaryTangentTargetTrack(bus, connectionIndex),
+        })),
+      )
+      .toSorted(
+        (first, second) =>
+          (first.targetTrack ?? 0) - (second.targetTrack ?? 0) ||
+          first.bus.busId.localeCompare(second.bus.busId) ||
+          first.connectionIndex - second.connectionIndex,
+      )
+    if (
+      orderedConnections.some(({ targetTrack }) => targetTrack === undefined) ||
+      orderedConnections.some(
+        ({ targetTrack }, index) =>
+          index > 0 &&
+          Math.abs(
+            targetTrack! - orderedConnections[index - 1]!.targetTrack!,
+          ) <= 1e-9,
+      )
+    ) {
+      continue
+    }
+
+    let bandIsContiguousByBus = true
+    for (const bus of bandBuses) {
+      const ranks = orderedConnections.flatMap((entry, rank) =>
+        entry.bus === bus ? [rank] : [],
+      )
+      const firstRank = ranks[0]
+      if (
+        firstRank === undefined ||
+        ranks.some((rank, index) => rank !== firstRank + index)
+      ) {
+        bandIsContiguousByBus = false
+        break
+      }
+    }
+    if (!bandIsContiguousByBus) continue
+    for (const bus of bandBuses) {
+      laneOffsetByBusId.set(
+        bus.busId,
+        orderedConnections.findIndex((entry) => entry.bus === bus),
+      )
+    }
+  }
+  return laneOffsetByBusId
+}
+
 export function getDenseSingletonBoundaryGeometry(
   bus: DenseSingletonBoundaryGeometryBus,
 ): { isCorner: boolean; targetProjection: number } {
@@ -1130,6 +1271,58 @@ export class FanoutSolver extends BaseSolver {
     const useGeometryAwareSingletonOutwardPreference =
       singletonBoundaryBusCount > 1 &&
       shouldDeferSingletonBoundaryViaReservation(boundaryBusConnectionCounts)
+    const routePitch = Math.max(
+      this.config.traceWidth + this.config.clearance,
+      this.config.viaDiameter + this.config.clearance,
+    )
+    const assignedLayerByBusId = new Map(
+      boundaryBuses.flatMap((bus) => {
+        const assignedLayer = params.busLayerAssignments[bus.busId]
+        return assignedLayer ? [[bus.busId, assignedLayer] as const] : []
+      }),
+    )
+    const pairBuses = boundaryBuses.filter(
+      (bus) => bus.connections.length === 2,
+    )
+    const laneInwardSingletonBusSet = new Set(
+      boundaryBuses.filter(
+        (bus) =>
+          boundaryBuses.length === 9 &&
+          isDenseCornerSingletonTargetLaneInwardOfPairs({
+            singletonBus: bus,
+            pairBuses,
+            assignedLayerByBusId,
+            routePitch,
+          }),
+      ),
+    )
+    if (laneInwardSingletonBusSet.size > 0) {
+      const targetLaneOffsetByBusId = getDenseCornerTargetLaneOffsets({
+        buses: boundaryBuses,
+        assignedLayerByBusId,
+      })
+      const targetOrderedBandLayerKeys = new Set(
+        [...laneInwardSingletonBusSet].flatMap((bus) => {
+          const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+          const assignedLayer = assignedLayerByBusId.get(bus.busId)
+          return bus.exitEdge && side && assignedLayer
+            ? [`${bus.exitEdge}:${side}:${assignedLayer}`]
+            : []
+        }),
+      )
+      for (const bus of boundaryBuses) {
+        const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+        const assignedLayer = assignedLayerByBusId.get(bus.busId)
+        const bandLayerKey =
+          bus.exitEdge && side && assignedLayer
+            ? `${bus.exitEdge}:${side}:${assignedLayer}`
+            : undefined
+        bus.cornerBandExitLaneOffset =
+          bandLayerKey && targetOrderedBandLayerKeys.has(bandLayerKey)
+            ? targetLaneOffsetByBusId.get(bus.busId)
+            : undefined
+      }
+    }
     const preferredBoundaryPerpendicularSideByBusId = new Map(
       boundaryBuses.map((bus) => [bus.busId, 1 as const]),
     )
@@ -1233,7 +1426,9 @@ export class FanoutSolver extends BaseSolver {
     }
     const viaProvisionalSingletonBusSet = new Set(
       singletonDeferralCandidates.filter(
-        (bus) => !leadingWideSingletonBuses.includes(bus),
+        (bus) =>
+          !leadingWideSingletonBuses.includes(bus) &&
+          !laneInwardSingletonBusSet.has(bus),
       ),
     )
     const getCornerBandTargetTrackOffset = (bus: PreparedBus): number => {
@@ -1279,14 +1474,15 @@ export class FanoutSolver extends BaseSolver {
         canShareCopper,
       })
     if (seedViaPoints) {
-      const routePitch = Math.max(
-        this.config.traceWidth + this.config.clearance,
-        this.config.viaDiameter + this.config.clearance,
-      )
       // In a nine-bus field, pair windings can fence off a fixed corner
       // singleton whose target lies well inward of its source. Route that
       // singleton after the wide buses have established their channels but
-      // before the pairs consume the remaining narrow corridor.
+      // before the pairs consume the remaining narrow corridor. If a
+      // singleton's downstream lane belongs inward of same-layer pairs,
+      // reserve all of those target-ordered corner lanes up front, route
+      // unrelated narrow buses first, then route the singleton before its
+      // related pairs. This preserves the interconnect winding without making
+      // the singleton block an unrelated centered pair.
       const earlyInwardSingletonBuses =
         boundaryBuses.length === 9
           ? boundaryBuses.filter((bus) => {
@@ -1303,6 +1499,25 @@ export class FanoutSolver extends BaseSolver {
               )
             })
           : []
+      const laneOrderSingletonBuses = boundaryBuses.filter(
+        (bus) =>
+          laneInwardSingletonBusSet.has(bus) &&
+          !leadingWideSingletonBuses.includes(bus) &&
+          !viaProvisionalSingletonBusSet.has(bus) &&
+          !earlyInwardSingletonBuses.includes(bus),
+      )
+      const targetOrderedPairBusSet = new Set(
+        pairBuses.filter((pairBus) =>
+          laneOrderSingletonBuses.some((singletonBus) =>
+            isDenseCornerSingletonTargetLaneInwardOfPairs({
+              singletonBus,
+              pairBuses: [pairBus],
+              assignedLayerByBusId,
+              routePitch,
+            }),
+          ),
+        ),
+      )
       const denseBoundaryBusesInRoutingOrder = [
         ...leadingWideSingletonBuses,
         ...boundaryBuses.filter(
@@ -1315,8 +1530,12 @@ export class FanoutSolver extends BaseSolver {
           (bus) =>
             !leadingWideSingletonBuses.includes(bus) &&
             bus.connections.length <= 2 &&
-            !earlyInwardSingletonBuses.includes(bus),
+            !earlyInwardSingletonBuses.includes(bus) &&
+            !laneOrderSingletonBuses.includes(bus) &&
+            !targetOrderedPairBusSet.has(bus),
         ),
+        ...laneOrderSingletonBuses,
+        ...boundaryBuses.filter((bus) => targetOrderedPairBusSet.has(bus)),
       ]
       let fixedViaPointsByConnectionIndex: ReadonlyMap<
         number,

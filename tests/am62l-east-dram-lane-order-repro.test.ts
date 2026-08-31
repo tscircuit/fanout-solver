@@ -92,7 +92,7 @@ const getLaneOrderInversions = (
   return inversions
 }
 
-test("captures the AM62L east-orbit DRAM lane-order inversion", async () => {
+test("routes the AM62L east-orbit DRAM fanout without a lane-order inversion", async () => {
   expect(fixture.inputSrj.connections).toHaveLength(33)
   expect(fixture.options.buses?.map((bus) => bus.busId)).toEqual([
     "DDR_BYTE0",
@@ -133,19 +133,14 @@ test("captures the AM62L east-orbit DRAM lane-order inversion", async () => {
     checkedViaCount: 33,
     issues: [],
   })
-  expect(getLaneOrderInversions(output.fanoutTraces)).toEqual([
-    "DDR_CLOCK[0] <> DDR_DMI0[0]",
-    "DDR_CLOCK[1] <> DDR_DMI0[0]",
-    "DDR_DQS0[0] <> DDR_DMI0[0]",
-    "DDR_DQS0[1] <> DDR_DMI0[0]",
-  ])
+  expect(getLaneOrderInversions(output.fanoutTraces)).toEqual([])
 
   await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
     import.meta.path,
   )
 }, 120_000)
 
-test.failing("preserves target lane order at the DRAM fanout boundary", () => {
+test("preserves target lane order at the DRAM fanout boundary", () => {
   const { output } = solveFixture()
   expect(getLaneOrderInversions(output.fanoutTraces)).toEqual([])
 })
