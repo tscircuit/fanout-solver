@@ -512,19 +512,20 @@ function candidatesAreMutuallyClear(params: {
   )
 }
 
-function matchComponent(params: {
+function matchComponentAlternatives(params: {
   component: ComponentMatchingInput
   rules: DogboneViaSiteGeometryRules
   consumeSearchState: () => boolean
-}): Map<number, Point2D> | null {
-  const { component, rules, consumeSearchState } = params
+  maximumAlternatives: number
+}): Map<number, Point2D>[] {
+  const { component, rules, consumeSearchState, maximumAlternatives } = params
   const entries: ConnectionCandidates[] = component.connections.map(
     (connection) => ({
       connection,
       candidates: getConnectionCandidates({ connection, component, rules }),
     }),
   )
-  if (entries.some((entry) => entry.candidates.length === 0)) return null
+  if (entries.some((entry) => entry.candidates.length === 0)) return []
   // Every solution must include each sole candidate. Seed and validate those
   // forced choices once so recursive matching only explores genuine choices.
   const forcedCandidates = entries.flatMap((entry) =>
@@ -548,7 +549,7 @@ function matchComponent(params: {
           rules,
         })
       ) {
-        return null
+        return []
       }
     }
   }
@@ -571,12 +572,16 @@ function matchComponent(params: {
   )
 
   if (remaining.size === 0) {
-    return new Map(
-      [...assignedCandidates.entries()].map(([connectionIndex, candidate]) => [
-        connectionIndex,
-        { ...candidate.point },
-      ]),
-    )
+    return [
+      new Map(
+        [...assignedCandidates.entries()].map(
+          ([connectionIndex, candidate]) => [
+            connectionIndex,
+            { ...candidate.point },
+          ],
+        ),
+      ),
+    ]
   }
 
   const getViableCandidates = (
@@ -592,9 +597,22 @@ function matchComponent(params: {
       ),
     )
 
+  const alternatives: Map<number, Point2D>[] = []
   const augmentMatching = (): boolean => {
-    if (!consumeSearchState()) return false
-    if (remaining.size === 0) return true
+    if (!consumeSearchState()) return true
+    if (remaining.size === 0) {
+      alternatives.push(
+        new Map(
+          [...assignedCandidates.entries()]
+            .toSorted(([first], [second]) => first - second)
+            .map(([connectionIndex, candidate]) => [
+              connectionIndex,
+              { ...candidate.point },
+            ]),
+        ),
+      )
+      return alternatives.length >= maximumAlternatives
+    }
 
     let selectedEntry: ConnectionCandidates | undefined
     let selectedCandidates: ViaSiteCandidate[] = []
@@ -621,22 +639,69 @@ function matchComponent(params: {
     remaining.delete(connectionIndex)
     for (const candidate of selectedCandidates) {
       assignedCandidates.set(connectionIndex, candidate)
-      if (augmentMatching()) return true
+      if (augmentMatching()) {
+        assignedCandidates.delete(connectionIndex)
+        remaining.add(connectionIndex)
+        return true
+      }
       assignedCandidates.delete(connectionIndex)
     }
     remaining.add(connectionIndex)
     return false
   }
 
-  if (!augmentMatching()) return null
-  return new Map(
-    [...assignedCandidates.entries()]
-      .toSorted(([first], [second]) => first - second)
-      .map(([connectionIndex, candidate]) => [
-        connectionIndex,
-        { ...candidate.point },
-      ]),
-  )
+  augmentMatching()
+  return alternatives
+}
+
+function assertMaximumAlternatives(maximumAlternatives: number): void {
+  if (!Number.isInteger(maximumAlternatives) || maximumAlternatives < 1) {
+    throw new Error(
+      `FanoutSolver: dogbone maximumAlternatives must be a positive integer, received ${maximumAlternatives}`,
+    )
+  }
+}
+
+/**
+ * Returns up to `maximumAlternatives` distinct complete dogbone matchings in
+ * deterministic candidate-search order.
+ */
+export function matchComponentDogboneViaSiteAlternatives(
+  preparedBuses: readonly PreparedBus[],
+  rules: DogboneViaSiteGeometryRules,
+  maximumAlternatives: number,
+): Map<number, Point2D>[] {
+  assertMaximumAlternatives(maximumAlternatives)
+  const maximumSearchStates = assertGeometryRules(rules)
+  if (preparedBuses.length === 0) return [new Map()]
+
+  let consumedSearchStates = 0
+  const consumeSearchState = (): boolean => {
+    consumedSearchStates++
+    return consumedSearchStates <= maximumSearchStates
+  }
+  let alternatives: Map<number, Point2D>[] = [new Map()]
+  for (const component of getComponentMatchingInputs(preparedBuses)) {
+    const componentAlternatives = matchComponentAlternatives({
+      component,
+      rules,
+      consumeSearchState,
+      maximumAlternatives,
+    })
+    if (componentAlternatives.length === 0) return []
+    const combinedAlternatives: Map<number, Point2D>[] = []
+    for (const alternative of alternatives) {
+      for (const componentAlternative of componentAlternatives) {
+        combinedAlternatives.push(
+          new Map([...alternative, ...componentAlternative]),
+        )
+        if (combinedAlternatives.length >= maximumAlternatives) break
+      }
+      if (combinedAlternatives.length >= maximumAlternatives) break
+    }
+    alternatives = combinedAlternatives
+  }
+  return alternatives
 }
 
 /**
@@ -650,27 +715,9 @@ export function matchComponentDogboneViaSites(
   preparedBuses: readonly PreparedBus[],
   rules: DogboneViaSiteGeometryRules,
 ): Map<number, Point2D> | null {
-  const maximumSearchStates = assertGeometryRules(rules)
-  if (preparedBuses.length === 0) return new Map()
-
-  let consumedSearchStates = 0
-  const consumeSearchState = (): boolean => {
-    consumedSearchStates++
-    return consumedSearchStates <= maximumSearchStates
-  }
-  const result = new Map<number, Point2D>()
-  for (const component of getComponentMatchingInputs(preparedBuses)) {
-    const componentResult = matchComponent({
-      component,
-      rules,
-      consumeSearchState,
-    })
-    if (!componentResult) return null
-    for (const [connectionIndex, point] of componentResult) {
-      result.set(connectionIndex, point)
-    }
-  }
-  return result
+  return (
+    matchComponentDogboneViaSiteAlternatives(preparedBuses, rules, 1)[0] ?? null
+  )
 }
 
 /**

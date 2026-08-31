@@ -10,6 +10,7 @@ import {
 } from "lib/geometry"
 import {
   getComponentDogboneViaSiteCandidates,
+  matchComponentDogboneViaSiteAlternatives,
   matchComponentDogboneViaSites,
 } from "lib/match-component-dogbone-via-sites"
 import type {
@@ -101,6 +102,46 @@ function createFixture(): {
     connections,
   }
 }
+
+test("component-wide dogbone matching returns bounded deterministic alternatives", () => {
+  const fixture = createFixture()
+  const rules = {
+    viaDiameter: 0.3,
+    viaHoleDiameter: 0.2,
+    traceWidth: 0.1,
+    clearance: 0.1,
+    holeToHoleClearance: 0.3,
+    maximumSearchStates: 10_000,
+  }
+  const alternatives = matchComponentDogboneViaSiteAlternatives(
+    fixture.buses,
+    rules,
+    4,
+  )
+  expect(alternatives).toHaveLength(4)
+  expect(alternatives.every((alternative) => alternative.size === 4)).toBe(true)
+  expect(
+    new Set(
+      alternatives.map((alternative) =>
+        JSON.stringify([...alternative.entries()]),
+      ),
+    ).size,
+  ).toBe(alternatives.length)
+
+  const reversedFixture = createFixture()
+  const reversedBuses = reversedFixture.buses
+    .toReversed()
+    .map((bus) => ({ ...bus, connections: bus.connections.toReversed() }))
+  expect(
+    matchComponentDogboneViaSiteAlternatives(reversedBuses, rules, 4),
+  ).toEqual(alternatives)
+  expect(
+    matchComponentDogboneViaSiteAlternatives(fixture.buses, rules, 2),
+  ).toEqual(alternatives.slice(0, 2))
+  expect(matchComponentDogboneViaSites(fixture.buses, rules)).toEqual(
+    alternatives[0],
+  )
+})
 
 test("component-wide dogbone matching assigns deterministic legal interstitial vias", () => {
   const fixture = createFixture()
