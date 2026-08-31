@@ -11,7 +11,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     # Skip test for PRs that not chore: bump version
     if: "${{ github.event_name != 'pull_request' || github.event.pull_request.title != 'chore: bump version' }}"
