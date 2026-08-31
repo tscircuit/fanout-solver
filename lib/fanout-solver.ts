@@ -977,11 +977,11 @@ export class FanoutSolver extends BaseSolver {
 
   /**
    * Through-all source vias from a wide boundary bus can consume the only
-   * legal dogbone channel for nearby plane pads. Conversely, routing hundreds
-   * of singleton plane drops first can strand the boundary bus. Search a tiny
-   * number of whole-bus boundary alternatives, then fill the remaining plane
-   * dogbones. This is intentionally bounded independently of the number of
-   * plane drops so dense power fields cannot explode the general beam search.
+   * legal dogbone channel for nearby boundary or plane pads. Match those
+   * dogbone sites jointly, search a tiny number of whole-bus boundary
+   * alternatives, then fill any remaining plane dogbones. This is
+   * intentionally bounded independently of the number of plane drops so dense
+   * power fields cannot explode the general beam search.
    */
   private routeDenseThroughAllMixedTerminations(params: {
     busLayerAssignments: Readonly<Record<string, string>>
@@ -992,9 +992,11 @@ export class FanoutSolver extends BaseSolver {
     const unsortedBoundaryBuses = params.busesInRoutingOrder.filter(
       (bus) => bus.termination.type === "boundary",
     )
-    const useJointBoundaryViaReservation = shouldUseJointBoundaryViaReservation(
-      unsortedBoundaryBuses.map((bus) => bus.connections.length),
-    )
+    const useJointBoundaryViaReservation =
+      unsortedBoundaryBuses.length === params.busesInRoutingOrder.length ||
+      shouldUseJointBoundaryViaReservation(
+        unsortedBoundaryBuses.map((bus) => bus.connections.length),
+      )
     const twoConnectionBoundaryBuses = unsortedBoundaryBuses.filter(
       (bus) => bus.connections.length === 2,
     )
@@ -1102,7 +1104,7 @@ export class FanoutSolver extends BaseSolver {
     if (
       boundaryBuses.length === 0 ||
       boundaryBuses.length > 9 ||
-      planeBuses.length < 8 ||
+      (planeBuses.length > 0 && planeBuses.length < 8) ||
       boundaryBuses.some((bus) => !busUsesCoordinatedWinding(bus)) ||
       planeBuses.some((bus) => bus.connections.length !== 1) ||
       boundaryBuses.length + planeBuses.length !==
