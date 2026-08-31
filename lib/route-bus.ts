@@ -395,7 +395,7 @@ function getCornerLaneOffsets(
     (plan) => plan.direction === bus.direction,
   )
   return {
-    exit: plansOnExitEdge.length,
+    exit: bus.cornerBandExitLaneOffset ?? plansOnExitEdge.length,
     localChannel: plansOnLocalEdge.length,
     boundaryChannel: plansOnExitEdge.length,
   }

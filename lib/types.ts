@@ -325,6 +325,8 @@ export interface PreparedBus {
   exitEdge?: FanoutEdge
   /** Total connection count sharing this explicit edge/corner band. */
   cornerBandConnectionCount?: number
+  /** Preassigned first lane within the shared corner band. */
+  cornerBandExitLaneOffset?: number
   /** Layers to which this bus is allowed to escape. */
   allowedLayers?: readonly string[]
   /** Bus layers that also survive the solver-wide escape-layer restriction. */
