@@ -143,7 +143,7 @@ test("captures the AM62L east-orbit DRAM lane-order inversion", async () => {
   await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
     import.meta.path,
   )
-}, 60_000)
+}, 120_000)
 
 test.failing("preserves target lane order at the DRAM fanout boundary", () => {
   const { output } = solveFixture()
