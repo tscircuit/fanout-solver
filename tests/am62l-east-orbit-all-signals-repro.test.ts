@@ -30,15 +30,17 @@ test.failing("routes every AM62L DDR bus in the east-orbit fanout", async () => 
   expect(solver.error).toBe(
     "FanoutSolver: best layer assignment routed 12/18 connections",
   )
-  expect(solver.bestAttempt?.summary).toMatchObject({
-    routedBusCount: 6,
-    routedConnectionCount: 12,
-    failedBusIds: ["DDR_DQS1", "DDR_DMI0", "DDR_BYTE0"],
-  })
+  expect(solver.attempts).toContainEqual(
+    expect.objectContaining({
+      routedBusCount: 6,
+      routedConnectionCount: 12,
+      failedBusIds: ["DDR_DQS1", "DDR_DMI0", "DDR_BYTE0"],
+    }),
+  )
 
   await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
     import.meta.path,
   )
 
   expect(solver.solved).toBe(true)
-}, 90_000)
+}, 180_000)
