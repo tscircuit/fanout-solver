@@ -313,26 +313,36 @@ class Dinic {
     return 0
   }
 
-  maximumFlow(source: number, sink: number, limit: number): number {
+  *maximumFlowSteps(
+    source: number,
+    sink: number,
+    limit: number,
+  ): Generator<void, number, void> {
     let flow = 0
     while (flow < limit && this.buildLevels(source, sink)) {
       this.nextEdges.fill(0)
+      let flowSinceYield = 0
       while (flow < limit) {
         const sent = this.sendFlow(source, sink)
         if (sent === 0) break
         flow += sent
+        flowSinceYield += sent
+        if (flowSinceYield >= 4 && flow < limit) {
+          flowSinceYield = 0
+          yield
+        }
       }
     }
     return flow
   }
 }
 
-function createFlowGrid(params: {
+function* createFlowGridSteps(params: {
   boundary: PreparedBus["sharedBoundary"]
   obstacles: Obstacle[]
   traceWidth: number
   clearance: number
-}): FlowGrid {
+}): Generator<void, FlowGrid, void> {
   const { boundary, obstacles, traceWidth, clearance } = params
   const step = traceWidth + clearance
   const columnCount = Math.round((boundary.maxX - boundary.minX) / step) + 1
@@ -374,6 +384,7 @@ function createFlowGrid(params: {
         obstacleIndexesByBin.set(key, indexes)
       }
     }
+    if ((obstacleIndex + 1) % 128 === 0) yield
   }
   const getNearbyObstacles = (first: Point2D, second = first): Obstacle[] => {
     const minBinX = Math.floor(Math.min(first.x, second.x) / OBSTACLE_BIN_SIZE)
@@ -404,6 +415,7 @@ function createFlowGrid(params: {
     ) {
       obstacleFreeNodes[node] = 1
     }
+    if ((node + 1) % 2048 === 0) yield
   }
   const neighbors: number[][] = Array.from({ length: nodeCount }, () => [])
   for (let node = 0; node < nodeCount; node++) {
@@ -437,6 +449,7 @@ function createFlowGrid(params: {
       neighbors[node]!.push(nextNode)
       neighbors[nextNode]!.push(node)
     }
+    if ((node + 1) % 2048 === 0) yield
   }
   return {
     boundary,
@@ -450,7 +463,7 @@ function createFlowGrid(params: {
   }
 }
 
-function routeDirectionGroup(params: {
+function* routeDirectionGroupSteps(params: {
   direction: FanoutDirection | "any"
   availableDirections?: ReadonlySet<FanoutDirection>
   items: FlowItem[]
@@ -461,7 +474,7 @@ function routeDirectionGroup(params: {
   occupiedNodes: Uint8Array
   acceptedSegments: RoutedSegment[]
   connectorSelectionOffset?: number
-}): DirectionGroupResult | null {
+}): Generator<void, DirectionGroupResult | null, void> {
   const {
     direction,
     availableDirections,
@@ -532,6 +545,7 @@ function routeDirectionGroup(params: {
     return { x, y, distanceSquared: x * x + y * y }
   }).sort((first, second) => first.distanceSquared - second.distanceSquared)
   const terminals: FlowTerminal[] = []
+  let processedTerminalGroupCount = 0
   for (const equivalentItems of equivalentItemsByKey.values()) {
     const item = equivalentItems[0]!
     const maxConnectorLength =
@@ -567,12 +581,15 @@ function routeDirectionGroup(params: {
     }
     if (candidates.length === 0) return null
     terminals.push({ item, equivalentItems, candidates })
+    processedTerminalGroupCount++
+    if (processedTerminalGroupCount % 8 === 0) yield
   }
 
   const selectedConnectorSegments: Array<{
     netKey: string
     segments: RoutedSegment[]
   }> = []
+  let selectedConnectorCount = 0
   for (const terminal of [...terminals].sort(
     (first, second) => first.candidates.length - second.candidates.length,
   )) {
@@ -609,6 +626,8 @@ function routeDirectionGroup(params: {
       netKey: terminal.item.netKey,
       segments: getSegments(candidate.connectorPoints, traceWidth),
     })
+    selectedConnectorCount++
+    if (selectedConnectorCount % 8 === 0) yield
   }
 
   const terminalNodes = new Set(
@@ -715,8 +734,13 @@ function routeDirectionGroup(params: {
     if (isTarget) {
       flow.addEdge(gridOutStart + node, sink, 1, { isSink: true })
     }
+    if ((node + 1) % 2048 === 0) yield
   }
-  const achievedFlow = flow.maximumFlow(source, sink, terminals.length)
+  const achievedFlow = yield* flow.maximumFlowSteps(
+    source,
+    sink,
+    terminals.length,
+  )
   const terminalWasMatched = (terminalIndex: number) => {
     const terminalNode = terminalStart + terminalIndex
     return flow.edges[source]!.some(
@@ -797,6 +821,7 @@ function routeDirectionGroup(params: {
     for (const item of terminal.equivalentItems) {
       routes.push({ item, points, segments })
     }
+    if ((terminalIndex + 1) % 8 === 0) yield
   }
   return { routes, usedNodes, unmatchedItems }
 }
@@ -972,14 +997,14 @@ function getDirectionForBoundaryPoint(
   return null
 }
 
-function routeWithAdaptiveExits(params: {
+function* routeWithAdaptiveExitsSteps(params: {
   items: FlowItem[]
   grid: FlowGrid
   obstacles: Obstacle[]
   traceWidth: number
   clearance: number
   availableBoundaryRegions?: AvailableBoundaryRegion[]
-}): FanoutRoutePlan[] | null {
+}): Generator<void, FanoutRoutePlan[] | null, void> {
   const {
     items,
     grid,
@@ -998,7 +1023,7 @@ function routeWithAdaptiveExits(params: {
         item.connection.sourceObstacle.height > 2,
     ),
   )
-  let unrestricted: ReturnType<typeof routeDirectionGroup> = null
+  let unrestricted: DirectionGroupResult | null = null
   for (let mergeRound = 0; mergeRound < 4; mergeRound++) {
     const directlyRoutedItems = items.filter((item) => !mergeItems.has(item))
     let bestResult: DirectionGroupResult | null = null
@@ -1007,7 +1032,7 @@ function routeWithAdaptiveExits(params: {
       connectorSelectionOffset < 4;
       connectorSelectionOffset++
     ) {
-      const result = routeDirectionGroup({
+      const result = yield* routeDirectionGroupSteps({
         direction: "any",
         availableDirections,
         items: directlyRoutedItems,
@@ -1119,6 +1144,7 @@ function routeWithAdaptiveExits(params: {
     }
     if (!mergedRoute) return null
     routes.push(mergedRoute)
+    yield
   }
   const plans = routes.map((route) => buildPlan(route, traceWidth))
   if (
@@ -1175,9 +1201,9 @@ function routeWithAdaptiveExits(params: {
   )
 }
 
-export function routeSingleLayerWithAdaptiveExits(
+export function* routeSingleLayerWithAdaptiveExitsSteps(
   params: FlowRoutingParams,
-): FanoutRoutePlan[] | null {
+): Generator<void, FanoutRoutePlan[] | null, void> {
   const { srj, buses, traceWidth, clearance, availableBoundaryRegions } = params
   if (buses.some((bus) => bus.connections.length !== 1)) return null
   const items = buses.flatMap((bus) =>
@@ -1198,7 +1224,7 @@ export function routeSingleLayerWithAdaptiveExits(
   )
   const boundary = buses[0]?.sharedBoundary
   if (!boundary) return []
-  const grid = createFlowGrid({
+  const grid = yield* createFlowGridSteps({
     boundary,
     obstacles: topObstacles,
     traceWidth,
@@ -1209,7 +1235,7 @@ export function routeSingleLayerWithAdaptiveExits(
       nodeCount: grid.nodeCount,
     })
   }
-  const adaptivePlans = routeWithAdaptiveExits({
+  const adaptivePlans = yield* routeWithAdaptiveExitsSteps({
     items,
     grid,
     obstacles: topObstacles,
@@ -1219,4 +1245,14 @@ export function routeSingleLayerWithAdaptiveExits(
   })
   if (adaptivePlans) return adaptivePlans
   return null
+}
+
+export function routeSingleLayerWithAdaptiveExits(
+  params: FlowRoutingParams,
+): FanoutRoutePlan[] | null {
+  const steps = routeSingleLayerWithAdaptiveExitsSteps(params)
+  while (true) {
+    const result = steps.next()
+    if (result.done) return result.value
+  }
 }
