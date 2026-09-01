@@ -143,6 +143,50 @@ test("component-wide dogbone matching returns bounded deterministic alternatives
   )
 })
 
+test("component-wide dogbone matching can prefer a previous legal assignment", () => {
+  const fixture = createFixture()
+  const rules = {
+    viaDiameter: 0.3,
+    viaHoleDiameter: 0.2,
+    traceWidth: 0.1,
+    clearance: 0.1,
+    holeToHoleClearance: 0.3,
+    maximumSearchStates: 10_000,
+  }
+  const alternatives = matchComponentDogboneViaSiteAlternatives(
+    fixture.buses,
+    rules,
+    4,
+  )
+  const preferred = alternatives[3]!
+  expect(
+    matchComponentDogboneViaSites(fixture.buses, {
+      ...rules,
+      preferredViaPointsByConnectionIndex: preferred,
+    }),
+  ).toEqual(preferred)
+
+  const reversedFixture = createFixture()
+  const reversedBuses = reversedFixture.buses
+    .toReversed()
+    .map((bus) => ({ ...bus, connections: bus.connections.toReversed() }))
+  expect(
+    matchComponentDogboneViaSites(reversedBuses, {
+      ...rules,
+      preferredViaPointsByConnectionIndex: new Map([...preferred].toReversed()),
+    }),
+  ).toEqual(preferred)
+
+  const fixedPoint = alternatives[0]!.get(0)!
+  expect(
+    matchComponentDogboneViaSites(fixture.buses, {
+      ...rules,
+      fixedViaPointsByConnectionIndex: new Map([[0, fixedPoint]]),
+      preferredViaPointsByConnectionIndex: preferred,
+    })?.get(0),
+  ).toEqual(fixedPoint)
+})
+
 test("component-wide dogbone matching assigns deterministic legal interstitial vias", () => {
   const fixture = createFixture()
   const rules = {
@@ -249,6 +293,24 @@ test("component-wide dogbone matching assigns deterministic legal interstitial v
   for (const [connectionIndex, point] of oneVariableFixedPoints) {
     expect(oneVariable!.get(connectionIndex)).toEqual(point)
   }
+
+  const sharedSearchStateBudget = { remaining: 2, exhausted: false }
+  const budgetedOneVariable = matchComponentDogboneViaSites(fixture.buses, {
+    ...rules,
+    maximumSearchStates: 10_000,
+    expandedStateBudget: sharedSearchStateBudget,
+    fixedViaPointsByConnectionIndex: oneVariableFixedPoints,
+  })
+  expect(budgetedOneVariable).not.toBeNull()
+  expect(sharedSearchStateBudget).toEqual({ remaining: 0, exhausted: true })
+  expect(
+    matchComponentDogboneViaSites(fixture.buses, {
+      ...rules,
+      maximumSearchStates: 10_000,
+      expandedStateBudget: sharedSearchStateBudget,
+      fixedViaPointsByConnectionIndex: oneVariableFixedPoints,
+    }),
+  ).toBeNull()
 
   const conflictingFixedPoints = new Map(matching)
   const sharedConflictPoint = { x: -0.5, y: 0.5 }

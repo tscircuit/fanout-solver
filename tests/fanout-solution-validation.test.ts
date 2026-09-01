@@ -380,6 +380,30 @@ test("validation requires explicit fanout exits to reach their declared edge", (
   ).toBe(true)
 })
 
+test("validation rejects boundary exits inset beyond numerical epsilon", () => {
+  const connection = createConnection("NET_A", { x: 0, y: 1 }, { x: 3, y: 1 })
+  const sourceObstacle = createSourceObstacle(connection)
+  const plan = createPlan({
+    connection,
+    connectionIndex: 0,
+    sourceObstacle,
+    exit: { x: sharedBoundary.maxX - 0.0001, y: 1 },
+  })
+  plan.exitEdge = "right"
+
+  const report = validateFixture({
+    connections: [connection],
+    obstacles: [sourceObstacle],
+    plans: [plan],
+  })
+
+  expect(report.valid).toBe(false)
+  expect(report.brokenOutConnectionCount).toBe(0)
+  expect(report.issues.map((issue) => issue.code)).toEqual(
+    expect.arrayContaining(["output-exit-mismatch", "not-broken-out"]),
+  )
+})
+
 test("validation follows merged same-net copper to prove every branch breaks out", () => {
   const connections = [
     createConnection("POWER_A", { x: 0, y: 0 }, { x: 3, y: 0 }, "POWER"),

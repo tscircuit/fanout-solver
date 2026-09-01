@@ -74,6 +74,18 @@ export function getRouteViaSpanLayers(params: {
   return [...layers]
 }
 
+export function getLayerAssignmentKey(
+  assignment: Readonly<Record<string, string>>,
+): string {
+  return JSON.stringify(
+    Object.entries(assignment).toSorted(
+      ([firstBusId, firstLayer], [secondBusId, secondLayer]) =>
+        firstBusId.localeCompare(secondBusId) ||
+        firstLayer.localeCompare(secondLayer),
+    ),
+  )
+}
+
 export function generateLayerAssignments(params: {
   busIds: string[]
   layers: string[]
@@ -119,7 +131,7 @@ export function generateLayerAssignments(params: {
       assignment[busIds[busIndex]!] =
         availableLayersByBus[busIndex]![layerIndexes[busIndex]!]!
     }
-    const key = JSON.stringify(assignment)
+    const key = getLayerAssignmentKey(assignment)
     if (seenAssignments.has(key)) return
     seenAssignments.add(key)
     assignments.push(assignment)

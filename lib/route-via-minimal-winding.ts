@@ -31,6 +31,11 @@ const MAX_GRID_NODE_COUNT = 120_000
 const MAX_EXPANDED_STATE_COUNT = 240_000
 const MAX_CONNECTOR_COUNT = 24
 const CONNECTOR_RADIUS_IN_STEPS = 3.25
+const MAX_DIVERSIFIED_PATH_ATTEMPTS = 5
+const DEFAULT_JOINT_ROUTE_BEAM_WIDTH = 6
+const BLOCKING_SEGMENT_CELL_SIZE = 0.5
+const MAX_CELLS_PER_BLOCKING_SEGMENT = 4_096
+const MAX_CELLS_PER_BLOCKING_SEGMENT_QUERY = 16_384
 
 export interface ViaMinimalWindingTerminal {
   connection: PreparedConnection
@@ -41,6 +46,20 @@ export interface ViaMinimalWindingTerminal {
 export interface ViaMinimalWindingReservedVia {
   connectionName: string
   via: Pick<RoutedVia, "center" | "diameter" | "spanLayers">
+}
+
+/**
+ * Alternative through-via sites for a connection whose future routing
+ * capacity should be preserved when possible. These are a search preference,
+ * not hard obstacles; callers must still validate the completed route.
+ */
+export interface ViaMinimalWindingSoftViaCapacityGroup {
+  connectionIndex: number
+  /** Connections sharing this candidate pool, for diagnostics and callers. */
+  connectionIndexes?: readonly number[]
+  points: readonly Point2D[]
+  /** Defaults to one. Hall groups can require multiple distinct survivors. */
+  minimumRemainingPointCount?: number
 }
 
 export interface RouteViaMinimalWindingParams {
@@ -58,10 +77,15 @@ export interface RouteViaMinimalWindingParams {
   allowSameNetMerges?: boolean
   maximumRouteOrderAttempts?: number
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
+  softViaCapacityGroups?: readonly ViaMinimalWindingSoftViaCapacityGroup[]
   /** Use a finer uniform grid for narrow channels between reserved vias. */
   gridStepDivisor?: 1 | 2
   /** Bias bounded fixed-site searches toward the remote target band. */
   preferTargetDirectedLaneBias?: boolean
+  /** Shared mutable cap for dense callers spanning multiple A* attempts. */
+  expandedStateBudget?: { remaining: number; exhausted?: boolean }
+  /** Opt into bounded path/order backtracking after the legacy greedy pass. */
+  enableJointRouteSearch?: boolean
 }
 
 interface GridNode {
@@ -77,9 +101,188 @@ interface ConnectorCandidate {
   length: number
 }
 
-interface BlockingSegment {
+interface WindingPathCandidate {
+  points: Point2D[]
+  physicalLength: number
+}
+
+export interface BlockingSegment {
   connectionName: string
   segment: RoutedSegment
+}
+
+interface IndexedBlockingSegment {
+  blocker: BlockingSegment
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+  halfWidth: number
+}
+
+/** Conservative broad phase; exact segment distance remains authoritative. */
+export class BlockingSegmentSpatialIndex {
+  private readonly segmentsByMinX: IndexedBlockingSegment[]
+  private readonly segmentIndicesByColumnAndRow = new Map<
+    number,
+    Map<number, number[]>
+  >()
+  private readonly globallyQueriedSegmentIndices: number[] = []
+
+  constructor(blockers: readonly BlockingSegment[]) {
+    this.segmentsByMinX = blockers
+      .map((blocker) => ({
+        blocker,
+        minX: Math.min(blocker.segment.start.x, blocker.segment.end.x),
+        maxX: Math.max(blocker.segment.start.x, blocker.segment.end.x),
+        minY: Math.min(blocker.segment.start.y, blocker.segment.end.y),
+        maxY: Math.max(blocker.segment.start.y, blocker.segment.end.y),
+        halfWidth: blocker.segment.width / 2,
+      }))
+      .toSorted((first, second) => first.minX - second.minX)
+
+    for (const [segmentIndex, indexed] of this.segmentsByMinX.entries()) {
+      const cellRange = this.getCellRange(
+        indexed.minX - indexed.halfWidth,
+        indexed.maxX + indexed.halfWidth,
+        indexed.minY - indexed.halfWidth,
+        indexed.maxY + indexed.halfWidth,
+      )
+      if (
+        cellRange === null ||
+        cellRange.cellCount > MAX_CELLS_PER_BLOCKING_SEGMENT
+      ) {
+        this.globallyQueriedSegmentIndices.push(segmentIndex)
+        continue
+      }
+
+      for (
+        let column = cellRange.minColumn;
+        column <= cellRange.maxColumn;
+        column++
+      ) {
+        let indicesByRow = this.segmentIndicesByColumnAndRow.get(column)
+        if (!indicesByRow) {
+          indicesByRow = new Map()
+          this.segmentIndicesByColumnAndRow.set(column, indicesByRow)
+        }
+        for (let row = cellRange.minRow; row <= cellRange.maxRow; row++) {
+          const segmentIndices = indicesByRow.get(row)
+          if (segmentIndices) {
+            segmentIndices.push(segmentIndex)
+          } else {
+            indicesByRow.set(row, [segmentIndex])
+          }
+        }
+      }
+    }
+  }
+
+  querySegment(segment: RoutedSegment, clearance: number): BlockingSegment[] {
+    const queryMargin = Math.max(0, segment.width / 2 + clearance)
+    const minX = Math.min(segment.start.x, segment.end.x) - queryMargin
+    const maxX = Math.max(segment.start.x, segment.end.x) + queryMargin
+    const minY = Math.min(segment.start.y, segment.end.y) - queryMargin
+    const maxY = Math.max(segment.start.y, segment.end.y) + queryMargin
+    const cellRange = this.getCellRange(minX, maxX, minY, maxY)
+    if (
+      cellRange === null ||
+      cellRange.cellCount > MAX_CELLS_PER_BLOCKING_SEGMENT_QUERY
+    ) {
+      return this.queryAllSegmentsByBounds(minX, maxX, minY, maxY)
+    }
+
+    const candidateIndices = new Set(this.globallyQueriedSegmentIndices)
+    for (
+      let column = cellRange.minColumn;
+      column <= cellRange.maxColumn;
+      column++
+    ) {
+      const indicesByRow = this.segmentIndicesByColumnAndRow.get(column)
+      if (!indicesByRow) continue
+      for (let row = cellRange.minRow; row <= cellRange.maxRow; row++) {
+        const segmentIndices = indicesByRow.get(row)
+        if (!segmentIndices) continue
+        for (const segmentIndex of segmentIndices) {
+          candidateIndices.add(segmentIndex)
+        }
+      }
+    }
+
+    return [...candidateIndices]
+      .toSorted((first, second) => first - second)
+      .flatMap((segmentIndex) => {
+        const indexed = this.segmentsByMinX[segmentIndex]!
+        return this.segmentBoundsOverlapQuery(indexed, minX, maxX, minY, maxY)
+          ? [indexed.blocker]
+          : []
+      })
+  }
+
+  private getCellRange(
+    minX: number,
+    maxX: number,
+    minY: number,
+    maxY: number,
+  ): {
+    minColumn: number
+    maxColumn: number
+    minRow: number
+    maxRow: number
+    cellCount: number
+  } | null {
+    if (![minX, maxX, minY, maxY].every(Number.isFinite)) return null
+
+    const minColumn = Math.floor(minX / BLOCKING_SEGMENT_CELL_SIZE)
+    const maxColumn = Math.floor(maxX / BLOCKING_SEGMENT_CELL_SIZE)
+    const minRow = Math.floor(minY / BLOCKING_SEGMENT_CELL_SIZE)
+    const maxRow = Math.floor(maxY / BLOCKING_SEGMENT_CELL_SIZE)
+    if (![minColumn, maxColumn, minRow, maxRow].every(Number.isSafeInteger)) {
+      return null
+    }
+    const columnCount = maxColumn - minColumn + 1
+    const rowCount = maxRow - minRow + 1
+    if (columnCount <= 0 || rowCount <= 0) return null
+
+    return {
+      minColumn,
+      maxColumn,
+      minRow,
+      maxRow,
+      cellCount: columnCount * rowCount,
+    }
+  }
+
+  private segmentBoundsOverlapQuery(
+    indexed: IndexedBlockingSegment,
+    minX: number,
+    maxX: number,
+    minY: number,
+    maxY: number,
+  ): boolean {
+    return !(
+      indexed.maxX + indexed.halfWidth < minX ||
+      indexed.minX - indexed.halfWidth > maxX ||
+      indexed.maxY + indexed.halfWidth < minY ||
+      indexed.minY - indexed.halfWidth > maxY
+    )
+  }
+
+  private queryAllSegmentsByBounds(
+    minX: number,
+    maxX: number,
+    minY: number,
+    maxY: number,
+  ): BlockingSegment[] {
+    if (![minX, maxX, minY, maxY].every(Number.isFinite)) {
+      return this.segmentsByMinX.map((indexed) => indexed.blocker)
+    }
+    return this.segmentsByMinX.flatMap((indexed) =>
+      this.segmentBoundsOverlapQuery(indexed, minX, maxX, minY, maxY)
+        ? [indexed.blocker]
+        : [],
+    )
+  }
 }
 
 interface BlockingVia {
@@ -601,8 +804,11 @@ export function routeViaMinimalWindingAlternatives(
     allowSameNetMerges = false,
     maximumRouteOrderAttempts,
     reservedVias = [],
+    softViaCapacityGroups = [],
     gridStepDivisor = 1,
     preferTargetDirectedLaneBias = false,
+    expandedStateBudget,
+    enableJointRouteSearch = false,
   } = params
   if (
     maximumRouteOrderAttempts !== undefined &&
@@ -632,6 +838,71 @@ export function routeViaMinimalWindingAlternatives(
   const gridStep = (traceWidth + clearance) / gridStepDivisor
   if (!Number.isFinite(gridStep) || gridStep <= 0) return []
   const { minX, maxX, minY, maxY } = bus.sharedBoundary
+  const boundedSoftViaCapacityGroups = softViaCapacityGroups
+    .map((group) => {
+      const points = group.points.filter(
+        (point) =>
+          point.x >= minX - EPSILON &&
+          point.x <= maxX + EPSILON &&
+          point.y >= minY - EPSILON &&
+          point.y <= maxY + EPSILON,
+      )
+      const requiredPointCount = Math.max(
+        0,
+        (group.minimumRemainingPointCount ?? 1) -
+          (group.points.length - points.length),
+      )
+      return {
+        ...group,
+        points,
+        minimumRemainingPointCount: requiredPointCount,
+      }
+    })
+    .filter((group) => group.minimumRemainingPointCount > 0)
+  const capacityGroupIsViable = (
+    group: ViaMinimalWindingSoftViaCapacityGroup,
+  ): boolean => group.points.length >= (group.minimumRemainingPointCount ?? 1)
+  const softCapacityBasePenalty = Math.max(
+    gridStep,
+    (maxX - minX + (maxY - minY)) * 4,
+  )
+  const segmentBlocksSoftCapacityPoint = (
+    segment: RoutedSegment,
+    point: Point2D,
+  ): boolean =>
+    distancePointToSegment(point, segment.start, segment.end) <
+    viaDiameter / 2 + segment.width / 2 + clearance - EPSILON
+  const getLiveSoftCapacityGroups = (
+    segments: readonly RoutedSegment[],
+  ): ViaMinimalWindingSoftViaCapacityGroup[] =>
+    boundedSoftViaCapacityGroups.map((group) => ({
+      ...group,
+      points: group.points.filter((point) =>
+        segments.every(
+          (segment) => !segmentBlocksSoftCapacityPoint(segment, point),
+        ),
+      ),
+    }))
+  const getSoftCapacityPenalty = (
+    segments: readonly RoutedSegment[],
+    liveGroups: readonly ViaMinimalWindingSoftViaCapacityGroup[],
+  ): number =>
+    liveGroups.reduce((total, group) => {
+      const loss = group.points.filter((point) =>
+        segments.some((segment) =>
+          segmentBlocksSoftCapacityPoint(segment, point),
+        ),
+      ).length
+      if (loss === 0) return total
+      const remaining = group.points.length - loss
+      const required = group.minimumRemainingPointCount ?? 1
+      return (
+        total +
+        (remaining < required
+          ? softCapacityBasePenalty * 64
+          : (softCapacityBasePenalty * loss) / (remaining - required + 1) ** 2)
+      )
+    }, 0)
   const columnCount = Math.floor((maxX - minX) / gridStep) + 1
   const rowCount = Math.floor((maxY - minY) / gridStep) + 1
   const nodeCount = columnCount * rowCount
@@ -668,6 +939,7 @@ export function routeViaMinimalWindingAlternatives(
       Math.min(segment.start.y, segment.end.y) > maxY + margin
     )
   })
+  const blockingSegmentIndex = new BlockingSegmentSpatialIndex(blockingSegments)
   const blockingVias = blockingCopper.vias.filter(({ via }) => {
     if (!via.spanLayers.includes(targetLayer)) return false
     const margin = via.diameter / 2 + traceWidth / 2 + clearance
@@ -730,8 +1002,26 @@ export function routeViaMinimalWindingAlternatives(
     segment: RoutedSegment
     terminal: ViaMinimalWindingTerminal
     acceptedAttemptSegments: BlockingSegment[]
+    acceptedAttemptSegmentIndex?: BlockingSegmentSpatialIndex
+    clearanceCache?: Map<string, boolean>
   }): boolean => {
-    const { segment, terminal, acceptedAttemptSegments } = params
+    const {
+      segment,
+      terminal,
+      acceptedAttemptSegments,
+      acceptedAttemptSegmentIndex,
+      clearanceCache,
+    } = params
+    const startKey = `${segment.start.x},${segment.start.y}`
+    const endKey = `${segment.end.x},${segment.end.y}`
+    const cacheKey =
+      startKey < endKey ? `${startKey}|${endKey}` : `${endKey}|${startKey}`
+    const cached = clearanceCache?.get(cacheKey)
+    if (cached !== undefined) return cached
+    const finish = (isClear: boolean) => {
+      clearanceCache?.set(cacheKey, isClear)
+      return isClear
+    }
     const connectionName = terminal.connection.connection.name
     const requiredObstacleClearance = segment.width / 2 + clearance
     for (const obstacle of targetLayerObstacleIndex.querySegment(
@@ -749,10 +1039,13 @@ export function routeViaMinimalWindingAlternatives(
         distanceSegmentToObstacle(segment, obstacle) <
         requiredObstacleClearance - EPSILON
       ) {
-        return false
+        return finish(false)
       }
     }
-    for (const blocker of blockingSegments) {
+    for (const blocker of blockingSegmentIndex.querySegment(
+      segment,
+      clearance,
+    )) {
       if (sharesNet(connectionName, blocker.connectionName)) continue
       if (
         distanceSegmentToSegment(
@@ -763,10 +1056,13 @@ export function routeViaMinimalWindingAlternatives(
         ) <
         (segment.width + blocker.segment.width) / 2 + clearance - EPSILON
       ) {
-        return false
+        return finish(false)
       }
     }
-    for (const blocker of acceptedAttemptSegments) {
+    const acceptedBlockers = acceptedAttemptSegmentIndex
+      ? acceptedAttemptSegmentIndex.querySegment(segment, clearance)
+      : acceptedAttemptSegments
+    for (const blocker of acceptedBlockers) {
       if (sharesNet(connectionName, blocker.connectionName)) continue
       if (
         distanceSegmentToSegment(
@@ -777,7 +1073,7 @@ export function routeViaMinimalWindingAlternatives(
         ) <
         (segment.width + blocker.segment.width) / 2 + clearance - EPSILON
       ) {
-        return false
+        return finish(false)
       }
     }
     const segmentMinX = Math.min(segment.start.x, segment.end.x)
@@ -810,18 +1106,28 @@ export function routeViaMinimalWindingAlternatives(
         distancePointToSegment(blocker.via.center, segment.start, segment.end) <
         requiredDistance - EPSILON
       ) {
-        return false
+        return finish(false)
       }
     }
-    return true
+    return finish(true)
   }
 
   const connectorCandidates = (params: {
     terminal: ViaMinimalWindingTerminal
     endpoint: Point2D
     acceptedAttemptSegments: BlockingSegment[]
+    acceptedAttemptSegmentIndex: BlockingSegmentSpatialIndex
+    clearanceCache: Map<string, boolean>
+    liveCapacityGroups: readonly ViaMinimalWindingSoftViaCapacityGroup[]
   }): ConnectorCandidate[] => {
-    const { terminal, endpoint, acceptedAttemptSegments } = params
+    const {
+      terminal,
+      endpoint,
+      acceptedAttemptSegments,
+      acceptedAttemptSegmentIndex,
+      clearanceCache,
+      liveCapacityGroups,
+    } = params
     const candidates: ConnectorCandidate[] = []
     for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
       const node = nodes[nodeIndex]!
@@ -835,6 +1141,8 @@ export function routeViaMinimalWindingAlternatives(
               segment,
               terminal,
               acceptedAttemptSegments,
+              acceptedAttemptSegmentIndex,
+              clearanceCache,
             }),
           )
         ) {
@@ -844,38 +1152,66 @@ export function routeViaMinimalWindingAlternatives(
           nodeIndex,
           points,
           radialDistance: connectorDistance,
-          length: segments.reduce(
-            (total, segment) => total + distance(segment.start, segment.end),
-            0,
-          ),
+          length:
+            segments.reduce(
+              (total, segment) => total + distance(segment.start, segment.end),
+              0,
+            ) + getSoftCapacityPenalty(segments, liveCapacityGroups),
         })
       }
     }
     return candidates
       .toSorted(
         (first, second) =>
-          first.radialDistance - second.radialDistance ||
-          first.length - second.length ||
+          (liveCapacityGroups.length > 0
+            ? first.length - second.length ||
+              first.radialDistance - second.radialDistance
+            : first.radialDistance - second.radialDistance ||
+              first.length - second.length) ||
           first.nodeIndex - second.nodeIndex,
       )
       .slice(0, MAX_CONNECTOR_COUNT)
   }
 
-  const routeOne = (params: {
+  const routeOneBest = (params: {
     terminal: ViaMinimalWindingTerminal
     acceptedAttemptSegments: BlockingSegment[]
     laneBias: -1 | 0 | 1
-  }): Point2D[] | null => {
-    const { terminal, acceptedAttemptSegments, laneBias } = params
+    diversitySegments?: readonly RoutedSegment[]
+    maximumExpandedStateCount?: number
+  }): WindingPathCandidate | null => {
+    const {
+      terminal,
+      acceptedAttemptSegments,
+      laneBias,
+      diversitySegments = [],
+      maximumExpandedStateCount = MAX_EXPANDED_STATE_COUNT,
+    } = params
+    const liveCapacityGroups = getLiveSoftCapacityGroups(
+      acceptedAttemptSegments.map(({ segment }) => segment),
+    )
+    if (liveCapacityGroups.some((group) => !capacityGroupIsViable(group))) {
+      return null
+    }
+    const acceptedAttemptSegmentIndex = new BlockingSegmentSpatialIndex(
+      acceptedAttemptSegments,
+    )
+    const clearanceCache = new Map<string, boolean>()
     const starts = connectorCandidates({
       terminal,
       endpoint: terminal.viaPoint,
       acceptedAttemptSegments,
+      acceptedAttemptSegmentIndex,
+      clearanceCache,
+      liveCapacityGroups,
     })
     const ends = connectorCandidates({
       terminal,
       endpoint: terminal.exitPoint,
       acceptedAttemptSegments,
+      acceptedAttemptSegmentIndex,
+      clearanceCache,
+      liveCapacityGroups,
     })
     if (starts.length === 0 || ends.length === 0) return null
     const endByNode = new Map<number, ConnectorCandidate[]>()
@@ -927,7 +1263,11 @@ export function routeViaMinimalWindingAlternatives(
     let bestGoalCost = Number.POSITIVE_INFINITY
     let bestGoalPoints: Point2D[] | null = null
     let expandedStateCount = 0
-    while (heap.size > 0 && expandedStateCount < MAX_EXPANDED_STATE_COUNT) {
+    while (
+      heap.size > 0 &&
+      expandedStateCount < maximumExpandedStateCount &&
+      (expandedStateBudget?.remaining ?? 1) > 0
+    ) {
       const current = heap.pop()!
       if (current.score >= bestGoalCost - EPSILON) break
       const state = current.node * 9 + current.direction
@@ -938,6 +1278,12 @@ export function routeViaMinimalWindingAlternatives(
       )
         continue
       expandedStateCount++
+      if (expandedStateBudget) {
+        expandedStateBudget.remaining--
+        if (expandedStateBudget.remaining <= 0) {
+          expandedStateBudget.exhausted = true
+        }
+      }
       const endConnectors = endByNode.get(current.node)
       if (endConnectors) {
         const gridPoints: Point2D[] = []
@@ -978,6 +1324,8 @@ export function routeViaMinimalWindingAlternatives(
                   segment,
                   terminal,
                   acceptedAttemptSegments,
+                  acceptedAttemptSegmentIndex,
+                  clearanceCache,
                 }),
               )
             ) {
@@ -1019,6 +1367,8 @@ export function routeViaMinimalWindingAlternatives(
             segment,
             terminal,
             acceptedAttemptSegments,
+            acceptedAttemptSegmentIndex,
+            clearanceCache,
           })
         ) {
           continue
@@ -1042,7 +1392,21 @@ export function routeViaMinimalWindingAlternatives(
             ? gridStep * Math.SQRT2
             : gridStep) +
           (addsTurn ? gridStep * 0.2 : 0) +
-          lanePenalty
+          lanePenalty +
+          diversitySegments.reduce(
+            (penalty, diversitySegment) =>
+              distanceSegmentToSegment(
+                segment.start,
+                segment.end,
+                diversitySegment.start,
+                diversitySegment.end,
+              ) <
+              gridStep * 0.25 - EPSILON
+                ? penalty + gridStep * 0.75
+                : penalty,
+            0,
+          ) +
+          getSoftCapacityPenalty([segment], liveCapacityGroups)
         const nextState = nextNode * 9 + directionIndex
         if (nextDistance >= distances[nextState]! - EPSILON) continue
         distances[nextState] = nextDistance
@@ -1055,7 +1419,56 @@ export function routeViaMinimalWindingAlternatives(
         })
       }
     }
-    return bestGoalPoints
+    if (!bestGoalPoints) return null
+    return {
+      points: bestGoalPoints,
+      physicalLength: getSegments(
+        bestGoalPoints,
+        traceWidth,
+        targetLayer,
+      ).reduce(
+        (total, segment) => total + distance(segment.start, segment.end),
+        0,
+      ),
+    }
+  }
+
+  const routeOneAlternatives = (params: {
+    terminal: ViaMinimalWindingTerminal
+    acceptedAttemptSegments: BlockingSegment[]
+    laneBias: -1 | 0 | 1
+    maximumAlternatives: number
+    maximumExpandedStateCount?: number
+  }): WindingPathCandidate[] => {
+    const alternatives: WindingPathCandidate[] = []
+    const seenKeys = new Set<string>()
+    const diversitySegments: RoutedSegment[] = []
+    for (
+      let attempt = 0;
+      attempt < MAX_DIVERSIFIED_PATH_ATTEMPTS &&
+      alternatives.length < params.maximumAlternatives;
+      attempt++
+    ) {
+      const candidate = routeOneBest({
+        terminal: params.terminal,
+        acceptedAttemptSegments: params.acceptedAttemptSegments,
+        laneBias: params.laneBias,
+        diversitySegments,
+        maximumExpandedStateCount: params.maximumExpandedStateCount,
+      })
+      if (!candidate) break
+      const candidateKey = candidate.points
+        .map((point) => `${point.x},${point.y}`)
+        .join(";")
+      if (!seenKeys.has(candidateKey)) {
+        seenKeys.add(candidateKey)
+        alternatives.push(candidate)
+      }
+      diversitySegments.push(
+        ...getSegments(candidate.points, traceWidth, targetLayer),
+      )
+    }
+    return alternatives
   }
 
   const targetOrderedTerminals = terminals.toSorted((first, second) => {
@@ -1163,6 +1576,310 @@ export function routeViaMinimalWindingAlternatives(
 
   const alternatives: FanoutRoutePlan[][] = []
   const seenAlternativeKeys = new Set<string>()
+  type JointRouteState = {
+    acceptedAttemptSegments: BlockingSegment[]
+    routedPointsByConnectionName: Map<string, Point2D[]>
+    physicalLength: number
+  }
+  const routeStateKey = (state: JointRouteState): string =>
+    [...state.routedPointsByConnectionName]
+      .toSorted(([first], [second]) => first.localeCompare(second))
+      .map(
+        ([connectionName, points]) =>
+          `${connectionName}:${points
+            .map((point) => `${point.x},${point.y}`)
+            .join(";")}`,
+      )
+      .join("|")
+  const extendRouteState = (
+    state: JointRouteState,
+    terminal: ViaMinimalWindingTerminal,
+    candidate: WindingPathCandidate,
+  ): JointRouteState | null => {
+    const connectionName = terminal.connection.connection.name
+    const routedSegments = getSegments(
+      candidate.points,
+      traceWidth,
+      targetLayer,
+    )
+    const remainingCapacityGroups = getLiveSoftCapacityGroups([
+      ...state.acceptedAttemptSegments.map(({ segment }) => segment),
+      ...routedSegments,
+    ])
+    if (
+      remainingCapacityGroups.some((group) => !capacityGroupIsViable(group))
+    ) {
+      return null
+    }
+    return {
+      acceptedAttemptSegments: [
+        ...state.acceptedAttemptSegments,
+        ...routedSegments.map((segment) => ({ connectionName, segment })),
+      ],
+      routedPointsByConnectionName: new Map([
+        ...state.routedPointsByConnectionName,
+        [connectionName, candidate.points] as const,
+      ]),
+      physicalLength: state.physicalLength + candidate.physicalLength,
+    }
+  }
+  const routeGreedyAttempt = (
+    routeOrder: readonly ViaMinimalWindingTerminal[],
+    laneBias: -1 | 0 | 1,
+  ): JointRouteState => {
+    let state: JointRouteState = {
+      acceptedAttemptSegments: [],
+      routedPointsByConnectionName: new Map(),
+      physicalLength: 0,
+    }
+    for (const terminal of routeOrder) {
+      const candidate = routeOneBest({
+        terminal,
+        acceptedAttemptSegments: state.acceptedAttemptSegments,
+        laneBias,
+      })
+      if (!candidate) return state
+      const extended = extendRouteState(state, terminal, candidate)
+      if (!extended) return state
+      state = extended
+    }
+    return state
+  }
+  const routeJointBeamAttempt = (
+    routeOrder: readonly ViaMinimalWindingTerminal[],
+    laneBias: -1 | 0 | 1,
+    seedState: JointRouteState,
+  ): JointRouteState[] => {
+    let frontier: JointRouteState[] = [seedState]
+    const beamWidth = Math.max(
+      DEFAULT_JOINT_ROUTE_BEAM_WIDTH * 2,
+      Math.min(16, maximumAlternatives * 3),
+    )
+    const futureRouteScoreCache = new Map<string, number>()
+    const getFutureRouteScore = (state: JointRouteState): number => {
+      const stateKey = routeStateKey(state)
+      const cached = futureRouteScoreCache.get(stateKey)
+      if (cached !== undefined) return cached
+      const acceptedAttemptSegmentIndex = new BlockingSegmentSpatialIndex(
+        state.acceptedAttemptSegments,
+      )
+      let fullyClearRouteCount = 0
+      let bestClearSegmentFractionTotal = 0
+      for (const terminal of routeOrder) {
+        if (
+          state.routedPointsByConnectionName.has(
+            terminal.connection.connection.name,
+          )
+        ) {
+          continue
+        }
+        let bestClearSegmentFraction = 0
+        for (const points of getConnectorVariants(
+          terminal.viaPoint,
+          terminal.exitPoint,
+        )) {
+          const segments = getSegments(points, traceWidth, targetLayer)
+          if (segments.length === 0) continue
+          const clearanceCache = new Map<string, boolean>()
+          const clearSegmentCount = segments.filter((segment) =>
+            segmentIsClear({
+              segment,
+              terminal,
+              acceptedAttemptSegments: state.acceptedAttemptSegments,
+              acceptedAttemptSegmentIndex,
+              clearanceCache,
+            }),
+          ).length
+          const clearSegmentFraction = clearSegmentCount / segments.length
+          bestClearSegmentFraction = Math.max(
+            bestClearSegmentFraction,
+            clearSegmentFraction,
+          )
+        }
+        if (bestClearSegmentFraction >= 1 - EPSILON) fullyClearRouteCount++
+        bestClearSegmentFractionTotal += bestClearSegmentFraction
+      }
+      const score = fullyClearRouteCount * 100 + bestClearSegmentFractionTotal
+      futureRouteScoreCache.set(stateKey, score)
+      return score
+    }
+    for (
+      let depth = seedState.routedPointsByConnectionName.size;
+      depth < routeOrder.length;
+      depth++
+    ) {
+      const nextByKey = new Map<string, { state: JointRouteState }>()
+      for (const state of frontier) {
+        for (const terminal of routeOrder) {
+          const connectionName = terminal.connection.connection.name
+          if (state.routedPointsByConnectionName.has(connectionName)) continue
+          const candidates = routeOneAlternatives({
+            terminal,
+            acceptedAttemptSegments: state.acceptedAttemptSegments,
+            laneBias,
+            maximumAlternatives: 2,
+            maximumExpandedStateCount: 60_000,
+          })
+          for (const candidate of candidates) {
+            const extended = extendRouteState(state, terminal, candidate)
+            if (!extended) continue
+            const key = routeStateKey(extended)
+            const existing = nextByKey.get(key)
+            if (
+              !existing ||
+              extended.physicalLength < existing.state.physicalLength
+            ) {
+              nextByKey.set(key, { state: extended })
+            }
+          }
+        }
+      }
+      const ordered = [...nextByKey.values()].toSorted(
+        (first, second) =>
+          getFutureRouteScore(second.state) -
+            getFutureRouteScore(first.state) ||
+          first.state.physicalLength - second.state.physicalLength ||
+          routeStateKey(first.state).localeCompare(routeStateKey(second.state)),
+      )
+      const selected: typeof ordered = []
+      const selectedKeys = new Set<string>()
+      const connectionSet = (candidate: (typeof ordered)[number]) =>
+        new Set(candidate.state.routedPointsByConnectionName.keys())
+      const connectionSetDistance = (
+        first: ReadonlySet<string>,
+        second: ReadonlySet<string>,
+      ): number =>
+        [...first].filter((value) => !second.has(value)).length +
+        [...second].filter((value) => !first.has(value)).length
+      const uniqueSetCandidates = new Map<string, (typeof ordered)[number]>()
+      for (const candidate of ordered) {
+        const connectionSetKey = [...connectionSet(candidate)]
+          .toSorted()
+          .join("\u0000")
+        if (!uniqueSetCandidates.has(connectionSetKey)) {
+          uniqueSetCandidates.set(connectionSetKey, candidate)
+        }
+      }
+      const remainingSetCandidates = [...uniqueSetCandidates.values()]
+      const diverseSetLimit = Math.min(
+        Math.ceil(beamWidth * 0.75),
+        remainingSetCandidates.length,
+      )
+      while (selected.length < diverseSetLimit) {
+        let bestIndex = 0
+        let bestDistance = -1
+        for (const [
+          candidateIndex,
+          candidate,
+        ] of remainingSetCandidates.entries()) {
+          const candidateSet = connectionSet(candidate)
+          const minimumDistance =
+            selected.length === 0
+              ? Number.POSITIVE_INFINITY
+              : Math.min(
+                  ...selected.map((selectedCandidate) =>
+                    connectionSetDistance(
+                      candidateSet,
+                      connectionSet(selectedCandidate),
+                    ),
+                  ),
+                )
+          if (minimumDistance > bestDistance) {
+            bestDistance = minimumDistance
+            bestIndex = candidateIndex
+          }
+        }
+        const [candidate] = remainingSetCandidates.splice(bestIndex, 1)
+        if (!candidate) break
+        selected.push(candidate)
+        selectedKeys.add(routeStateKey(candidate.state))
+      }
+      for (const candidate of ordered) {
+        if (selected.length >= beamWidth) break
+        const key = routeStateKey(candidate.state)
+        if (selectedKeys.has(key)) continue
+        selected.push(candidate)
+        selectedKeys.add(key)
+      }
+      frontier = selected
+        .map((candidate) => candidate.state)
+        .toSorted(
+          (first, second) =>
+            getFutureRouteScore(second) - getFutureRouteScore(first) ||
+            first.physicalLength - second.physicalLength ||
+            routeStateKey(first).localeCompare(routeStateKey(second)),
+        )
+      if (frontier.length === 0) return []
+    }
+    return frontier
+  }
+  const backtrackGreedyState = (
+    state: JointRouteState,
+    routeOrder: readonly ViaMinimalWindingTerminal[],
+    count: number,
+  ): JointRouteState => {
+    const routedTerminalCount = state.routedPointsByConnectionName.size
+    const retainedTerminalCount = Math.max(0, routedTerminalCount - count)
+    const retainedConnectionNames = new Set(
+      routeOrder
+        .slice(0, retainedTerminalCount)
+        .map((terminal) => terminal.connection.connection.name),
+    )
+    const acceptedAttemptSegments = state.acceptedAttemptSegments.filter(
+      ({ connectionName }) => retainedConnectionNames.has(connectionName),
+    )
+    return {
+      acceptedAttemptSegments,
+      routedPointsByConnectionName: new Map(
+        [...state.routedPointsByConnectionName].filter(([connectionName]) =>
+          retainedConnectionNames.has(connectionName),
+        ),
+      ),
+      physicalLength: acceptedAttemptSegments.reduce(
+        (total, { segment }) => total + distance(segment.start, segment.end),
+        0,
+      ),
+    }
+  }
+  const buildPlansForState = (state: JointRouteState): FanoutRoutePlan[] =>
+    terminals.map((terminal) => {
+      const targetLayerPoints = state.routedPointsByConnectionName.get(
+        terminal.connection.connection.name,
+      )
+      if (!targetLayerPoints) {
+        throw new Error(
+          `FanoutSolver: via-minimal winding route omitted "${terminal.connection.connection.name}"`,
+        )
+      }
+      return buildPlan({
+        bus,
+        terminal,
+        targetLayer,
+        targetLayerPoints,
+        layerNames,
+        traceWidth,
+        viaDiameter,
+        viaHoleDiameter,
+        allowBlindAndBuriedVias,
+      })
+    })
+  const addAlternative = (state: JointRouteState): boolean => {
+    const plans = buildPlansForState(state)
+    const alternativeKey = plans
+      .map((plan) =>
+        plan.segments
+          .map(
+            (segment) =>
+              `${segment.start.x},${segment.start.y},${segment.end.x},${segment.end.y},${segment.layer}`,
+          )
+          .join(";"),
+      )
+      .join("|")
+    if (seenAlternativeKeys.has(alternativeKey)) return false
+    seenAlternativeKeys.add(alternativeKey)
+    alternatives.push(plans)
+    return true
+  }
   let routeOrderAttemptCount = 0
   for (const routeOrder of routeOrders) {
     for (const laneBias of laneBiases) {
@@ -1173,66 +1890,31 @@ export function routeViaMinimalWindingAlternatives(
         return alternatives
       }
       routeOrderAttemptCount++
-      const acceptedAttemptSegments: BlockingSegment[] = []
-      const routedPointsByConnectionName = new Map<string, Point2D[]>()
-      let failed = false
-      for (const terminal of routeOrder) {
-        const points = routeOne({
-          terminal,
-          acceptedAttemptSegments,
+      const greedyState = routeGreedyAttempt(routeOrder, laneBias)
+      if (greedyState.routedPointsByConnectionName.size === routeOrder.length) {
+        addAlternative(greedyState)
+      } else if (
+        routeOrder.length >= 4 &&
+        enableJointRouteSearch &&
+        expandedStateBudget !== undefined &&
+        expandedStateBudget.remaining > 0 &&
+        greedyState.routedPointsByConnectionName.size >= 2
+      ) {
+        const jointSeedState = backtrackGreedyState(
+          greedyState,
+          routeOrder,
+          Math.min(2, greedyState.routedPointsByConnectionName.size),
+        )
+        for (const jointState of routeJointBeamAttempt(
+          routeOrder,
           laneBias,
-        })
-        if (!points) {
-          failed = true
-          break
+          jointSeedState,
+        )) {
+          addAlternative(jointState)
+          if (alternatives.length >= maximumAlternatives) return alternatives
         }
-        const connectionName = terminal.connection.connection.name
-        routedPointsByConnectionName.set(connectionName, points)
-        acceptedAttemptSegments.push(
-          ...getSegments(points, traceWidth, targetLayer).map((segment) => ({
-            connectionName,
-            segment,
-          })),
-        )
       }
-      if (failed) continue
-      const plans = terminals.map((terminal) => {
-        const targetLayerPoints = routedPointsByConnectionName.get(
-          terminal.connection.connection.name,
-        )
-        if (!targetLayerPoints) {
-          throw new Error(
-            `FanoutSolver: via-minimal winding route omitted "${terminal.connection.connection.name}"`,
-          )
-        }
-        return buildPlan({
-          bus,
-          terminal,
-          targetLayer,
-          targetLayerPoints,
-          layerNames,
-          traceWidth,
-          viaDiameter,
-          viaHoleDiameter,
-          allowBlindAndBuriedVias,
-        })
-      })
-      const alternativeKey = plans
-        .map((plan) =>
-          plan.segments
-            .map(
-              (segment) =>
-                `${segment.start.x},${segment.start.y},${segment.end.x},${segment.end.y},${segment.layer}`,
-            )
-            .join(";"),
-        )
-        .join("|")
-      if (seenAlternativeKeys.has(alternativeKey)) continue
-      seenAlternativeKeys.add(alternativeKey)
-      alternatives.push(plans)
-      if (alternatives.length >= maximumAlternatives) {
-        return alternatives
-      }
+      if (alternatives.length >= maximumAlternatives) return alternatives
     }
   }
   return alternatives

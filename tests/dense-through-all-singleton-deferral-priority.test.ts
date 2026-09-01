@@ -4,7 +4,39 @@ import {
   getDenseCornerTargetLaneOffsets,
   getDenseSingletonBoundaryGeometry,
   isDenseCornerSingletonTargetLaneInwardOfPairs,
+  isDenseSingletonEmbeddedInSingleLayerWideBus,
 } from "../lib/fanout-solver"
+
+test("detects a singleton embedded in a same-layer wide source field", () => {
+  const singleton = {
+    componentId: "component",
+    exitEdge: "top" as const,
+    routableEscapeLayers: ["inner6"],
+    connections: [{ sourcePoint: { x: 1, y: 1 } }],
+  }
+  const wideBus = {
+    componentId: "component",
+    exitEdge: "top" as const,
+    routableEscapeLayers: ["inner6"],
+    connections: Array.from({ length: 8 }, (_, index) => ({
+      sourcePoint: { x: index % 4, y: Math.floor(index / 4) },
+    })),
+  }
+  expect(
+    isDenseSingletonEmbeddedInSingleLayerWideBus({
+      singletonBus: singleton,
+      singletonTargetLayer: "inner6",
+      wideBuses: [wideBus],
+    }),
+  ).toBe(true)
+  expect(
+    isDenseSingletonEmbeddedInSingleLayerWideBus({
+      singletonBus: singleton,
+      singletonTargetLayer: "inner5",
+      wideBuses: [wideBus],
+    }),
+  ).toBe(false)
+})
 
 type SingletonInput = Parameters<
   typeof compareDenseSingletonBoundaryDeferralPriority

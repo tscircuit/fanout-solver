@@ -8,6 +8,7 @@ import type { Point2D, RoutedSegment } from "./types"
 export interface RoutedTraceVia {
   center: Point2D
   diameter: number
+  holeDiameter: number
   spanLayers: string[]
 }
 
@@ -32,14 +33,22 @@ export function getRoutedTraceCopper(
 
   for (const routePoint of trace.route) {
     if (routePoint.route_type === "via") {
+      const diameter =
+        routePoint.via_diameter ??
+        srj.minViaPadDiameter ??
+        srj.min_via_pad_diameter ??
+        srj.minViaDiameter ??
+        srj.minTraceWidth
       vias.push({
         center: { x: routePoint.x, y: routePoint.y },
-        diameter:
-          routePoint.via_diameter ??
-          srj.minViaPadDiameter ??
-          srj.min_via_pad_diameter ??
-          srj.minViaDiameter ??
-          srj.minTraceWidth,
+        diameter,
+        holeDiameter:
+          routePoint.via_hole_diameter ??
+          srj.minViaHoleDiameter ??
+          srj.min_via_hole_diameter ??
+          // Unknown drills must not make same-net mechanical validation less
+          // conservative than the known outer via geometry.
+          diameter,
         spanLayers: getRouteViaSpanLayers({
           fromLayer: routePoint.from_layer,
           toLayer: routePoint.to_layer,

@@ -8,7 +8,7 @@ import {
   distanceSegmentToSegment,
   segmentsAreClear,
 } from "./geometry"
-import { fanoutPlansAreClear } from "./route-bus"
+import { fanoutPlanIsClearAgainstPlans } from "./route-bus"
 import type {
   Bounds,
   FanoutRoutePlan,
@@ -660,8 +660,9 @@ export function matchBusPlanLengths(params: {
         )
         if (getBusSkew(nextBusPlans) > skew + EPSILON) return null
         if (
-          !fanoutPlansAreClear({
-            plans: nextPlans,
+          !fanoutPlanIsClearAgainstPlans({
+            plan: candidate,
+            otherPlans: matchedPlans.filter((plan) => plan !== shortest),
             srj: inputSrj,
             sharedBoundary,
             clearance,
