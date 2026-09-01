@@ -2077,6 +2077,19 @@ export function matchComponentDogboneViaPathAlternatives(
   const candidateCache = new Map<string, ViaPathCandidate[]>()
   const compatibilityCache: PathCompatibilityCache = new WeakMap()
   let consumedSearchStates = 0
+  const consumeExpandedStateBudget = (): boolean => {
+    if (rules.expandedStateBudget && rules.expandedStateBudget.remaining <= 0) {
+      rules.expandedStateBudget.exhausted = true
+      return false
+    }
+    if (rules.expandedStateBudget) {
+      rules.expandedStateBudget.remaining--
+      if (rules.expandedStateBudget.remaining <= 0) {
+        rules.expandedStateBudget.exhausted = true
+      }
+    }
+    return true
+  }
   let entries = createPathCandidateEntries({
     componentInputs,
     rules,
@@ -2125,6 +2138,7 @@ export function matchComponentDogboneViaPathAlternatives(
       maximumAlternatives,
       compatibilityCache,
       consumeSearchState: () => {
+        if (!consumeExpandedStateBudget()) return false
         consumedSearchStates++
         localSearchStates++
         return (
@@ -2236,6 +2250,7 @@ export function matchComponentDogboneViaPathAlternatives(
       maximumAlternatives,
       compatibilityCache,
       consumeSearchState: () => {
+        if (!consumeExpandedStateBudget()) return false
         consumedSearchStates++
         return consumedSearchStates <= maximumSearchStates
       },

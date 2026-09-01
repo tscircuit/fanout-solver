@@ -1,12 +1,17 @@
 import { expect, test } from "bun:test"
 import {
+  getDenseBoundaryPlanGeometryKey,
+  getDenseCompletionSourceEscapePaths,
   getDenseFixedMapSearchPolicy,
   getDenseLeadingCornerBandTargetTrackOffset,
   getDenseSingletonDeferralCandidateCount,
   isDenseSingletonEmbeddedInMultiLayerWideBus,
   matchDenseDogboneCompletionDirectFirst,
+  matchDenseDogboneCompletionDirectFirstCached,
+  obstacleMayAffectBoundedDogboneField,
   runLegacyFirstDenseRootProbe,
   runReleasedDenseAdaptivePreflightIfEligible,
+  selectDenseLengthPlansThenMatchDogbones,
   shouldDeferSingletonBoundaryViaReservation,
   shouldSearchAdditionalBoundaryRouteTopologies,
   shouldSearchReleasedDenseBoundaryRouteTopologies,
@@ -205,6 +210,166 @@ test("expands dogbone paths only after direct sites are blocked", () => {
 
   expect(assignment).toEqual({ kind: "path", viaPaths: expandedViaPaths })
   expect(pathMatchCount).toBe(1)
+})
+
+test("caches dense dogbone completion by final boundary geometry", () => {
+  const completionByGeometry = new Map()
+  const directViaPoints = new Map([[0, { x: 1, y: 2 }]])
+  let directMatchCount = 0
+  const match = (geometryKey: string) =>
+    matchDenseDogboneCompletionDirectFirstCached({
+      geometryKey,
+      completionByGeometry,
+      matchDirect: () => {
+        directMatchCount++
+        return directViaPoints
+      },
+    })
+
+  expect(match("geometry-a")).toEqual({
+    kind: "direct",
+    viaPoints: directViaPoints,
+  })
+  expect(match("geometry-a")).toEqual({
+    kind: "direct",
+    viaPoints: directViaPoints,
+  })
+  expect(match("geometry-b")).toEqual({
+    kind: "direct",
+    viaPoints: directViaPoints,
+  })
+  expect(directMatchCount).toBe(2)
+})
+
+test("does not cache a budget-sensitive failed dense completion", () => {
+  const completionByGeometry = new Map()
+  let directMatchCount = 0
+  const match = () =>
+    matchDenseDogboneCompletionDirectFirstCached({
+      geometryKey: "same-geometry",
+      completionByGeometry,
+      matchDirect: () => {
+        directMatchCount++
+        return null
+      },
+    })
+
+  expect(match()).toBeNull()
+  expect(match()).toBeNull()
+  expect(directMatchCount).toBe(2)
+  expect(completionByGeometry.size).toBe(0)
+})
+
+test("matches path-aware dogbones once after length-plan selection and hands off source paths", () => {
+  const viaPaths = new Map([
+    [
+      7,
+      {
+        point: { x: 2, y: 1 },
+        path: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+          { x: 2, y: 1 },
+        ],
+      },
+    ],
+  ])
+  let visitedLengthCandidateCount = 0
+  let pathMatchCount = 0
+  const selection = selectDenseLengthPlansThenMatchDogbones({
+    selectPlans: () => {
+      for (let index = 0; index < 6; index++) {
+        visitedLengthCandidateCount++
+      }
+      return ["selected-plan"]
+    },
+    matchFinalCompletion: () =>
+      matchDenseDogboneCompletionDirectFirst({
+        matchDirect: () => null,
+        matchPaths: () => {
+          pathMatchCount++
+          return viaPaths
+        },
+      }),
+  })
+
+  expect(visitedLengthCandidateCount).toBe(6)
+  expect(pathMatchCount).toBe(1)
+  expect(selection).toEqual({
+    plans: ["selected-plan"],
+    completion: { kind: "path", viaPaths },
+  })
+  expect(getDenseCompletionSourceEscapePaths(selection!.completion)).toEqual(
+    new Map([
+      [
+        7,
+        [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+          { x: 2, y: 1 },
+        ],
+      ],
+    ]),
+  )
+})
+
+test("keys dense completion by routed geometry independent of plan order", () => {
+  const makePlan = (connectionIndex: number, endX: number) =>
+    ({
+      connectionIndex,
+      via: { center: { x: endX, y: 0 } },
+      segments: [
+        {
+          layer: "top",
+          width: 0.1,
+          start: { x: 0, y: connectionIndex },
+          end: { x: endX, y: connectionIndex },
+        },
+      ],
+    }) as Parameters<typeof getDenseBoundaryPlanGeometryKey>[0][number]
+  const first = makePlan(0, 1)
+  const second = makePlan(1, 2)
+
+  expect(getDenseBoundaryPlanGeometryKey([first, second])).toBe(
+    getDenseBoundaryPlanGeometryKey([second, first]),
+  )
+  expect(getDenseBoundaryPlanGeometryKey([first, second])).not.toBe(
+    getDenseBoundaryPlanGeometryKey([makePlan(0, 1.1), second]),
+  )
+})
+
+test("filters only obstacles outside a conservatively expanded dogbone field", () => {
+  const bounds = { minX: -1, maxX: 1, minY: -1, maxY: 1 }
+  const obstacle = (x: number, y: number, width = 0.2, height = 0.2) => ({
+    type: "rect" as const,
+    layers: ["top"],
+    center: { x, y },
+    width,
+    height,
+    connectedTo: [],
+  })
+
+  expect(
+    obstacleMayAffectBoundedDogboneField({
+      obstacle: obstacle(0, 0),
+      bounds,
+      clearanceMargin: 0.2,
+    }),
+  ).toBe(true)
+  expect(
+    obstacleMayAffectBoundedDogboneField({
+      obstacle: obstacle(1.25, 1.25, 0.4, 0.4),
+      bounds,
+      clearanceMargin: 0.2,
+    }),
+  ).toBe(true)
+  expect(
+    obstacleMayAffectBoundedDogboneField({
+      obstacle: obstacle(3, 3, 1, 1),
+      bounds,
+      clearanceMargin: 0.2,
+    }),
+  ).toBe(false)
 })
 
 test("reuses a plane-feasible legacy root without expanded probing", () => {

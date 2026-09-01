@@ -5,6 +5,7 @@ import {
   getDenseSingletonBoundaryGeometry,
   isDenseCornerSingletonTargetLaneInwardOfPairs,
   isDenseSingletonEmbeddedInSingleLayerWideBus,
+  isDenseSingletonTargetLaneAdjacentToPairs,
 } from "../lib/fanout-solver"
 
 test("detects a singleton embedded in a same-layer wide source field", () => {
@@ -317,4 +318,71 @@ test("detects a corner singleton target lane inward of same-layer pairs", () => 
       assignedLayerByBusId,
     }),
   ).toEqual(new Map())
+})
+
+test("detects a centered singleton immediately outside a same-layer pair lane", () => {
+  const makeBus = ({
+    busId,
+    targetTracks,
+    componentId = "component",
+    exitEdge = "left",
+    preferredExit = "left",
+  }: {
+    busId: string
+    targetTracks: number[]
+    componentId?: string
+    exitEdge?: "left" | "right"
+    preferredExit?: "left" | "top-left"
+  }) => ({
+    busId,
+    componentId,
+    exitEdge,
+    preferredExit,
+    connections: targetTracks.map((targetTrack) => ({
+      exitTargetPoint: { x: 0, y: targetTrack },
+    })),
+  })
+  const pair = makeBus({ busId: "pair", targetTracks: [0, 1] })
+  const assignedLayerByBusId = new Map([
+    ["singleton", "inner5"],
+    ["pair", "inner5"],
+  ])
+  const isAdjacent = (
+    singletonOverrides: Partial<ReturnType<typeof makeBus>> = {},
+    pairOverrides: Partial<ReturnType<typeof makeBus>> = {},
+    assignedLayers = assignedLayerByBusId,
+  ) =>
+    isDenseSingletonTargetLaneAdjacentToPairs({
+      singletonBus: {
+        ...makeBus({ busId: "singleton", targetTracks: [2] }),
+        ...singletonOverrides,
+      },
+      pairBuses: [{ ...pair, ...pairOverrides }],
+      assignedLayerByBusId: assignedLayers,
+      routePitch: 1,
+    })
+
+  expect(isAdjacent()).toBe(true)
+  expect(
+    isAdjacent({ connections: [{ exitTargetPoint: { x: 0, y: -4 } }] }),
+  ).toBe(false)
+  expect(
+    isAdjacent({ connections: [{ exitTargetPoint: { x: 0, y: 1.5 } }] }),
+  ).toBe(false)
+  expect(
+    isAdjacent({ connections: [{ exitTargetPoint: { x: 0, y: 0.5 } }] }),
+  ).toBe(false)
+  expect(isAdjacent({ componentId: "other" })).toBe(false)
+  expect(isAdjacent({ exitEdge: "right" })).toBe(false)
+  expect(isAdjacent({ preferredExit: "top-left" })).toBe(false)
+  expect(
+    isAdjacent(
+      {},
+      {},
+      new Map([
+        ["singleton", "inner4"],
+        ["pair", "inner5"],
+      ]),
+    ),
+  ).toBe(false)
 })

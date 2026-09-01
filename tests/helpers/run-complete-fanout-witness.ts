@@ -38,7 +38,10 @@ const clearance =
   inputSrj.minTraceWidth
 const drc = validateRoutedCopperDrc({
   inputSrj,
-  routedSrj: output.simpleRouteJson,
+  routedSrj: {
+    ...output.simpleRouteJson,
+    traces: output.fanoutTraces,
+  },
   clearance,
   allowBlindAndBuriedVias: false,
 })
