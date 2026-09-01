@@ -8,10 +8,13 @@ const fixturePath = process.argv[2]
 if (!fixturePath) throw new Error("Expected a fixture path")
 
 const fixture = (await Bun.file(fixturePath).json()) as {
-  inputSrj: SimpleRouteJson
+  inputSrj?: SimpleRouteJson
+  input?: SimpleRouteJson
   options: FanoutSolverOptions
 }
-const { inputSrj, options } = fixture
+const inputSrj = fixture.inputSrj ?? fixture.input
+assert.ok(inputSrj, "Fixture must contain inputSrj or input")
+const { options } = fixture
 const solver = new FanoutSolver(inputSrj, options)
 solver.solve()
 
