@@ -421,6 +421,22 @@ test("path-aware matching prefers a complete direct assignment before channel es
   ).toEqual([2, 2, 2, 2])
 })
 
+test("path-aware matching consumes the caller's aggregate search budget", () => {
+  const fixture = createSinglePlaneFixture()
+  const expandedStateBudget = { remaining: 1, exhausted: false }
+  const matching = matchComponentDogboneViaPaths([fixture.bus], {
+    viaDiameter: 0.3,
+    viaHoleDiameter: 0.15,
+    traceWidth: 0.1,
+    clearance: 0.1,
+    maximumSearchStates: 100_000,
+    expandedStateBudget,
+  })
+
+  expect(matching).toBeNull()
+  expect(expandedStateBudget).toEqual({ remaining: 0, exhausted: true })
+})
+
 test("channel retention fills unused topology-reservation slots with new endpoints", () => {
   const fixture = createSinglePlaneFixture()
   const blocker: Obstacle = {

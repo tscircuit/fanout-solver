@@ -1,4 +1,4 @@
-import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import type { Obstacle, SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { addViaLayerMetadataToSrj } from "./add-via-layer-metadata"
@@ -783,6 +783,95 @@ export function matchDenseDogboneCompletionDirectFirst(params: {
   return viaPaths ? { kind: "path", viaPaths } : null
 }
 
+export function getDenseBoundaryPlanGeometryKey(
+  plans: readonly FanoutRoutePlan[],
+): string {
+  return JSON.stringify(
+    plans
+      .map((plan) => ({
+        connectionIndex: plan.connectionIndex,
+        via: plan.via ? [plan.via.center.x, plan.via.center.y] : null,
+        segments: plan.segments.map((segment) => [
+          segment.layer,
+          segment.width,
+          segment.start.x,
+          segment.start.y,
+          segment.end.x,
+          segment.end.y,
+        ]),
+      }))
+      .toSorted(
+        (first, second) => first.connectionIndex - second.connectionIndex,
+      ),
+  )
+}
+
+export function matchDenseDogboneCompletionDirectFirstCached(params: {
+  geometryKey: string
+  completionByGeometry: Map<string, DenseDogboneCompletionAssignment>
+  matchDirect: () => Map<number, Point2D> | null
+  matchPaths?: () => Map<number, ComponentDogboneViaPath> | null
+}): DenseDogboneCompletionAssignment | null {
+  if (params.completionByGeometry.has(params.geometryKey)) {
+    return params.completionByGeometry.get(params.geometryKey) ?? null
+  }
+  const completion = matchDenseDogboneCompletionDirectFirst(params)
+  if (completion) {
+    params.completionByGeometry.set(params.geometryKey, completion)
+  }
+  return completion
+}
+
+export function selectDenseLengthPlansThenMatchDogbones<TPlan>(params: {
+  selectPlans: () => readonly TPlan[] | null
+  matchFinalCompletion: (
+    plans: readonly TPlan[],
+  ) => DenseDogboneCompletionAssignment | null
+}): {
+  plans: readonly TPlan[]
+  completion: DenseDogboneCompletionAssignment | null
+} | null {
+  const plans = params.selectPlans()
+  if (!plans) return null
+  return {
+    plans,
+    completion: params.matchFinalCompletion(plans),
+  }
+}
+
+export function getDenseCompletionSourceEscapePaths(
+  completion: DenseDogboneCompletionAssignment | null,
+): Map<number, readonly Point2D[]> | undefined {
+  return completion?.kind === "path"
+    ? new Map(
+        [...completion.viaPaths].map(([connectionIndex, assignment]) => [
+          connectionIndex,
+          assignment.path,
+        ]),
+      )
+    : undefined
+}
+
+/**
+ * Dogbone points and source paths are clipped to the supplied bounds. An
+ * obstacle farther away than this conservative rotated-rectangle envelope
+ * cannot affect either their via or trace clearance.
+ */
+export function obstacleMayAffectBoundedDogboneField(params: {
+  obstacle: Obstacle
+  bounds: Bounds
+  clearanceMargin: number
+}): boolean {
+  const { obstacle, bounds, clearanceMargin } = params
+  const conservativeRadius = Math.hypot(obstacle.width, obstacle.height) / 2
+  return !(
+    obstacle.center.x + conservativeRadius < bounds.minX - clearanceMargin ||
+    obstacle.center.x - conservativeRadius > bounds.maxX + clearanceMargin ||
+    obstacle.center.y + conservativeRadius < bounds.minY - clearanceMargin ||
+    obstacle.center.y - conservativeRadius > bounds.maxY + clearanceMargin
+  )
+}
+
 export function runLegacyFirstDenseRootProbe<T>(params: {
   probeLegacy: () => T
   legacyIsUsable: (probe: T) => boolean
@@ -966,6 +1055,7 @@ interface DenseSingletonBoundaryGeometryBus {
 
 interface DenseCornerTargetLaneBus {
   busId: string
+  componentId?: string
   exitEdge?: PreparedBus["exitEdge"]
   preferredExit?: PreparedBus["preferredExit"]
   connections: readonly {
@@ -1033,6 +1123,76 @@ export function isDenseCornerSingletonTargetLaneInwardOfPairs(params: {
   return cornerSide === "maximum"
     ? singletonTargetTrack <= Math.min(...pairTargetTracks) - routePitch + 1e-9
     : singletonTargetTrack >= Math.max(...pairTargetTracks) + routePitch - 1e-9
+}
+
+export function isDenseSingletonTargetLaneAdjacentToPairs(params: {
+  singletonBus: DenseCornerTargetLaneBus
+  pairBuses: readonly DenseCornerTargetLaneBus[]
+  assignedLayerByBusId: ReadonlyMap<string, string>
+  routePitch: number
+}): boolean {
+  const { singletonBus, pairBuses, assignedLayerByBusId, routePitch } = params
+  if (
+    singletonBus.connections.length !== 1 ||
+    !singletonBus.exitEdge ||
+    !singletonBus.componentId ||
+    getCornerBandSide(singletonBus.exitEdge, singletonBus.preferredExit) ||
+    !Number.isFinite(routePitch) ||
+    routePitch <= 0
+  ) {
+    return false
+  }
+  const singletonTargetTrack = getBoundaryTangentTargetTrack(singletonBus, 0)
+  const assignedLayer = assignedLayerByBusId.get(singletonBus.busId)
+  if (singletonTargetTrack === undefined || !assignedLayer) return false
+
+  return pairBuses.some((pairBus) => {
+    if (
+      pairBus.connections.length !== 2 ||
+      pairBus.componentId !== singletonBus.componentId ||
+      pairBus.exitEdge !== singletonBus.exitEdge ||
+      getCornerBandSide(pairBus.exitEdge, pairBus.preferredExit) ||
+      assignedLayerByBusId.get(pairBus.busId) !== assignedLayer
+    ) {
+      return false
+    }
+    const pairTargetTracks = pairBus.connections.map((_, connectionIndex) =>
+      getBoundaryTangentTargetTrack(pairBus, connectionIndex),
+    )
+    if (
+      !pairTargetTracks.every((track): track is number => track !== undefined)
+    ) {
+      return false
+    }
+    const minimumPairTrack = Math.min(...pairTargetTracks)
+    const maximumPairTrack = Math.max(...pairTargetTracks)
+    if (
+      singletonTargetTrack >= minimumPairTrack &&
+      singletonTargetTrack <= maximumPairTrack
+    ) {
+      return false
+    }
+    const distanceToPairInterval = Math.min(
+      Math.abs(singletonTargetTrack - minimumPairTrack),
+      Math.abs(singletonTargetTrack - maximumPairTrack),
+    )
+    return (
+      distanceToPairInterval >= routePitch - 1e-9 &&
+      distanceToPairInterval <= 2 * routePitch + 1e-9
+    )
+  })
+}
+
+function isDenseSingletonTargetLaneOrderedWithPairs(params: {
+  singletonBus: DenseCornerTargetLaneBus
+  pairBuses: readonly DenseCornerTargetLaneBus[]
+  assignedLayerByBusId: ReadonlyMap<string, string>
+  routePitch: number
+}): boolean {
+  return (
+    isDenseCornerSingletonTargetLaneInwardOfPairs(params) ||
+    isDenseSingletonTargetLaneAdjacentToPairs(params)
+  )
 }
 
 export function getDenseCornerTargetLaneOffsets(params: {
@@ -1413,6 +1573,72 @@ export function buildReleasedDenseBoundaryRoutingOrder<
       params.targetOrderedPairBuses.has(bus),
     ),
   ]
+}
+
+export function normalizeDenseCenteredAdjacentLaneBundleOrder<T>(params: {
+  busesInRoutingOrder: readonly T[]
+  adjacentSingletonBuses: readonly T[]
+  getComparablePairBuses: (singletonBus: T) => readonly T[]
+  getRelatedPairBuses: (singletonBus: T) => readonly T[]
+  getTargetTracks: (bus: T) => readonly number[]
+}): T[] {
+  const originalIndexByBus = new Map(
+    params.busesInRoutingOrder.map((bus, index) => [bus, index]),
+  )
+  const claimedRelatedPairBuses = new Set<T>()
+  const bundleBlocks = params.adjacentSingletonBuses.flatMap((singletonBus) => {
+    const relatedPairBuses = params
+      .getRelatedPairBuses(singletonBus)
+      .filter(
+        (bus) =>
+          originalIndexByBus.has(bus) && !claimedRelatedPairBuses.has(bus),
+      )
+    if (
+      !originalIndexByBus.has(singletonBus) ||
+      relatedPairBuses.length === 0
+    ) {
+      return []
+    }
+    for (const pairBus of relatedPairBuses) {
+      claimedRelatedPairBuses.add(pairBus)
+    }
+    return [[singletonBus, ...relatedPairBuses]]
+  })
+  if (bundleBlocks.length === 0) return [...params.busesInRoutingOrder]
+
+  const comparablePairBuses = new Set(
+    params.adjacentSingletonBuses.flatMap((singletonBus) =>
+      params
+        .getComparablePairBuses(singletonBus)
+        .filter((bus) => originalIndexByBus.has(bus)),
+    ),
+  )
+  const ordinaryPairBlocks = [...comparablePairBuses]
+    .filter((bus) => !claimedRelatedPairBuses.has(bus))
+    .map((bus) => [bus])
+  const affectedBuses = new Set([...ordinaryPairBlocks, ...bundleBlocks].flat())
+  const insertionIndex = Math.min(
+    ...[...affectedBuses].map((bus) => originalIndexByBus.get(bus)!),
+  )
+  const orderedBlocks = [...ordinaryPairBlocks, ...bundleBlocks].toSorted(
+    (first, second) => {
+      const firstTracks = first.flatMap(params.getTargetTracks)
+      const secondTracks = second.flatMap(params.getTargetTracks)
+      const firstMinimumTrack = Math.min(...firstTracks)
+      const secondMinimumTrack = Math.min(...secondTracks)
+      return (
+        firstMinimumTrack - secondMinimumTrack ||
+        Math.min(...first.map((bus) => originalIndexByBus.get(bus)!)) -
+          Math.min(...second.map((bus) => originalIndexByBus.get(bus)!))
+      )
+    },
+  )
+  const orderedAffectedBuses = orderedBlocks.flat()
+  const result = params.busesInRoutingOrder.filter(
+    (bus) => !affectedBuses.has(bus),
+  )
+  result.splice(insertionIndex, 0, ...orderedAffectedBuses)
+  return result
 }
 
 export function buildDenseBoundaryRoutingOrderCandidates<T>(params: {
@@ -2090,7 +2316,7 @@ export class FanoutSolver extends BaseSolver {
     const pairBuses = boundaryBuses.filter(
       (bus) => bus.connections.length === 2,
     )
-    const laneInwardSingletonBusSet = new Set(
+    const cornerLaneInwardSingletonBusSet = new Set(
       boundaryBuses.filter(
         (bus) =>
           boundaryBuses.length === 9 &&
@@ -2102,6 +2328,22 @@ export class FanoutSolver extends BaseSolver {
           }),
       ),
     )
+    const centeredAdjacentSingletonBusSet = new Set(
+      boundaryBuses.filter(
+        (bus) =>
+          boundaryBuses.length === 9 &&
+          isDenseSingletonTargetLaneAdjacentToPairs({
+            singletonBus: bus,
+            pairBuses,
+            assignedLayerByBusId,
+            routePitch,
+          }),
+      ),
+    )
+    const laneInwardSingletonBusSet = new Set([
+      ...cornerLaneInwardSingletonBusSet,
+      ...centeredAdjacentSingletonBusSet,
+    ])
     const legacyCornerBandExitLaneOffsetByBusId = new Map<
       string,
       number | undefined
@@ -2230,7 +2472,8 @@ export class FanoutSolver extends BaseSolver {
             const singletonTargetLayer =
               params.busLayerAssignments[singletonBus.busId]
             return Boolean(
-              singletonTargetLayer &&
+              !laneInwardSingletonBusSet.has(singletonBus) &&
+                singletonTargetLayer &&
                 isDenseSingletonEmbeddedInMultiLayerWideBus({
                   singletonBus,
                   singletonTargetLayer,
@@ -2314,7 +2557,9 @@ export class FanoutSolver extends BaseSolver {
     const leadingWideSingletonBuses = [
       ...legacyLeadingWideSingletonBuses,
       ...singleLayerEmbeddedSingletonBuses.filter(
-        (bus) => !legacyLeadingWideSingletonBuses.includes(bus),
+        (bus) =>
+          !legacyLeadingWideSingletonBuses.includes(bus) &&
+          !laneInwardSingletonBusSet.has(bus),
       ),
     ]
     const leadingLaneCountByWideCornerBand = new Map<string, number>()
@@ -2388,6 +2633,16 @@ export class FanoutSolver extends BaseSolver {
       ...planeBuses,
       ...releasedInitiallyMatchedBoundaryBuses,
     ]
+    const boundedDogboneBlockingObstacles = this.routingSrj.obstacles.filter(
+      (obstacle) =>
+        obstacleMayAffectBoundedDogboneField({
+          obstacle,
+          bounds: this.routingSrj.bounds,
+          clearanceMargin:
+            Math.max(this.config.viaDiameter / 2, this.config.traceWidth / 2) +
+            this.config.clearance,
+        }),
+    )
     const allBoundaryConnectionIndexes = new Set(
       boundaryBuses.flatMap((bus) =>
         bus.connections.map((connection) => connection.connectionIndex),
@@ -2428,6 +2683,7 @@ export class FanoutSolver extends BaseSolver {
       preferredViaPoints?: ReadonlyMap<number, { x: number; y: number }>
       preferredViaPaths?: ReadonlyMap<number, ComponentDogboneViaPath>
       fixedViaPaths?: ReadonlyMap<number, ComponentDogboneViaPath>
+      useReleasedMatchingRules?: boolean
     }): Map<number, ComponentDogboneViaPath> | null => {
       const boundaryPlans = params.plans.filter(
         (plan) => plan.termination.type === "boundary",
@@ -2485,7 +2741,10 @@ export class FanoutSolver extends BaseSolver {
           ])
         : fixedBoundaryViaPoints
       return matchComponentDogboneViaPaths([...planeBuses, ...boundaryBuses], {
-        ...jointMatchingRules,
+        ...(params.useReleasedMatchingRules
+          ? releasedJointMatchingRules
+          : jointMatchingRules),
+        canShareCopper,
         holeToHoleClearance:
           (
             this.routingSrj as SimpleRouteJson & {
@@ -2502,7 +2761,7 @@ export class FanoutSolver extends BaseSolver {
             segment,
           })),
         ),
-        blockingObstacles: this.routingSrj.obstacles,
+        blockingObstacles: boundedDogboneBlockingObstacles,
         obstacleCanBeIgnored: (connectionIndex, obstacle) => {
           const connectionName = connectionNameByIndex.get(connectionIndex)
           return Boolean(
@@ -2708,7 +2967,7 @@ export class FanoutSolver extends BaseSolver {
       const targetOrderedPairBusSet = new Set(
         pairBuses.filter((pairBus) =>
           laneOrderSingletonBuses.some((singletonBus) =>
-            isDenseCornerSingletonTargetLaneInwardOfPairs({
+            isDenseSingletonTargetLaneOrderedWithPairs({
               singletonBus,
               pairBuses: [pairBus],
               assignedLayerByBusId,
@@ -2743,7 +3002,7 @@ export class FanoutSolver extends BaseSolver {
       const releasedTargetOrderedPairBusSet = new Set(
         pairBuses.filter((pairBus) =>
           releasedLaneOrderSingletonBuses.some((singletonBus) =>
-            isDenseCornerSingletonTargetLaneInwardOfPairs({
+            isDenseSingletonTargetLaneOrderedWithPairs({
               singletonBus,
               pairBuses: [pairBus],
               assignedLayerByBusId,
@@ -2752,13 +3011,44 @@ export class FanoutSolver extends BaseSolver {
           ),
         ),
       )
-      const releasedDenseBoundaryBusesInRoutingOrder =
+      const releasedLegacyBoundaryBusesInRoutingOrder =
         buildReleasedDenseBoundaryRoutingOrder({
           boundaryBuses,
           leadingWideSingletonBuses: legacyLeadingWideSingletonBuses,
           earlyInwardSingletonBuses: releasedEarlyInwardSingletonBuses,
           laneOrderSingletonBuses: releasedLaneOrderSingletonBuses,
           targetOrderedPairBuses: releasedTargetOrderedPairBusSet,
+        })
+      const getBoundaryTargetTracks = (bus: PreparedBus): number[] =>
+        bus.connections.flatMap((_, connectionIndex) => {
+          const track = getBoundaryTangentTargetTrack(bus, connectionIndex)
+          return track === undefined ? [] : [track]
+        })
+      const releasedDenseBoundaryBusesInRoutingOrder =
+        normalizeDenseCenteredAdjacentLaneBundleOrder({
+          busesInRoutingOrder: releasedLegacyBoundaryBusesInRoutingOrder,
+          adjacentSingletonBuses: releasedLaneOrderSingletonBuses.filter(
+            (bus) => centeredAdjacentSingletonBusSet.has(bus),
+          ),
+          getComparablePairBuses: (singletonBus) =>
+            pairBuses.filter(
+              (pairBus) =>
+                pairBus.componentId === singletonBus.componentId &&
+                pairBus.exitEdge === singletonBus.exitEdge &&
+                assignedLayerByBusId.get(pairBus.busId) ===
+                  assignedLayerByBusId.get(singletonBus.busId) &&
+                getBoundaryTargetTracks(pairBus).length === 2,
+            ),
+          getRelatedPairBuses: (singletonBus) =>
+            pairBuses.filter((pairBus) =>
+              isDenseSingletonTargetLaneAdjacentToPairs({
+                singletonBus,
+                pairBuses: [pairBus],
+                assignedLayerByBusId,
+                routePitch,
+              }),
+            ),
+          getTargetTracks: getBoundaryTargetTracks,
         })
       const orderedWideBoundaryBuses = boundaryBuses
         .filter(
@@ -4069,11 +4359,16 @@ export class FanoutSolver extends BaseSolver {
             remainingBoundaryBuses.splice(selectedBusIndex, 1)
           }
 
+          let selectedCompletion: DenseDogboneCompletionAssignment | null = null
           if (matchedRoutingSucceeded) {
-            let feasibleViaPoints: Map<
-              number,
-              { x: number; y: number }
-            > | null = null
+            const completionByBoundaryGeometry = new Map<
+              string,
+              DenseDogboneCompletionAssignment
+            >()
+            const directViaPointsByBoundaryGeometry = new Map<
+              string,
+              Map<number, Point2D>
+            >()
             const matchViaPointsAroundPlans = (
               candidatePlans: readonly FanoutRoutePlan[],
             ): Map<number, { x: number; y: number }> | null => {
@@ -4098,7 +4393,38 @@ export class FanoutSolver extends BaseSolver {
                 },
               )
             }
-            const matchedLengthResult = matchBusPlanLengths({
+            const matchDirectAroundPlans = (
+              candidatePlans: readonly FanoutRoutePlan[],
+            ): Map<number, Point2D> | null => {
+              const geometryKey =
+                getDenseBoundaryPlanGeometryKey(candidatePlans)
+              if (directViaPointsByBoundaryGeometry.has(geometryKey)) {
+                return (
+                  directViaPointsByBoundaryGeometry.get(geometryKey) ?? null
+                )
+              }
+              const viaPoints = matchViaPointsAroundPlans(candidatePlans)
+              if (viaPoints) {
+                directViaPointsByBoundaryGeometry.set(geometryKey, viaPoints)
+              }
+              return viaPoints
+            }
+            const matchCompletionAroundPlans = (
+              candidatePlans: readonly FanoutRoutePlan[],
+            ): DenseDogboneCompletionAssignment | null =>
+              matchDenseDogboneCompletionDirectFirstCached({
+                geometryKey: getDenseBoundaryPlanGeometryKey(candidatePlans),
+                completionByGeometry: completionByBoundaryGeometry,
+                matchDirect: () => matchDirectAroundPlans(candidatePlans),
+                matchPaths: () =>
+                  matchCompleteDogbonePathsAroundBoundaryPlans({
+                    plans: candidatePlans,
+                    boundaryViaPoints: fixedViaPointsByConnectionIndex,
+                    preferredViaPoints: fixedViaPointsByConnectionIndex,
+                    useReleasedMatchingRules: true,
+                  }),
+              })
+            const lengthMatchingParams = {
               plans: matchedPlans,
               preparedBuses: this.preparedBuses,
               inputSrj: this.inputSrj,
@@ -4107,36 +4433,47 @@ export class FanoutSolver extends BaseSolver {
               allowBlindAndBuriedVias: false,
               allowSameNetMerges: this.config.allowSameNetMerges,
               allowMatchingInsideDenseBounds: true,
-              ...(planeBuses.length === 0
-                ? {}
-                : {
-                    candidatePlansAreFeasible: (candidatePlans) => {
-                      const candidateViaPoints =
-                        matchViaPointsAroundPlans(candidatePlans)
-                      if (!candidateViaPoints) return false
-                      feasibleViaPoints = candidateViaPoints
-                      return true
-                    },
-                  }),
-            })
-            if (matchedLengthResult.plans) {
-              matchedPlans = matchedLengthResult.plans
-              const rematchedViaPoints =
-                planeBuses.length === 0
-                  ? fixedViaPointsByConnectionIndex
-                  : (feasibleViaPoints ??
-                    matchViaPointsAroundPlans(matchedPlans))
-              if (rematchedViaPoints) {
-                fixedViaPointsByConnectionIndex = rematchedViaPoints
+            } as const
+            const selectMatchedLengthPlans = (): FanoutRoutePlan[] | null =>
+              matchBusPlanLengths({
+                ...lengthMatchingParams,
+                candidatePlansAreFeasible: (candidatePlans) =>
+                  Boolean(matchDirectAroundPlans(candidatePlans)),
+              }).plans ?? matchBusPlanLengths(lengthMatchingParams).plans
+            if (planeBuses.length === 0) {
+              const matchedLengthPlans = selectMatchedLengthPlans()
+              if (matchedLengthPlans) {
+                matchedPlans = matchedLengthPlans
               } else {
                 matchedRoutingSucceeded = false
               }
             } else {
-              matchedRoutingSucceeded = false
+              const selection = selectDenseLengthPlansThenMatchDogbones({
+                selectPlans: selectMatchedLengthPlans,
+                matchFinalCompletion: matchCompletionAroundPlans,
+              })
+              if (selection?.completion?.kind === "direct") {
+                matchedPlans = [...selection.plans]
+                selectedCompletion = selection.completion
+                fixedViaPointsByConnectionIndex = selection.completion.viaPoints
+              } else if (selection?.completion?.kind === "path") {
+                matchedPlans = [...selection.plans]
+                selectedCompletion = selection.completion
+                fixedViaPointsByConnectionIndex = new Map(
+                  [...selection.completion.viaPaths].map(
+                    ([connectionIndex, assignment]) =>
+                      [connectionIndex, assignment.point] as const,
+                  ),
+                )
+              } else {
+                matchedRoutingSucceeded = false
+              }
             }
           }
 
           if (matchedRoutingSucceeded) {
+            const fixedSourceEscapePathsByConnectionIndex =
+              getDenseCompletionSourceEscapePaths(selectedCompletion)
             for (const bus of planeBuses) {
               const targetLayer = params.busLayerAssignments[bus.busId]
               const busPlans = targetLayer
@@ -4155,6 +4492,7 @@ export class FanoutSolver extends BaseSolver {
                     allowSameNetMerges: this.config.allowSameNetMerges,
                     staticClearanceCache: this.routeStaticClearanceCache,
                     fixedViaPointsByConnectionIndex,
+                    fixedSourceEscapePathsByConnectionIndex,
                     expandedStateBudget: releasedAdaptivePreflightSearchBudget,
                   })
                 : null

@@ -18,13 +18,22 @@ const witnessPath = new URL(
 
 const runBoundedWitness = async (timeoutMs: number) => {
   const child = Bun.spawn([process.execPath, witnessPath, fixturePath], {
-    stdout: "pipe",
-    stderr: "pipe",
+    stdout: "ignore",
+    stderr: "ignore",
   })
-  const timeout = setTimeout(() => child.kill(), timeoutMs)
-  const exitCode = await child.exited
-  clearTimeout(timeout)
-  return exitCode
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    // The witness has no descendants. SIGKILL guarantees that synchronous
+    // solver work cannot defer termination, and awaiting `exited` reaps it.
+    child.kill(9)
+  }, timeoutMs)
+  try {
+    return { exitCode: await child.exited, timedOut }
+  } finally {
+    clearTimeout(timeout)
+    if (timedOut) await child.exited
+  }
 }
 
 test("captures the complete frame-000 DRAM fanout", () => {
@@ -51,6 +60,15 @@ test("captures the complete frame-000 DRAM fanout", () => {
   ).toEqual([1.4776121212121214])
 })
 
+test("reaps a witness that exceeds its timeout", async () => {
+  const result = await runBoundedWitness(10)
+  expect(result.timedOut).toBe(true)
+  expect(result.exitCode).not.toBe(0)
+}, 2_000)
+
 test("routes all 143 frame-000 DRAM connections within thirty seconds", async () => {
-  expect(await runBoundedWitness(30_000)).toBe(0)
+  expect(await runBoundedWitness(30_000)).toEqual({
+    exitCode: 0,
+    timedOut: false,
+  })
 }, 40_000)

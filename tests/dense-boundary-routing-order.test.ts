@@ -3,6 +3,7 @@ import {
   buildDenseBoundaryRoutingOrderCandidates,
   buildReleasedDenseBoundaryRoutingOrder,
   getReleasedDenseProvisionalSingletonBuses,
+  normalizeDenseCenteredAdjacentLaneBundleOrder,
 } from "../lib/fanout-solver"
 
 type Bus = { id: string; connections: unknown[] }
@@ -60,6 +61,56 @@ test("keeps the released provisional policy and boundary order isolated", () => 
     "lane-inward",
     "target-ordered-pair",
   ])
+})
+
+test("normalizes only a centered adjacent bundle among target-ordered pairs", () => {
+  type TargetBus = Bus & { targetTracks: number[] }
+  const targetBus = (
+    id: string,
+    targetTracks: number[],
+    width = targetTracks.length,
+  ): TargetBus => ({ ...bus(id, width), targetTracks })
+  const wide = targetBus("wide", [], 8)
+  const higherPair = targetBus("higher-pair", [2.5, 3])
+  const lowerPair = targetBus("lower-pair", [-2.5, -2])
+  const ordinarySingleton = targetBus("ordinary-singleton", [4])
+  const adjacentSingleton = targetBus("adjacent-singleton", [1.5])
+  const relatedPair = targetBus("related-pair", [0.5, 1])
+  const legacyOrder = [
+    wide,
+    higherPair,
+    lowerPair,
+    ordinarySingleton,
+    adjacentSingleton,
+    relatedPair,
+  ]
+
+  expect(
+    normalizeDenseCenteredAdjacentLaneBundleOrder({
+      busesInRoutingOrder: legacyOrder,
+      adjacentSingletonBuses: [adjacentSingleton],
+      getComparablePairBuses: () => [higherPair, lowerPair, relatedPair],
+      getRelatedPairBuses: () => [relatedPair],
+      getTargetTracks: (candidate) => candidate.targetTracks,
+    }).map(({ id }) => id),
+  ).toEqual([
+    "wide",
+    "lower-pair",
+    "adjacent-singleton",
+    "related-pair",
+    "higher-pair",
+    "ordinary-singleton",
+  ])
+
+  expect(
+    normalizeDenseCenteredAdjacentLaneBundleOrder({
+      busesInRoutingOrder: legacyOrder,
+      adjacentSingletonBuses: [],
+      getComparablePairBuses: () => [],
+      getRelatedPairBuses: () => [],
+      getTargetTracks: (candidate) => candidate.targetTracks,
+    }),
+  ).toEqual(legacyOrder)
 })
 
 test("builds exact-once dense boundary routing order fallbacks", () => {
