@@ -317,7 +317,7 @@ class Dinic {
     source: number,
     sink: number,
     limit: number,
-  ): Generator<void, number, void> {
+  ): Generator<void, number, unknown> {
     let flow = 0
     while (flow < limit && this.buildLevels(source, sink)) {
       this.nextEdges.fill(0)
@@ -342,7 +342,7 @@ function* createFlowGridSteps(params: {
   obstacles: Obstacle[]
   traceWidth: number
   clearance: number
-}): Generator<void, FlowGrid, void> {
+}): Generator<void, FlowGrid, unknown> {
   const { boundary, obstacles, traceWidth, clearance } = params
   const step = traceWidth + clearance
   const columnCount = Math.round((boundary.maxX - boundary.minX) / step) + 1
@@ -474,7 +474,7 @@ function* routeDirectionGroupSteps(params: {
   occupiedNodes: Uint8Array
   acceptedSegments: RoutedSegment[]
   connectorSelectionOffset?: number
-}): Generator<void, DirectionGroupResult | null, void> {
+}): Generator<void, DirectionGroupResult | null, unknown> {
   const {
     direction,
     availableDirections,
@@ -1004,7 +1004,7 @@ function* routeWithAdaptiveExitsSteps(params: {
   traceWidth: number
   clearance: number
   availableBoundaryRegions?: AvailableBoundaryRegion[]
-}): Generator<void, FanoutRoutePlan[] | null, void> {
+}): Generator<void, FanoutRoutePlan[] | null, unknown> {
   const {
     items,
     grid,
@@ -1203,7 +1203,7 @@ function* routeWithAdaptiveExitsSteps(params: {
 
 export function* routeSingleLayerWithAdaptiveExitsSteps(
   params: FlowRoutingParams,
-): Generator<void, FanoutRoutePlan[] | null, void> {
+): Generator<void, FanoutRoutePlan[] | null, unknown> {
   const { srj, buses, traceWidth, clearance, availableBoundaryRegions } = params
   if (buses.some((bus) => bus.connections.length !== 1)) return null
   const items = buses.flatMap((bus) =>

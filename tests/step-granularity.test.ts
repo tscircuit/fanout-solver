@@ -13,6 +13,11 @@ test("step exposes candidate, bus-routing, and max-flow work incrementally", () 
 
   expect(multilayerSolver.layerAssignments).toHaveLength(0)
   multilayerSolver.step()
+  expect(multilayerSolver.activeSubSolver?.getSolverName()).toBe(
+    "FanoutCandidateLayerSolver",
+  )
+  expect(multilayerSolver.stats).toEqual({})
+  multilayerSolver.step()
   expect(multilayerSolver.stats).toMatchObject({
     phase: "discover-candidate-layers",
     busIndex: 1,

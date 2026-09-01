@@ -24,7 +24,8 @@ import {
   obstacleSharesElectricalNet,
 } from "./net-identity"
 import {
-  routeViaMinimalWindingAlternatives,
+  routeViaMinimalWindingAlternativesSteps,
+  type RouteViaMinimalWindingProgress,
   type ViaMinimalWindingReservedVia,
 } from "./route-via-minimal-winding"
 import type {
@@ -62,6 +63,13 @@ export interface RouteBusParams {
   viaMinimalOnly?: boolean
   /** Dense corner-band phase that preserves existing lane centers when leading lanes are prepended. */
   cornerBandTargetTrackOffset?: number
+}
+
+export interface RouteBusAlternativesProgress {
+  phase: "via-minimal-winding"
+  busId: string
+  targetLayer: string
+  winding: RouteViaMinimalWindingProgress
 }
 
 interface TrackCandidate {
@@ -2367,10 +2375,10 @@ function routePlaneTerminatedBus(
   return null
 }
 
-export function routeBusAlternatives(
+export function* routeBusAlternativesSteps(
   params: RouteBusParams,
   maxAlternatives = 1,
-): FanoutRoutePlan[][] {
+): Generator<RouteBusAlternativesProgress, FanoutRoutePlan[][], void> {
   const {
     srj,
     bus,
@@ -2765,7 +2773,7 @@ export function routeBusAlternatives(
         .join("|")}:${terminalPattern.maximumRouteOrderAttempts ?? "all"}`
       if (seenTerminalSignatures.has(terminalSignature)) continue
       seenTerminalSignatures.add(terminalSignature)
-      const viaMinimalAlternatives = routeViaMinimalWindingAlternatives(
+      const windingSteps = routeViaMinimalWindingAlternativesSteps(
         {
           srj,
           bus,
@@ -2797,6 +2805,17 @@ export function routeBusAlternatives(
             ? Math.min(2, maxAlternatives - alternatives.length)
             : 2,
       )
+      let windingResult = windingSteps.next()
+      while (!windingResult.done) {
+        yield {
+          phase: "via-minimal-winding",
+          busId: bus.busId,
+          targetLayer,
+          winding: windingResult.value,
+        }
+        windingResult = windingSteps.next()
+      }
+      const viaMinimalAlternatives = windingResult.value
       for (const viaMinimalPlans of viaMinimalAlternatives) {
         const combinedPlansAreClear = fanoutPlansAreClear({
           plans: [...acceptedPlans, ...viaMinimalPlans],
@@ -2947,6 +2966,16 @@ export function routeBusAlternatives(
   }
 
   return alternatives
+}
+
+export function routeBusAlternatives(
+  params: RouteBusParams,
+  maxAlternatives = 1,
+): FanoutRoutePlan[][] {
+  const steps = routeBusAlternativesSteps(params, maxAlternatives)
+  let result = steps.next()
+  while (!result.done) result = steps.next()
+  return result.value
 }
 
 export function routeBus(params: RouteBusParams): FanoutRoutePlan[] | null {

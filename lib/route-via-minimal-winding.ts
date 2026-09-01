@@ -29,6 +29,7 @@ import type {
 const EPSILON = 1e-7
 const MAX_GRID_NODE_COUNT = 120_000
 const MAX_EXPANDED_STATE_COUNT = 240_000
+const EXPANDED_STATES_PER_STEP = 5_000
 const MAX_CONNECTOR_COUNT = 24
 const CONNECTOR_RADIUS_IN_STEPS = 3.25
 
@@ -62,6 +63,17 @@ export interface RouteViaMinimalWindingParams {
   gridStepDivisor?: 1 | 2
   /** Bias bounded fixed-site searches toward the remote target band. */
   preferTargetDirectedLaneBias?: boolean
+}
+
+export interface RouteViaMinimalWindingProgress {
+  phase: "route-connection"
+  routeOrderAttempt: number
+  connectionIndex: number
+  connectionCount: number
+  connectionName: string
+  searchBatch: number
+  expandedStateCount: number
+  connectionComplete: boolean
 }
 
 interface GridNode {
@@ -577,10 +589,10 @@ function buildPlan(params: {
   }
 }
 
-export function routeViaMinimalWindingAlternatives(
+export function* routeViaMinimalWindingAlternativesSteps(
   params: RouteViaMinimalWindingParams,
   maximumAlternatives = 1,
-): FanoutRoutePlan[][] {
+): Generator<RouteViaMinimalWindingProgress, FanoutRoutePlan[][], void> {
   if (!Number.isInteger(maximumAlternatives) || maximumAlternatives < 1) {
     throw new Error(
       `FanoutSolver: maximum winding alternatives must be a positive integer, received ${maximumAlternatives}`,
@@ -861,11 +873,11 @@ export function routeViaMinimalWindingAlternatives(
       .slice(0, MAX_CONNECTOR_COUNT)
   }
 
-  const routeOne = (params: {
+  const routeOneSteps = function* (params: {
     terminal: ViaMinimalWindingTerminal
     acceptedAttemptSegments: BlockingSegment[]
     laneBias: -1 | 0 | 1
-  }): Point2D[] | null => {
+  }): Generator<number, Point2D[] | null, void> {
     const { terminal, acceptedAttemptSegments, laneBias } = params
     const starts = connectorCandidates({
       terminal,
@@ -927,6 +939,7 @@ export function routeViaMinimalWindingAlternatives(
     let bestGoalCost = Number.POSITIVE_INFINITY
     let bestGoalPoints: Point2D[] | null = null
     let expandedStateCount = 0
+    let expandedStatesSinceYield = 0
     while (heap.size > 0 && expandedStateCount < MAX_EXPANDED_STATE_COUNT) {
       const current = heap.pop()!
       if (current.score >= bestGoalCost - EPSILON) break
@@ -938,6 +951,7 @@ export function routeViaMinimalWindingAlternatives(
       )
         continue
       expandedStateCount++
+      expandedStatesSinceYield++
       const endConnectors = endByNode.get(current.node)
       if (endConnectors) {
         const gridPoints: Point2D[] = []
@@ -1053,6 +1067,10 @@ export function routeViaMinimalWindingAlternatives(
           direction: directionIndex,
           score: nextDistance + remaining,
         })
+      }
+      if (expandedStatesSinceYield >= EXPANDED_STATES_PER_STEP) {
+        expandedStatesSinceYield = 0
+        yield expandedStateCount
       }
     }
     return bestGoalPoints
@@ -1176,12 +1194,45 @@ export function routeViaMinimalWindingAlternatives(
       const acceptedAttemptSegments: BlockingSegment[] = []
       const routedPointsByConnectionName = new Map<string, Point2D[]>()
       let failed = false
-      for (const terminal of routeOrder) {
-        const points = routeOne({
+      for (
+        let terminalIndex = 0;
+        terminalIndex < routeOrder.length;
+        terminalIndex++
+      ) {
+        const terminal = routeOrder[terminalIndex]!
+        const connectionSteps = routeOneSteps({
           terminal,
           acceptedAttemptSegments,
           laneBias,
         })
+        let connectionResult = connectionSteps.next()
+        let searchBatch = 0
+        let expandedStateCount = 0
+        while (!connectionResult.done) {
+          expandedStateCount = connectionResult.value
+          yield {
+            phase: "route-connection",
+            routeOrderAttempt: routeOrderAttemptCount,
+            connectionIndex: terminalIndex,
+            connectionCount: routeOrder.length,
+            connectionName: terminal.connection.connection.name,
+            searchBatch: ++searchBatch,
+            expandedStateCount: connectionResult.value,
+            connectionComplete: false,
+          }
+          connectionResult = connectionSteps.next()
+        }
+        const points = connectionResult.value
+        yield {
+          phase: "route-connection",
+          routeOrderAttempt: routeOrderAttemptCount,
+          connectionIndex: terminalIndex,
+          connectionCount: routeOrder.length,
+          connectionName: terminal.connection.connection.name,
+          searchBatch,
+          expandedStateCount,
+          connectionComplete: true,
+        }
         if (!points) {
           failed = true
           break
@@ -1236,6 +1287,19 @@ export function routeViaMinimalWindingAlternatives(
     }
   }
   return alternatives
+}
+
+export function routeViaMinimalWindingAlternatives(
+  params: RouteViaMinimalWindingParams,
+  maximumAlternatives = 1,
+): FanoutRoutePlan[][] {
+  const steps = routeViaMinimalWindingAlternativesSteps(
+    params,
+    maximumAlternatives,
+  )
+  let result = steps.next()
+  while (!result.done) result = steps.next()
+  return result.value
 }
 
 export function routeViaMinimalWinding(
