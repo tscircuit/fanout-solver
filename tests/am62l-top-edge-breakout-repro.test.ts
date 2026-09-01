@@ -20,10 +20,8 @@ test("captures the AM62L nine-bus top-edge breakout input", () => {
   const { inputSrj, options } = createAm62lTopEdgeBreakoutRepro()
 
   expect(am62lTopEdgeBreakoutProvenance).toEqual({
-    commit: "8a0faa2f843d50b5cf4cad4b422c275d6fc29e46",
+    generator: "scripts/generate-repro/generate-repro04.tsx",
     layout: "ram_above",
-    repository: "tscircuit/core",
-    fixture: "tests/fixtures/create-am62l-lpddr4-fanout.tsx",
   })
   expect(inputSrj.connections).toHaveLength(135)
   expect(inputSrj.obstacles).toHaveLength(589)
