@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import { createAm62lTopEdgeBreakoutRepro } from "../repros/repro04-am62l-top-edge-breakout.page"
+import {
+  am62lTopEdgeBreakoutProvenance,
+  createAm62lTopEdgeBreakoutRepro,
+} from "../repros/repro04-am62l-top-edge-breakout.page"
 
 const expectedSignalExitPositions = {
   DDR_ADDR_CTRL: "topside_center",
@@ -16,8 +19,14 @@ const expectedSignalExitPositions = {
 test("captures the AM62L nine-bus top-edge breakout input", () => {
   const { inputSrj, options } = createAm62lTopEdgeBreakoutRepro()
 
+  expect(am62lTopEdgeBreakoutProvenance).toEqual({
+    commit: "8a0faa2f843d50b5cf4cad4b422c275d6fc29e46",
+    layout: "ram_above",
+    repository: "tscircuit/core",
+    fixture: "tests/fixtures/create-am62l-lpddr4-fanout.tsx",
+  })
   expect(inputSrj.connections).toHaveLength(135)
-  expect(inputSrj.obstacles).toHaveLength(373)
+  expect(inputSrj.obstacles).toHaveLength(589)
   expect(inputSrj.layerCount).toBe(8)
   expect(inputSrj.allowBlindAndBuriedVias).toBe(false)
   expect(inputSrj.allowViaInPad).not.toBe(true)
@@ -78,24 +87,7 @@ test("captures the AM62L nine-bus top-edge breakout input", () => {
     ),
   ).toBe(false)
 
-  const bandWidth = (inputSrj.bounds.maxX - inputSrj.bounds.minX) / 3
-  const bandIndexByExitPosition = {
-    topside_left: 0,
-    topside_center: 1,
-    topside_right: 2,
-  } as const
-
   for (const bus of signalBuses) {
-    const bandIndex = bus.exitPosition
-      ? bandIndexByExitPosition[
-          bus.exitPosition as keyof typeof bandIndexByExitPosition
-        ]
-      : undefined
-    expect(bandIndex).toBeDefined()
-    if (bandIndex === undefined) continue
-    const bandMinX = inputSrj.bounds.minX + bandIndex * bandWidth
-    const bandMaxX = bandMinX + bandWidth
-
     for (const connectionName of bus.connectionNames) {
       const connection = connectionByName.get(connectionName)
       const breakoutTarget = connection?.pointsToConnect.find((point) =>
@@ -104,8 +96,6 @@ test("captures the AM62L nine-bus top-edge breakout input", () => {
       const exitTarget = bus.connectionExitTargets?.[connectionName]
 
       expect(breakoutTarget).toBeDefined()
-      expect(breakoutTarget!.x).toBeGreaterThan(bandMinX)
-      expect(breakoutTarget!.x).toBeLessThan(bandMaxX)
       expect(exitTarget?.x).toBe(breakoutTarget!.x)
       expect(exitTarget?.y).toBeGreaterThan(inputSrj.bounds.maxY)
     }

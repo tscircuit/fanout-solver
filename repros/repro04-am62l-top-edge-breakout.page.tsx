@@ -1,8 +1,8 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { GenericSolverDebugger } from "@tscircuit/solver-utils/react"
 import { FanoutSolver } from "lib/fanout-solver"
-import type { FanoutExitPosition, FanoutSolverOptions } from "lib/types"
-import capturedFixture from "../tests/fixtures/am62l-lpddr4-six-bus-through-all-soc.json"
+import type { FanoutSolverOptions } from "lib/types"
+import capturedFixture from "../tests/fixtures/am62l-lpddr4-ram-above-soc-fanout.json"
 
 type CapturedInput = SimpleRouteJson & {
   allowBlindAndBuriedVias?: boolean
@@ -10,20 +10,14 @@ type CapturedInput = SimpleRouteJson & {
 }
 
 const fixture = capturedFixture as unknown as {
+  generatedFrom: {
+    commit: string
+    fixture: string
+    layout: "ram_above"
+    repository: "tscircuit/core"
+  }
   inputSrj: CapturedInput
   options: FanoutSolverOptions
-}
-
-const topExitPositionByBusId: Readonly<Record<string, FanoutExitPosition>> = {
-  DDR_ADDR_CTRL: "topside_center",
-  DDR_BYTE0: "topside_left",
-  DDR_BYTE1: "topside_right",
-  DDR_CLOCK: "topside_left",
-  DDR_DMI0: "topside_left",
-  DDR_DMI1: "topside_right",
-  DDR_DQS0: "topside_left",
-  DDR_DQS1: "topside_right",
-  DDR_RESET: "topside_center",
 }
 
 const busDescriptions = [
@@ -37,104 +31,12 @@ const busDescriptions = [
   "DMI1 · top/right · 1 signal",
 ]
 
-type TopEdgeBand = "left" | "center" | "right"
+export const am62lTopEdgeBreakoutProvenance = fixture.generatedFrom
 
-const topEdgeBandByExitPosition: Readonly<
-  Partial<Record<FanoutExitPosition, TopEdgeBand>>
-> = {
-  topside_center: "center",
-  topside_left: "left",
-  topside_right: "right",
-}
-
-const placeSignalTargetsOnTopEdge = (
-  inputSrj: CapturedInput,
-  options: FanoutSolverOptions,
-) => {
-  const signalBuses = (options.buses ?? []).filter(
-    (bus) => bus.termination?.type !== "plane",
-  )
-  const connectionByName = new Map(
-    inputSrj.connections.map((connection) => [connection.name, connection]),
-  )
-  const connectionNamesByBand: Record<TopEdgeBand, string[]> = {
-    left: [],
-    center: [],
-    right: [],
-  }
-
-  for (const bus of signalBuses) {
-    const band = bus.exitPosition
-      ? topEdgeBandByExitPosition[bus.exitPosition]
-      : undefined
-    if (band !== undefined) {
-      connectionNamesByBand[band].push(...bus.connectionNames)
-    }
-  }
-
-  const boundaryWidth = inputSrj.bounds.maxX - inputSrj.bounds.minX
-  const bandWidth = boundaryWidth / 3
-  const topBoundaryY = inputSrj.bounds.maxY - 0.0001
-  const firstSignalBus = signalBuses[0]
-  const firstConnectionName = firstSignalBus?.connectionNames[0]
-  const firstConnection = firstConnectionName
-    ? connectionByName.get(firstConnectionName)
-    : undefined
-  const firstBreakoutPoint = firstConnection?.pointsToConnect.find((point) =>
-    point.pointId?.startsWith("pcb_breakout_point_"),
-  )
-  const firstExitTarget = firstConnectionName
-    ? firstSignalBus?.connectionExitTargets?.[firstConnectionName]
-    : undefined
-  const exitTargetInset =
-    firstBreakoutPoint && firstExitTarget
-      ? firstExitTarget.x - firstBreakoutPoint.x
-      : 0.5
-
-  for (const [bandIndex, band] of (
-    ["left", "center", "right"] as const
-  ).entries()) {
-    const connectionNames = connectionNamesByBand[band]
-    const bandMinX = inputSrj.bounds.minX + bandIndex * bandWidth
-
-    for (const [connectionIndex, connectionName] of connectionNames.entries()) {
-      const x =
-        bandMinX +
-        ((connectionIndex + 1) * bandWidth) / (connectionNames.length + 1)
-      const connection = connectionByName.get(connectionName)
-      const breakoutPoint = connection?.pointsToConnect.find((point) =>
-        point.pointId?.startsWith("pcb_breakout_point_"),
-      )
-      if (breakoutPoint) {
-        breakoutPoint.x = x
-        breakoutPoint.y = topBoundaryY
-      }
-
-      const bus = signalBuses.find((candidate) =>
-        candidate.connectionNames.includes(connectionName),
-      )
-      const exitTarget = bus?.connectionExitTargets?.[connectionName]
-      if (exitTarget) {
-        exitTarget.x = x
-        exitTarget.y = topBoundaryY + exitTargetInset
-      }
-    }
-  }
-}
-
-export const createAm62lTopEdgeBreakoutRepro = () => {
-  const inputSrj = structuredClone(fixture.inputSrj)
-  const options = structuredClone(fixture.options)
-
-  for (const bus of options.buses ?? []) {
-    const exitPosition = topExitPositionByBusId[bus.busId]
-    if (exitPosition !== undefined) bus.exitPosition = exitPosition
-  }
-
-  placeSignalTargetsOnTopEdge(inputSrj, options)
-
-  return { inputSrj, options }
-}
+export const createAm62lTopEdgeBreakoutRepro = () => ({
+  inputSrj: structuredClone(fixture.inputSrj),
+  options: structuredClone(fixture.options),
+})
 
 export default function Am62lTopEdgeBreakoutReproPage() {
   return (
@@ -158,15 +60,14 @@ export default function Am62lTopEdgeBreakoutReproPage() {
         <div>
           <strong>Repro 04 · AM62L nine-bus top-edge breakout</strong>
           <div style={{ color: "#475569", fontSize: 13, marginTop: 4 }}>
-            SoC fanout phase · 135 connections · 373 active BGA pads · 8 layers
+            SoC fanout phase · 135 connections · 589 phase obstacles · 8 layers
           </div>
         </div>
 
         <div style={{ color: "#475569", fontSize: 13 }}>
-          This reuses the passing AM62L/LPDDR4 captured input with 102
-          power-plane drops and 33 DDR signals. All nine signal buses and their
-          downstream targets are moved to the top edge in left, center, or right
-          bands.
+          Generated by rendering the RAM-above circuit TSX in tscircuit/core and
+          capturing the exact FanoutSolver constructor arguments for SOC_FANOUT.
+          This repro does not rotate or redistribute any points.
         </div>
 
         <div
@@ -194,15 +95,14 @@ export default function Am62lTopEdgeBreakoutReproPage() {
         </div>
 
         <div style={{ color: "#b45309", fontSize: 13 }}>
-          The colored rings inside the BGA are source pads. The 33 signal target
-          rings are distributed along the top boundary.
+          The colored rings inside the BGA are source pads. Core placed all 33
+          downstream breakout points on the top boundary.
         </div>
 
         <div style={{ color: "#b45309", fontSize: 13 }}>
-          Current behavior: the solver cannot complete the AM62L escape. In
-          core, the 3mm-boundary run reached 114/135 connections before failing;
-          solver 0.0.47 can instead remain CPU-bound for several minutes. Use
-          the debugger controls to inspect the search.
+          Current behavior: the solver cannot complete the AM62L escape. The
+          captured core run reached 114/135 connections before failing. Use the
+          debugger controls to inspect the search.
         </div>
       </header>
 
