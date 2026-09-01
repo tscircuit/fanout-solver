@@ -37,6 +37,91 @@ const busDescriptions = [
   "DMI1 · top/right · 1 signal",
 ]
 
+type TopEdgeBand = "left" | "center" | "right"
+
+const topEdgeBandByExitPosition: Readonly<
+  Partial<Record<FanoutExitPosition, TopEdgeBand>>
+> = {
+  topside_center: "center",
+  topside_left: "left",
+  topside_right: "right",
+}
+
+const placeSignalTargetsOnTopEdge = (
+  inputSrj: CapturedInput,
+  options: FanoutSolverOptions,
+) => {
+  const signalBuses = (options.buses ?? []).filter(
+    (bus) => bus.termination?.type !== "plane",
+  )
+  const connectionByName = new Map(
+    inputSrj.connections.map((connection) => [connection.name, connection]),
+  )
+  const connectionNamesByBand: Record<TopEdgeBand, string[]> = {
+    left: [],
+    center: [],
+    right: [],
+  }
+
+  for (const bus of signalBuses) {
+    const band = bus.exitPosition
+      ? topEdgeBandByExitPosition[bus.exitPosition]
+      : undefined
+    if (band !== undefined) {
+      connectionNamesByBand[band].push(...bus.connectionNames)
+    }
+  }
+
+  const boundaryWidth = inputSrj.bounds.maxX - inputSrj.bounds.minX
+  const bandWidth = boundaryWidth / 3
+  const topBoundaryY = inputSrj.bounds.maxY - 0.0001
+  const firstSignalBus = signalBuses[0]
+  const firstConnectionName = firstSignalBus?.connectionNames[0]
+  const firstConnection = firstConnectionName
+    ? connectionByName.get(firstConnectionName)
+    : undefined
+  const firstBreakoutPoint = firstConnection?.pointsToConnect.find((point) =>
+    point.pointId?.startsWith("pcb_breakout_point_"),
+  )
+  const firstExitTarget = firstConnectionName
+    ? firstSignalBus?.connectionExitTargets?.[firstConnectionName]
+    : undefined
+  const exitTargetInset =
+    firstBreakoutPoint && firstExitTarget
+      ? firstExitTarget.x - firstBreakoutPoint.x
+      : 0.5
+
+  for (const [bandIndex, band] of (
+    ["left", "center", "right"] as const
+  ).entries()) {
+    const connectionNames = connectionNamesByBand[band]
+    const bandMinX = inputSrj.bounds.minX + bandIndex * bandWidth
+
+    for (const [connectionIndex, connectionName] of connectionNames.entries()) {
+      const x =
+        bandMinX +
+        ((connectionIndex + 1) * bandWidth) / (connectionNames.length + 1)
+      const connection = connectionByName.get(connectionName)
+      const breakoutPoint = connection?.pointsToConnect.find((point) =>
+        point.pointId?.startsWith("pcb_breakout_point_"),
+      )
+      if (breakoutPoint) {
+        breakoutPoint.x = x
+        breakoutPoint.y = topBoundaryY
+      }
+
+      const bus = signalBuses.find((candidate) =>
+        candidate.connectionNames.includes(connectionName),
+      )
+      const exitTarget = bus?.connectionExitTargets?.[connectionName]
+      if (exitTarget) {
+        exitTarget.x = x
+        exitTarget.y = topBoundaryY + exitTargetInset
+      }
+    }
+  }
+}
+
 export const createAm62lTopEdgeBreakoutRepro = () => {
   const inputSrj = structuredClone(fixture.inputSrj)
   const options = structuredClone(fixture.options)
@@ -45,6 +130,8 @@ export const createAm62lTopEdgeBreakoutRepro = () => {
     const exitPosition = topExitPositionByBusId[bus.busId]
     if (exitPosition !== undefined) bus.exitPosition = exitPosition
   }
+
+  placeSignalTargetsOnTopEdge(inputSrj, options)
 
   return { inputSrj, options }
 }
@@ -77,8 +164,8 @@ export default function Am62lTopEdgeBreakoutReproPage() {
 
         <div style={{ color: "#475569", fontSize: 13 }}>
           This reuses the passing AM62L/LPDDR4 captured input with 102
-          power-plane drops and 33 DDR signals. The only change is that all nine
-          signal buses must terminate on the top edge in left, center, or right
+          power-plane drops and 33 DDR signals. All nine signal buses and their
+          downstream targets are moved to the top edge in left, center, or right
           bands.
         </div>
 
@@ -104,6 +191,11 @@ export default function Am62lTopEdgeBreakoutReproPage() {
               {description}
             </span>
           ))}
+        </div>
+
+        <div style={{ color: "#b45309", fontSize: 13 }}>
+          The colored rings inside the BGA are source pads. The 33 signal target
+          rings are distributed along the top boundary.
         </div>
 
         <div style={{ color: "#b45309", fontSize: 13 }}>
