@@ -17,10 +17,13 @@ const witnessPath = new URL(
 ).pathname
 
 const runBoundedWitness = async (timeoutMs: number) => {
-  const child = Bun.spawn([process.execPath, witnessPath, fixturePath], {
-    stdout: "ignore",
-    stderr: "ignore",
-  })
+  const child = Bun.spawn(
+    [process.execPath, witnessPath, fixturePath, "--assert-ddr-corner-order"],
+    {
+      stdout: "ignore",
+      stderr: "ignore",
+    },
+  )
   let timedOut = false
   const timeout = setTimeout(() => {
     timedOut = true

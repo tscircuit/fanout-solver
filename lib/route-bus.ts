@@ -437,7 +437,7 @@ export function getBoundaryTargetTrack(params: {
   return Math.max(boundaryMinimum, Math.min(boundaryMaximum, requestedTrack))
 }
 
-function getCornerTargetTrack(params: {
+export function getCornerTargetTrack(params: {
   bus: PreparedBus
   connection: PreparedConnection
   cornerExitLaneOffset: number
