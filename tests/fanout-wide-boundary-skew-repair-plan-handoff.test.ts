@@ -83,6 +83,18 @@ const makePlans = (params: {
 function installDeterministicRoutingDoubles(): void {
   mock.module(`${root}/lib/route-bus.ts`, () => ({
     fanoutPlansAreClear: () => true,
+    getCornerTargetTrack: ({
+      bus,
+      connection,
+    }: {
+      bus: PreparedBus
+      connection: PreparedBus["connections"][number]
+    }) => {
+      const target = connection.exitTargetPoint ?? connection.targetPoint
+      return bus.exitEdge === "left" || bus.exitEdge === "right"
+        ? target.y
+        : target.x
+    },
     getPrioritizedSourceTopologyConnectionOrders: (bus: PreparedBus) => [
       bus.connections,
     ],

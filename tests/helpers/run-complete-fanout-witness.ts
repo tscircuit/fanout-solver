@@ -49,3 +49,52 @@ assert.deepEqual(drc.issues, [])
 assert.equal(drc.valid, true)
 assert.equal(drc.checkedTraceCount, inputSrj.connections.length)
 assert.equal(drc.checkedViaCount, inputSrj.connections.length)
+
+const orderedCornerBusIds = ["DDR_DMI0", "DDR_DQS0", "DDR_CLOCK"]
+const orderedCornerBuses = orderedCornerBusIds.map((busId) =>
+  options.buses?.find((bus) => bus.busId === busId),
+)
+if (process.argv.includes("--assert-ddr-corner-order")) {
+  for (const [busIndex, bus] of orderedCornerBuses.entries()) {
+    assert.ok(bus, `Missing ${orderedCornerBusIds[busIndex]} bus`)
+  }
+  const targetTrackByConnectionName = new Map<string, number>()
+  for (const bus of orderedCornerBuses) {
+    for (const connectionName of bus!.connectionNames) {
+      const target = bus!.connectionExitTargets?.[connectionName]
+      assert.ok(target, `Missing explicit target for ${connectionName}`)
+      targetTrackByConnectionName.set(connectionName, target.y)
+    }
+  }
+  const exitTrackByConnectionName = new Map(
+    output.fanoutTraces.flatMap((trace) => {
+      if (!targetTrackByConnectionName.has(trace.connection_name ?? "")) {
+        return []
+      }
+      const wire = trace.route.findLast((point) => point.route_type === "wire")
+      assert.equal(wire?.route_type, "wire")
+      return [[trace.connection_name!, wire.y] as const]
+    }),
+  )
+  const connectionNames = [...targetTrackByConnectionName.keys()]
+  for (let firstIndex = 0; firstIndex < connectionNames.length; firstIndex++) {
+    const firstName = connectionNames[firstIndex]!
+    for (
+      let secondIndex = firstIndex + 1;
+      secondIndex < connectionNames.length;
+      secondIndex++
+    ) {
+      const secondName = connectionNames[secondIndex]!
+      const targetOrder =
+        targetTrackByConnectionName.get(firstName)! -
+        targetTrackByConnectionName.get(secondName)!
+      const exitOrder =
+        exitTrackByConnectionName.get(firstName)! -
+        exitTrackByConnectionName.get(secondName)!
+      assert.ok(
+        targetOrder * exitOrder >= -1e-9,
+        `Breakout lane inversion: ${firstName} <> ${secondName}`,
+      )
+    }
+  }
+}

@@ -36,6 +36,7 @@ import {
 } from "./prepare-buses"
 import {
   fanoutPlansAreClear,
+  getCornerTargetTrack,
   getPrioritizedSourceTopologyConnectionOrders,
   type RouteBusStaticClearanceCache,
   routeBus,
@@ -1123,6 +1124,77 @@ export function isDenseCornerSingletonTargetLaneInwardOfPairs(params: {
   return cornerSide === "maximum"
     ? singletonTargetTrack <= Math.min(...pairTargetTracks) - routePitch + 1e-9
     : singletonTargetTrack >= Math.max(...pairTargetTracks) + routePitch - 1e-9
+}
+
+export function isDenseCornerSingletonContiguousWithPairBundle(params: {
+  singletonBus: DenseCornerTargetLaneBus
+  pairBuses: readonly DenseCornerTargetLaneBus[]
+  assignedLayerByBusId: ReadonlyMap<string, string>
+  routePitch: number
+}): boolean {
+  const { singletonBus, pairBuses, assignedLayerByBusId, routePitch } = params
+  const cornerSide = getCornerBandSide(
+    singletonBus.exitEdge,
+    singletonBus.preferredExit,
+  )
+  const singletonLayer = assignedLayerByBusId.get(singletonBus.busId)
+  const singletonTrack = getBoundaryTangentTargetTrack(singletonBus, 0)
+  if (
+    singletonBus.connections.length !== 1 ||
+    !singletonBus.componentId ||
+    !singletonBus.exitEdge ||
+    !cornerSide ||
+    !singletonLayer ||
+    singletonTrack === undefined ||
+    !Number.isFinite(routePitch) ||
+    routePitch <= 0
+  ) {
+    return false
+  }
+
+  const outwardDirection = cornerSide === "maximum" ? 1 : -1
+  const singletonProjection = singletonTrack * outwardDirection
+  const tolerance = Math.max(1e-9, routePitch * 1e-6)
+  const outwardPairBlocks = pairBuses
+    .flatMap((pairBus) => {
+      if (
+        pairBus.connections.length !== 2 ||
+        pairBus.componentId !== singletonBus.componentId ||
+        pairBus.exitEdge !== singletonBus.exitEdge ||
+        getCornerBandSide(pairBus.exitEdge, pairBus.preferredExit) !==
+          cornerSide ||
+        assignedLayerByBusId.get(pairBus.busId) !== singletonLayer
+      ) {
+        return []
+      }
+      const tracks = pairBus.connections.map((_, connectionIndex) =>
+        getBoundaryTangentTargetTrack(pairBus, connectionIndex),
+      )
+      if (!tracks.every((track): track is number => track !== undefined)) {
+        return []
+      }
+      const projections = tracks
+        .map((track) => track * outwardDirection)
+        .toSorted((first, second) => first - second)
+      if (
+        projections[0]! <= singletonProjection ||
+        Math.abs(projections[1]! - projections[0]! - routePitch) > tolerance
+      ) {
+        return []
+      }
+      return [{ minimum: projections[0]!, maximum: projections[1]! }]
+    })
+    .toSorted((first, second) => first.minimum - second.minimum)
+
+  let contiguousPairBlockCount = 0
+  let expectedProjection = singletonProjection + routePitch
+  for (const block of outwardPairBlocks) {
+    if (block.maximum < expectedProjection - tolerance) continue
+    if (Math.abs(block.minimum - expectedProjection) > tolerance) break
+    contiguousPairBlockCount++
+    expectedProjection = block.maximum + routePitch
+  }
+  return contiguousPairBlockCount >= 2
 }
 
 export function isDenseSingletonTargetLaneAdjacentToPairs(params: {
@@ -3050,6 +3122,72 @@ export class FanoutSolver extends BaseSolver {
             ),
           getTargetTracks: getBoundaryTargetTracks,
         })
+      const releasedCornerBundleTrigger = boundaryBuses.find((singletonBus) =>
+        isDenseCornerSingletonContiguousWithPairBundle({
+          singletonBus,
+          pairBuses,
+          assignedLayerByBusId,
+          routePitch,
+        }),
+      )
+      const releasedCornerBundleLayer = releasedCornerBundleTrigger
+        ? assignedLayerByBusId.get(releasedCornerBundleTrigger.busId)
+        : undefined
+      const releasedCornerBundleSide = releasedCornerBundleTrigger
+        ? getCornerBandSide(
+            releasedCornerBundleTrigger.exitEdge,
+            releasedCornerBundleTrigger.preferredExit,
+          )
+        : undefined
+      const releasedNarrowSameLayerBundleCandidates =
+        releasedCornerBundleTrigger && releasedCornerBundleLayer
+          ? boundaryBuses.filter((bus) => {
+              const busCornerSide = getCornerBandSide(
+                bus.exitEdge,
+                bus.preferredExit,
+              )
+              return (
+                bus.componentId === releasedCornerBundleTrigger.componentId &&
+                bus.exitEdge === releasedCornerBundleTrigger.exitEdge &&
+                (!busCornerSide ||
+                  busCornerSide === releasedCornerBundleSide) &&
+                bus.connections.length <= 2 &&
+                busUsesCoordinatedWinding(bus) &&
+                !releasedViaProvisionalSingletonBusSet.has(bus) &&
+                assignedLayerByBusId.get(bus.busId) ===
+                  releasedCornerBundleLayer &&
+                bus.connections.every(
+                  (connection) =>
+                    connection.sourceLayer !== releasedCornerBundleLayer,
+                )
+              )
+            })
+          : []
+      const releasedNarrowSameLayerBundleConnectionCount =
+        releasedNarrowSameLayerBundleCandidates.reduce(
+          (count, bus) => count + bus.connections.length,
+          0,
+        )
+      const releasedCornerBundleMembersHavePackedLaneOffsets =
+        releasedNarrowSameLayerBundleCandidates.every(
+          (bus) =>
+            !getCornerBandSide(bus.exitEdge, bus.preferredExit) ||
+            legacyCornerBandExitLaneOffsetByBusId.get(bus.busId) !== undefined,
+        )
+      const releasedNarrowSameLayerBundleBuses =
+        releasedNarrowSameLayerBundleCandidates.length >= 3 &&
+        releasedNarrowSameLayerBundleConnectionCount >= 5 &&
+        releasedNarrowSameLayerBundleConnectionCount <= 12 &&
+        releasedCornerBundleMembersHavePackedLaneOffsets
+          ? releasedNarrowSameLayerBundleCandidates
+          : []
+      const releasedNarrowSameLayerBundleBusSet = new Set(
+        releasedNarrowSameLayerBundleBuses,
+      )
+      const releasedSequentialBoundaryBusesInRoutingOrder =
+        releasedDenseBoundaryBusesInRoutingOrder.filter(
+          (bus) => !releasedNarrowSameLayerBundleBusSet.has(bus),
+        )
       const orderedWideBoundaryBuses = boundaryBuses
         .filter(
           (bus) =>
@@ -4210,15 +4348,171 @@ export class FanoutSolver extends BaseSolver {
             return true
           }
 
-          const firstBoundaryBus = releasedDenseBoundaryBusesInRoutingOrder[0]!
+          const routeReleasedNarrowSameLayerBundle = (): boolean => {
+            if (releasedNarrowSameLayerBundleBuses.length === 0) return true
+            const seedBus = releasedCornerBundleTrigger!
+            const targetLayer = params.busLayerAssignments[seedBus.busId]
+            const exitEdge = seedBus.exitEdge
+            if (!targetLayer || !exitEdge) return false
+            const originalBusByConnectionIndex = new Map(
+              releasedNarrowSameLayerBundleBuses.flatMap((bus) =>
+                bus.connections.map(
+                  (connection) => [connection.connectionIndex, bus] as const,
+                ),
+              ),
+            )
+            const tangentAxis =
+              exitEdge === "left" || exitEdge === "right" ? "y" : "x"
+            const groupedConnections = releasedNarrowSameLayerBundleBuses
+              .flatMap((bus) => bus.connections)
+              .toSorted((first, second) => {
+                const firstTarget = first.exitTargetPoint ?? first.targetPoint
+                const secondTarget =
+                  second.exitTargetPoint ?? second.targetPoint
+                return (
+                  firstTarget[tangentAxis] - secondTarget[tangentAxis] ||
+                  first.connectionIndex - second.connectionIndex
+                )
+              })
+            const syntheticBus: PreparedBus = {
+              ...seedBus,
+              busId: releasedNarrowSameLayerBundleBuses
+                .map((bus) => bus.busId)
+                .join("+"),
+              maxLengthSkew: undefined,
+              allowedLayers: [targetLayer],
+              routableEscapeLayers: [targetLayer],
+              connections: groupedConnections,
+            }
+            const getExitPoint = (
+              bus: PreparedBus,
+              connection: PreparedBus["connections"][number],
+            ): Point2D => {
+              const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+              if (!side || !bus.exitEdge) {
+                return projectPointToBoundaryExitEdge({
+                  point: connection.exitTargetPoint ?? connection.targetPoint,
+                  exitEdge,
+                  boundary: bus.sharedBoundary,
+                })
+              }
+              const cornerExitLaneOffset =
+                legacyCornerBandExitLaneOffsetByBusId.get(bus.busId) ?? 0
+              // Reuse the ordinary coordinated-winding slot calculation here.
+              // In particular, explicit target lanes retain their canonical
+              // order on mirrored positive-direction corners rather than
+              // inheriting the legacy source-rank reversal.
+              const tangentTrack = getCornerTargetTrack({
+                bus,
+                connection,
+                cornerExitLaneOffset,
+                traceWidth: this.config.traceWidth,
+                viaDiameter: this.config.viaDiameter,
+                clearance: this.config.clearance,
+                layerNames: this.config.layerNames,
+                targetLayer,
+                windingOrderIndex: 0,
+                cornerBandTargetTrackOffset:
+                  getReleasedCornerBandTargetTrackOffset(bus),
+              })
+              return projectPointToBoundaryExitEdge({
+                point:
+                  tangentAxis === "y"
+                    ? { x: 0, y: tangentTrack }
+                    : { x: tangentTrack, y: 0 },
+                exitEdge,
+                boundary: bus.sharedBoundary,
+              })
+            }
+            const terminals = groupedConnections.map((connection) => {
+              const originalBus = originalBusByConnectionIndex.get(
+                connection.connectionIndex,
+              )!
+              return {
+                connection,
+                viaPoint: fixedViaPointsByConnectionIndex.get(
+                  connection.connectionIndex,
+                )!,
+                exitPoint: getExitPoint(originalBus, connection),
+              }
+            })
+            if (terminals.some((terminal) => !terminal.viaPoint)) return false
+            const alternatives = routeViaMinimalWindingAlternatives(
+              {
+                srj: this.routingSrj,
+                bus: syntheticBus,
+                targetLayer,
+                terminals,
+                acceptedPlans: matchedPlans,
+                layerNames: this.config.layerNames,
+                traceWidth: this.config.traceWidth,
+                viaDiameter: this.config.viaDiameter,
+                viaHoleDiameter: this.config.viaHoleDiameter,
+                clearance: this.config.clearance,
+                allowBlindAndBuriedVias: false,
+                allowSameNetMerges: this.config.allowSameNetMerges,
+                maximumRouteOrderAttempts: 24,
+                reservedVias: getReservedVias(syntheticBus),
+                gridStepDivisor:
+                  Math.min(syntheticBus.pitchX, syntheticBus.pitchY) -
+                    2 *
+                      (this.config.viaDiameter / 2 +
+                        this.config.traceWidth / 2 +
+                        this.config.clearance) <
+                  this.config.traceWidth + this.config.clearance
+                    ? 2
+                    : 1,
+                preferTargetDirectedLaneBias: true,
+                enableJointRouteSearch: true,
+                expandedStateBudget: releasedAdaptivePreflightSearchBudget,
+              },
+              1,
+            )
+            for (const bundlePlans of alternatives) {
+              const relabeledPlans = bundlePlans.map((plan) => {
+                const originalBus = originalBusByConnectionIndex.get(
+                  plan.connectionIndex,
+                )!
+                return {
+                  ...plan,
+                  busId: originalBus.busId,
+                  direction: originalBus.direction,
+                  exitEdge: originalBus.exitEdge,
+                  cornerBandSide: getCornerBandSide(
+                    originalBus.exitEdge,
+                    originalBus.preferredExit,
+                  ),
+                  termination: originalBus.termination,
+                }
+              })
+              if (
+                fanoutPlansAreClear({
+                  plans: [...matchedPlans, ...relabeledPlans],
+                  srj: this.routingSrj,
+                  sharedBoundary: syntheticBus.sharedBoundary,
+                  clearance: this.config.clearance,
+                  allowBlindAndBuriedVias: false,
+                  allowSameNetMerges: this.config.allowSameNetMerges,
+                })
+              ) {
+                matchedPlans.push(...relabeledPlans)
+                return true
+              }
+            }
+            return false
+          }
+
+          const firstBoundaryBus =
+            releasedSequentialBoundaryBusesInRoutingOrder[0]
           const routedBoundaryBuses: PreparedBus[] = []
-          if (routeMatchedBoundaryBus(firstBoundaryBus)) {
+          if (firstBoundaryBus && routeMatchedBoundaryBus(firstBoundaryBus)) {
             routedBoundaryBuses.push(firstBoundaryBus)
-          } else {
+          } else if (firstBoundaryBus) {
             matchedRoutingSucceeded = false
           }
-          const remainingBoundaryBuses =
-            releasedDenseBoundaryBusesInRoutingOrder.slice(1)
+          const remainingBoundaryBuses = firstBoundaryBus
+            ? releasedSequentialBoundaryBusesInRoutingOrder.slice(1)
+            : []
           while (matchedRoutingSucceeded && remainingBoundaryBuses.length > 0) {
             const blockingSegments = matchedPlans.flatMap((plan) =>
               plan.segments.map((segment) => ({
@@ -4357,6 +4651,13 @@ export class FanoutSolver extends BaseSolver {
               break
             }
             remainingBoundaryBuses.splice(selectedBusIndex, 1)
+          }
+
+          if (
+            matchedRoutingSucceeded &&
+            !routeReleasedNarrowSameLayerBundle()
+          ) {
+            matchedRoutingSucceeded = false
           }
 
           let selectedCompletion: DenseDogboneCompletionAssignment | null = null
