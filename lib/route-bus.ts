@@ -26,6 +26,7 @@ import {
 import {
   routeViaMinimalWindingAlternatives,
   type ViaMinimalWindingReservedVia,
+  type ViaMinimalWindingSoftViaCapacityGroup,
 } from "./route-via-minimal-winding"
 import type {
   Bounds,
@@ -58,8 +59,19 @@ export interface RouteBusParams {
   rejectedViaMinimalCandidates?: FanoutRoutePlan[][]
   stopAfterFirstRejectedViaMinimalCandidate?: boolean
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
+  /** Exact source-to-via paths for fixed plane dogbones. */
+  fixedSourceEscapePathsByConnectionIndex?: ReadonlyMap<
+    number,
+    readonly Point2D[]
+  >
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
+  softViaCapacityGroups?: readonly ViaMinimalWindingSoftViaCapacityGroup[]
   viaMinimalOnly?: boolean
+  /** Try only the cheap fixed-via winding interleaves, without the route-order fallback. */
+  fixedViaWindingOnly?: boolean
+  /** Opt in to bounded multi-terminal backtracking after greedy winding fails. */
+  enableJointRouteSearch?: boolean
+  expandedStateBudget?: { remaining: number; exhausted?: boolean }
   /** Dense corner-band phase that preserves existing lane centers when leading lanes are prepended. */
   cornerBandTargetTrackOffset?: number
 }
@@ -133,7 +145,7 @@ function getStableConnectionIdentity(
   return connection.name
 }
 
-function getWindingTargetOrders(params: {
+export function getWindingTargetOrders(params: {
   bus: PreparedBus
   boundaryDirection: FanoutDirection
   layerNames: readonly string[]
@@ -230,7 +242,15 @@ function getWindingTargetOrders(params: {
         (layerOrderByName.get(getTargetLayer(second)) ?? 0) ||
       compareWithinLayer(first, second),
   )
-  const candidateOrders: PreparedConnection[][] = [canonicalOrderedConnections]
+  // When explicit destinations span copper layers, their cross-layer track
+  // order is part of the established winding topology.  Keep that literal
+  // order first; alternate interleaves may still be tried as fallbacks.  A
+  // single-layer bus has no cross-layer ordering identity, so its canonical
+  // source/target embedding remains the primary route.
+  const candidateOrders: PreparedConnection[][] =
+    orderedLayers.length > 1
+      ? [legacyOrderedConnections, canonicalOrderedConnections]
+      : [canonicalOrderedConnections]
   for (let index = 0; index + 1 < canonicalOrderedConnections.length; index++) {
     const first = canonicalOrderedConnections[index]!
     const second = canonicalOrderedConnections[index + 1]!
@@ -239,6 +259,84 @@ function getWindingTargetOrders(params: {
     adjacentExtension[index] = second
     adjacentExtension[index + 1] = first
     candidateOrders.push(adjacentExtension)
+  }
+  // A component on the opposite side of the shared boundary can present the
+  // same electrical bus with its tangent order reflected.  Keeping only the
+  // target-coordinate order then forces an avoidable braid between the
+  // dogbones and the packed boundary lanes.  Preserve the supplied targets as
+  // routing guidance, but also try the other planar embedding by reflecting
+  // each layer's rank.  Put it directly behind the canonical order so earlier
+  // failing linear extensions cannot consume the bounded route budget before
+  // it is reached.  The canonical order still wins whenever it routes, keeping
+  // established layouts byte-for-byte stable.
+  const reflectedRankWithinLayerByConnectionIndex = new Map<number, number>()
+  for (const layer of orderedLayers) {
+    const orderedLayerConnections = connectionsByLayer
+      .get(layer)!
+      .toSorted(compareWithinLayer)
+    for (const [rank, candidate] of orderedLayerConnections.entries()) {
+      reflectedRankWithinLayerByConnectionIndex.set(
+        candidate.connectionIndex,
+        orderedLayerConnections.length - rank - 1,
+      )
+    }
+  }
+  const reflectedOrderedConnections = bus.connections.toSorted(
+    (first, second) =>
+      (reflectedRankWithinLayerByConnectionIndex.get(first.connectionIndex) ??
+        0) -
+        (reflectedRankWithinLayerByConnectionIndex.get(
+          second.connectionIndex,
+        ) ?? 0) ||
+      (layerOrderByName.get(getTargetLayer(first)) ?? 0) -
+        (layerOrderByName.get(getTargetLayer(second)) ?? 0) ||
+      compareWithinLayer(first, second),
+  )
+  if (
+    orderedLayers.length === 1 &&
+    reflectedOrderedConnections.some(
+      (connection, index) =>
+        connection.connectionIndex !==
+        canonicalOrderedConnections[index]?.connectionIndex,
+    )
+  ) {
+    const reflectedOrders = [reflectedOrderedConnections]
+    for (
+      let index = 0;
+      index + 1 < reflectedOrderedConnections.length;
+      index++
+    ) {
+      const first = reflectedOrderedConnections[index]!
+      const second = reflectedOrderedConnections[index + 1]!
+      if (getTargetLayer(first) === getTargetLayer(second)) continue
+      const adjacentExtension = [...reflectedOrderedConnections]
+      adjacentExtension[index] = second
+      adjacentExtension[index + 1] = first
+      reflectedOrders.push(adjacentExtension)
+    }
+    if (boundaryDirection === "left") {
+      // Reflected westbound escapes need this embedding before the bounded
+      // canonical extensions consume the route budget.
+      candidateOrders.splice(1, 0, ...reflectedOrders)
+    } else if (boundaryDirection !== "up") {
+      // Preserve the reflected fallback for east/south. North's dense
+      // canonical lineage consumes the bounded residual-bundle budget if
+      // these extra embeddings are appended, before length repair can run.
+      candidateOrders.push(...reflectedOrders)
+    }
+  }
+  if (
+    (boundaryDirection === "left" || boundaryDirection === "down") &&
+    orderedLayers.length === 1 &&
+    bus.connections.length >= 4
+  ) {
+    const prioritizedSourceOrders =
+      getPrioritizedSourceTopologyConnectionOrders(bus, boundaryDirection)
+    candidateOrders.splice(
+      Math.min(candidateOrders.length, 2),
+      0,
+      ...prioritizedSourceOrders,
+    )
   }
   // Retain the coordinate-total-order behavior as a compatibility fallback,
   // but do not let sub-nanometer noise between unrelated layer bands choose
@@ -293,11 +391,43 @@ export function getBoundaryTargetTrack(params: {
   bus: PreparedBus
   connection: PreparedConnection
   boundaryDirection: FanoutDirection
+  layerNames?: readonly string[]
+  targetLayer?: string
+  windingOrderIndex?: number
 }): number {
-  const requestedTrack = getPerpendicularAxis(
+  let requestedTrack = getPerpendicularAxis(
     params.connection.exitTargetPoint ?? params.connection.targetPoint,
     params.boundaryDirection,
   )
+  const canReassignTargetTracks =
+    params.windingOrderIndex !== undefined &&
+    params.layerNames !== undefined &&
+    params.targetLayer !== undefined &&
+    params.bus.connections.length > 1 &&
+    params.bus.connections.every(
+      (connection) =>
+        connection.hasExplicitLayeredExitTarget &&
+        connection.exitTargetPoint?.layer ===
+          params.bus.connections[0]?.exitTargetPoint?.layer,
+    )
+  if (canReassignTargetTracks) {
+    const { rank } = getWindingTargetRank({
+      bus: params.bus,
+      connection: params.connection,
+      boundaryDirection: params.boundaryDirection,
+      layerNames: params.layerNames!,
+      targetLayer: params.targetLayer!,
+      windingOrderIndex: params.windingOrderIndex,
+    })
+    requestedTrack = params.bus.connections
+      .map((connection) =>
+        getPerpendicularAxis(
+          connection.exitTargetPoint ?? connection.targetPoint,
+          params.boundaryDirection,
+        ),
+      )
+      .toSorted((first, second) => first - second)[rank]!
+  }
   const boundaryMinimum = isHorizontal(params.boundaryDirection)
     ? params.bus.sharedBoundary.minY
     : params.bus.sharedBoundary.minX
@@ -799,28 +929,29 @@ function getLegacyPreferredTrack(params: {
   )
 }
 
-function getConnectionOrders(bus: PreparedBus): PreparedConnection[][] {
-  const sign = directionSign(bus.direction)
+export function getSourceTopologyConnectionOrders(
+  bus: PreparedBus,
+  direction: FanoutDirection = bus.direction,
+): PreparedConnection[][] {
+  const sign = directionSign(direction)
   const outwardFirst = [...bus.connections].sort((a, b) => {
     const directionalDifference =
       sign *
-      (getAxis(b.sourcePoint, bus.direction) -
-        getAxis(a.sourcePoint, bus.direction))
+      (getAxis(b.sourcePoint, direction) - getAxis(a.sourcePoint, direction))
     if (Math.abs(directionalDifference) > 1e-6) {
       return directionalDifference
     }
     return (
-      getPerpendicularAxis(a.sourcePoint, bus.direction) -
-      getPerpendicularAxis(b.sourcePoint, bus.direction)
+      getPerpendicularAxis(a.sourcePoint, direction) -
+      getPerpendicularAxis(b.sourcePoint, direction)
     )
   })
   const perpendicularFirst = [...bus.connections].sort(
     (a, b) =>
-      getPerpendicularAxis(a.sourcePoint, bus.direction) -
-        getPerpendicularAxis(b.sourcePoint, bus.direction) ||
+      getPerpendicularAxis(a.sourcePoint, direction) -
+        getPerpendicularAxis(b.sourcePoint, direction) ||
       sign *
-        (getAxis(b.sourcePoint, bus.direction) -
-          getAxis(a.sourcePoint, bus.direction)),
+        (getAxis(b.sourcePoint, direction) - getAxis(a.sourcePoint, direction)),
   )
   const orders = [
     outwardFirst,
@@ -835,6 +966,21 @@ function getConnectionOrders(bus: PreparedBus): PreparedConnection[][] {
     ])
   }
   return orders
+}
+
+export function getPrioritizedSourceTopologyConnectionOrders(
+  bus: PreparedBus,
+  direction: FanoutDirection = bus.direction,
+): PreparedConnection[][] {
+  const sourceOrders = getSourceTopologyConnectionOrders(bus, direction)
+  const preferredPerpendicularOrderIndex = directionSign(direction) < 0 ? 3 : 2
+  return [
+    sourceOrders[preferredPerpendicularOrderIndex],
+    sourceOrders[preferredPerpendicularOrderIndex === 3 ? 2 : 3],
+    sourceOrders[0],
+    sourceOrders[1],
+    ...sourceOrders.slice(4),
+  ].filter((order): order is PreparedConnection[] => order !== undefined)
 }
 
 function appendSegment(
@@ -1577,7 +1723,7 @@ function segmentIsClearOfObstacles(params: {
     if (!obstacle.layers.includes(segment.layer)) continue
     if (obstacle.connectedTo.includes(plan.connectionName)) continue
     if (
-      allowSameNetMerges &&
+      (allowSameNetMerges || plan.termination.type === "plane") &&
       obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
     ) {
       continue
@@ -1621,6 +1767,105 @@ function getPlanVias(plan: FanoutRoutePlan) {
   ].filter((via): via is NonNullable<FanoutRoutePlan["via"]> => Boolean(via))
 }
 
+interface MechanicallySpacedVia {
+  center: Point2D
+  holeDiameter: number
+  spanLayers: readonly string[]
+}
+
+function getHoleToHoleClearance(
+  srj: SimpleRouteJson,
+  fallbackClearance: number,
+): number {
+  const holeClearanceRules = srj as SimpleRouteJson & {
+    minViaHoleEdgeToViaHoleEdgeClearance?: number
+    min_via_hole_edge_to_via_hole_edge_clearance?: number
+  }
+  const configuredClearance =
+    holeClearanceRules.minViaHoleEdgeToViaHoleEdgeClearance ??
+    holeClearanceRules.min_via_hole_edge_to_via_hole_edge_clearance
+  return typeof configuredClearance === "number" &&
+    Number.isFinite(configuredClearance) &&
+    configuredClearance >= 0
+    ? configuredClearance
+    : fallbackClearance
+}
+
+function viaHolesAreMechanicallyClear(params: {
+  firstVias: readonly MechanicallySpacedVia[]
+  secondVias: readonly MechanicallySpacedVia[]
+  srj: SimpleRouteJson
+  fallbackClearance: number
+}): boolean {
+  const { firstVias, secondVias, srj, fallbackClearance } = params
+  const holeToHoleClearance = getHoleToHoleClearance(srj, fallbackClearance)
+  for (const firstVia of firstVias) {
+    for (const secondVia of secondVias) {
+      if (
+        !firstVia.spanLayers.some((layer) =>
+          secondVia.spanLayers.includes(layer),
+        )
+      ) {
+        continue
+      }
+      if (
+        distance(firstVia.center, secondVia.center) <
+        (firstVia.holeDiameter + secondVia.holeDiameter) / 2 +
+          holeToHoleClearance -
+          1e-9
+      ) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
+function viaHolesArePairwiseMechanicallyClear(params: {
+  vias: readonly MechanicallySpacedVia[]
+  srj: SimpleRouteJson
+  fallbackClearance: number
+}): boolean {
+  const { vias, srj, fallbackClearance } = params
+  for (let firstIndex = 0; firstIndex < vias.length; firstIndex++) {
+    if (
+      !viaHolesAreMechanicallyClear({
+        firstVias: [vias[firstIndex]!],
+        secondVias: vias.slice(firstIndex + 1),
+        srj,
+        fallbackClearance,
+      })
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+function connectionsMayShareCopper(params: {
+  srj: SimpleRouteJson
+  firstConnectionName: string
+  secondConnectionName: string
+  allowSameNetMerges: boolean
+  includesPlaneTermination: boolean
+}): boolean {
+  const {
+    srj,
+    firstConnectionName,
+    secondConnectionName,
+    allowSameNetMerges,
+    includesPlaneTermination,
+  } = params
+  return (
+    (allowSameNetMerges || includesPlaneTermination) &&
+    connectionsShareElectricalNet(
+      srj,
+      firstConnectionName,
+      secondConnectionName,
+    )
+  )
+}
+
 function viaFitsInsidePlanSourcePad(
   plan: FanoutRoutePlan,
   via: NonNullable<FanoutRoutePlan["via"]>,
@@ -1662,6 +1907,16 @@ function planIsStaticallyClear(params: {
   ) {
     return false
   }
+  const planVias = getPlanVias(plan)
+  if (
+    !viaHolesArePairwiseMechanicallyClear({
+      vias: planVias,
+      srj,
+      fallbackClearance: clearance,
+    })
+  ) {
+    return false
+  }
   const segments = getPlanSegments(plan)
   for (let index = 0; index < segments.length; index++) {
     if (
@@ -1678,7 +1933,7 @@ function planIsStaticallyClear(params: {
       return false
     }
   }
-  for (const via of getPlanVias(plan)) {
+  for (const via of planVias) {
     for (const obstacle of srj.obstacles) {
       if (
         allowsViaInPad(srj) &&
@@ -1691,7 +1946,7 @@ function planIsStaticallyClear(params: {
         continue
       }
       if (
-        allowSameNetMerges &&
+        (allowSameNetMerges || plan.termination.type === "plane") &&
         obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
       ) {
         continue
@@ -1709,15 +1964,28 @@ function planIsStaticallyClear(params: {
     srj,
     allowBlindAndBuriedVias,
   )) {
+    if (plan.connectionName === traceCopper.connectionName) {
+      continue
+    }
     if (
-      plan.connectionName === traceCopper.connectionName ||
-      (allowSameNetMerges &&
-        connectionsShareElectricalNet(
-          srj,
-          plan.connectionName,
-          traceCopper.connectionName,
-        ))
+      connectionsMayShareCopper({
+        srj,
+        firstConnectionName: plan.connectionName,
+        secondConnectionName: traceCopper.connectionName,
+        allowSameNetMerges,
+        includesPlaneTermination: plan.termination.type === "plane",
+      })
     ) {
+      if (
+        !viaHolesAreMechanicallyClear({
+          firstVias: planVias,
+          secondVias: traceCopper.vias,
+          srj,
+          fallbackClearance: clearance,
+        })
+      ) {
+        return false
+      }
       continue
     }
     for (const segment of getPlanSegments(plan)) {
@@ -1789,13 +2057,26 @@ function planIsClearOfPlans(params: {
   } = params
   for (const otherPlan of otherPlans) {
     if (
-      allowSameNetMerges &&
-      connectionsShareElectricalNet(
+      connectionsMayShareCopper({
         srj,
-        plan.connectionName,
-        otherPlan.connectionName,
-      )
+        firstConnectionName: plan.connectionName,
+        secondConnectionName: otherPlan.connectionName,
+        allowSameNetMerges,
+        includesPlaneTermination:
+          plan.termination.type === "plane" ||
+          otherPlan.termination.type === "plane",
+      })
     ) {
+      if (
+        !viaHolesAreMechanicallyClear({
+          firstVias: getPlanVias(plan),
+          secondVias: getPlanVias(otherPlan),
+          srj,
+          fallbackClearance: clearance,
+        })
+      ) {
+        return false
+      }
       continue
     }
     const plansShareSourcePort =
@@ -1965,6 +2246,48 @@ export function fanoutPlansAreClear(params: {
   return true
 }
 
+/**
+ * Validate one replacement plan against static copper and an already-clear
+ * set of unchanged plans. This avoids revalidating every unchanged pair while
+ * length matching explores meander candidates.
+ */
+export function fanoutPlanIsClearAgainstPlans(params: {
+  plan: FanoutRoutePlan
+  otherPlans: readonly FanoutRoutePlan[]
+  srj: SimpleRouteJson
+  sharedBoundary: Bounds
+  clearance: number
+  allowBlindAndBuriedVias?: boolean
+  allowSameNetMerges?: boolean
+}): boolean {
+  const {
+    plan,
+    otherPlans,
+    srj,
+    sharedBoundary,
+    clearance,
+    allowBlindAndBuriedVias = true,
+    allowSameNetMerges = false,
+  } = params
+  return (
+    planIsStaticallyClear({
+      plan,
+      srj,
+      sharedBoundary,
+      clearance,
+      allowBlindAndBuriedVias,
+      allowSameNetMerges,
+    }) &&
+    planIsClearOfPlans({
+      plan,
+      otherPlans: [...otherPlans],
+      srj,
+      allowSameNetMerges,
+      clearance,
+    })
+  )
+}
+
 function routePlaneTerminatedBus(
   params: RouteBusParams,
 ): FanoutRoutePlan[] | null {
@@ -1983,19 +2306,36 @@ function routePlaneTerminatedBus(
     allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
     fixedViaPointsByConnectionIndex,
+    fixedSourceEscapePathsByConnectionIndex,
   } = params
   const sourceObstacle = bus.connections[0]?.sourceObstacle
   if (!sourceObstacle || bus.termination.type !== "plane") return null
   const sourceLayer = bus.connections[0]!.sourceLayer
   if (targetLayer === sourceLayer) return null
 
-  if (fixedViaPointsByConnectionIndex) {
+  if (
+    fixedViaPointsByConnectionIndex ||
+    fixedSourceEscapePathsByConnectionIndex
+  ) {
     const fixedPlans: FanoutRoutePlan[] = []
     for (const preparedConnection of bus.connections) {
-      const fixedViaPoint = fixedViaPointsByConnectionIndex.get(
-        preparedConnection.connectionIndex,
-      )
+      const fixedSourceEscapePath =
+        fixedSourceEscapePathsByConnectionIndex?.get(
+          preparedConnection.connectionIndex,
+        )
+      const fixedViaPoint =
+        fixedViaPointsByConnectionIndex?.get(
+          preparedConnection.connectionIndex,
+        ) ?? fixedSourceEscapePath?.at(-1)
       if (!fixedViaPoint) return null
+      if (
+        fixedSourceEscapePath &&
+        distance(fixedSourceEscapePath.at(-1)!, fixedViaPoint) > 1e-9
+      ) {
+        throw new Error(
+          `FanoutSolver: fixed source escape path for "${preparedConnection.connection.name}" must end at its fixed via`,
+        )
+      }
       const sourcePoint = {
         x: preparedConnection.sourcePoint.x,
         y: preparedConnection.sourcePoint.y,
@@ -2020,7 +2360,7 @@ function routePlaneTerminatedBus(
         terminateAtVia: true,
         allowBlindAndBuriedVias,
         initialViaPoint: fixedViaPoint,
-        sourceEscapePath: [sourcePoint, fixedViaPoint],
+        sourceEscapePath: fixedSourceEscapePath ?? [sourcePoint, fixedViaPoint],
       })
       const endpointViaCandidates = getPlaneEndpointViaCandidates({
         preparedConnection,
@@ -2044,13 +2384,19 @@ function routePlaneTerminatedBus(
         ),
         basePlan,
       ]
+      const fixedSourceGeometryKey = JSON.stringify(
+        (fixedSourceEscapePath ?? [sourcePoint, fixedViaPoint]).map((point) => [
+          point.x,
+          point.y,
+        ]),
+      )
       const clearPlan = plansToTry.find((candidatePlan, candidateIndex) =>
         planIsClear({
           plan: candidatePlan,
           otherPlans: [...acceptedPlans, ...fixedPlans],
           staticClearanceCache,
           blockingBusCounts,
-          cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${candidateIndex}`,
+          cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${fixedSourceGeometryKey}:${candidateIndex}`,
           srj,
           sharedBoundary: bus.sharedBoundary,
           clearance,
@@ -2157,7 +2503,9 @@ function routePlaneTerminatedBus(
       : [1, -1]
 
     for (const viaHandedness of viaHandednesses) {
-      for (const connectionOrder of getConnectionOrders(directionalBus)) {
+      for (const connectionOrder of getSourceTopologyConnectionOrders(
+        directionalBus,
+      )) {
         const candidatePlans: FanoutRoutePlan[] = []
         let orderIsClear = true
         for (const preparedConnection of connectionOrder) {
@@ -2389,8 +2737,13 @@ export function routeBusAlternatives(
     rejectedViaMinimalCandidates,
     stopAfterFirstRejectedViaMinimalCandidate = false,
     fixedViaPointsByConnectionIndex,
+    fixedSourceEscapePathsByConnectionIndex,
     reservedVias = [],
+    softViaCapacityGroups = [],
     viaMinimalOnly = false,
+    fixedViaWindingOnly = false,
+    enableJointRouteSearch = false,
+    expandedStateBudget,
     cornerBandTargetTrackOffset,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
@@ -2403,6 +2756,17 @@ export function routeBusAlternatives(
     bus.connections.some(
       (connection) =>
         !fixedViaPointsByConnectionIndex.has(connection.connectionIndex),
+    )
+  ) {
+    return []
+  }
+  if (
+    fixedSourceEscapePathsByConnectionIndex &&
+    bus.connections.some(
+      (connection) =>
+        !fixedSourceEscapePathsByConnectionIndex.has(
+          connection.connectionIndex,
+        ),
     )
   ) {
     return []
@@ -2508,14 +2872,25 @@ export function routeBusAlternatives(
       preferTargetDirectedLaneBias?: boolean
     }
     const maximumThroughAllRouteOrderAttempts = 24
-    const windingTargetOrderCount = cornerSide
-      ? getWindingTargetOrders({
-          bus,
-          boundaryDirection,
-          layerNames,
-          targetLayer,
-        }).orders.length
-      : 1
+    const maximumFixedViaFallbackRouteOrderAttempts = 24
+    const unbandedTargetTracksCanBeReassigned =
+      !cornerSide &&
+      bus.connections.length > 1 &&
+      bus.connections.every(
+        (connection) =>
+          connection.hasExplicitLayeredExitTarget &&
+          connection.exitTargetPoint?.layer ===
+            bus.connections[0]?.exitTargetPoint?.layer,
+      )
+    const windingTargetOrderCount =
+      cornerSide || unbandedTargetTracksCanBeReassigned
+        ? getWindingTargetOrders({
+            bus,
+            boundaryDirection,
+            layerNames,
+            targetLayer,
+          }).orders.length
+        : 1
     const uniformDogboneTerminalPatterns: CoordinatedTerminalPattern[] =
       viaHandednesses.map((viaHandedness) => ({
         label: `uniform-${viaHandedness}`,
@@ -2525,6 +2900,22 @@ export function routeBusAlternatives(
           ? undefined
           : maximumThroughAllRouteOrderAttempts,
       }))
+    const alternateUniformDogboneTerminalPatterns: CoordinatedTerminalPattern[] =
+      viaHandednesses.flatMap((viaHandedness) =>
+        Array.from(
+          { length: Math.max(0, windingTargetOrderCount - 1) },
+          (_, alternateOrderIndex) => ({
+            label: `uniform-${viaHandedness}-winding-${alternateOrderIndex + 1}`,
+            useViaInPad: false,
+            getViaHandedness: () => viaHandedness,
+            // The legacy target topology above retains its established
+            // bounded route-order search. Alternate legal interleaves are
+            // cheap topology probes before falling back to crossover vias.
+            maximumRouteOrderAttempts: 1,
+            windingOrderIndex: alternateOrderIndex + 1,
+          }),
+        ),
+      )
     const connectionsBySourceTrack = bus.connections.toSorted(
       (first, second) =>
         getPerpendicularAxis(first.sourcePoint, bus.direction) -
@@ -2675,20 +3066,25 @@ export function routeBusAlternatives(
                 preferTargetDirectedLaneBias: true,
               }),
             ),
-            {
-              label: "component-matched-vias-fallback",
-              useViaInPad: false,
-              getViaHandedness: () => 0,
-              getViaPoint: (connection) =>
-                fixedViaPointsByConnectionIndex.get(
-                  connection.connectionIndex,
-                )!,
-              // Preserve the existing bounded search after every inexpensive
-              // layer-interleave candidate has had one deterministic attempt.
-              maximumRouteOrderAttempts: maximumThroughAllRouteOrderAttempts,
-              windingOrderIndex: 0,
-              preferTargetDirectedLaneBias: true,
-            },
+            ...(!fixedViaWindingOnly
+              ? [
+                  {
+                    label: "component-matched-vias-fallback",
+                    useViaInPad: false,
+                    getViaHandedness: () => 0 as const,
+                    getViaPoint: (connection: PreparedConnection) =>
+                      fixedViaPointsByConnectionIndex.get(
+                        connection.connectionIndex,
+                      )!,
+                    // Preserve the existing bounded search after every inexpensive
+                    // layer-interleave candidate has had one deterministic attempt.
+                    maximumRouteOrderAttempts:
+                      maximumFixedViaFallbackRouteOrderAttempts,
+                    windingOrderIndex: 0,
+                    preferTargetDirectedLaneBias: true,
+                  },
+                ]
+              : []),
           ]
         : []
     const planeTerminationsAlreadyOccupyTheFanout = acceptedPlans.some(
@@ -2699,11 +3095,32 @@ export function routeBusAlternatives(
     )
     const dogboneTerminalPatterns =
       acceptedBoundaryPlansExist && !allowBlindAndBuriedVias
-        ? [...mixedDogboneTerminalPatterns, ...uniformDogboneTerminalPatterns]
-        : [...uniformDogboneTerminalPatterns, ...mixedDogboneTerminalPatterns]
+        ? [
+            ...mixedDogboneTerminalPatterns,
+            ...uniformDogboneTerminalPatterns,
+            ...alternateUniformDogboneTerminalPatterns,
+          ]
+        : [
+            ...uniformDogboneTerminalPatterns,
+            ...alternateUniformDogboneTerminalPatterns,
+            ...mixedDogboneTerminalPatterns,
+          ]
+    const explicitTargetLayers = new Set(
+      bus.connections.flatMap((connection) =>
+        connection.exitTargetPoint?.layer
+          ? [connection.exitTargetPoint.layer]
+          : [],
+      ),
+    )
+    const tryUnreservedLegacyTerminalsBeforeFixedMap =
+      fixedViaTerminalPatterns.length > 0 &&
+      reservedVias.length === 0 &&
+      explicitTargetLayers.size > 1
     const terminalPatterns: CoordinatedTerminalPattern[] =
       fixedViaTerminalPatterns.length > 0
-        ? fixedViaTerminalPatterns
+        ? tryUnreservedLegacyTerminalsBeforeFixedMap
+          ? [...uniformDogboneTerminalPatterns, ...fixedViaTerminalPatterns]
+          : fixedViaTerminalPatterns
         : canUseViaInPadTerminals
           ? planeTerminationsAlreadyOccupyTheFanout
             ? [viaInPadTerminalPattern, ...dogboneTerminalPatterns]
@@ -2731,6 +3148,9 @@ export function routeBusAlternatives(
               bus,
               connection: preparedConnection,
               boundaryDirection,
+              layerNames,
+              targetLayer,
+              windingOrderIndex: terminalPattern.windingOrderIndex,
             })
         return {
           connection: preparedConnection,
@@ -2781,6 +3201,7 @@ export function routeBusAlternatives(
           allowSameNetMerges,
           maximumRouteOrderAttempts: terminalPattern.maximumRouteOrderAttempts,
           reservedVias,
+          softViaCapacityGroups,
           gridStepDivisor:
             fixedViaPointsByConnectionIndex &&
             Math.min(bus.pitchX, bus.pitchY) -
@@ -2790,6 +3211,8 @@ export function routeBusAlternatives(
               : 1,
           preferTargetDirectedLaneBias:
             terminalPattern.preferTargetDirectedLaneBias,
+          enableJointRouteSearch,
+          expandedStateBudget,
         },
         fixedViaPointsByConnectionIndex && viaMinimalOnly
           ? Math.min(2, Math.max(1, maxAlternatives - alternatives.length))
@@ -2940,7 +3363,7 @@ export function routeBusAlternatives(
   }
 
   for (const viaHandedness of viaHandednesses) {
-    for (const connectionOrder of getConnectionOrders(bus)) {
+    for (const connectionOrder of getSourceTopologyConnectionOrders(bus)) {
       searchConnectionOrder(connectionOrder, viaHandedness, 0, [])
       if (alternatives.length >= maxAlternatives) return alternatives
     }

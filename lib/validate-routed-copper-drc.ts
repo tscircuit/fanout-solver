@@ -30,6 +30,7 @@ export type RoutedCopperDrcIssueCode =
   | "different-net-trace-clearance"
   | "different-net-trace-via-clearance"
   | "different-net-via-clearance"
+  | "via-hole-clearance"
 
 export interface RoutedCopperDrcIssue {
   code: RoutedCopperDrcIssueCode
@@ -53,6 +54,7 @@ export interface RoutedCopperDrcReport {
 interface RoutedVia {
   center: Point2D
   diameter: number
+  holeDiameter: number
   spanLayers: string[]
 }
 
@@ -143,6 +145,8 @@ function extractTraceCopper(params: {
 
   for (const routePoint of trace.route) {
     if (routePoint.route_type === "via") {
+      const diameter =
+        routePoint.via_diameter ?? srj.minViaPadDiameter ?? srj.minTraceWidth
       const spanLayers = getRouteViaSpanLayers({
         fromLayer: routePoint.from_layer,
         toLayer: routePoint.to_layer,
@@ -155,8 +159,14 @@ function extractTraceCopper(params: {
       })
       vias.push({
         center: { x: routePoint.x, y: routePoint.y },
-        diameter:
-          routePoint.via_diameter ?? srj.minViaPadDiameter ?? srj.minTraceWidth,
+        diameter,
+        holeDiameter:
+          routePoint.via_hole_diameter ??
+          srj.minViaHoleDiameter ??
+          srj.min_via_hole_diameter ??
+          // An unknown drill must not make mechanical validation less
+          // conservative than the known outer via geometry.
+          diameter,
         spanLayers,
       })
       if (
@@ -234,6 +244,55 @@ function extractTraceCopper(params: {
   }
 
   return { trace, connectionName, segments, vias }
+}
+
+function getViaHoleEdgeClearance(
+  srj: SimpleRouteJson,
+  fallbackClearance: number,
+): number {
+  const rules = srj as SimpleRouteJson & {
+    minViaHoleEdgeToViaHoleEdgeClearance?: number
+    min_via_hole_edge_to_via_hole_edge_clearance?: number
+  }
+  const configuredClearance =
+    rules.minViaHoleEdgeToViaHoleEdgeClearance ??
+    rules.min_via_hole_edge_to_via_hole_edge_clearance
+  return typeof configuredClearance === "number" &&
+    Number.isFinite(configuredClearance) &&
+    configuredClearance >= 0
+    ? configuredClearance
+    : fallbackClearance
+}
+
+function addViaHoleClearanceIssue(params: {
+  issues: RoutedCopperDrcIssue[]
+  first: TraceCopper
+  firstVia: RoutedVia
+  second: TraceCopper
+  secondVia: RoutedVia
+  requiredEdgeClearance: number
+}): void {
+  const { issues, first, firstVia, second, secondVia, requiredEdgeClearance } =
+    params
+  if (
+    !firstVia.spanLayers.some((layer) => secondVia.spanLayers.includes(layer))
+  ) {
+    return
+  }
+  const centerDistance = distance(firstVia.center, secondVia.center)
+  const requiredCenterDistance =
+    (firstVia.holeDiameter + secondVia.holeDiameter) / 2 + requiredEdgeClearance
+  if (centerDistance >= requiredCenterDistance - EPSILON) return
+  const actualEdgeClearance =
+    centerDistance - (firstVia.holeDiameter + secondVia.holeDiameter) / 2
+  addIssue(issues, {
+    code: "via-hole-clearance",
+    traceId: first.trace.pcb_trace_id,
+    connectionName: first.connectionName,
+    otherTraceId: second.trace.pcb_trace_id,
+    otherConnectionName: second.connectionName,
+    message: `Drilled holes in ${first.trace.pcb_trace_id} and ${second.trace.pcb_trace_id} are ${actualEdgeClearance.toFixed(4)}mm edge-to-edge; ${requiredEdgeClearance.toFixed(4)}mm is required`,
+  })
 }
 
 /**
@@ -379,6 +438,32 @@ export function validateRoutedCopperDrc(params: {
     }
   }
 
+  const requiredViaHoleEdgeClearance = getViaHoleEdgeClearance(
+    inputSrj,
+    clearance,
+  )
+  for (const copper of traceCopper) {
+    for (
+      let firstViaIndex = 0;
+      firstViaIndex < copper.vias.length;
+      firstViaIndex++
+    ) {
+      for (
+        let secondViaIndex = firstViaIndex + 1;
+        secondViaIndex < copper.vias.length;
+        secondViaIndex++
+      ) {
+        addViaHoleClearanceIssue({
+          issues,
+          first: copper,
+          firstVia: copper.vias[firstViaIndex]!,
+          second: copper,
+          secondVia: copper.vias[secondViaIndex]!,
+          requiredEdgeClearance: requiredViaHoleEdgeClearance,
+        })
+      }
+    }
+  }
   for (let firstIndex = 0; firstIndex < traceCopper.length; firstIndex++) {
     const first = traceCopper[firstIndex]!
     for (
@@ -387,6 +472,18 @@ export function validateRoutedCopperDrc(params: {
       secondIndex++
     ) {
       const second = traceCopper[secondIndex]!
+      for (const firstVia of first.vias) {
+        for (const secondVia of second.vias) {
+          addViaHoleClearanceIssue({
+            issues,
+            first,
+            firstVia,
+            second,
+            secondVia,
+            requiredEdgeClearance: requiredViaHoleEdgeClearance,
+          })
+        }
+      }
       if (
         connectionsShareElectricalNet(
           inputSrj,
