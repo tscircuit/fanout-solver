@@ -1,0 +1,146 @@
+name: Fanout Benchmark
+
+"on":
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Optional open PR to benchmark and comment on (otherwise this ref)"
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: fanout-benchmark-${{ github.event.issue.number || inputs.pr_number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/benchmark') &&
+       github.event.comment.user.type != 'Bot')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+    outputs:
+      enabled: ${{ steps.prepare.outputs.enabled }}
+      ref: ${{ steps.prepare.outputs.ref }}
+      repository: ${{ steps.prepare.outputs.repository }}
+      comment_id: ${{ steps.prepare.outputs.comment_id }}
+    steps:
+      - name: Checkout trusted workflow code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Authorize request and capture PR revision
+        id: prepare
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { pathToFileURL } = require('node:url')
+            const { preparePrBenchmark } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/benchmarks/pr-benchmark.js`).href)
+            await preparePrBenchmark({ github, context, core })
+
+  benchmark:
+    needs: prepare
+    if: needs.prepare.outputs.enabled == 'true'
+    runs-on: blacksmith-32vcpu-ubuntu-2404-arm
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      BENCHMARK_CONCURRENCY: ${{ vars.BENCHMARK_CONCURRENCY || '32' }}
+      BENCHMARK_SAMPLE_TIMEOUT_SECONDS: ${{ vars.BENCHMARK_SAMPLE_TIMEOUT_SECONDS || '120' }}
+    steps:
+      # This job executes PR code, so it has no comment-writing token or secrets.
+      - name: Checkout exact requested revision
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.prepare.outputs.repository }}
+          ref: ${{ needs.prepare.outputs.ref }}
+          persist-credentials: false
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install
+      - name: Run every sample
+        run: >-
+          ./benchmark.sh
+          --concurrency "$BENCHMARK_CONCURRENCY"
+          --sample-timeout-seconds "$BENCHMARK_SAMPLE_TIMEOUT_SECONDS"
+          --output-directory benchmark-results
+      - name: Upload complete or partial reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fanout-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            benchmark-results/benchmark.json
+            benchmark-results/benchmark.md
+          if-no-files-found: warn
+
+  report:
+    needs: [prepare, benchmark]
+    if: always() && needs.prepare.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      # Never run PR code in the job with permission to post comments.
+      - name: Checkout trusted report renderer
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Download benchmark data
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: fanout-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: benchmark-report
+      - name: Publish result or infrastructure failure
+        uses: actions/github-script@v7
+        env:
+          BENCHMARK_REF: ${{ needs.prepare.outputs.ref }}
+          BENCHMARK_RESULT: ${{ needs.benchmark.result }}
+          COMMENT_ID: ${{ needs.prepare.outputs.comment_id }}
+        with:
+          script: |
+            const { pathToFileURL } = require('node:url')
+            const { readFileSync, existsSync, statSync } = require('node:fs')
+            const { renderBenchmarkComment } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/benchmarks/pr-benchmark.js`).href)
+            const options = {
+              ref: process.env.BENCHMARK_REF,
+              result: process.env.BENCHMARK_RESULT,
+              runUrl: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            }
+            const path = 'benchmark-report/benchmark.json'
+            let body
+            try {
+              if (existsSync(path) && statSync(path).size > 5 * 1024 * 1024) throw new Error('Report exceeds 5 MiB')
+              const report = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null
+              body = renderBenchmarkComment(report, options)
+            } catch (error) {
+              core.warning(`Unreadable report: ${error.message}`)
+              body = renderBenchmarkComment(null, options)
+            }
+            await core.summary.addRaw(body).write()
+            if (process.env.COMMENT_ID) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: Number(process.env.COMMENT_ID),
+                body,
+              })
+            }

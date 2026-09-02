@@ -280,6 +280,54 @@ parameters. Each sample has one shared boundary around all of its footprints,
 and component bounds come from the exact footprinter-generated copper pad
 extents.
 
+## All-sample benchmark
+
+Run `./benchmark.sh` (or `bun run benchmark`) to benchmark every available sample:
+Datasets 01–08, SRJ19, and SRJ29, currently **421 samples**. New samples in these
+catalogs are discovered automatically; no test-file allowlist is involved.
+
+```sh
+./benchmark.sh
+./benchmark.sh --list
+./benchmark.sh --dataset dataset08
+./benchmark.sh --dataset srj19,srj29 --sample sample001
+./benchmark.sh --concurrency 8 --sample-timeout-seconds 300
+```
+
+Each sample runs in an isolated process, with up to four concurrent processes
+locally and a **120-second hard timeout** by default. A synchronous solver hang,
+exception, or unsolved case does not prevent later samples from running.
+Assignment budgets and circuit constraints remain at each sample's defaults;
+`--max-layer-combinations` explicitly overrides only the search budget.
+
+The ordered `benchmark-results/benchmark.json` and `benchmark.md` reports contain
+the commit, configuration, per-dataset solve totals, every sample's status and
+timing, and partial routing/validation counts. Reports are saved after every
+completed sample, including the total selected count to identify incomplete runs.
+Timed-out workers do not retain their in-flight routing counts.
+Compare reports with the same budgets to track progress. Solved means validated
+fanout, not downstream inter-chip routing; SRJ29 additionally requires its
+original-endpoint and emitted-copper DRC checks. Partial, error, and timeout rows
+are benchmark results (exit 0); invalid CLI arguments or report I/O failures are
+command failures (nonzero exit).
+
+### PR comment trigger
+
+Once `.github/workflows/benchmark.yml` is on the default branch, a repository
+writer can comment **`/benchmark`** on an open PR. The workflow captures that
+PR's exact head SHA, runs all samples on a **32-vCPU Blacksmith ARM** runner,
+then updates a status comment with solve totals, per-sample results, and a link
+to the complete JSON/Markdown artifact. The Actions UI also supports a manual
+run, optionally supplying an open PR number. No custom bot token is required.
+
+The runner defaults to 32 processes and a 120-second per-sample deadline; set
+repository variables `BENCHMARK_CONCURRENCY` and
+`BENCHMARK_SAMPLE_TIMEOUT_SECONDS` to change these. PR code runs with a read-only
+token and no persisted checkout credentials. A separate job uses the trusted
+workflow revision to validate report data and post comments; it never executes
+PR code. Only exact commands from non-bot users with current write, maintain, or
+admin access are accepted.
+
 ## SRJ29 benchmark
 
 The repository loads all 200 samples from the derivative
@@ -293,10 +341,10 @@ direction. Every adapted problem uses the same six-layer stackup (`top`,
 `inner1` through `inner4`, and `bottom`) so benchmark improvements are directly
 comparable.
 
-Run the full benchmark with:
+The dedicated legacy SRJ29 report remains available with:
 
 ```sh
-./benchmark.sh
+bun run benchmark:srj29
 ```
 
 Use `--sample sample001`, `--limit 10`, or

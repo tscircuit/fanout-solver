@@ -134,7 +134,7 @@ function parseOptions(args: string[]): BenchmarkOptions {
 }
 
 function printHelp(): void {
-  console.log(`Usage: ./benchmark.sh [options]
+  console.log(`Usage: bun run benchmark:srj29 [options]
 
 Runs the six-layer SRJ29 fanout benchmark. Local runs process one sample at a
 time by default; use --concurrency on a multi-core benchmark runner.
