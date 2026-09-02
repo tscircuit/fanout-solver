@@ -452,8 +452,14 @@ function createInitialLayerAssignment(params: {
   buses: PreparedBus[]
   escapeLayers: string[]
   escapeLayersByBusId: Readonly<Record<string, readonly string[]>>
+  preferOrderedCoordinatedWindingLayers: boolean
 }): Readonly<Record<string, string>> {
-  const { buses, escapeLayers, escapeLayersByBusId } = params
+  const {
+    buses,
+    escapeLayers,
+    escapeLayersByBusId,
+    preferOrderedCoordinatedWindingLayers,
+  } = params
   const assignment: Record<string, string> = {}
   const directionsByComponent = new Map<string, Set<PreparedBus["direction"]>>()
   let nextViaLayerIndex = 0
@@ -489,7 +495,10 @@ function createInitialLayerAssignment(params: {
     ) {
       assignment[bus.busId] = sourceLayer
     } else if (viaLayers.length > 0) {
-      if (busUsesCoordinatedWinding(bus)) {
+      if (
+        preferOrderedCoordinatedWindingLayers &&
+        busUsesCoordinatedWinding(bus)
+      ) {
         // Coordinated winding treats allowedLayers as an ordered preference.
         // A global round-robin index can otherwise skip a bus's first choice
         // just because a previous bus had a different set of legal layers.
@@ -546,11 +555,6 @@ export function shouldUseJointBoundaryViaReservation(
   boundaryBusConnectionCounts: readonly number[],
 ): boolean {
   return (
-    (boundaryBusConnectionCounts.length === 2 &&
-      Math.max(...boundaryBusConnectionCounts) >= 8 &&
-      Math.min(...boundaryBusConnectionCounts) >= 2) ||
-    (boundaryBusConnectionCounts.length === 3 &&
-      boundaryBusConnectionCounts.every((count) => count >= 8)) ||
     boundaryBusConnectionCounts.length === 5 ||
     boundaryBusConnectionCounts.length === 6 ||
     boundaryBusConnectionCounts.length === 7 ||
@@ -1028,6 +1032,9 @@ export class FanoutSolver extends BaseSolver {
           buses: this.preparedBuses,
           escapeLayers: this.config.escapeLayers,
           escapeLayersByBusId: this.escapeLayersByBusId,
+          preferOrderedCoordinatedWindingLayers:
+            this.config.densePlaneReservationBusIds.length > 0 ||
+            this.config.denseUnrestrictedPlaneRoutingBusIds.length > 0,
         }),
         generatedAssignments,
         maxAssignments: this.config.maxLayerCombinations,
@@ -1404,6 +1411,9 @@ export class FanoutSolver extends BaseSolver {
     const unsortedBoundaryBuses = params.busesInRoutingOrder.filter(
       (bus) => bus.termination.type === "boundary",
     )
+    const useConfiguredDensePlaneRouting =
+      this.config.densePlaneReservationBusIds.length > 0 ||
+      this.config.denseUnrestrictedPlaneRoutingBusIds.length > 0
     const useJointBoundaryViaReservation = shouldUseJointBoundaryViaReservation(
       unsortedBoundaryBuses.map((bus) => bus.connections.length),
     )
@@ -1428,7 +1438,8 @@ export class FanoutSolver extends BaseSolver {
     const wideBoundaryBuses = unsortedBoundaryBuses.filter(
       (bus) => bus.connections.length >= 8,
     )
-    const hasThreeWideBoundaryBuses = wideBoundaryBuses.length === 3
+    const hasThreeWideBoundaryBuses =
+      useConfiguredDensePlaneRouting && wideBoundaryBuses.length === 3
     const getBoundaryTargetSpan = (bus: PreparedBus) => {
       const coordinates = bus.connections.map((connection) => {
         const target = connection.exitTargetPoint ?? connection.targetPoint
@@ -1607,9 +1618,9 @@ export class FanoutSolver extends BaseSolver {
     const planeBuses = this.preparedBuses.filter(
       (bus) => bus.termination.type === "plane",
     )
-    const useConfiguredDensePlaneRouting =
-      this.config.densePlaneReservationBusIds.length > 0 ||
-      this.config.denseUnrestrictedPlaneRoutingBusIds.length > 0
+    const denseAdditionalObstacles = useConfiguredDensePlaneRouting
+      ? this.routingSrj.obstacles
+      : undefined
     const initialPlaneReservationCount = Number.parseInt(
       process.env.FANOUT_INITIAL_PLANE_RESERVATIONS ?? "8",
       10,
@@ -1630,12 +1641,14 @@ export class FanoutSolver extends BaseSolver {
           ? planeBuses.filter((bus) =>
               this.config.densePlaneReservationBusIds.includes(bus.busId),
             )
-          : planeBuses.slice(
-              0,
-              Number.isFinite(initialPlaneReservationCount)
-                ? initialPlaneReservationCount
-                : 8,
-            )
+          : useConfiguredDensePlaneRouting
+            ? planeBuses.slice(
+                0,
+                Number.isFinite(initialPlaneReservationCount)
+                  ? initialPlaneReservationCount
+                  : 8,
+              )
+            : planeBuses
     debugDense(
       "start",
       boundaryBuses.map((bus) => `${bus.busId}:${bus.connections.length}`),
@@ -1887,7 +1900,8 @@ export class FanoutSolver extends BaseSolver {
             maximumSearchStates: 100_000,
             preferredBoundaryPerpendicularSideByBusId,
             preferBoundaryOutwardByBusId,
-            additionalObstacles: this.routingSrj.obstacles,
+            additionalObstacles: denseAdditionalObstacles,
+            preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
             canShareCopper,
           },
         )
@@ -1904,7 +1918,8 @@ export class FanoutSolver extends BaseSolver {
           maximumSearchStates: 20_000,
           preferredBoundaryPerpendicularSideByBusId,
           preferBoundaryOutwardByBusId,
-          additionalObstacles: this.routingSrj.obstacles,
+          additionalObstacles: denseAdditionalObstacles,
+          preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
           canShareCopper,
         },
       )
@@ -1962,7 +1977,8 @@ export class FanoutSolver extends BaseSolver {
             preferredBoundaryPerpendicularSideByBusId,
             preferBoundaryOutwardByBusId,
             fixedViaPointsByConnectionIndex: seedViaPoints,
-            additionalObstacles: this.routingSrj.obstacles,
+            additionalObstacles: denseAdditionalObstacles,
+            preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
             canShareCopper,
           },
         )
@@ -2089,6 +2105,9 @@ export class FanoutSolver extends BaseSolver {
           fixedViaPointsByConnectionIndex,
           reservedVias: getReservedVias(bus),
           viaMinimalOnly: process.env.FANOUT_DEBUG_ALLOW_EXTRA_VIAS !== "1",
+          fixedViaFallbackRouteOrderAttempts: useConfiguredDensePlaneRouting
+            ? 6
+            : 24,
           cornerBandTargetTrackOffset: getCornerBandTargetTrackOffset(bus),
         } as const
         const routeAlternatives = function* (
@@ -2121,26 +2140,23 @@ export class FanoutSolver extends BaseSolver {
             getContainingWideSourceField(candidate) === bus &&
             matchedPlans.some((plan) => plan.busId === candidate.busId),
         )
-        // A second allowed layer is an optional winding crossover channel,
-        // not a requirement. Prefer the simpler single-layer route before
-        // paying for (and committing to) extra crossover vias. The exception
-        // is an already-routed narrow bus embedded in this wide source field:
-        // its copper occupies the direct winding channel by construction.
-        const preferLayeredWinding =
-          singleLayerBus !== bus && embeddedNarrowBusAlreadyRouted
+        // In the configured dense-plane mode, a second allowed layer is an
+        // optional winding crossover channel rather than a requirement. Try
+        // the simpler single-layer route first unless an already-routed narrow
+        // bus occupies that direct winding channel. Preserve the released
+        // multi-layer search order for callers that did not opt into this mode.
+        const preferSingleLayerWinding =
+          useConfiguredDensePlaneRouting &&
+          singleLayerBus !== bus &&
+          !embeddedNarrowBusAlreadyRouted
         let busPlans = (yield* routeAlternatives(
-          preferLayeredWinding
-            ? routeParams
-            : { ...routeParams, bus: singleLayerBus },
+          preferSingleLayerWinding
+            ? { ...routeParams, bus: singleLayerBus }
+            : routeParams,
           1,
         ))[0]
-        if (!busPlans && singleLayerBus !== bus) {
-          busPlans = (yield* routeAlternatives(
-            preferLayeredWinding
-              ? { ...routeParams, bus: singleLayerBus }
-              : routeParams,
-            1,
-          ))[0]
+        if (!busPlans && preferSingleLayerWinding) {
+          busPlans = (yield* routeAlternatives(routeParams, 1))[0]
         }
         if (busPlans && bus.maxLengthSkew !== undefined) {
           const lengths = busPlans.map((plan) => plan.length)
@@ -2280,7 +2296,9 @@ export class FanoutSolver extends BaseSolver {
                     preferBoundaryOutwardByBusId,
                     fixedViaPointsByConnectionIndex: candidateMatchingBase,
                     blockingSegments,
-                    additionalObstacles: this.routingSrj.obstacles,
+                    additionalObstacles: denseAdditionalObstacles,
+                    preferPlaneCheckerboardSites:
+                      useConfiguredDensePlaneRouting,
                     canShareCopper,
                   },
                 )
@@ -2330,7 +2348,8 @@ export class FanoutSolver extends BaseSolver {
                 preferBoundaryOutwardByBusId,
                 fixedViaPointsByConnectionIndex: extendedViaPoints,
                 blockingSegments,
-                additionalObstacles: this.routingSrj.obstacles,
+                additionalObstacles: denseAdditionalObstacles,
+                preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
                 canShareCopper,
               },
             )
@@ -2349,7 +2368,8 @@ export class FanoutSolver extends BaseSolver {
                   traceWidth: this.config.traceWidth,
                   clearance: this.config.clearance,
                   blockingSegments,
-                  additionalObstacles: this.routingSrj.obstacles,
+                  additionalObstacles: denseAdditionalObstacles,
+                  preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
                   canShareCopper,
                 },
               )) {
@@ -2414,7 +2434,9 @@ export class FanoutSolver extends BaseSolver {
                       fixedViaPointsByConnectionIndex:
                         fixedViaPointsByConnectionIndex,
                       blockingSegments: lookaheadBlockingSegments,
-                      additionalObstacles: this.routingSrj.obstacles,
+                      additionalObstacles: denseAdditionalObstacles,
+                      preferPlaneCheckerboardSites:
+                        useConfiguredDensePlaneRouting,
                       canShareCopper,
                     },
                   ),
@@ -2540,7 +2562,9 @@ export class FanoutSolver extends BaseSolver {
                     preferBoundaryOutwardByBusId,
                     fixedViaPointsByConnectionIndex: incrementalViaPoints,
                     blockingSegments,
-                    additionalObstacles: this.routingSrj.obstacles,
+                    additionalObstacles: denseAdditionalObstacles,
+                    preferPlaneCheckerboardSites:
+                      useConfiguredDensePlaneRouting,
                     canShareCopper,
                   },
                 ),
@@ -3062,7 +3086,8 @@ export class FanoutSolver extends BaseSolver {
                   clearance: this.config.clearance,
                   blockingSegments: allBlockingSegments,
                   blockingVias: alternateBlockingVias,
-                  additionalObstacles: this.routingSrj.obstacles,
+                  additionalObstacles: denseAdditionalObstacles,
+                  preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
                   canShareCopper,
                 },
               )) {
@@ -3199,7 +3224,8 @@ export class FanoutSolver extends BaseSolver {
                   fixedViaPointsByConnectionIndex: incrementalViaPoints,
                   blockingSegments: allBlockingSegments,
                   blockingVias: alternateBlockingVias,
-                  additionalObstacles: this.routingSrj.obstacles,
+                  additionalObstacles: denseAdditionalObstacles,
+                  preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
                   canShareCopper,
                 },
               )
@@ -3242,7 +3268,8 @@ export class FanoutSolver extends BaseSolver {
               preferBoundaryOutwardByBusId,
               fixedViaPointsByConnectionIndex: fixedBoundaryViaPoints,
               blockingSegments,
-              additionalObstacles: this.routingSrj.obstacles,
+              additionalObstacles: denseAdditionalObstacles,
+              preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
               canShareCopper,
             },
           )

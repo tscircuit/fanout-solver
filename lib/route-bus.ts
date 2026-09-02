@@ -61,6 +61,8 @@ export interface RouteBusParams {
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
   viaMinimalOnly?: boolean
+  /** Bounds the final fixed-via winding fallback after ordered attempts. */
+  fixedViaFallbackRouteOrderAttempts?: number
   /** Skip this many otherwise-clear plane escapes when enumerating alternatives. */
   planeCandidateSkipCount?: number
   /** Dense corner-band phase that preserves existing lane centers when leading lanes are prepended. */
@@ -2442,6 +2444,7 @@ export function* routeBusAlternativesSteps(
     fixedViaPointsByConnectionIndex,
     reservedVias = [],
     viaMinimalOnly = false,
+    fixedViaFallbackRouteOrderAttempts = 24,
     cornerBandTargetTrackOffset,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
@@ -2663,7 +2666,7 @@ export function* routeBusAlternativesSteps(
             ...towardMedianFlipRankSets.slice(0, 12).map((flippedRanks) => ({
               label: `toward-source-median-with-ranks-${flippedRanks.join("-")}-flipped`,
               useViaInPad: false,
-              maximumRouteOrderAttempts: maximumThroughAllRouteOrderAttempts,
+              maximumRouteOrderAttempts: 6,
               getViaHandedness: (connection: PreparedConnection) => {
                 const rank =
                   sourceTrackRankByConnectionIndex.get(
@@ -2748,7 +2751,7 @@ export function* routeBusAlternativesSteps(
                 )!,
               // Preserve the existing bounded search after every inexpensive
               // layer-interleave candidate has had one deterministic attempt.
-              maximumRouteOrderAttempts: 6,
+              maximumRouteOrderAttempts: fixedViaFallbackRouteOrderAttempts,
               windingOrderIndex: 0,
               preferTargetDirectedLaneBias: true,
             },

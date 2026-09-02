@@ -49,6 +49,8 @@ export interface DogboneViaSiteGeometryRules {
   }[]
   /** Board obstacles outside the source component that dogbones must clear. */
   additionalObstacles?: readonly Obstacle[]
+  /** Alternate horizontal plane dogbones across BGA rows. */
+  preferPlaneCheckerboardSites?: boolean
   /** True only when the two connections are allowed to merge copper. */
   canShareCopper?: (
     firstConnectionIndex: number,
@@ -495,7 +497,8 @@ function getConnectionCandidates(params: {
   const preferredPerpendicularSide =
     connection.terminationType === "boundary"
       ? rules.preferredBoundaryPerpendicularSideByBusId?.get(connection.busId)
-      : connection.terminationType === "plane" &&
+      : rules.preferPlaneCheckerboardSites &&
+          connection.terminationType === "plane" &&
           (direction === "left" || direction === "right")
         ? planeCheckerboardSide
         : undefined
