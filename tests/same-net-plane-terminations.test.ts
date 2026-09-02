@@ -4,9 +4,10 @@ import { FanoutSolver } from "lib/fanout-solver"
 import type { FanoutBusSpec } from "lib/types"
 
 test("same-net plane terminations use offset through-all vias", () => {
+  const clearance = 0.08128
   const sources = [
     { name: "GND_A", x: 0 },
-    { name: "GND_B", x: 0.5 },
+    { name: "GND_B", x: 0.1 },
   ]
   const buses: FanoutBusSpec[] = sources.map(({ name }) => ({
     busId: `plane-${name}`,
@@ -21,9 +22,9 @@ test("same-net plane terminations use offset through-all vias", () => {
     nominalTraceWidth: 0.1,
     minViaPadDiameter: 0.24,
     minViaHoleDiameter: 0.12,
-    minTraceToPadEdgeClearance: 0.08128,
-    minViaEdgeToPadEdgeClearance: 0.08128,
-    defaultObstacleMargin: 0.08128,
+    minTraceToPadEdgeClearance: clearance,
+    minViaEdgeToPadEdgeClearance: clearance,
+    defaultObstacleMargin: clearance,
     bounds: { minX: -1, maxX: 1.5, minY: -1, maxY: 1 },
     connections: sources.map(({ name, x }) => ({
       name,
@@ -35,8 +36,8 @@ test("same-net plane terminations use offset through-all vias", () => {
       componentId: "U1",
       type: "rect" as const,
       center: { x, y: 0 },
-      width: 0.25616,
-      height: 0.25616,
+      width: 0.05,
+      height: 0.05,
       layers: ["top"],
       connectedTo: [name, `${name}-source`],
     })),
@@ -67,4 +68,15 @@ test("same-net plane terminations use offset through-all vias", () => {
       spanLayers: ["top", "inner1", "inner2", "bottom"],
     })
   }
+  const [firstVia, secondVia] = output.planeTerminations.map(
+    (termination) => termination.via,
+  )
+  expect(
+    Math.hypot(
+      firstVia!.center.x - secondVia!.center.x,
+      firstVia!.center.y - secondVia!.center.y,
+    ),
+  ).toBeGreaterThanOrEqual(
+    (firstVia!.diameter + secondVia!.diameter) / 2 + clearance,
+  )
 })

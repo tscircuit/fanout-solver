@@ -1796,16 +1796,13 @@ function planIsClearOfPlans(params: {
     blockingBusCounts,
   } = params
   for (const otherPlan of otherPlans) {
-    if (
+    const plansShareElectricalNet =
       allowSameNetMerges &&
       connectionsShareElectricalNet(
         srj,
         plan.connectionName,
         otherPlan.connectionName,
       )
-    ) {
-      continue
-    }
     const plansShareSourcePort =
       (plan.sourcePoint.pcb_port_id &&
         plan.sourcePoint.pcb_port_id === otherPlan.sourcePoint.pcb_port_id) ||
@@ -1824,36 +1821,44 @@ function planIsClearOfPlans(params: {
     const planVias = getPlanVias(plan)
     const otherVias = getPlanVias(otherPlan)
     for (const segment of planSegments) {
-      for (const otherSegment of otherSegments) {
-        if (!segmentsAreClear(segment, otherSegment, clearance)) {
-          recordBlocker()
-          return false
+      if (!plansShareElectricalNet) {
+        for (const otherSegment of otherSegments) {
+          if (!segmentsAreClear(segment, otherSegment, clearance)) {
+            recordBlocker()
+            return false
+          }
         }
-      }
-      for (const otherVia of otherVias) {
-        if (
-          otherVia.spanLayers.includes(segment.layer) &&
-          distancePointToSegment(otherVia.center, segment.start, segment.end) <
-            otherVia.diameter / 2 + segment.width / 2 + clearance - 1e-9
-        ) {
-          recordBlocker()
-          return false
+        for (const otherVia of otherVias) {
+          if (
+            otherVia.spanLayers.includes(segment.layer) &&
+            distancePointToSegment(
+              otherVia.center,
+              segment.start,
+              segment.end,
+            ) <
+              otherVia.diameter / 2 + segment.width / 2 + clearance - 1e-9
+          ) {
+            recordBlocker()
+            return false
+          }
         }
       }
     }
     for (const planVia of planVias) {
-      for (const otherSegment of otherSegments) {
-        if (
-          planVia.spanLayers.includes(otherSegment.layer) &&
-          distancePointToSegment(
-            planVia.center,
-            otherSegment.start,
-            otherSegment.end,
-          ) <
-            planVia.diameter / 2 + otherSegment.width / 2 + clearance - 1e-9
-        ) {
-          recordBlocker()
-          return false
+      if (!plansShareElectricalNet) {
+        for (const otherSegment of otherSegments) {
+          if (
+            planVia.spanLayers.includes(otherSegment.layer) &&
+            distancePointToSegment(
+              planVia.center,
+              otherSegment.start,
+              otherSegment.end,
+            ) <
+              planVia.diameter / 2 + otherSegment.width / 2 + clearance - 1e-9
+          ) {
+            recordBlocker()
+            return false
+          }
         }
       }
       for (const otherVia of otherVias) {
