@@ -2378,6 +2378,7 @@ function routePlaneTerminatedBus(
 export function* routeBusAlternativesSteps(
   params: RouteBusParams,
   maxAlternatives = 1,
+  includeVisualization = false,
 ): Generator<RouteBusAlternativesProgress, FanoutRoutePlan[][], void> {
   const {
     srj,
@@ -2804,6 +2805,7 @@ export function* routeBusAlternativesSteps(
           : terminalPattern.maximumRouteOrderAttempts === undefined
             ? Math.min(2, maxAlternatives - alternatives.length)
             : 2,
+        includeVisualization,
       )
       let windingResult = windingSteps.next()
       while (!windingResult.done) {

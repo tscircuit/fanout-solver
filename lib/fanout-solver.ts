@@ -1,6 +1,6 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
-import type { GraphicsObject } from "graphics-debug"
+import { mergeGraphics, type GraphicsObject } from "graphics-debug"
 import { addViaLayerMetadataToSrj } from "./add-via-layer-metadata"
 import { getCornerBandSide, getExitEdgeForDirection } from "./boundary-exit"
 import { buildOutputSimpleRouteJson } from "./build-output"
@@ -874,6 +874,8 @@ export class FanoutSolver extends BaseSolver {
   private nextGeneratedAssignmentIndex = 0
   private activeOperation: ActiveFanoutOperation<unknown> | null = null
   private inProgressPlans: FanoutRoutePlan[] = []
+  private activeRoutingVisualization: GraphicsObject | null = null
+  private activeAdaptiveVisualization: GraphicsObject | null = null
   private bestAttempt: AssignmentAttempt | null = null
   private lengthMatchingFailure: FanoutValidationIssue | null = null
   private endpointCompletion: CompleteOriginalEndpointsResult | null = null
@@ -1064,6 +1066,134 @@ export class FanoutSolver extends BaseSolver {
     return visualizeSimpleRouteJson(visualizedSrj)
   }
 
+  private visualizeWorkState(solverName: string): GraphicsObject {
+    const base = this.visualizeCurrentState()
+    const boundary =
+      this.preparedBuses[0]?.sharedBoundary ?? this.inputSrj.bounds
+    const activeBusId =
+      typeof this.stats.bus === "string" ? this.stats.bus : undefined
+    const activeBus = activeBusId
+      ? this.preparedBuses.find((bus) => bus.busId === activeBusId)
+      : undefined
+    const width = boundary.maxX - boundary.minX
+    const height = boundary.maxY - boundary.minY
+    const annotationSize = Math.max(Math.min(width, height) * 0.025, 0.25)
+    const phase =
+      typeof this.stats.phase === "string" ? this.stats.phase : "starting"
+    const detail = [
+      typeof this.stats.routeConnection === "string"
+        ? `connection ${this.stats.routeConnection}`
+        : undefined,
+      typeof this.stats.searchBatch === "number"
+        ? `batch ${this.stats.searchBatch}`
+        : undefined,
+      typeof this.stats.expandedStates === "number"
+        ? `${this.stats.expandedStates.toLocaleString()} states`
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join(" · ")
+    const title = `${solverName}: ${phase}`
+    return {
+      ...mergeGraphics(base, {
+        rects: [
+          {
+            center: {
+              x: (boundary.minX + boundary.maxX) / 2,
+              y: (boundary.minY + boundary.maxY) / 2,
+            },
+            width,
+            height,
+            fill: "rgba(0, 0, 0, 0)",
+            stroke: "rgba(14, 165, 233, 0.8)",
+            label: `${solverName} working boundary`,
+          },
+        ],
+        circles: (activeBus?.connections ?? []).map((connection) => ({
+          center: connection.sourcePoint,
+          radius: Math.max(
+            annotationSize,
+            Math.min(
+              connection.sourceObstacle.width,
+              connection.sourceObstacle.height,
+            ) * 0.6,
+          ),
+          fill: "rgba(250, 204, 21, 0.25)",
+          stroke: "#f59e0b",
+          label: `active bus ${activeBusId}: ${connection.connection.name}`,
+        })),
+        texts: [
+          {
+            x: boundary.minX,
+            y: boundary.maxY + annotationSize * 2,
+            text: `${solverName} · ${phase}${detail ? ` · ${detail}` : ""}`,
+            color: "#0f172a",
+            fontSize: annotationSize * 1.5,
+            anchorSide: "bottom_left",
+          },
+        ],
+      }),
+      title,
+    }
+  }
+
+  private visualizeBoundaryRoutingState(): GraphicsObject {
+    if (!this.activeRoutingVisualization) {
+      return this.visualizeWorkState("BoundaryBusRoutingSolver")
+    }
+    return {
+      ...mergeGraphics(
+        this.visualizeCurrentState(),
+        this.activeRoutingVisualization,
+      ),
+      title: this.activeRoutingVisualization.title,
+    }
+  }
+
+  private visualizeAdaptiveRoutingState(): GraphicsObject {
+    if (this.activeAdaptiveVisualization) {
+      return this.activeAdaptiveVisualization
+    }
+    const boundary =
+      this.preparedBuses[0]?.sharedBoundary ?? this.inputSrj.bounds
+    const width = boundary.maxX - boundary.minX
+    const height = boundary.maxY - boundary.minY
+    const annotationSize = Math.max(Math.min(width, height) * 0.02, 0.2)
+    return {
+      title: "SingleLayerAdaptiveExitSolver: preparing flow grid",
+      rects: [
+        {
+          center: {
+            x: (boundary.minX + boundary.maxX) / 2,
+            y: (boundary.minY + boundary.maxY) / 2,
+          },
+          width,
+          height,
+          fill: "rgba(0, 0, 0, 0)",
+          stroke: "rgba(14, 165, 233, 0.9)",
+          label: "adaptive flow grid boundary",
+        },
+      ],
+      points: this.preparedBuses.flatMap((bus) =>
+        bus.connections.map((connection) => ({
+          ...connection.sourcePoint,
+          color: "#f97316",
+          label: "adaptive route source",
+        })),
+      ),
+      texts: [
+        {
+          x: boundary.minX,
+          y: boundary.maxY + annotationSize * 2,
+          text: "preparing adaptive flow grid",
+          color: "#0f172a",
+          fontSize: annotationSize * 1.5,
+          anchorSide: "bottom_left",
+        },
+      ],
+    }
+  }
+
   private startOperation<T>(params: {
     name: string
     generator: Generator<unknown, T, unknown>
@@ -1086,11 +1216,12 @@ export class FanoutSolver extends BaseSolver {
     name: string,
     generator: Generator<unknown, T, unknown>,
     getProgress?: () => number,
+    getVisualization?: () => GraphicsObject,
   ): FanoutWorkSolver<T> {
     return new FanoutWorkSolver(
       name,
       generator,
-      () => this.visualizeCurrentState(),
+      getVisualization ?? (() => this.visualizeWorkState(name)),
       () => ({ ...this.stats }),
       getProgress ?? (() => 0),
     )
@@ -1100,10 +1231,13 @@ export class FanoutSolver extends BaseSolver {
     params: Parameters<typeof routeBusAlternativesSteps>[0],
     maximumAlternatives: number,
   ): Generator<FanoutWorkYield, FanoutRoutePlan[][], unknown> {
-    const steps = routeBusAlternativesSteps(params, maximumAlternatives)
+    const steps = routeBusAlternativesSteps(params, maximumAlternatives, true)
     let result = steps.next()
     while (!result.done) {
       const { winding } = result.value
+      if (winding.visualization) {
+        this.activeRoutingVisualization = winding.visualization
+      }
       this.stats = {
         ...this.stats,
         phase: "route-boundary-bus-connection",
@@ -1597,12 +1731,15 @@ export class FanoutSolver extends BaseSolver {
           this: FanoutSolver,
           maximumAlternatives: number,
         ): Generator<FanoutWorkYield, FanoutRoutePlan[][], unknown> {
+          this.activeRoutingVisualization = null
           const solver = this.createWorkSolver(
             "BoundaryBusRoutingSolver",
             this.routeBusAlternativesWorkSteps(
               routeParams,
               maximumAlternatives,
             ),
+            undefined,
+            () => this.visualizeBoundaryRoutingState(),
           )
           return (yield { type: "subsolver", solver }) as FanoutRoutePlan[][]
         }.bind(this)
@@ -2374,6 +2511,7 @@ export class FanoutSolver extends BaseSolver {
           plans,
           strategy: routingStrategy,
         })
+        this.activeAdaptiveVisualization = null
         const adaptiveSolver = this.createWorkSolver(
           "SingleLayerAdaptiveExitSolver",
           routeSingleLayerWithAdaptiveExitsSteps({
@@ -2381,7 +2519,13 @@ export class FanoutSolver extends BaseSolver {
             availableBoundaryRegions: resolveAvailableBoundaryRegions(
               this.options.availableCornersAndSides,
             ),
+            onProgress: (visualization, adaptiveStats) => {
+              this.activeAdaptiveVisualization = visualization
+              this.stats = { ...this.stats, ...adaptiveStats }
+            },
           }),
+          undefined,
+          () => this.visualizeAdaptiveRoutingState(),
         )
         singleLayerPlans = (yield {
           type: "subsolver",

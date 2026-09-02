@@ -23,6 +23,9 @@ test("step exposes candidate, bus-routing, and max-flow work incrementally", () 
     busIndex: 1,
     busCount: multilayerSolver.preparedBuses.length,
   })
+  expect(multilayerSolver.visualize().title).toBe(
+    "FanoutCandidateLayerSolver: discover-candidate-layers",
+  )
   expect(multilayerSolver.attempts).toHaveLength(0)
   expect(multilayerSolver.solved).toBe(false)
 
@@ -65,11 +68,21 @@ test("step exposes candidate, bus-routing, and max-flow work incrementally", () 
   expect(singleLayerSolver.stats.phase).toBe(
     "route-single-layer-adaptive-exits",
   )
+  const initialAdaptiveVisualization = singleLayerSolver.visualize()
+  let latestAdaptiveVisualization = initialAdaptiveVisualization
   for (let step = 0; step < 4; step++) {
     singleLayerSolver.step()
+    latestAdaptiveVisualization = singleLayerSolver.visualize()
     expect(singleLayerSolver.solved).toBe(false)
     expect(singleLayerSolver.stats.phase).toBe(
       "route-single-layer-adaptive-exits",
     )
   }
+  expect(latestAdaptiveVisualization).not.toEqual(initialAdaptiveVisualization)
+  expect(
+    latestAdaptiveVisualization.points?.some(
+      (point) => point.label === "adaptive route source",
+    ),
+  ).toBe(true)
+  expect(latestAdaptiveVisualization.title).toStartWith("Adaptive exits:")
 })
