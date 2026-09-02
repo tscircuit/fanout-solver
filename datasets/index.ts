@@ -6,6 +6,7 @@ import { fanoutDataset04 } from "./dataset04"
 import { fanoutDataset05 } from "./dataset05"
 import { fanoutDataset06 } from "./dataset06"
 import { fanoutDataset07 } from "./dataset07"
+import { fanoutDataset08 } from "./dataset08"
 
 export const fanoutDatasets: FanoutDataset[] = [
   {
@@ -56,6 +57,13 @@ export const fanoutDatasets: FanoutDataset[] = [
     description:
       "An RP2350A breakout with its decoupling ring, solved at three shared-boundary sizes. Regression guard for exits being rejected outside srj.bounds.",
     samples: fanoutDataset07,
+  },
+  {
+    id: "dataset08",
+    name: "AM62L RAM-left fanout",
+    description:
+      "Sample 11-left-center from dataset-fanout31-am62l, captured from its TSX through core without modifying connections or constraints.",
+    samples: fanoutDataset08,
   },
 ]
 

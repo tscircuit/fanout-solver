@@ -35,6 +35,8 @@ export interface DogboneViaSiteGeometryRules {
   preferBoundaryOutwardByBusId?: ReadonlyMap<string, boolean>
   /** Existing assignments that must be preserved while matching other pads. */
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
+  /** Prefer these provisional sites, but allow rematching when they conflict. */
+  preferredViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
   /** Routed copper that every newly assigned through-via/dogbone must clear. */
   blockingSegments?: readonly {
     connectionIndex: number
@@ -506,6 +508,9 @@ function getConnectionCandidates(params: {
     connection.terminationType === "boundary"
       ? (rules.preferBoundaryOutwardByBusId?.get(connection.busId) ?? true)
       : true
+  const preferredViaPoint = rules.preferredViaPointsByConnectionIndex?.get(
+    preparedConnection.connectionIndex,
+  )
   const getPerpendicularPreferenceRank = (
     candidate: ViaSiteCandidate,
   ): number => {
@@ -522,6 +527,10 @@ function getConnectionCandidates(params: {
   }
   return candidates.toSorted(
     (first, second) =>
+      (preferredViaPoint
+        ? Number(distance(first.point, preferredViaPoint) > EPSILON) -
+          Number(distance(second.point, preferredViaPoint) > EPSILON)
+        : 0) ||
       (preferOutward
         ? first.outwardRank - second.outwardRank
         : second.outwardRank - first.outwardRank) ||

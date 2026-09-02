@@ -10,6 +10,7 @@
     "@tscircuit/copper-pour-solver": "0.0.51",
     "@tscircuit/core": "0.0.1819",
     "@tscircuit/create-fdm-enclosure": "0.0.4",
+    "@tscircuit/dataset-fanout31-am62l": "github:tscircuit/dataset-fanout31-am62l#8c73befb36b125c84651c07454a9b940b3c6500a",
     "@tscircuit/footprinter": "0.0.426",
     "@tscircuit/infer-cable-insertion-point": "0.0.4",
     "@tscircuit/infgrid-ijump-astar": "0.0.35",
