@@ -2801,14 +2801,19 @@ export function* routeBusAlternativesSteps(
       acceptedBoundaryPlansExist && !allowBlindAndBuriedVias
         ? [...mixedDogboneTerminalPatterns, ...uniformDogboneTerminalPatterns]
         : [...uniformDogboneTerminalPatterns, ...mixedDogboneTerminalPatterns]
+    const unreservedTerminalPatterns: CoordinatedTerminalPattern[] =
+      canUseViaInPadTerminals
+        ? planeTerminationsAlreadyOccupyTheFanout
+          ? [viaInPadTerminalPattern, ...dogboneTerminalPatterns]
+          : [...dogboneTerminalPatterns, viaInPadTerminalPattern]
+        : dogboneTerminalPatterns
+    // Automatically matched sites are candidates, not caller reservations.
+    // Keep the ordinary dogbone patterns available before adding crossover
+    // vias when that first site assignment cannot route the complete bus.
     const terminalPatterns: CoordinatedTerminalPattern[] =
-      fixedViaTerminalPatterns.length > 0
+      fixedViaPointsByConnectionIndex
         ? fixedViaTerminalPatterns
-        : canUseViaInPadTerminals
-          ? planeTerminationsAlreadyOccupyTheFanout
-            ? [viaInPadTerminalPattern, ...dogboneTerminalPatterns]
-            : [...dogboneTerminalPatterns, viaInPadTerminalPattern]
-          : dogboneTerminalPatterns
+        : [...fixedViaTerminalPatterns, ...unreservedTerminalPatterns]
     const seenTerminalSignatures = new Set<string>()
     for (const terminalPattern of terminalPatterns) {
       const terminals = bus.connections.map((preparedConnection) => {
@@ -2857,12 +2862,24 @@ export function* routeBusAlternativesSteps(
           ),
         }
       })
+      const alignGridToPads =
+        alignWindingGridToPads ||
+        Boolean(terminalPattern.getViaPoint && !fixedViaPointsByConnectionIndex)
+      const gridStepDivisor =
+        terminalPattern.getViaPoint &&
+        Math.min(bus.pitchX, bus.pitchY) -
+          2 * (viaDiameter / 2 + traceWidth / 2 + clearance) <
+          traceWidth + clearance
+          ? 2
+          : 1
       const terminalSignature = `${terminals
         .map(
           (terminal) =>
             `${terminal.connection.connectionIndex}:${terminal.viaPoint.x}:${terminal.viaPoint.y}:${terminal.exitPoint.x}:${terminal.exitPoint.y}`,
         )
-        .join("|")}:${terminalPattern.maximumRouteOrderAttempts ?? "all"}`
+        .join(
+          "|",
+        )}:${terminalPattern.maximumRouteOrderAttempts ?? "all"}:${gridStepDivisor}:${alignGridToPads}`
       if (seenTerminalSignatures.has(terminalSignature)) continue
       seenTerminalSignatures.add(terminalSignature)
       const windingSteps = routeViaMinimalWindingAlternativesSteps(
@@ -2881,17 +2898,9 @@ export function* routeBusAlternativesSteps(
           allowSameNetMerges,
           maximumRouteOrderAttempts: terminalPattern.maximumRouteOrderAttempts,
           adaptiveRouteOrder: adaptiveWindingRouteOrder,
-          alignGridToPads:
-            alignWindingGridToPads ||
-            Boolean(coordinatedViaPoints && !fixedViaPointsByConnectionIndex),
+          alignGridToPads,
           reservedVias,
-          gridStepDivisor:
-            coordinatedViaPoints &&
-            Math.min(bus.pitchX, bus.pitchY) -
-              2 * (viaDiameter / 2 + traceWidth / 2 + clearance) <
-              traceWidth + clearance
-              ? 2
-              : 1,
+          gridStepDivisor,
           preferTargetDirectedLaneBias:
             terminalPattern.preferTargetDirectedLaneBias,
         },
