@@ -268,3 +268,66 @@ test("component-wide dogbone matching fails within geometry and search bounds", 
     }),
   ).toBeNull()
 })
+
+test("dogbone candidates clear board obstacles and already-routed vias", () => {
+  const fixture = createFixture()
+  const rules = {
+    viaDiameter: 0.3,
+    viaHoleDiameter: 0.2,
+    traceWidth: 0.1,
+    clearance: 0.1,
+  }
+  const connectionIndex = fixture.connections[0]!.connectionIndex
+  const originalCandidates = getComponentDogboneViaSiteCandidates(
+    [fixture.buses[0]!],
+    rules,
+  ).filter((candidate) => candidate.connectionIndex === connectionIndex)
+  const blockedPoint = originalCandidates[0]!.point
+  const externalObstacle: Obstacle = {
+    obstacleId: "bottom-side-decoupler-pad",
+    componentId: "C1",
+    type: "rect",
+    center: blockedPoint,
+    width: 0.2,
+    height: 0.2,
+    layers: ["top"],
+    connectedTo: [],
+  }
+
+  const candidatesClearingObstacle = getComponentDogboneViaSiteCandidates(
+    [fixture.buses[0]!],
+    {
+      ...rules,
+      additionalObstacles: [externalObstacle],
+    },
+  )
+  expect(
+    candidatesClearingObstacle.some(
+      (candidate) =>
+        candidate.connectionIndex === connectionIndex &&
+        distance(candidate.point, blockedPoint) < 1e-9,
+    ),
+  ).toBe(false)
+
+  const candidatesClearingVia = getComponentDogboneViaSiteCandidates(
+    [fixture.buses[0]!],
+    {
+      ...rules,
+      blockingVias: [
+        {
+          connectionIndex: 99,
+          center: blockedPoint,
+          diameter: rules.viaDiameter,
+          spanLayers: ["top", "inner1"],
+        },
+      ],
+    },
+  )
+  expect(
+    candidatesClearingVia.some(
+      (candidate) =>
+        candidate.connectionIndex === connectionIndex &&
+        distance(candidate.point, blockedPoint) < 1e-9,
+    ),
+  ).toBe(false)
+})

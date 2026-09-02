@@ -40,6 +40,15 @@ export interface DogboneViaSiteGeometryRules {
     connectionIndex: number
     segment: RoutedSegment
   }[]
+  /** Routed vias that every newly assigned through-via/dogbone must clear. */
+  blockingVias?: readonly {
+    connectionIndex: number
+    center: Point2D
+    diameter: number
+    spanLayers: readonly string[]
+  }[]
+  /** Board obstacles outside the source component that dogbones must clear. */
+  additionalObstacles?: readonly Obstacle[]
   /** True only when the two connections are allowed to merge copper. */
   canShareCopper?: (
     firstConnectionIndex: number,
@@ -148,6 +157,7 @@ function getComponentMatchingInputs(
 ): ComponentMatchingInput[] {
   const byComponent = new Map<string, ComponentMatchingInput>()
   const componentByConnectionIndex = new Map<number, string>()
+  const obstacleSetByComponentId = new Map<string, Set<Obstacle>>()
 
   for (const bus of preparedBuses) {
     let component = byComponent.get(bus.componentId)
@@ -162,6 +172,7 @@ function getComponentMatchingInputs(
         pitchY: Number.POSITIVE_INFINITY,
       }
       byComponent.set(bus.componentId, component)
+      obstacleSetByComponentId.set(bus.componentId, new Set())
     }
 
     component.xCoordinates.push(...bus.xCoordinates)
@@ -172,8 +183,10 @@ function getComponentMatchingInputs(
     if (Number.isFinite(bus.pitchY) && bus.pitchY > EPSILON) {
       component.pitchY = Math.min(component.pitchY, bus.pitchY)
     }
+    const obstacleSet = obstacleSetByComponentId.get(bus.componentId)!
     for (const obstacle of bus.componentObstacles) {
-      if (!component.obstacles.includes(obstacle)) {
+      if (!obstacleSet.has(obstacle)) {
+        obstacleSet.add(obstacle)
         component.obstacles.push(obstacle)
       }
     }
@@ -325,6 +338,9 @@ function getConnectionCandidates(params: {
 }): ViaSiteCandidate[] {
   const { connection, component, rules } = params
   const { preparedConnection, direction } = connection
+  const obstacles = rules.additionalObstacles
+    ? [...new Set([...component.obstacles, ...rules.additionalObstacles])]
+    : component.obstacles
   const source = {
     x: preparedConnection.sourcePoint.x,
     y: preparedConnection.sourcePoint.y,
@@ -368,7 +384,7 @@ function getConnectionCandidates(params: {
     if (
       !viaSiteClearsObstacles({
         point,
-        obstacles: component.obstacles,
+        obstacles,
         viaDiameter: rules.viaDiameter,
         clearance: rules.clearance,
       })
@@ -385,7 +401,7 @@ function getConnectionCandidates(params: {
       !sourceSegmentClearsOtherObstacles({
         segment: sourceSegment,
         sourceObstacle: preparedConnection.sourceObstacle,
-        obstacles: component.obstacles,
+        obstacles,
         clearance: rules.clearance,
       })
     ) {
@@ -423,6 +439,35 @@ function getConnectionCandidates(params: {
       },
     )
     if (!candidateClearsRoutedCopper) continue
+    const candidateClearsRoutedVias = (rules.blockingVias ?? []).every(
+      (blocker) => {
+        if (blocker.connectionIndex === preparedConnection.connectionIndex) {
+          return true
+        }
+        if (
+          distance(point, blocker.center) <
+          (rules.viaDiameter + blocker.diameter) / 2 + rules.clearance - EPSILON
+        ) {
+          return false
+        }
+        if (
+          blocker.spanLayers.includes(sourceSegment.layer) &&
+          distancePointToSegment(
+            blocker.center,
+            sourceSegment.start,
+            sourceSegment.end,
+          ) <
+            blocker.diameter / 2 +
+              sourceSegment.width / 2 +
+              rules.clearance -
+              EPSILON
+        ) {
+          return false
+        }
+        return true
+      },
+    )
+    if (!candidateClearsRoutedVias) continue
     candidates.push({
       connectionIndex: preparedConnection.connectionIndex,
       point,
@@ -431,10 +476,29 @@ function getConnectionCandidates(params: {
     })
   }
 
+  const perpendicularCoordinates =
+    direction === "left" || direction === "right"
+      ? component.yCoordinates
+      : component.xCoordinates
+  const sourcePerpendicularCoordinate =
+    direction === "left" || direction === "right" ? source.y : source.x
+  const perpendicularGridIndex = perpendicularCoordinates.findIndex(
+    (coordinate) =>
+      Math.abs(coordinate - sourcePerpendicularCoordinate) <= EPSILON,
+  )
+  const planeCheckerboardSide =
+    perpendicularGridIndex >= 0
+      ? perpendicularGridIndex % 2 === 0
+        ? 1
+        : -1
+      : undefined
   const preferredPerpendicularSide =
     connection.terminationType === "boundary"
       ? rules.preferredBoundaryPerpendicularSideByBusId?.get(connection.busId)
-      : undefined
+      : connection.terminationType === "plane" &&
+          (direction === "left" || direction === "right")
+        ? planeCheckerboardSide
+        : undefined
   const preferOutward =
     connection.terminationType === "boundary"
       ? (rules.preferBoundaryOutwardByBusId?.get(connection.busId) ?? true)
@@ -525,6 +589,25 @@ function matchComponent(params: {
     }),
   )
   if (entries.some((entry) => entry.candidates.length === 0)) return null
+  const compatibilityCache = new Map<
+    ViaSiteCandidate,
+    Map<ViaSiteCandidate, boolean>
+  >()
+  const candidatesAreCompatible = (
+    first: ViaSiteCandidate,
+    second: ViaSiteCandidate,
+  ): boolean => {
+    const cached = compatibilityCache.get(first)?.get(second)
+    if (cached !== undefined) return cached
+    const compatible = candidatesAreMutuallyClear({ first, second, rules })
+    const firstCache = compatibilityCache.get(first) ?? new Map()
+    firstCache.set(second, compatible)
+    compatibilityCache.set(first, firstCache)
+    const secondCache = compatibilityCache.get(second) ?? new Map()
+    secondCache.set(first, compatible)
+    compatibilityCache.set(second, secondCache)
+    return compatible
+  }
   // Every solution must include each sole candidate. Seed and validate those
   // forced choices once so recursive matching only explores genuine choices.
   const forcedCandidates = entries.flatMap((entry) =>
@@ -542,11 +625,7 @@ function matchComponent(params: {
       previousIndex++
     ) {
       if (
-        !candidatesAreMutuallyClear({
-          first: candidate,
-          second: forcedCandidates[previousIndex]!,
-          rules,
-        })
+        !candidatesAreCompatible(candidate, forcedCandidates[previousIndex]!)
       ) {
         return null
       }
@@ -584,11 +663,7 @@ function matchComponent(params: {
   ): ViaSiteCandidate[] =>
     entry.candidates.filter((candidate) =>
       [...assignedCandidates.values()].every((assignedCandidate) =>
-        candidatesAreMutuallyClear({
-          first: candidate,
-          second: assignedCandidate,
-          rules,
-        }),
+        candidatesAreCompatible(candidate, assignedCandidate),
       ),
     )
 
