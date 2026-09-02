@@ -32,7 +32,7 @@
     "test": "bun test",
     "benchmark": "bun benchmarks/run-benchmark.ts",
     "generate:repro04": "bun scripts/generate-repro/generate-repro04.tsx",
-    "benchmark:srj29": "./benchmark.sh",
+    "benchmark:srj29": "bun benchmarks/run-srj29-benchmark.ts",
     "render:dataset": "bun scripts/render-dataset-pngs.ts",
     "format": "biome format --write .",
     "format:check": "biome format ."
