@@ -64,6 +64,12 @@ export interface RouteViaMinimalWindingParams {
   gridStepDivisor?: 1 | 2
   /** Bias bounded fixed-site searches toward the remote target band. */
   preferTargetDirectedLaneBias?: boolean
+  /** Internal path-only mode used before a boundary-side via is appended. */
+  allowSourceLayerRouting?: boolean
+  /** Promote a blocked terminal while staying within maximumRouteOrderAttempts. */
+  adaptiveRouteOrder?: boolean
+  /** Align a fine grid with pad/interstice centers instead of the boundary. */
+  alignGridToPads?: boolean
 }
 
 export interface RouteViaMinimalWindingProgress {
@@ -493,6 +499,7 @@ function buildPlan(params: {
     layer: connection.sourceLayer,
   }
   const hasSourceDogbone = distance(sourcePoint, terminal.viaPoint) > EPSILON
+  const changesLayer = connection.sourceLayer !== targetLayer
   const targetSegments = getSegments(targetLayerPoints, traceWidth, targetLayer)
   const spanLayers = getViaSpanLayers({
     fromLayer: connection.sourceLayer,
@@ -528,20 +535,24 @@ function buildPlan(params: {
           },
         ]
       : []),
-    {
-      route_type: "via",
-      ...terminal.viaPoint,
-      from_layer: connection.sourceLayer,
-      to_layer: targetLayer,
-      via_diameter: viaDiameter,
-      via_hole_diameter: viaHoleDiameter,
-    },
-    {
-      route_type: "wire",
-      ...terminal.viaPoint,
-      width: traceWidth,
-      layer: targetLayer,
-    },
+    ...(changesLayer
+      ? [
+          {
+            route_type: "via" as const,
+            ...terminal.viaPoint,
+            from_layer: connection.sourceLayer,
+            to_layer: targetLayer,
+            via_diameter: viaDiameter,
+            via_hole_diameter: viaHoleDiameter,
+          },
+          {
+            route_type: "wire" as const,
+            ...terminal.viaPoint,
+            width: traceWidth,
+            layer: targetLayer,
+          },
+        ]
+      : []),
     ...targetLayerPoints.slice(1).map((point) => ({
       route_type: "wire" as const,
       ...point,
@@ -589,7 +600,7 @@ function buildPlan(params: {
       route,
     },
     segments,
-    via,
+    via: changesLayer ? via : undefined,
     length: segments.reduce(
       (total, segment) => total + distance(segment.start, segment.end),
       0,
@@ -624,6 +635,9 @@ export function* routeViaMinimalWindingAlternativesSteps(
     reservedVias = [],
     gridStepDivisor = 1,
     preferTargetDirectedLaneBias = false,
+    allowSourceLayerRouting = false,
+    adaptiveRouteOrder = false,
+    alignGridToPads = false,
   } = params
   if (
     maximumRouteOrderAttempts !== undefined &&
@@ -643,18 +657,33 @@ export function* routeViaMinimalWindingAlternativesSteps(
   if (
     terminals.length === 0 ||
     !bus.exitEdge ||
-    terminals.some(
-      (terminal) => terminal.connection.sourceLayer === targetLayer,
-    )
+    (!allowSourceLayerRouting &&
+      terminals.some(
+        (terminal) => terminal.connection.sourceLayer === targetLayer,
+      ))
   ) {
     return []
   }
 
-  const gridStep = (traceWidth + clearance) / gridStepDivisor
+  const baseGridStep = (traceWidth + clearance) / gridStepDivisor
+  const pitch = Math.min(bus.pitchX, bus.pitchY)
+  const alignGridToPitch =
+    alignGridToPads && gridStepDivisor === 2 && Number.isFinite(pitch)
+  const gridStep = alignGridToPitch
+    ? pitch / (2 * Math.ceil(pitch / (2 * baseGridStep)))
+    : baseGridStep
   if (!Number.isFinite(gridStep) || gridStep <= 0) return []
   const { minX, maxX, minY, maxY } = bus.sharedBoundary
-  const columnCount = Math.floor((maxX - minX) / gridStep) + 1
-  const rowCount = Math.floor((maxY - minY) / gridStep) + 1
+  const originX = bus.xCoordinates[0] ?? minX
+  const originY = bus.yCoordinates[0] ?? minY
+  const gridMinX = alignGridToPitch
+    ? originX + Math.ceil((minX - originX) / gridStep) * gridStep
+    : minX
+  const gridMinY = alignGridToPitch
+    ? originY + Math.ceil((minY - originY) / gridStep) * gridStep
+    : minY
+  const columnCount = Math.floor((maxX - gridMinX) / gridStep) + 1
+  const rowCount = Math.floor((maxY - gridMinY) / gridStep) + 1
   const nodeCount = columnCount * rowCount
   if (columnCount < 2 || rowCount < 2 || nodeCount > MAX_GRID_NODE_COUNT) {
     return []
@@ -665,7 +694,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
     return {
       column,
       row,
-      point: { x: minX + column * gridStep, y: minY + row * gridStep },
+      point: { x: gridMinX + column * gridStep, y: gridMinY + row * gridStep },
     }
   })
   const sampledGridPoints = includeVisualization
@@ -797,6 +826,18 @@ export function* routeViaMinimalWindingAlternativesSteps(
     }
     for (const blocker of acceptedAttemptSegments) {
       if (sharesNet(connectionName, blocker.connectionName)) continue
+      const margin = (segment.width + blocker.segment.width) / 2 + clearance
+      if (
+        Math.max(segment.start.x, segment.end.x) + margin <
+          Math.min(blocker.segment.start.x, blocker.segment.end.x) ||
+        Math.min(segment.start.x, segment.end.x) - margin >
+          Math.max(blocker.segment.start.x, blocker.segment.end.x) ||
+        Math.max(segment.start.y, segment.end.y) + margin <
+          Math.min(blocker.segment.start.y, blocker.segment.end.y) ||
+        Math.min(segment.start.y, segment.end.y) - margin >
+          Math.max(blocker.segment.start.y, blocker.segment.end.y)
+      )
+        continue
       if (
         distanceSegmentToSegment(
           segment.start,
@@ -1283,6 +1324,9 @@ export function* routeViaMinimalWindingAlternativesSteps(
   const initialRouteOrderFactories: Array<
     () => readonly ViaMinimalWindingTerminal[]
   > = []
+  if (alignGridToPads && preferTargetDirectedLaneBias && viasAreBeforeTargets) {
+    initialRouteOrderFactories.push(() => targetOrderedTerminals)
+  }
   if (viasAreBeforeTargets) {
     initialRouteOrderFactories.push(() => [
       ...targetOrderedTerminals.slice(1),
@@ -1340,11 +1384,28 @@ export function* routeViaMinimalWindingAlternativesSteps(
     getItemKey: (terminal) => terminal.connection.connection.name,
     maximumOrderCount: maximumRouteOrderCount,
   })
+  const pendingRouteOrders: ViaMinimalWindingTerminal[][] = []
+  const seenAdaptiveOrders = new Set<string>()
+  const adaptiveRouteOrders = function* () {
+    while (true) {
+      const pending = pendingRouteOrders.shift()
+      const next = pending
+        ? { done: false, value: pending }
+        : routeOrders.next()
+      if (next.done) return
+      const key = next.value
+        .map((terminal) => terminal.connection.connection.name)
+        .join("|")
+      if (seenAdaptiveOrders.has(key)) continue
+      seenAdaptiveOrders.add(key)
+      yield next.value
+    }
+  }
 
   const alternatives: FanoutRoutePlan[][] = []
   const seenAlternativeKeys = new Set<string>()
   let routeOrderAttemptCount = 0
-  for (const routeOrder of routeOrders) {
+  for (const routeOrder of adaptiveRouteOrders()) {
     for (const laneBias of laneBiases) {
       if (
         maximumRouteOrderAttempts !== undefined &&
@@ -1415,6 +1476,16 @@ export function* routeViaMinimalWindingAlternativesSteps(
             : {}),
         }
         if (!points) {
+          if (
+            adaptiveRouteOrder &&
+            maximumRouteOrderAttempts !== undefined &&
+            terminalIndex > 0
+          ) {
+            const others = routeOrder.filter(
+              (candidate) => candidate !== terminal,
+            )
+            pendingRouteOrders.push([terminal, ...others])
+          }
           failed = true
           break
         }

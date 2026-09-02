@@ -1710,6 +1710,46 @@ export class FanoutSolver extends BaseSolver {
             : getExitEdgeForDirection(bus.direction) !== bus.exitEdge,
       ]),
     )
+    // An outward half-pitch dogbone can enter a neighboring wide bus's pad
+    // field when a corner bus first escapes toward the package center. Keep
+    // those through-barrels on the opposite side before any earlier bus
+    // commits copper; rematching after that point can be too late.
+    for (const bus of wideBoundaryBuses) {
+      if (useConfiguredDensePlaneRouting) continue
+      if (!getCornerBandSide(bus.exitEdge, bus.preferredExit)) continue
+      const entersNeighboringSourceField = wideBoundaryBuses.some((other) => {
+        if (other === bus || other.componentId !== bus.componentId) return false
+        const xs = other.connections.map(
+          (connection) => connection.sourcePoint.x,
+        )
+        const ys = other.connections.map(
+          (connection) => connection.sourcePoint.y,
+        )
+        const minX = Math.min(...xs)
+        const maxX = Math.max(...xs)
+        const minY = Math.min(...ys)
+        const maxY = Math.max(...ys)
+        return bus.connections.some(({ sourcePoint }) => {
+          const x =
+            sourcePoint.x +
+            (bus.direction === "left"
+              ? -bus.pitchX / 2
+              : bus.direction === "right"
+                ? bus.pitchX / 2
+                : 0)
+          const y =
+            sourcePoint.y +
+            (bus.direction === "down"
+              ? -bus.pitchY / 2
+              : bus.direction === "up"
+                ? bus.pitchY / 2
+                : 0)
+          return x >= minX && x <= maxX && y >= minY && y <= maxY
+        })
+      })
+      if (entersNeighboringSourceField)
+        preferBoundaryOutwardByBusId.set(bus.busId, false)
+    }
     const debugFlippedBoundaryBus = process.env.FANOUT_DEBUG_FLIP_BOUNDARY_BUS
     if (debugFlippedBoundaryBus) {
       preferredBoundaryPerpendicularSideByBusId.set(debugFlippedBoundaryBus, -1)
@@ -1859,9 +1899,17 @@ export class FanoutSolver extends BaseSolver {
       ...(process.env.FANOUT_DEBUG_PROVISIONAL_NARROW === "1"
         ? boundaryBuses.filter((bus) => bus.connections.length < 8)
         : []),
-      ...singletonDeferralCandidates.filter(
-        (bus) => !leadingWideSingletonBuses.includes(bus),
-      ),
+      ...singletonDeferralCandidates.filter((bus) => {
+        const containingBus = getContainingWideSourceField(bus)
+        const sharesContainingBusLayer =
+          !useConfiguredDensePlaneRouting &&
+          containingBus &&
+          params.busLayerAssignments[containingBus.busId] ===
+            params.busLayerAssignments[bus.busId]
+        return (
+          !leadingWideSingletonBuses.includes(bus) && !sharesContainingBusLayer
+        )
+      }),
       ...(hasThreeWideBoundaryBuses
         ? boundaryBuses.filter(
             (bus) =>
@@ -2088,6 +2136,13 @@ export class FanoutSolver extends BaseSolver {
         if (!targetLayer) {
           return false
         }
+        const adaptiveWindingRouteOrder =
+          !useConfiguredDensePlaneRouting &&
+          !getCornerBandSide(bus.exitEdge, bus.preferredExit) &&
+          bus.connections.length > 2 &&
+          wideBoundaryBuses.some((candidate) =>
+            getCornerBandSide(candidate.exitEdge, candidate.preferredExit),
+          )
         const routeParams = {
           srj: this.routingSrj,
           bus,
@@ -2105,9 +2160,14 @@ export class FanoutSolver extends BaseSolver {
           fixedViaPointsByConnectionIndex,
           reservedVias: getReservedVias(bus),
           viaMinimalOnly: process.env.FANOUT_DEBUG_ALLOW_EXTRA_VIAS !== "1",
-          fixedViaFallbackRouteOrderAttempts: useConfiguredDensePlaneRouting
-            ? 6
-            : 24,
+          allowBoundarySideViaFallback: !useConfiguredDensePlaneRouting,
+          adaptiveWindingRouteOrder,
+          alignWindingGridToPads: !useConfiguredDensePlaneRouting,
+          fixedViaFallbackRouteOrderAttempts: adaptiveWindingRouteOrder
+            ? 60
+            : useConfiguredDensePlaneRouting
+              ? 6
+              : 24,
           cornerBandTargetTrackOffset: getCornerBandTargetTrackOffset(bus),
         } as const
         const routeAlternatives = function* (
@@ -2157,6 +2217,88 @@ export class FanoutSolver extends BaseSolver {
         ))[0]
         if (!busPlans && preferSingleLayerWinding) {
           busPlans = (yield* routeAlternatives(routeParams, 1))[0]
+        }
+        if (!busPlans && !useConfiguredDensePlaneRouting) {
+          const originalPoints = fixedViaPointsByConnectionIndex
+          const originalOutward =
+            preferBoundaryOutwardByBusId.get(bus.busId) ?? true
+          const originalSide =
+            preferredBoundaryPerpendicularSideByBusId.get(bus.busId) ?? 1
+          for (const [outward, side] of [
+            [!originalOutward, originalSide],
+            [originalOutward, -originalSide],
+            [!originalOutward, -originalSide],
+          ] as const) {
+            const rematchedPoints = matchComponentDogboneViaSites(
+              [
+                ...new Set([
+                  ...activeBoundaryReservationPlaneBuses,
+                  ...initiallyMatchedBoundaryBuses,
+                  ...this.preparedBuses.filter((candidate) =>
+                    matchedPlans.some((plan) => plan.busId === candidate.busId),
+                  ),
+                  bus,
+                ]),
+              ],
+              {
+                viaDiameter: this.config.viaDiameter,
+                viaHoleDiameter: this.config.viaHoleDiameter,
+                traceWidth: this.config.traceWidth,
+                clearance: this.config.clearance,
+                maximumSearchStates: 100_000,
+                preferredBoundaryPerpendicularSideByBusId: new Map([
+                  ...preferredBoundaryPerpendicularSideByBusId,
+                  [bus.busId, side as -1 | 1],
+                ]),
+                preferBoundaryOutwardByBusId: new Map([
+                  ...preferBoundaryOutwardByBusId,
+                  [bus.busId, outward],
+                ]),
+                fixedViaPointsByConnectionIndex: new Map(
+                  matchedPlans
+                    .filter((plan) => plan.via)
+                    .map((plan) => [plan.connectionIndex, plan.via!.center]),
+                ),
+                preferredViaPointsByConnectionIndex: new Map(
+                  [...originalPoints].filter(
+                    ([index]) =>
+                      !bus.connections.some(
+                        (connection) => connection.connectionIndex === index,
+                      ),
+                  ),
+                ),
+                blockingSegments: matchedPlans.flatMap((plan) =>
+                  plan.segments.map((segment) => ({
+                    connectionIndex: plan.connectionIndex,
+                    segment,
+                  })),
+                ),
+                additionalObstacles: this.routingSrj.obstacles,
+                preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
+                canShareCopper,
+              },
+            )
+            debugDense(
+              "retry-sites",
+              bus.busId,
+              outward,
+              side,
+              rematchedPoints?.size ?? "failed",
+            )
+            if (!rematchedPoints) continue
+            fixedViaPointsByConnectionIndex = rematchedPoints
+            busPlans = (yield* routeAlternatives(
+              {
+                ...routeParams,
+                fixedViaPointsByConnectionIndex: rematchedPoints,
+                reservedVias: getReservedVias(bus),
+                fixedViaFallbackRouteOrderAttempts: 3,
+              },
+              1,
+            ))[0]
+            if (busPlans) break
+          }
+          if (!busPlans) fixedViaPointsByConnectionIndex = originalPoints
         }
         if (busPlans && bus.maxLengthSkew !== undefined) {
           const lengths = busPlans.map((plan) => plan.length)
@@ -2503,6 +2645,50 @@ export class FanoutSolver extends BaseSolver {
               segment,
             })),
           )
+          const boundaryBusesToMatch = useConfiguredDensePlaneRouting
+            ? boundaryBuses
+            : []
+          const blockingVias = useConfiguredDensePlaneRouting
+            ? []
+            : candidatePlans.flatMap((plan) =>
+                [
+                  plan.via,
+                  ...(plan.additionalVias ?? []),
+                  plan.planeEndpointVia,
+                ]
+                  .filter((via) => via !== undefined)
+                  .map((via) => ({
+                    connectionIndex: plan.connectionIndex,
+                    center: via!.center,
+                    diameter: via!.diameter,
+                    spanLayers: via!.spanLayers,
+                  })),
+              )
+          // Completed boundary paths can reach their via with several source-
+          // layer segments. Treat their actual copper as fixed obstacles instead
+          // of reinterpreting each as a straight pad-to-via dogbone.
+          const retainedViaPoints = useConfiguredDensePlaneRouting
+            ? null
+            : matchComponentDogboneViaSites(planeBuses, {
+                viaDiameter: this.config.viaDiameter,
+                viaHoleDiameter: this.config.viaHoleDiameter,
+                traceWidth: this.config.traceWidth,
+                clearance: this.config.clearance,
+                maximumSearchStates: 1,
+                preferredBoundaryPerpendicularSideByBusId,
+                preferBoundaryOutwardByBusId,
+                fixedViaPointsByConnectionIndex: new Map([
+                  ...fixedViaPointsByConnectionIndex,
+                  ...fixedBoundaryViaPoints,
+                ]),
+                blockingSegments,
+                blockingVias,
+                additionalObstacles: denseAdditionalObstacles,
+                preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
+                canShareCopper,
+              })
+          if (retainedViaPoints)
+            return new Map([...fixedBoundaryViaPoints, ...retainedViaPoints])
           if (
             useConfiguredDensePlaneRouting ||
             process.env.FANOUT_DEBUG_INCREMENTAL_PLANE_MATCH === "1"
@@ -2551,7 +2737,7 @@ export class FanoutSolver extends BaseSolver {
               (planeBus) =>
                 !matchedPlaneBuses.includes(planeBus) &&
                 !matchComponentDogboneViaSites(
-                  [...matchedPlaneBuses, planeBus, ...boundaryBuses],
+                  [...matchedPlaneBuses, planeBus, ...boundaryBusesToMatch],
                   {
                     viaDiameter: this.config.viaDiameter,
                     viaHoleDiameter: this.config.viaHoleDiameter,
@@ -2562,6 +2748,7 @@ export class FanoutSolver extends BaseSolver {
                     preferBoundaryOutwardByBusId,
                     fixedViaPointsByConnectionIndex: incrementalViaPoints,
                     blockingSegments,
+                    blockingVias,
                     additionalObstacles: denseAdditionalObstacles,
                     preferPlaneCheckerboardSites:
                       useConfiguredDensePlaneRouting,
@@ -3212,7 +3399,7 @@ export class FanoutSolver extends BaseSolver {
                 )
               }
               const nextViaPoints = matchComponentDogboneViaSites(
-                [...matchedPlaneBuses, planeBus, ...boundaryBuses],
+                [...matchedPlaneBuses, planeBus, ...boundaryBusesToMatch],
                 {
                   viaDiameter: this.config.viaDiameter,
                   viaHoleDiameter: this.config.viaHoleDiameter,
@@ -3223,7 +3410,7 @@ export class FanoutSolver extends BaseSolver {
                   preferBoundaryOutwardByBusId,
                   fixedViaPointsByConnectionIndex: incrementalViaPoints,
                   blockingSegments: allBlockingSegments,
-                  blockingVias: alternateBlockingVias,
+                  blockingVias: [...blockingVias, ...alternateBlockingVias],
                   additionalObstacles: denseAdditionalObstacles,
                   preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
                   canShareCopper,
@@ -3256,8 +3443,8 @@ export class FanoutSolver extends BaseSolver {
             )
             return incrementalViaPoints
           }
-          return matchComponentDogboneViaSites(
-            [...planeBuses, ...boundaryBuses],
+          const planeViaPoints = matchComponentDogboneViaSites(
+            [...planeBuses, ...boundaryBusesToMatch],
             {
               viaDiameter: this.config.viaDiameter,
               viaHoleDiameter: this.config.viaHoleDiameter,
@@ -3268,11 +3455,15 @@ export class FanoutSolver extends BaseSolver {
               preferBoundaryOutwardByBusId,
               fixedViaPointsByConnectionIndex: fixedBoundaryViaPoints,
               blockingSegments,
+              blockingVias,
               additionalObstacles: denseAdditionalObstacles,
               preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
               canShareCopper,
             },
           )
+          return planeViaPoints
+            ? new Map([...fixedBoundaryViaPoints, ...planeViaPoints])
+            : null
         }
         debugDense("length-match:start", matchedPlans.length)
         const matchedLengthResult = matchBusPlanLengths({
