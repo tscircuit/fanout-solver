@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+import { getSvgFromGraphicsObject } from "graphics-debug"
+import { FanoutSolver } from "lib/fanout-solver"
 import {
   am62lTopEdgeBreakoutProvenance,
   createAm62lTopEdgeBreakoutRepro,
@@ -16,7 +18,7 @@ const expectedSignalExitPositions = {
   DDR_RESET: "topside_center",
 } as const
 
-test("captures the AM62L nine-bus top-edge breakout input", () => {
+test("captures the AM62L nine-bus top-edge breakout input", async () => {
   const { inputSrj, options } = createAm62lTopEdgeBreakoutRepro()
 
   expect(am62lTopEdgeBreakoutProvenance).toEqual({
@@ -98,4 +100,9 @@ test("captures the AM62L nine-bus top-edge breakout input", () => {
       expect(exitTarget?.y).toBeGreaterThan(inputSrj.bounds.maxY)
     }
   }
+
+  const solver = new FanoutSolver(inputSrj, options)
+  await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
+    import.meta.path,
+  )
 })
