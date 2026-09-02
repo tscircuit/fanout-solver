@@ -3,6 +3,7 @@ import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
 } from "@tscircuit/capacity-autorouter"
+import type { GraphicsObject } from "graphics-debug"
 import { getCornerBandSide, getDirectionForExitEdge } from "./boundary-exit"
 import { createFanoutOutputIds } from "./fanout-output-ids"
 import {
@@ -29,6 +30,7 @@ import type {
 const EPSILON = 1e-7
 const MAX_GRID_NODE_COUNT = 120_000
 const MAX_EXPANDED_STATE_COUNT = 240_000
+const EXPANDED_STATES_PER_STEP = 5_000
 const MAX_CONNECTOR_COUNT = 24
 const CONNECTOR_RADIUS_IN_STEPS = 3.25
 
@@ -62,6 +64,18 @@ export interface RouteViaMinimalWindingParams {
   gridStepDivisor?: 1 | 2
   /** Bias bounded fixed-site searches toward the remote target band. */
   preferTargetDirectedLaneBias?: boolean
+}
+
+export interface RouteViaMinimalWindingProgress {
+  phase: "route-connection"
+  routeOrderAttempt: number
+  connectionIndex: number
+  connectionCount: number
+  connectionName: string
+  searchBatch: number
+  expandedStateCount: number
+  connectionComplete: boolean
+  visualization?: GraphicsObject
 }
 
 interface GridNode {
@@ -249,6 +263,12 @@ class MinHeap {
 
   get size(): number {
     return this.values.length
+  }
+
+  sampleEntries(maximumCount: number): readonly HeapEntry[] {
+    if (this.values.length <= maximumCount) return this.values
+    const stride = Math.ceil(this.values.length / maximumCount)
+    return this.values.filter((_, index) => index % stride === 0)
   }
 
   push(value: HeapEntry): void {
@@ -577,10 +597,11 @@ function buildPlan(params: {
   }
 }
 
-export function routeViaMinimalWindingAlternatives(
+export function* routeViaMinimalWindingAlternativesSteps(
   params: RouteViaMinimalWindingParams,
   maximumAlternatives = 1,
-): FanoutRoutePlan[][] {
+  includeVisualization = false,
+): Generator<RouteViaMinimalWindingProgress, FanoutRoutePlan[][], void> {
   if (!Number.isInteger(maximumAlternatives) || maximumAlternatives < 1) {
     throw new Error(
       `FanoutSolver: maximum winding alternatives must be a positive integer, received ${maximumAlternatives}`,
@@ -647,6 +668,14 @@ export function routeViaMinimalWindingAlternatives(
       point: { x: minX + column * gridStep, y: minY + row * gridStep },
     }
   })
+  const sampledGridPoints = includeVisualization
+    ? nodes
+        .filter(
+          (_, index) =>
+            index % Math.max(1, Math.ceil(nodes.length / 1_000)) === 0,
+        )
+        .map((node) => node.point)
+    : []
   const targetLayerObstacles = srj.obstacles.filter((obstacle) =>
     obstacle.layers.includes(targetLayer),
   )
@@ -861,11 +890,129 @@ export function routeViaMinimalWindingAlternatives(
       .slice(0, MAX_CONNECTOR_COUNT)
   }
 
-  const routeOne = (params: {
+  const visualizeSearch = (params: {
+    terminal: ViaMinimalWindingTerminal
+    acceptedAttemptSegments: readonly BlockingSegment[]
+    expandedPoints: readonly Point2D[]
+    frontierPoints: readonly Point2D[]
+    bestPath: readonly Point2D[] | null
+    expandedStateCount: number
+    searchBatch: number
+    connectionComplete: boolean
+  }): GraphicsObject => {
+    const {
+      terminal,
+      acceptedAttemptSegments,
+      expandedPoints,
+      frontierPoints,
+      bestPath,
+      expandedStateCount,
+      searchBatch,
+      connectionComplete,
+    } = params
+    return {
+      title: `Winding ${bus.busId}: ${terminal.connection.connection.name}`,
+      rects: [
+        {
+          center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+          width: maxX - minX,
+          height: maxY - minY,
+          fill: "rgba(0, 0, 0, 0)",
+          stroke: "rgba(14, 165, 233, 0.9)",
+          label: "A* search boundary",
+        },
+      ],
+      points: [
+        ...sampledGridPoints.map((point) => ({
+          ...point,
+          color: "rgba(148, 163, 184, 0.22)",
+        })),
+        ...frontierPoints.map((point) => ({
+          ...point,
+          color: "rgba(6, 182, 212, 0.75)",
+          label: "open frontier",
+        })),
+        ...expandedPoints.map((point) => ({
+          ...point,
+          color: "rgba(244, 63, 94, 0.8)",
+          label: "expanded in current step",
+        })),
+        {
+          ...terminal.connection.sourcePoint,
+          color: "#f97316",
+          label: `source: ${terminal.connection.connection.name}`,
+        },
+        {
+          ...terminal.exitPoint,
+          color: "#a855f7",
+          label: "target exit",
+        },
+      ],
+      circles: terminals.map((candidate) => ({
+        center: candidate.viaPoint,
+        radius: viaDiameter / 2,
+        fill:
+          candidate === terminal
+            ? "rgba(250, 204, 21, 0.85)"
+            : "rgba(250, 204, 21, 0.25)",
+        stroke: candidate === terminal ? "#ca8a04" : "#a16207",
+        label:
+          candidate === terminal
+            ? "active via"
+            : `reserved via: ${candidate.connection.connection.name}`,
+      })),
+      lines: [
+        ...acceptedAttemptSegments.map(({ segment, connectionName }) => ({
+          points: [segment.start, segment.end],
+          strokeColor: "rgba(34, 197, 94, 0.9)",
+          strokeWidth: Math.max(traceWidth, gridStep * 0.35),
+          label: `accepted: ${connectionName}`,
+        })),
+        {
+          points: [terminal.viaPoint, terminal.exitPoint],
+          strokeColor: "rgba(168, 85, 247, 0.45)",
+          strokeWidth: Math.max(traceWidth * 0.5, gridStep * 0.15),
+          strokeDash: [gridStep, gridStep],
+          label: "active via-to-exit search",
+        },
+        ...(bestPath
+          ? [
+              {
+                points: [...bestPath],
+                strokeColor: "#facc15",
+                strokeWidth: Math.max(traceWidth, gridStep * 0.45),
+                label: "best path so far",
+              },
+            ]
+          : []),
+      ],
+      texts: [
+        {
+          x: minX,
+          y: maxY + gridStep * 2,
+          text: connectionComplete
+            ? `connection complete · ${expandedStateCount.toLocaleString()} states`
+            : `A* batch ${searchBatch} · ${expandedStateCount.toLocaleString()} states`,
+          color: "#0f172a",
+          fontSize: Math.max(gridStep * 2.5, 0.5),
+          anchorSide: "bottom_left",
+        },
+      ],
+    }
+  }
+
+  const routeOneSteps = function* (params: {
     terminal: ViaMinimalWindingTerminal
     acceptedAttemptSegments: BlockingSegment[]
     laneBias: -1 | 0 | 1
-  }): Point2D[] | null => {
+  }): Generator<
+    {
+      expandedStateCount: number
+      visualization?: GraphicsObject
+    },
+    { points: Point2D[] | null; expandedStateCount: number },
+    void
+  > {
     const { terminal, acceptedAttemptSegments, laneBias } = params
     const starts = connectorCandidates({
       terminal,
@@ -877,7 +1024,9 @@ export function routeViaMinimalWindingAlternatives(
       endpoint: terminal.exitPoint,
       acceptedAttemptSegments,
     })
-    if (starts.length === 0 || ends.length === 0) return null
+    if (starts.length === 0 || ends.length === 0) {
+      return { points: null, expandedStateCount: 0 }
+    }
     const endByNode = new Map<number, ConnectorCandidate[]>()
     for (const end of ends) {
       const values = endByNode.get(end.nodeIndex) ?? []
@@ -927,6 +1076,9 @@ export function routeViaMinimalWindingAlternatives(
     let bestGoalCost = Number.POSITIVE_INFINITY
     let bestGoalPoints: Point2D[] | null = null
     let expandedStateCount = 0
+    let expandedStatesSinceYield = 0
+    let searchBatch = 0
+    let expandedBatchPoints: Point2D[] = []
     while (heap.size > 0 && expandedStateCount < MAX_EXPANDED_STATE_COUNT) {
       const current = heap.pop()!
       if (current.score >= bestGoalCost - EPSILON) break
@@ -938,6 +1090,10 @@ export function routeViaMinimalWindingAlternatives(
       )
         continue
       expandedStateCount++
+      expandedStatesSinceYield++
+      if (includeVisualization && expandedStatesSinceYield % 50 === 0) {
+        expandedBatchPoints.push(nodes[current.node]!.point)
+      }
       const endConnectors = endByNode.get(current.node)
       if (endConnectors) {
         const gridPoints: Point2D[] = []
@@ -1054,8 +1210,32 @@ export function routeViaMinimalWindingAlternatives(
           score: nextDistance + remaining,
         })
       }
+      if (expandedStatesSinceYield >= EXPANDED_STATES_PER_STEP) {
+        expandedStatesSinceYield = 0
+        searchBatch++
+        yield {
+          expandedStateCount,
+          ...(includeVisualization
+            ? {
+                visualization: visualizeSearch({
+                  terminal,
+                  acceptedAttemptSegments,
+                  expandedPoints: expandedBatchPoints,
+                  frontierPoints: heap
+                    .sampleEntries(120)
+                    .map((entry) => nodes[entry.node]!.point),
+                  bestPath: bestGoalPoints,
+                  expandedStateCount,
+                  searchBatch,
+                  connectionComplete: false,
+                }),
+              }
+            : {}),
+        }
+        expandedBatchPoints = []
+      }
     }
-    return bestGoalPoints
+    return { points: bestGoalPoints, expandedStateCount }
   }
 
   const targetOrderedTerminals = terminals.toSorted((first, second) => {
@@ -1176,12 +1356,64 @@ export function routeViaMinimalWindingAlternatives(
       const acceptedAttemptSegments: BlockingSegment[] = []
       const routedPointsByConnectionName = new Map<string, Point2D[]>()
       let failed = false
-      for (const terminal of routeOrder) {
-        const points = routeOne({
+      for (
+        let terminalIndex = 0;
+        terminalIndex < routeOrder.length;
+        terminalIndex++
+      ) {
+        const terminal = routeOrder[terminalIndex]!
+        const connectionSteps = routeOneSteps({
           terminal,
           acceptedAttemptSegments,
           laneBias,
         })
+        let connectionResult = connectionSteps.next()
+        let searchBatch = 0
+        let expandedStateCount = 0
+        while (!connectionResult.done) {
+          expandedStateCount = connectionResult.value.expandedStateCount
+          yield {
+            phase: "route-connection",
+            routeOrderAttempt: routeOrderAttemptCount,
+            connectionIndex: terminalIndex,
+            connectionCount: routeOrder.length,
+            connectionName: terminal.connection.connection.name,
+            searchBatch: ++searchBatch,
+            expandedStateCount,
+            connectionComplete: false,
+            ...(connectionResult.value.visualization
+              ? { visualization: connectionResult.value.visualization }
+              : {}),
+          }
+          connectionResult = connectionSteps.next()
+        }
+        const { points, expandedStateCount: finalExpandedStateCount } =
+          connectionResult.value
+        expandedStateCount = finalExpandedStateCount
+        yield {
+          phase: "route-connection",
+          routeOrderAttempt: routeOrderAttemptCount,
+          connectionIndex: terminalIndex,
+          connectionCount: routeOrder.length,
+          connectionName: terminal.connection.connection.name,
+          searchBatch,
+          expandedStateCount,
+          connectionComplete: true,
+          ...(includeVisualization
+            ? {
+                visualization: visualizeSearch({
+                  terminal,
+                  acceptedAttemptSegments,
+                  expandedPoints: [],
+                  frontierPoints: [],
+                  bestPath: points,
+                  expandedStateCount,
+                  searchBatch,
+                  connectionComplete: true,
+                }),
+              }
+            : {}),
+        }
         if (!points) {
           failed = true
           break
@@ -1236,6 +1468,19 @@ export function routeViaMinimalWindingAlternatives(
     }
   }
   return alternatives
+}
+
+export function routeViaMinimalWindingAlternatives(
+  params: RouteViaMinimalWindingParams,
+  maximumAlternatives = 1,
+): FanoutRoutePlan[][] {
+  const steps = routeViaMinimalWindingAlternativesSteps(
+    params,
+    maximumAlternatives,
+  )
+  let result = steps.next()
+  while (!result.done) result = steps.next()
+  return result.value
 }
 
 export function routeViaMinimalWinding(
