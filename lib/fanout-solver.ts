@@ -1380,8 +1380,11 @@ export class FanoutSolver extends BaseSolver {
   private *routeDenseThroughAllMixedTerminationSteps(params: {
     busLayerAssignments: Readonly<Record<string, string>>
     busesInRoutingOrder: readonly PreparedBus[]
+    denseRoutingStrategy?: "pad-aligned" | "boundary-aligned"
   }): Generator<FanoutWorkYield, MixedTerminationState | null, unknown> {
     if (this.config.allowBlindAndBuriedVias) return null
+    const usePadAlignedDenseRouting =
+      params.denseRoutingStrategy !== "boundary-aligned"
     const debugDense = (...values: unknown[]) => {
       if (process.env.FANOUT_DEBUG_DENSE === "1") {
         if (
@@ -1902,6 +1905,7 @@ export class FanoutSolver extends BaseSolver {
       ...singletonDeferralCandidates.filter((bus) => {
         const containingBus = getContainingWideSourceField(bus)
         const sharesContainingBusLayer =
+          usePadAlignedDenseRouting &&
           !useConfiguredDensePlaneRouting &&
           containingBus &&
           params.busLayerAssignments[containingBus.busId] ===
@@ -2162,7 +2166,8 @@ export class FanoutSolver extends BaseSolver {
           viaMinimalOnly: process.env.FANOUT_DEBUG_ALLOW_EXTRA_VIAS !== "1",
           allowBoundarySideViaFallback: !useConfiguredDensePlaneRouting,
           adaptiveWindingRouteOrder,
-          alignWindingGridToPads: !useConfiguredDensePlaneRouting,
+          alignWindingGridToPads:
+            usePadAlignedDenseRouting && !useConfiguredDensePlaneRouting,
           fixedViaFallbackRouteOrderAttempts: adaptiveWindingRouteOrder
             ? 60
             : useConfiguredDensePlaneRouting
@@ -3586,7 +3591,23 @@ export class FanoutSolver extends BaseSolver {
       }
     }
 
-    if (process.env.FANOUT_DEBUG_DENSE_ONLY === "1") return null
+    // Pad-aligned windings can fence off a same-layer singleton even when
+    // every wide bus routes successfully. Before widening the search, retry
+    // the coordinated reservation with a boundary-aligned grid and let those
+    // singleton sites remain provisional until surrounding copper is fixed.
+    if (usePadAlignedDenseRouting && !useConfiguredDensePlaneRouting) {
+      const boundaryAlignedState =
+        yield* this.routeDenseThroughAllMixedTerminationSteps({
+          ...params,
+          denseRoutingStrategy: "boundary-aligned",
+        })
+      if (boundaryAlignedState) return boundaryAlignedState
+    }
+    if (
+      !usePadAlignedDenseRouting ||
+      process.env.FANOUT_DEBUG_DENSE_ONLY === "1"
+    )
+      return null
 
     const maximumStates = 8
     const getBoundaryStates = (

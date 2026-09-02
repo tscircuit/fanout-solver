@@ -1075,6 +1075,10 @@ export function* routeViaMinimalWindingAlternativesSteps(
       endByNode.set(end.nodeIndex, values)
     }
     const stateCount = nodeCount * 9
+    // A* visits a grid edge with several incoming directions. Copper does not
+    // change while routing this terminal, so check each edge only once. Keep
+    // this cache local: later terminals and route-order attempts add blockers.
+    const edgeClearance = new Uint8Array(nodeCount * 8)
     const distances = new Float64Array(stateCount).fill(
       Number.POSITIVE_INFINITY,
     )
@@ -1205,21 +1209,6 @@ export function* routeViaMinimalWindingAlternativesSteps(
         }
         const nextNode = row * columnCount + column
         const nextPoint = nodes[nextNode]!.point
-        const segment: RoutedSegment = {
-          start: node.point,
-          end: nextPoint,
-          width: traceWidth,
-          layer: targetLayer,
-        }
-        if (
-          !segmentIsClear({
-            segment,
-            terminal,
-            acceptedAttemptSegments,
-          })
-        ) {
-          continue
-        }
         const addsTurn =
           current.direction !== 8 && current.direction !== directionIndex
         const nextTrack = getPerpendicularAxis(nextPoint, boundaryDirection)
@@ -1242,6 +1231,24 @@ export function* routeViaMinimalWindingAlternativesSteps(
           lanePenalty
         const nextState = nextNode * 9 + directionIndex
         if (nextDistance >= distances[nextState]! - EPSILON) continue
+        const edgeIndex = current.node * 8 + directionIndex
+        if (edgeClearance[edgeIndex] === 0) {
+          const clear = segmentIsClear({
+            segment: {
+              start: node.point,
+              end: nextPoint,
+              width: traceWidth,
+              layer: targetLayer,
+            },
+            terminal,
+            acceptedAttemptSegments,
+          })
+          edgeClearance[edgeIndex] = clear ? 1 : 2
+          edgeClearance[nextNode * 8 + ((directionIndex + 4) % 8)] = clear
+            ? 1
+            : 2
+        }
+        if (edgeClearance[edgeIndex] === 2) continue
         distances[nextState] = nextDistance
         previous[nextState] = state
         const remaining = heuristic(nextPoint)
