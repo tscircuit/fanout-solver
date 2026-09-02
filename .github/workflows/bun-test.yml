@@ -9,9 +9,18 @@ on:
       - '!version-bumps/**'
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  test-shard:
+    name: test shard ${{ matrix.shard }}/8
+    # Keep visual routing snapshots on the ARM architecture used to generate
+    # the repository baselines; floating-point ties can select a different,
+    # still-valid route on x64.
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
 
     # Skip test for PRs that not chore: bump version
     if: "${{ github.event_name != 'pull_request' || github.event.pull_request.title != 'chore: bump version' }}"
@@ -26,15 +35,32 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - name: Run tests
-        run: bun test
+      - name: Run test shard
+        run: bun scripts/run-test-shard.ts ${{ matrix.shard }} 8
 
       - name: Upload snapshot artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-snapshots
+          name: test-snapshots-${{ matrix.shard }}
           path: tests/**/__snapshots__/*.diff.png
           if-no-files-found: ignore
+
+  test:
+    name: test
+    needs: test-shard
+    if: "${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.title != 'chore: bump version') }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Verify every test shard passed
+        env:
+          SHARD_RESULT: ${{ needs.test-shard.result }}
+        run: |
+          if [[ "$SHARD_RESULT" != "success" ]]; then
+            echo "::error::At least one test shard did not pass: $SHARD_RESULT"
+            exit 1
+          fi

@@ -24,8 +24,8 @@ import {
   obstacleSharesElectricalNet,
 } from "./net-identity"
 import {
-  routeViaMinimalWindingAlternativesSteps,
   type RouteViaMinimalWindingProgress,
+  routeViaMinimalWindingAlternativesSteps,
   type ViaMinimalWindingReservedVia,
 } from "./route-via-minimal-winding"
 import type {
@@ -61,6 +61,10 @@ export interface RouteBusParams {
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
   viaMinimalOnly?: boolean
+  /** Bounds the final fixed-via winding fallback after ordered attempts. */
+  fixedViaFallbackRouteOrderAttempts?: number
+  /** Skip this many otherwise-clear plane escapes when enumerating alternatives. */
+  planeCandidateSkipCount?: number
   /** Dense corner-band phase that preserves existing lane centers when leading lanes are prepended. */
   cornerBandTargetTrackOffset?: number
 }
@@ -1873,6 +1877,24 @@ function planIsClearOfPlans(params: {
   return true
 }
 
+export function fanoutPlansAreMutuallyClear(params: {
+  plans: readonly FanoutRoutePlan[]
+  srj: SimpleRouteJson
+  clearance: number
+  allowSameNetMerges?: boolean
+}): boolean {
+  const { plans, srj, clearance, allowSameNetMerges = false } = params
+  return plans.every((plan, index) =>
+    planIsClearOfPlans({
+      plan,
+      otherPlans: plans.filter((_, otherIndex) => otherIndex !== index),
+      srj,
+      allowSameNetMerges,
+      clearance,
+    }),
+  )
+}
+
 function planIsClear(params: {
   plan: FanoutRoutePlan
   otherPlans: FanoutRoutePlan[]
@@ -1991,11 +2013,27 @@ function routePlaneTerminatedBus(
     allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
     fixedViaPointsByConnectionIndex,
+    planeCandidateSkipCount = 0,
   } = params
   const sourceObstacle = bus.connections[0]?.sourceObstacle
   if (!sourceObstacle || bus.termination.type !== "plane") return null
   const sourceLayer = bus.connections[0]!.sourceLayer
   if (targetLayer === sourceLayer) return null
+  let remainingPlaneCandidatesToSkip = planeCandidateSkipCount
+  const selectClearPlanePlan = (
+    plans: FanoutRoutePlan[],
+    isClear: (plan: FanoutRoutePlan, index: number) => boolean,
+  ): FanoutRoutePlan | undefined => {
+    for (const [index, plan] of plans.entries()) {
+      if (!isClear(plan, index)) continue
+      if (remainingPlaneCandidatesToSkip > 0) {
+        remainingPlaneCandidatesToSkip--
+        continue
+      }
+      return plan
+    }
+    return undefined
+  }
 
   if (fixedViaPointsByConnectionIndex) {
     const fixedPlans: FanoutRoutePlan[] = []
@@ -2052,19 +2090,21 @@ function routePlaneTerminatedBus(
         ),
         basePlan,
       ]
-      const clearPlan = plansToTry.find((candidatePlan, candidateIndex) =>
-        planIsClear({
-          plan: candidatePlan,
-          otherPlans: [...acceptedPlans, ...fixedPlans],
-          staticClearanceCache,
-          blockingBusCounts,
-          cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${candidateIndex}`,
-          srj,
-          sharedBoundary: bus.sharedBoundary,
-          clearance,
-          allowBlindAndBuriedVias,
-          allowSameNetMerges,
-        }),
+      const clearPlan = selectClearPlanePlan(
+        plansToTry,
+        (candidatePlan, candidateIndex) =>
+          planIsClear({
+            plan: candidatePlan,
+            otherPlans: [...acceptedPlans, ...fixedPlans],
+            staticClearanceCache,
+            blockingBusCounts,
+            cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${candidateIndex}`,
+            srj,
+            sharedBoundary: bus.sharedBoundary,
+            clearance,
+            allowBlindAndBuriedVias,
+            allowSameNetMerges,
+          }),
       )
       if (!clearPlan) return null
       fixedPlans.push(clearPlan)
@@ -2128,19 +2168,21 @@ function routePlaneTerminatedBus(
       ),
       viaInPadPlan,
     ]
-    const clearPlan = plansToTry.find((candidatePlan, candidateIndex) =>
-      planIsClear({
-        plan: candidatePlan,
-        otherPlans: acceptedPlans,
-        staticClearanceCache,
-        blockingBusCounts,
-        cacheKey: `plane-via-in-pad:${bus.busId}:${targetLayer}:${candidateIndex}`,
-        srj,
-        sharedBoundary: bus.sharedBoundary,
-        clearance,
-        allowBlindAndBuriedVias,
-        allowSameNetMerges,
-      }),
+    const clearPlan = selectClearPlanePlan(
+      plansToTry,
+      (candidatePlan, candidateIndex) =>
+        planIsClear({
+          plan: candidatePlan,
+          otherPlans: acceptedPlans,
+          staticClearanceCache,
+          blockingBusCounts,
+          cacheKey: `plane-via-in-pad:${bus.busId}:${targetLayer}:${candidateIndex}`,
+          srj,
+          sharedBoundary: bus.sharedBoundary,
+          clearance,
+          allowBlindAndBuriedVias,
+          allowSameNetMerges,
+        }),
     )
     if (clearPlan) return [clearPlan]
   }
@@ -2203,7 +2245,7 @@ function routePlaneTerminatedBus(
           )
           const perpendicularPitch = getPerpendicularPitch(directionalBus)
           const sourceEscapePaths: Point2D[][] = []
-          const maximumCandidatePaths = 32
+          const maximumCandidatePaths = 128
           for (
             let totalSteps = 0;
             totalSteps <= maximumEscapeSteps &&
@@ -2345,19 +2387,21 @@ function routePlaneTerminatedBus(
               ),
               basePlan,
             ]
-            plan = plansToTry.find((candidatePlan, candidateIndex) =>
-              planIsClear({
-                plan: candidatePlan,
-                otherPlans: [...acceptedPlans, ...candidatePlans],
-                staticClearanceCache,
-                blockingBusCounts,
-                cacheKey: `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}:${candidateIndex}`,
-                srj,
-                sharedBoundary: bus.sharedBoundary,
-                clearance,
-                allowBlindAndBuriedVias,
-                allowSameNetMerges,
-              }),
+            plan = selectClearPlanePlan(
+              plansToTry,
+              (candidatePlan, candidateIndex) =>
+                planIsClear({
+                  plan: candidatePlan,
+                  otherPlans: [...acceptedPlans, ...candidatePlans],
+                  staticClearanceCache,
+                  blockingBusCounts,
+                  cacheKey: `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}:${candidateIndex}`,
+                  srj,
+                  sharedBoundary: bus.sharedBoundary,
+                  clearance,
+                  allowBlindAndBuriedVias,
+                  allowSameNetMerges,
+                }),
             )
             if (plan) break
           }
@@ -2400,6 +2444,7 @@ export function* routeBusAlternativesSteps(
     fixedViaPointsByConnectionIndex,
     reservedVias = [],
     viaMinimalOnly = false,
+    fixedViaFallbackRouteOrderAttempts = 24,
     cornerBandTargetTrackOffset,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
@@ -2417,8 +2462,20 @@ export function* routeBusAlternativesSteps(
     return []
   }
   if (bus.termination.type === "plane") {
-    const plan = routePlaneTerminatedBus(params)
-    return plan ? [plan] : []
+    const alternatives: FanoutRoutePlan[][] = []
+    for (
+      let planeCandidateSkipCount = 0;
+      planeCandidateSkipCount < maxAlternatives;
+      planeCandidateSkipCount++
+    ) {
+      const plan = routePlaneTerminatedBus({
+        ...params,
+        planeCandidateSkipCount,
+      })
+      if (!plan) break
+      alternatives.push(plan)
+    }
+    return alternatives
   }
   const exitAxis = getExitAxis(bus)
   const sourceObstacle = bus.connections[0]?.sourceObstacle
@@ -2694,7 +2751,7 @@ export function* routeBusAlternativesSteps(
                 )!,
               // Preserve the existing bounded search after every inexpensive
               // layer-interleave candidate has had one deterministic attempt.
-              maximumRouteOrderAttempts: maximumThroughAllRouteOrderAttempts,
+              maximumRouteOrderAttempts: fixedViaFallbackRouteOrderAttempts,
               windingOrderIndex: 0,
               preferTargetDirectedLaneBias: true,
             },

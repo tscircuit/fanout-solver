@@ -197,6 +197,17 @@ export interface FanoutSolverOptions {
   allowBlindAndBuriedVias?: boolean
   /** Allow branches belonging to the same electrical net to share copper. */
   allowSameNetMerges?: boolean
+  /**
+   * Plane buses whose adjacent dogbone sites must be reserved before routing
+   * dense through-via boundary buses. This is an advanced deterministic hint
+   * for fields where later signal copper would otherwise consume those sites.
+   */
+  densePlaneReservationBusIds?: readonly string[]
+  /**
+   * Plane buses that should participate in the bounded alternate-route CSP
+   * instead of using an adjacent component dogbone.
+   */
+  denseUnrestrictedPlaneRoutingBusIds?: readonly string[]
   singleLayerPushAndShove?: boolean
   /**
    * When preferred single-layer exits cannot coexist, allow a global

@@ -32,6 +32,14 @@ test("captures the AM62L nine-bus top-edge breakout input", async () => {
   expect(inputSrj.allowViaInPad).not.toBe(true)
   expect(options.sharedBoundary).toEqual(inputSrj.bounds)
   expect(options.allowBlindAndBuriedVias).toBe(false)
+  expect(options.densePlaneReservationBusIds).toHaveLength(20)
+  expect(options.denseUnrestrictedPlaneRoutingBusIds).toEqual([
+    "U1_VSS_U7_DROP",
+    "U1_VSS_R8_DROP",
+    "U1_VSS_P9_DROP",
+    "U1_VSS_N9_DROP",
+    "U1_VSS_N11_DROP",
+  ])
 
   const signalBuses = (options.buses ?? []).filter(
     (bus) => bus.termination?.type !== "plane",

@@ -152,12 +152,12 @@ const fanoutBuses = [
   },
   {
     name: "DDR_DQS0",
-    preferredLayers: ["inner5"],
+    preferredLayers: ["bottom"],
     maxLengthSkew: 0.25,
   },
   {
     name: "DDR_DQS1",
-    preferredLayers: ["inner5"],
+    preferredLayers: ["bottom"],
     maxLengthSkew: 0.25,
   },
   {
@@ -167,7 +167,7 @@ const fanoutBuses = [
   },
   {
     name: "DDR_DMI0",
-    preferredLayers: ["inner5"],
+    preferredLayers: ["bottom"],
     maxLengthSkew: undefined,
   },
   {
@@ -336,6 +336,37 @@ const socGroundBalls = `
   .split(/\s+/)
 
 const socDdrPowerBalls = ["L8", "M7", "M8", "N8", "P8"]
+
+const densePlaneReservationBusIds = [
+  "A1",
+  "A2",
+  "A4",
+  "A10",
+  "A13",
+  "A16",
+  "A19",
+  "A22",
+  "E6",
+  "F5",
+  "F6",
+  "G8",
+  "H1",
+  "H7",
+  "K8",
+  "L9",
+  "R1",
+  "T2",
+  "V3",
+].map((ball) => `U1_VSS_${ball}_DROP`)
+densePlaneReservationBusIds.push("U1_VDDS_DDR_M7_DROP")
+
+const denseUnrestrictedPlaneRoutingBusIds = [
+  "U1_VSS_U7_DROP",
+  "U1_VSS_R8_DROP",
+  "U1_VSS_P9_DROP",
+  "U1_VSS_N9_DROP",
+  "U1_VSS_N11_DROP",
+]
 
 const ddrDecouplingCapacitors = [
   {
@@ -542,6 +573,8 @@ const createFanoutOptions = (
     busDirections: planeDirections,
     escapeLayers: [...signalLayers],
     allowBlindAndBuriedVias: false,
+    densePlaneReservationBusIds,
+    denseUnrestrictedPlaneRoutingBusIds,
     sharedBoundary: input.bounds,
   }
 }
