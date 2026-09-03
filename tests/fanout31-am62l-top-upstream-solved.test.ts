@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test"
+import { getSvgFromGraphicsObject } from "graphics-debug"
 import capturedSample from "../datasets/fixtures/fanout31-am62l-top-center.json"
 import { FanoutSolver } from "../lib/fanout-solver"
 import { inferDensePlaneRoutingHints } from "../lib/infer-dense-plane-routing-hints"
 
-test("routes the raw upstream AM62L top-center sample without caller hints", () => {
+test("routes the raw upstream AM62L top-center sample without caller hints", async () => {
   const { simpleRouteJson, solverOptions } = structuredClone(
     capturedSample,
   ) as unknown as {
@@ -37,4 +38,7 @@ test("routes the raw upstream AM62L top-center sample without caller hints", () 
     brokenOutConnectionCount: 135,
     issues: [],
   })
+  await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
+    import.meta.path,
+  )
 }, 180_000)

@@ -919,9 +919,10 @@ export class FanoutSolver extends BaseSolver {
       this.preparedBuses,
       options,
     )
-    this.config = inferredDensePlaneRoutingHints
-      ? { ...resolvedConfig, ...inferredDensePlaneRoutingHints }
-      : resolvedConfig
+    this.config = resolvedConfig
+    if (inferredDensePlaneRoutingHints) {
+      this.config = { ...resolvedConfig, ...inferredDensePlaneRoutingHints }
+    }
     validateCornerBandCapacities(this.preparedBuses, this.config)
     for (const bus of this.preparedBuses) {
       for (const connection of bus.connections) {
