@@ -3941,6 +3941,7 @@ export class FanoutSolver extends BaseSolver {
     assignmentIndex: number,
     busLayerAssignments: Readonly<Record<string, string>>,
     routingStrategy: RoutingStrategy,
+    priorityBusIds: readonly string[] = [],
   ): Generator<FanoutWorkYield, EvaluatedAssignment, unknown> {
     let plans: AssignmentAttempt["plans"] = []
     let failedBusIds: string[] = []
@@ -4023,6 +4024,8 @@ export class FanoutSolver extends BaseSolver {
           b,
           this.config.allowBlindAndBuriedVias,
         ) ||
+        Number(priorityBusIds.includes(b.busId)) -
+          Number(priorityBusIds.includes(a.busId)) ||
         Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
         (aUsesCoordinatedWinding && bUsesCoordinatedWinding
           ? bLayerIndex - aLayerIndex
@@ -4284,6 +4287,30 @@ export class FanoutSolver extends BaseSolver {
       ) {
         return bestAttempt
       }
+    }
+    // Near-complete singleton fanouts can be trapped by an earlier bus's
+    // otherwise legal track. Give the blocked buses first choice once, keeping
+    // the same layer assignment and final validation. Limit this extra order
+    // to at most three missing connections; grouped/winding buses have their
+    // own coordinated searches, and single-layer push/shove ignores this order.
+    if (
+      bestAttempt.summary.failedBusIds.length > 0 &&
+      bestAttempt.summary.failedBusIds.length <= 3 &&
+      this.config.escapeLayers.length > 1 &&
+      this.preparedBuses.every(
+        (bus) =>
+          bus.connections.length === 1 &&
+          bus.termination.type === "boundary" &&
+          !busUsesCoordinatedWinding(bus),
+      )
+    ) {
+      const attempt = yield* this.evaluateAssignmentWithStrategySteps(
+        assignmentIndex,
+        busLayerAssignments,
+        "default",
+        bestAttempt.summary.failedBusIds,
+      )
+      if (this.isAttemptBetter(attempt, bestAttempt)) bestAttempt = attempt
     }
     return bestAttempt
   }
