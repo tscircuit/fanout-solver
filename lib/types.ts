@@ -388,8 +388,6 @@ export interface FanoutRoutePlan {
   exitPoint: Point2D
   trace: FanoutSimplifiedPcbTrace
   segments: RoutedSegment[]
-  /** Validated winding segments that leave this route's own source pad. */
-  sourceEscapeSegmentCount?: number
   via?: RoutedVia
   /** Additional layer transitions used by an explicit winding channel. */
   additionalVias?: RoutedVia[]
