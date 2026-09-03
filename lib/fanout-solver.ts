@@ -85,7 +85,7 @@ interface ResolvedFanoutConfig {
 interface EvaluatedAssignment extends AssignmentAttempt {
   blockingBusIds: string[]
   blockingBusIdsByFailedBusId: Readonly<Record<string, readonly string[]>>
-  routingStrategy: RoutingStrategy
+  routingOrderBusIds: readonly string[]
 }
 
 interface GroupedBeamState {
@@ -4983,8 +4983,8 @@ export class FanoutSolver extends BaseSolver {
   private *evaluateAssignmentWithStrategySteps(
     assignmentIndex: number,
     busLayerAssignments: Readonly<Record<string, string>>,
-    routingStrategy: RoutingStrategy,
-    routingOrderRepair?: { busId: string; beforeBusId: string },
+    routingStrategy: RoutingStrategy | undefined,
+    routingOrderBusIds?: readonly string[],
   ): Generator<FanoutWorkYield, EvaluatedAssignment, unknown> {
     let plans: AssignmentAttempt["plans"] = []
     let failedBusIds: string[] = []
@@ -5053,51 +5053,42 @@ export class FanoutSolver extends BaseSolver {
       })
       yield
     }
-    let busesInRoutingOrder = [...this.preparedBuses].sort((a, b) => {
-      const aUsesCoordinatedWinding = busUsesCoordinatedWinding(a)
-      const bUsesCoordinatedWinding = busUsesCoordinatedWinding(b)
-      const aLayerIndex = this.config.layerNames.indexOf(
-        busLayerAssignments[a.busId] ?? "",
-      )
-      const bLayerIndex = this.config.layerNames.indexOf(
-        busLayerAssignments[b.busId] ?? "",
-      )
-      return (
-        comparePlaneRoutingPriority(
-          a,
-          b,
-          this.config.allowBlindAndBuriedVias,
-        ) ||
-        Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
-        (aUsesCoordinatedWinding && bUsesCoordinatedWinding
-          ? bLayerIndex - aLayerIndex
-          : 0) ||
-        (routingStrategy === "group-by-layer"
-          ? (busLayerAssignments[a.busId] ?? "").localeCompare(
-              busLayerAssignments[b.busId] ?? "",
-            )
-          : 0) ||
-        b.componentObstacles.length - a.componentObstacles.length ||
-        (isSingleLayerFanout
-          ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
-          : b.connections.length - a.connections.length ||
-            (routingStrategy === "deep-first"
+    const busById = new Map(this.preparedBuses.map((bus) => [bus.busId, bus]))
+    const busesInRoutingOrder = routingOrderBusIds
+      ? routingOrderBusIds.map((busId) => busById.get(busId)!)
+      : [...this.preparedBuses].sort((a, b) => {
+          const aUsesCoordinatedWinding = busUsesCoordinatedWinding(a)
+          const bUsesCoordinatedWinding = busUsesCoordinatedWinding(b)
+          const aLayerIndex = this.config.layerNames.indexOf(
+            busLayerAssignments[a.busId] ?? "",
+          )
+          const bLayerIndex = this.config.layerNames.indexOf(
+            busLayerAssignments[b.busId] ?? "",
+          )
+          return (
+            comparePlaneRoutingPriority(
+              a,
+              b,
+              this.config.allowBlindAndBuriedVias,
+            ) ||
+            Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
+            (aUsesCoordinatedWinding && bUsesCoordinatedWinding
+              ? bLayerIndex - aLayerIndex
+              : 0) ||
+            (routingStrategy === "group-by-layer"
+              ? (busLayerAssignments[a.busId] ?? "").localeCompare(
+                  busLayerAssignments[b.busId] ?? "",
+                )
+              : 0) ||
+            b.componentObstacles.length - a.componentObstacles.length ||
+            (isSingleLayerFanout
               ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
-              : getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b)))
-      )
-    })
-    if (routingOrderRepair) {
-      const busIndex = busesInRoutingOrder.findIndex(
-        (bus) => bus.busId === routingOrderRepair.busId,
-      )
-      const blockerIndex = busesInRoutingOrder.findIndex(
-        (bus) => bus.busId === routingOrderRepair.beforeBusId,
-      )
-      if (busIndex > blockerIndex && blockerIndex >= 0) {
-        const [bus] = busesInRoutingOrder.splice(busIndex, 1)
-        busesInRoutingOrder.splice(blockerIndex, 0, bus!)
-      }
-    }
+              : b.connections.length - a.connections.length ||
+                (routingStrategy === "deep-first"
+                  ? getBusDistanceToBoundary(b) - getBusDistanceToBoundary(a)
+                  : getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b)))
+          )
+        })
 
     let mixedTerminationState: MixedTerminationState | null = null
     if (!useSingleLayerPushAndShove && routingStrategy === "default") {
@@ -5143,7 +5134,7 @@ export class FanoutSolver extends BaseSolver {
       yield
     }
 
-    let routingPrefixKey = `${routingStrategy}|`
+    let routingPrefixKey = `${routingStrategy ?? "explicit-order"}|`
     let routedBusIndex = 0
     for (const bus of useSingleLayerPushAndShove || mixedTerminationState
       ? []
@@ -5319,7 +5310,7 @@ export class FanoutSolver extends BaseSolver {
         .toSorted(([, firstCount], [, secondCount]) => secondCount - firstCount)
         .map(([busId]) => busId),
       blockingBusIdsByFailedBusId,
-      routingStrategy,
+      routingOrderBusIds: busesInRoutingOrder.map((bus) => bus.busId),
       outputSrj,
     }
   }
@@ -5379,11 +5370,20 @@ export class FanoutSolver extends BaseSolver {
       // This is the routing-order counterpart of the layer-assignment repairs
       // performed after an attempt and keeps the additional search bounded.
       this.routingOrderRepairEvaluated = true
+      const repairedRoutingOrderBusIds = [...bestAttempt.routingOrderBusIds]
+      const busIndex = repairedRoutingOrderBusIds.indexOf(repair.busId)
+      const blockerIndex = repairedRoutingOrderBusIds.indexOf(
+        repair.beforeBusId,
+      )
+      if (busIndex > blockerIndex && blockerIndex >= 0) {
+        repairedRoutingOrderBusIds.splice(busIndex, 1)
+        repairedRoutingOrderBusIds.splice(blockerIndex, 0, repair.busId)
+      }
       const repairedAttempt = yield* this.evaluateAssignmentWithStrategySteps(
         assignmentIndex,
         busLayerAssignments,
-        bestAttempt.routingStrategy,
-        repair,
+        undefined,
+        repairedRoutingOrderBusIds,
       )
       if (this.isAttemptBetter(repairedAttempt, bestAttempt)) {
         bestAttempt = repairedAttempt
@@ -5692,7 +5692,7 @@ export class FanoutSolver extends BaseSolver {
       plans: bestState.plans,
       blockingBusIds: [],
       blockingBusIdsByFailedBusId: {},
-      routingStrategy: "default",
+      routingOrderBusIds: [],
       outputSrj,
     }
   }
