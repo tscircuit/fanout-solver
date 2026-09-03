@@ -12,33 +12,25 @@ const escape = (value: string) =>
 export function renderBenchmarkMarkdown(report: BenchmarkReport): string {
   const { rows, configuration } = report
   const lines = [
-    "# Fanout benchmark",
+    "# Dataset 31 — AM62L fanout benchmark",
     "",
     `Commit: ${report.commit ?? "unknown"}. Generated: ${report.generatedAt}.`,
+    `Dataset source: ${report.datasetSource.repository} at ${report.datasetSource.commit}.`,
     "",
     `**Solved ${rows.filter((row) => row.status === "solved").length}/${report.totalSamples} selected samples.** Completed ${rows.length}/${report.totalSamples}; partial: ${rows.filter((row) => row.status === "partial").length}; errors: ${rows.filter((row) => row.status === "error").length}; timeouts: ${rows.filter((row) => row.status === "timeout").length}.`,
     "",
     `Concurrency: ${configuration.concurrency}; per-sample timeout: ${configuration.sampleTimeoutSeconds}s; assignment budget: ${configuration.maxLayerCombinations ?? "sample defaults"}; wall time: ${(report.wallClockMilliseconds / 1000).toFixed(2)}s.`,
     "",
-    "Solved means validated fanout. Rows with original-endpoints scope additionally require complete original-endpoint connectivity and independently DRC-clean emitted copper (including SRJ29). It does not imply inter-chip routing for fanout-only samples.",
-    "",
-    "| Dataset | Solved / samples | Partial | Error | Timeout |",
-    "| --- | ---: | ---: | ---: | ---: |",
+    "Only dataset-fanout31-am62l is benchmarked. Solved means all 135 AM62L connections have validated fanout with the original clearance and length-skew constraints. It does not imply RAM fanout or inter-chip routing.",
   ]
-  for (const dataset of new Set(rows.map((row) => row.dataset))) {
-    const group = rows.filter((row) => row.dataset === dataset)
-    lines.push(
-      `| ${escape(dataset)} | ${group.filter((row) => row.status === "solved").length}/${group.length} | ${group.filter((row) => row.status === "partial").length} | ${group.filter((row) => row.status === "error").length} | ${group.filter((row) => row.status === "timeout").length} |`,
-    )
-  }
   lines.push(
     "",
-    "| Sample | Status | Scope | Routed | Validated breakouts | Original endpoints | Copper DRC | Vias | Attempts | Seconds |",
-    "| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |",
+    "| Sample | Status | Routed | Validated breakouts | Vias | Attempts | Seconds |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
   )
   for (const row of rows)
     lines.push(
-      `| ${escape(`${row.dataset}/${row.sample}`)} | ${row.status} | ${row.scope} | ${row.routed}/${row.connections} | ${row.validatedBreakouts ?? "—"} | ${row.connectedOriginalConnections ?? "—"} | ${row.routedCopperDrcValid === null ? "—" : row.routedCopperDrcValid ? "clean" : "issues"} | ${row.vias ?? "—"} | ${row.attempts} | ${(row.milliseconds / 1000).toFixed(2)} |`,
+      `| ${escape(row.sample)} | ${row.status} | ${row.routed}/${row.connections} | ${row.validatedBreakouts ?? "—"} | ${row.vias ?? "—"} | ${row.attempts} | ${(row.milliseconds / 1000).toFixed(2)} |`,
     )
   for (const row of rows.filter((row) => row.error))
     lines.push(

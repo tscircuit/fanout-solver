@@ -3,42 +3,43 @@ import {
   benchmarkSamples,
   selectBenchmarkSamples,
 } from "../benchmarks/benchmark-catalog"
-import { fanoutDatasets } from "../datasets"
-import { srj19FanoutSamples } from "../datasets/srj19"
-import { srj29FanoutSamples } from "../datasets/srj29"
+import { FANOUT_DIRECTION_CASES } from "../scripts/generate-repro/dataset31-source"
 
-test("benchmark discovers every registered and external sample without dropping constraints", () => {
-  expect(benchmarkSamples).toHaveLength(
-    fanoutDatasets.reduce(
-      (count, dataset) => count + dataset.samples.length,
-      0,
-    ) +
-      srj19FanoutSamples.length +
-      srj29FanoutSamples.length,
+test("benchmark includes exactly the 12 upstream dataset 31 cases and rejects other datasets", () => {
+  expect(benchmarkSamples).toHaveLength(12)
+  expect(benchmarkSamples.map((sample) => sample.id)).toEqual(
+    FANOUT_DIRECTION_CASES.map((sample) => sample.id),
+  )
+  expect(new Set(benchmarkSamples.map((sample) => sample.dataset))).toEqual(
+    new Set(["dataset31"]),
   )
   expect(
     new Set(benchmarkSamples.map((sample) => `${sample.dataset}/${sample.id}`))
       .size,
   ).toBe(benchmarkSamples.length)
-  const am62l = selectBenchmarkSamples({ dataset: "dataset08" })[0]!
-  expect(am62l.simpleRouteJson.connections).toHaveLength(135)
-  expect(am62l.simpleRouteJson.obstacles).toHaveLength(573)
-  expect(am62l.requireOriginalEndpoints).toBe(false)
+  for (const dataset of [
+    "31",
+    "dataset31",
+    "fanout31",
+    "dataset-fanout31-am62l",
+  ])
+    expect(selectBenchmarkSamples({ dataset })).toEqual(benchmarkSamples)
+  for (const dataset of [
+    "dataset08",
+    "srj19",
+    "srj29",
+    "all",
+    "dataset31,srj29",
+  ])
+    expect(() => selectBenchmarkSamples({ dataset })).toThrow("Only dataset31")
+  expect(selectBenchmarkSamples({ sample: "11-left-center" })).toEqual([
+    benchmarkSamples[10],
+  ])
   expect(
-    selectBenchmarkSamples({ dataset: "srj19,srj29", sample: "sample001" }),
-  ).toHaveLength(2)
-  expect(
-    selectBenchmarkSamples({ sample: "srj29/sample001" })[0]!
-      .requireOriginalEndpoints,
-  ).toBe(true)
+    selectBenchmarkSamples({ sample: "dataset31/11-left-center" }),
+  ).toEqual([benchmarkSamples[10]])
   expect(selectBenchmarkSamples({ limit: 2 })).toHaveLength(2)
-  expect(() => selectBenchmarkSamples({ dataset: "missing" })).toThrow(
-    "Unknown dataset",
-  )
   expect(() => selectBenchmarkSamples({ sample: "missing" })).toThrow(
     "No benchmark samples",
   )
-  // The worker transport must not silently drop callbacks or non-JSON input.
-  for (const sample of benchmarkSamples)
-    expect(JSON.parse(JSON.stringify(sample))).toEqual(sample)
 })

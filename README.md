@@ -16,7 +16,7 @@ and treats each bus-layer decision atomically.
 - Detects rectangular pad footprints through obstacle `componentId` metadata,
   including perimeter packages and two-pad passives.
 - Handles multiple mixed footprints inside one shared breakout boundary.
-- Routes perimeter and inner-matrix pads; the benchmark connects every pad.
+- Routes perimeter and inner-matrix pads.
 - Uses `sharedBoundary` as the common exit rectangle. Without one, it infers a
   shared rectangle around the source footprints selected for the buses, without
   expanding that boundary to include destination footprints.
@@ -280,19 +280,31 @@ parameters. Each sample has one shared boundary around all of its footprints,
 and component bounds come from the exact footprinter-generated copper pad
 extents.
 
-## All-sample benchmark
+## Dataset 31 benchmark
 
-Run `./benchmark.sh` (or `bun run benchmark`) to benchmark every available sample:
-Datasets 01–08, SRJ19, and SRJ29, currently **421 samples**. New samples in these
-catalogs are discovered automatically; no test-file allowlist is involved.
+Run `./benchmark.sh` (or `bun run benchmark`) to benchmark **only the 12 AM62L
+directional cases** from
+[`tscircuit/dataset-fanout31-am62l`](https://github.com/tscircuit/dataset-fanout31-am62l).
+The upstream revision is pinned in `scripts/generate-repro/package.json` and
+recorded in every report. Other datasets remain available for regression tests
+and the debugger, but have no benchmark commands or workflows.
 
 ```sh
 ./benchmark.sh
 ./benchmark.sh --list
-./benchmark.sh --dataset dataset08
-./benchmark.sh --dataset srj19,srj29 --sample sample001
+./benchmark.sh --sample 11-left-center
 ./benchmark.sh --concurrency 8 --sample-timeout-seconds 300
 ```
+
+Before timing the solver, the benchmark renders the selected upstream TSX/core
+circuits and captures their exact fanout-solver constructor inputs into
+`benchmark-results/inputs/<sample-id>.json`. Each case retains all 135 AM62L
+connections, 573 pad obstacles, nine DDR buses, 102 plane drops, and the original
+clearance, differential-pair, and length-skew constraints. The timed workers run
+**this checkout's solver**, not the upstream package's released solver.
+To capture the inputs without solving, use `bun run generate:dataset31`.
+The optional `--dataset dataset31` flag is accepted for explicit CI invocation;
+other dataset selections are rejected.
 
 Each sample runs in an isolated process, with up to four concurrent processes
 locally and a **120-second hard timeout** by default. A synchronous solver hang,
@@ -301,80 +313,33 @@ Assignment budgets and circuit constraints remain at each sample's defaults;
 `--max-layer-combinations` explicitly overrides only the search budget.
 
 The ordered `benchmark-results/benchmark.json` and `benchmark.md` reports contain
-the commit, configuration, per-dataset solve totals, every sample's status and
-timing, and partial routing/validation counts. Reports are saved after every
-completed sample, including the total selected count to identify incomplete runs.
+the solver commit, dataset revision, configuration, solve totals, every sample's
+status and timing, and partial routing/validation counts. Reports are saved after
+every completed sample, including the total selected count to identify incomplete runs.
 Timed-out workers do not retain their in-flight routing counts.
 Compare reports with the same budgets to track progress. Solved means validated
-fanout, not downstream inter-chip routing; SRJ29 additionally requires its
-original-endpoint and emitted-copper DRC checks. Partial, error, and timeout rows
-are benchmark results (exit 0); invalid CLI arguments or report I/O failures are
-command failures (nonzero exit).
+AM62L fanout, not RAM fanout or downstream inter-chip routing. Partial, error,
+and timeout rows are benchmark results (exit 0); invalid CLI arguments or report
+I/O failures are command failures (nonzero exit).
 
 ### PR comment trigger
 
 Once `.github/workflows/benchmark.yml` is on the default branch, a repository
 writer can comment **`/benchmark`** on an open PR. The workflow captures that
-PR's exact head SHA, runs all samples on a **32-vCPU Blacksmith ARM** runner,
-then updates a status comment with solve totals, per-sample results, and a link
-to the complete JSON/Markdown artifact. The Actions UI also supports a manual
-run, optionally supplying an open PR number. No custom bot token is required.
+PR's exact head SHA, runs all 12 dataset 31 samples on a **32-vCPU Blacksmith ARM**
+runner, then updates a status comment with solve totals, per-sample results,
+and a link to the complete JSON/Markdown reports and captured inputs. The Actions
+UI also supports a manual run, optionally supplying an open PR number. No custom
+bot token is required.
 
 The runner defaults to 32 processes and a 120-second per-sample deadline; set
 repository variables `BENCHMARK_CONCURRENCY` and
 `BENCHMARK_SAMPLE_TIMEOUT_SECONDS` to change these. PR code runs with a read-only
 token and no persisted checkout credentials. A separate job uses the trusted
 workflow revision to validate report data and post comments; it never executes
-PR code. Only exact commands from non-bot users with current write, maintain, or
-admin access are accepted.
-
-## SRJ29 benchmark
-
-The repository loads all 200 samples from the derivative
-[`tscircuit/dataset-srj29-bga-decoupling`](https://github.com/tscircuit/dataset-srj29-bga-decoupling)
-as a pinned development dependency. The adapter keeps the complete obstacle
-field, including opposite-layer capacitor pads and bodies. VCC and GND are
-grouped onto opposite boundary corridors, while the capacitor pad remains the
-downstream endpoint of every power connection; a local capacitor or plane via
-alone cannot count as a solved BGA pin. Remaining edge signals are grouped by
-direction. Every adapted problem uses the same six-layer stackup (`top`,
-`inner1` through `inner4`, and `bottom`) so benchmark improvements are directly
-comparable.
-
-The dedicated legacy SRJ29 report remains available with:
-
-```sh
-bun run benchmark:srj29
-```
-
-Use `--sample sample001`, `--limit 10`, or
-`--max-layer-combinations 16` for shorter runs. Samples run one at a time by
-default and print progress as they finish. `--concurrency 8` runs isolated
-samples in parallel, and `--sample-timeout-seconds 600` prevents a difficult
-sample from blocking the remaining work. Each run writes the full ordered
-results to `benchmark-results/srj29.json` and
-`benchmark-results/srj29.md`. A row is marked solved only when every input
-connection has a validated breakout and an independent physical-copper audit
-proves that the emitted wires, vias, and same-net pads connect every original
-endpoint on compatible layers. A second independent audit checks every emitted
-trace and via against different-net pads, obstacles, traces, and vias on every
-physical layer in its span. Reaching an arbitrary boundary point, retaining an
-unrouted endpoint in the output JSON, or emitting copper with a DRC violation
-does not count. The report separates fanout-prefix completion from physically
-connected original connections so partial progress remains visible without
-overstating it as a solution. Partial solutions are reported as benchmark
-results instead of failing the command. `bun run benchmark:srj29` is an alias
-for the same command.
-
-The `SRJ29 Benchmark` GitHub Actions workflow runs the complete dataset on a
-Blacksmith 32-vCPU ARM runner with 32 sample processes by default. It can be
-started manually with an optional sample id, or for a pull request by adding
-`[BENCHMARK TEST]` to its title. The workflow publishes the Markdown summary and
-uploads both reports as an artifact.
-
-Run `bun run start` and inspect the SRJ29 fixtures to step through the selected
-sample. The derivative dataset also publishes dedicated Cosmos pages for the
-first ten samples.
+PR code. The trusted renderer rejects legacy or mixed-dataset reports, so PR
+comments contain only dataset 31 results. Only exact commands from non-bot users
+with current write, maintain, or admin access are accepted.
 
 ## Dataset 02
 
@@ -527,8 +492,8 @@ bun run render:dataset
 bun run start
 ```
 
-The benchmark runs every sample in all datasets and reports footprint, pad,
-connection, routing, and layer-assignment metrics. `bun run start` opens the
+The benchmark runs only the 12 dataset 31 AM62L cases and reports solve counts,
+validation, and timing. `bun run start` opens all regression
 datasets in the standard tscircuit solver debugger. `bun run
 render:dataset` writes `graphics-debug` PNGs under one subdirectory per dataset,
 with a red shared boundary, gray component courtyards, and green fanout-exit

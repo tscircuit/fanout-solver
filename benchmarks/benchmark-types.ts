@@ -2,23 +2,20 @@ import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import type { FanoutSolverOptions } from "../lib/types"
 
 export interface BenchmarkSample {
-  dataset: string
+  dataset: "dataset31"
   id: string
   simpleRouteJson: SimpleRouteJson
   solverOptions?: FanoutSolverOptions
-  requireOriginalEndpoints: boolean
 }
 
 export interface BenchmarkRow {
-  dataset: string
+  dataset: "dataset31"
   sample: string
   status: "solved" | "partial" | "error" | "timeout"
-  scope: "fanout" | "original-endpoints"
+  scope: "fanout"
   connections: number
   routed: number
   validatedBreakouts: number | null
-  connectedOriginalConnections: number | null
-  routedCopperDrcValid: boolean | null
   attempts: number
   vias: number | null
   milliseconds: number
@@ -32,7 +29,9 @@ export interface BenchmarkConfiguration {
 }
 
 export interface BenchmarkReport {
-  version: 1
+  version: 2
+  dataset: "dataset31"
+  datasetSource: { repository: string; commit: string }
   generatedAt: string
   commit: string | null
   configuration: BenchmarkConfiguration

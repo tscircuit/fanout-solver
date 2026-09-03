@@ -4,7 +4,7 @@
 
 - Typecheck: `bun run typecheck`
 - Test: `bun test`
-- Benchmark: `bun run benchmark`
+- Benchmark: `bun run benchmark` (only dataset-fanout31-am62l; other datasets are regression fixtures)
 - Render dataset verification PNGs: `bun run render:dataset`
 - Cosmos debugger: `bun run start`
 - Export debugger: `bun run build:site`

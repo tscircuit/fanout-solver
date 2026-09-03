@@ -16,8 +16,6 @@ if (sample.id === "malformed") {
       connections: 1,
       routed: 1,
       validatedBreakouts: 1,
-      connectedOriginalConnections: null,
-      routedCopperDrcValid: null,
       attempts: 1,
       vias: 0,
       milliseconds: 1,

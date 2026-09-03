@@ -1,4 +1,4 @@
-name: Fanout Benchmark
+name: Dataset 31 Benchmark
 
 "on":
   issue_comment:
@@ -72,10 +72,11 @@ jobs:
         with:
           bun-version: latest
       - name: Install dependencies
-        run: bun install
-      - name: Run every sample
+        run: bun install --frozen-lockfile
+      - name: Run all dataset 31 samples
         run: >-
           ./benchmark.sh
+          --dataset dataset31
           --concurrency "$BENCHMARK_CONCURRENCY"
           --sample-timeout-seconds "$BENCHMARK_SAMPLE_TIMEOUT_SECONDS"
           --output-directory benchmark-results
@@ -87,6 +88,7 @@ jobs:
           path: |
             benchmark-results/benchmark.json
             benchmark-results/benchmark.md
+            benchmark-results/inputs/*.json
           if-no-files-found: warn
 
   report:
