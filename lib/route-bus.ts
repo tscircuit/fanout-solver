@@ -18,6 +18,7 @@ import {
   segmentsAreClear,
 } from "./geometry"
 import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
+import { getDogboneSideVariants } from "./get-dogbone-side-variants"
 import { getViaSpanLayers } from "./layer-names"
 import { matchComponentDogboneViaSites } from "./match-component-dogbone-via-sites"
 import {
@@ -62,7 +63,7 @@ export interface RouteBusParams {
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
   viaMinimalOnly?: boolean
-  /** Permit a singleton to move its provisional via near the boundary. */
+  /** Permit a singleton or pair to move provisional vias near the boundary. */
   allowBoundarySideViaFallback?: boolean
   /** Reserve corner tuning space when selecting a boundary-side via. */
   preferCornerBoundaryVia?: boolean
@@ -2113,7 +2114,7 @@ function routePlaneTerminatedBus(
             otherPlans: [...acceptedPlans, ...fixedPlans],
             staticClearanceCache,
             blockingBusCounts,
-            cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${candidateIndex}`,
+            cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${fixedViaPoint.x}:${fixedViaPoint.y}:${candidateIndex}`,
             srj,
             sharedBoundary: bus.sharedBoundary,
             clearance,
@@ -2604,6 +2605,7 @@ export function* routeBusAlternativesSteps(
       maximumRouteOrderAttempts?: number
       windingOrderIndex?: number
       preferTargetDirectedLaneBias?: boolean
+      localDogboneRepair?: boolean
     }
     const maximumThroughAllRouteOrderAttempts = 24
     const windingTargetOrderCount = cornerSide
@@ -2836,6 +2838,48 @@ export function* routeBusAlternativesSteps(
       fixedViaPointsByConnectionIndex
         ? fixedViaTerminalPatterns
         : [...fixedViaTerminalPatterns, ...unreservedTerminalPatterns]
+    if (
+      !fixedViaPointsByConnectionIndex &&
+      !allowBlindAndBuriedVias &&
+      bus.connections.length > 1 &&
+      bus.connections.every(
+        (connection) => connection.sourceLayer !== targetLayer,
+      ) &&
+      viaHandednesses.includes(-1) &&
+      viaHandednesses.includes(1)
+    ) {
+      // Keep the existing successful routes unchanged. Only after those site
+      // assignments fail, try local inward dogbones that reopen a channel
+      // closed by one or two pads in the same source row.
+      const variants = getDogboneSideVariants(bus.connections, bus.direction)
+      for (const handedness of viaHandednesses) {
+        for (const flippedIndices of variants) {
+          terminalPatterns.push({
+            label: `local-dogbone-repair-${handedness}-${flippedIndices.join("-")}`,
+            useViaInPad: false,
+            getViaHandedness: () => handedness,
+            maximumRouteOrderAttempts: 6,
+            localDogboneRepair: true,
+            getViaPoint: (connection) => {
+              const point = getInitialViaPoint({
+                preparedConnection: connection,
+                bus,
+                targetLayer,
+                traceWidth,
+                viaDiameter,
+                clearance,
+                viaHandedness: handedness,
+              })
+              if (!flippedIndices.includes(connection.connectionIndex))
+                return point
+              return bus.direction === "up" || bus.direction === "down"
+                ? { x: point.x, y: 2 * connection.sourcePoint.y - point.y }
+                : { x: 2 * connection.sourcePoint.x - point.x, y: point.y }
+            },
+          })
+        }
+      }
+    }
     const seenTerminalSignatures = new Set<string>()
     for (const terminalPattern of terminalPatterns) {
       const terminals = bus.connections.map((preparedConnection) => {
@@ -2887,6 +2931,42 @@ export function* routeBusAlternativesSteps(
       const alignGridToPads =
         alignWindingGridToPads ||
         Boolean(terminalPattern.getViaPoint && !fixedViaPointsByConnectionIndex)
+      if (
+        terminalPattern.localDogboneRepair &&
+        !matchComponentDogboneViaSites([bus], {
+          viaDiameter,
+          viaHoleDiameter,
+          traceWidth,
+          clearance,
+          additionalObstacles: srj.obstacles,
+          fixedViaPointsByConnectionIndex: new Map(
+            terminals.map((terminal) => [
+              terminal.connection.connectionIndex,
+              terminal.viaPoint,
+            ]),
+          ),
+          blockingSegments: acceptedPlans.flatMap((plan) =>
+            getPlanSegments(plan).map((segment) => ({
+              connectionIndex: plan.connectionIndex,
+              segment,
+            })),
+          ),
+          blockingVias: [
+            ...acceptedPlans.flatMap((plan) =>
+              getPlanVias(plan).map((via) => ({
+                connectionIndex: plan.connectionIndex,
+                center: via.center,
+                diameter: via.diameter,
+                spanLayers: via.spanLayers,
+              })),
+            ),
+            // These are future connections, not members of the current bus.
+            ...reservedVias.map(({ via }) => ({ connectionIndex: -1, ...via })),
+          ],
+        })
+      ) {
+        continue
+      }
       const gridStepDivisor =
         terminalPattern.getViaPoint &&
         Math.min(bus.pitchX, bus.pitchY) -
@@ -2901,7 +2981,7 @@ export function* routeBusAlternativesSteps(
         )
         .join(
           "|",
-        )}:${terminalPattern.maximumRouteOrderAttempts ?? "all"}:${gridStepDivisor}:${alignGridToPads}`
+        )}:${terminalPattern.maximumRouteOrderAttempts ?? "all"}:${gridStepDivisor}:${alignGridToPads}:${Boolean(terminalPattern.localDogboneRepair)}`
       if (seenTerminalSignatures.has(terminalSignature)) continue
       seenTerminalSignatures.add(terminalSignature)
       const windingSteps = routeViaMinimalWindingAlternativesSteps(
@@ -2921,6 +3001,7 @@ export function* routeBusAlternativesSteps(
           maximumRouteOrderAttempts: terminalPattern.maximumRouteOrderAttempts,
           adaptiveRouteOrder: adaptiveWindingRouteOrder,
           alignGridToPads,
+          includeReverseTargetRotation: terminalPattern.localDogboneRepair,
           reservedVias,
           gridStepDivisor,
           preferTargetDirectedLaneBias:
@@ -2976,24 +3057,28 @@ export function* routeBusAlternativesSteps(
     }
   }
 
-  // A through-via does not have to sit next to the source pad. A singleton
+  // A through-via does not have to sit next to the source pad. A narrow bus
   // embedded in another bus's source field can have every local dogbone site
-  // occupied while still having a clear top-layer escape. In that case, route
-  // to one via near the boundary and make the short final hop on the requested
-  // escape layer. This retains the one-via invariant and avoids weakening any
-  // clearance rule.
+  // occupied while still having a clear source-layer escape. A pair first
+  // relocates its two vias just outside the nearest package edge; a singleton
+  // retains the boundary-side-via fallback. Both forms preserve one via per
+  // signal without weakening any clearance rule.
   if (
     alternatives.length === 0 &&
     allowBoundarySideViaFallback &&
     fixedViaPointsByConnectionIndex &&
-    bus.connections.length === 1 &&
+    bus.connections.length <= 2 &&
     bus.exitEdge &&
-    bus.connections[0]!.sourceLayer !== targetLayer
+    bus.connections.every(
+      (connection) =>
+        connection.sourceLayer === bus.connections[0]!.sourceLayer &&
+        connection.sourceLayer !== targetLayer,
+    )
   ) {
-    const preparedConnection = bus.connections[0]!
+    const sourceLayer = bus.connections[0]!.sourceLayer
     const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
     const boundaryExitAxis = getExitAxis(bus, boundaryDirection)
-    const finalTrack =
+    const finalTracks = bus.connections.map((preparedConnection) =>
       preferCornerBoundaryVia && getCornerSide(bus)
         ? getCornerTargetTrack({
             bus,
@@ -3010,27 +3095,30 @@ export function* routeBusAlternativesSteps(
             bus,
             connection: preparedConnection,
             boundaryDirection,
-          })
-    const finalExitPoint = makePoint(
-      boundaryExitAxis,
-      finalTrack,
-      boundaryDirection,
+          }),
+    )
+    const finalExitPoints = finalTracks.map((track) =>
+      makePoint(boundaryExitAxis, track, boundaryDirection),
     )
     const sourceLayerSrj: SimpleRouteJson = {
       ...srj,
-      obstacles: srj.obstacles.map((obstacle) =>
-        obstacle === preparedConnection.sourceObstacle ||
-        (distance(obstacle.center, preparedConnection.sourcePoint) <= 1e-7 &&
-          obstacle.layers.includes(preparedConnection.sourceLayer))
+      obstacles: srj.obstacles.map((obstacle) => {
+        const connection = bus.connections.find(
+          (connection) =>
+            obstacle === connection.sourceObstacle ||
+            (distance(obstacle.center, connection.sourcePoint) <= 1e-7 &&
+              obstacle.layers.includes(connection.sourceLayer)),
+        )
+        return connection
           ? {
               ...obstacle,
               connectedTo: [
                 ...obstacle.connectedTo,
-                preparedConnection.connection.name,
+                connection.connection.name,
               ],
             }
-          : obstacle,
-      ),
+          : obstacle
+      }),
     }
     const insetStep = Math.max(
       viaDiameter / 2 + clearance,
@@ -3039,36 +3127,124 @@ export function* routeBusAlternativesSteps(
     const cornerSide = preferCornerBoundaryVia ? getCornerSide(bus) : undefined
     const boundaryViaCandidates = [1, 2, 3, 4, 5].flatMap((multiple) => {
       const inset = multiple * insetStep
-      const straight = makePoint(
-        boundaryExitAxis - directionSign(boundaryDirection) * inset,
-        finalTrack,
-        boundaryDirection,
+      const straight = finalTracks.map((finalTrack) =>
+        makePoint(
+          boundaryExitAxis - directionSign(boundaryDirection) * inset,
+          finalTrack,
+          boundaryDirection,
+        ),
       )
       if (!cornerSide) return [straight]
       // Approach corner exits diagonally to leave the adjacent pair's tuning
       // lane free of the through-via barrel. Retain the straight fallback.
       return [
-        makePoint(
-          boundaryExitAxis - directionSign(boundaryDirection) * inset,
-          finalTrack + (cornerSide === "maximum" ? inset : -inset),
-          boundaryDirection,
+        finalTracks.map((finalTrack) =>
+          makePoint(
+            boundaryExitAxis - directionSign(boundaryDirection) * inset,
+            finalTrack + (cornerSide === "maximum" ? inset : -inset),
+            boundaryDirection,
+          ),
         ),
         straight,
       ]
     })
-    for (const boundaryViaPoint of boundaryViaCandidates) {
+    const sourceCenter = {
+      x:
+        bus.connections.reduce(
+          (sum, connection) => sum + connection.sourcePoint.x,
+          0,
+        ) / bus.connections.length,
+      y:
+        bus.connections.reduce(
+          (sum, connection) => sum + connection.sourcePoint.y,
+          0,
+        ) / bus.connections.length,
+    }
+    const directions = [
+      { x: -1, y: 0, distance: sourceCenter.x - Math.min(...bus.xCoordinates) },
+      { x: 1, y: 0, distance: Math.max(...bus.xCoordinates) - sourceCenter.x },
+      { x: 0, y: -1, distance: sourceCenter.y - Math.min(...bus.yCoordinates) },
+      { x: 0, y: 1, distance: Math.max(...bus.yCoordinates) - sourceCenter.y },
+    ].toSorted((first, second) => first.distance - second.distance)
+    const displacedViaCandidates =
+      bus.connections.length === 2
+        ? directions.flatMap((direction) =>
+            [3].map((multiple) =>
+              bus.connections.map((connection) => {
+                const original = fixedViaPointsByConnectionIndex.get(
+                  connection.connectionIndex,
+                )!
+                return {
+                  x: original.x + direction.x * multiple * bus.pitchX,
+                  y: original.y + direction.y * multiple * bus.pitchY,
+                }
+              }),
+            ),
+          )
+        : []
+    const viaCandidates = [
+      ...displacedViaCandidates.map((points) => ({
+        points,
+        boundarySide: false,
+      })),
+      ...boundaryViaCandidates.map((points) => ({
+        points,
+        boundarySide: true,
+      })),
+    ]
+    for (const { points: boundaryViaPoints, boundarySide } of viaCandidates) {
+      const boundaryVias = bus.connections.map((connection, index) => ({
+        connectionName: connection.connection.name,
+        via: {
+          center: boundaryViaPoints[index]!,
+          diameter: viaDiameter,
+          spanLayers: getViaSpanLayers({
+            fromLayer: sourceLayer,
+            toLayer: targetLayer,
+            layerNames,
+            allowBlindAndBuriedVias,
+          }),
+        },
+      }))
+      if (
+        boundaryVias.some((candidate, index) =>
+          boundaryVias.some(
+            (other, otherIndex) =>
+              index !== otherIndex &&
+              (distance(candidate.via.center, other.via.center) <
+                viaDiameter + clearance - 1e-9 ||
+                (boundarySide &&
+                  distancePointToSegment(
+                    candidate.via.center,
+                    other.via.center,
+                    finalExitPoints[otherIndex]!,
+                  ) <
+                    viaDiameter / 2 + traceWidth / 2 + clearance - 1e-9)),
+          ),
+        )
+      )
+        continue
+      if (
+        boundaryVias.some(({ via }) =>
+          srj.obstacles.some(
+            (obstacle) =>
+              obstacle.layers.some((layer) => via.spanLayers.includes(layer)) &&
+              distancePointToObstacle(via.center, obstacle) <
+                via.diameter / 2 + clearance - 1e-9,
+          ),
+        )
+      )
+        continue
       const sourceLayerSteps = routeViaMinimalWindingAlternativesSteps(
         {
           srj: sourceLayerSrj,
           bus,
-          targetLayer: preparedConnection.sourceLayer,
-          terminals: [
-            {
-              connection: preparedConnection,
-              viaPoint: preparedConnection.sourcePoint,
-              exitPoint: boundaryViaPoint,
-            },
-          ],
+          targetLayer: sourceLayer,
+          terminals: bus.connections.map((preparedConnection, index) => ({
+            connection: preparedConnection,
+            viaPoint: preparedConnection.sourcePoint,
+            exitPoint: boundaryViaPoints[index]!,
+          })),
           acceptedPlans,
           layerNames,
           traceWidth,
@@ -3077,8 +3253,11 @@ export function* routeBusAlternativesSteps(
           clearance,
           allowBlindAndBuriedVias,
           allowSameNetMerges,
-          maximumRouteOrderAttempts: 3,
-          reservedVias,
+          maximumRouteOrderAttempts: bus.connections.length === 1 ? 3 : 6,
+          reservedVias:
+            bus.connections.length > 1
+              ? [...reservedVias, ...boundaryVias]
+              : reservedVias,
           gridStepDivisor: 2,
           allowSourceLayerRouting: true,
           alignGridToPads: true,
@@ -3091,75 +3270,133 @@ export function* routeBusAlternativesSteps(
         yield {
           phase: "via-minimal-winding",
           busId: bus.busId,
-          targetLayer: preparedConnection.sourceLayer,
+          targetLayer: sourceLayer,
           winding: sourceLayerResult.value,
         }
         sourceLayerResult = sourceLayerSteps.next()
       }
-      const sourceLayerPlan = sourceLayerResult.value[0]?.[0]
-      if (!sourceLayerPlan) continue
-      const targetSegment: RoutedSegment = {
-        start: boundaryViaPoint,
-        end: finalExitPoint,
-        width: traceWidth,
-        layer: targetLayer,
-      }
-      const via = {
-        center: boundaryViaPoint,
-        diameter: viaDiameter,
-        holeDiameter: viaHoleDiameter,
-        fromLayer: preparedConnection.sourceLayer,
-        toLayer: targetLayer,
-        spanLayers: getViaSpanLayers({
-          fromLayer: preparedConnection.sourceLayer,
-          toLayer: targetLayer,
-          layerNames,
-          allowBlindAndBuriedVias,
-        }),
-      }
-      const sourceRoute = sourceLayerPlan.trace.route.filter(
-        (item) => item.route_type === "wire",
+      const sourceLayerPlans = sourceLayerResult.value[0]
+      if (
+        !sourceLayerPlans ||
+        sourceLayerPlans.length !== bus.connections.length
       )
-      const plans: FanoutRoutePlan[] = [
-        {
-          ...sourceLayerPlan,
-          ...(preferCornerBoundaryVia
-            ? { sourceEscapeSegmentCount: sourceLayerPlan.segments.length }
-            : {}),
-          targetLayer,
-          exitPoint: finalExitPoint,
-          via,
-          segments: [...sourceLayerPlan.segments, targetSegment],
-          length:
-            sourceLayerPlan.length + distance(boundaryViaPoint, finalExitPoint),
-          trace: {
-            ...sourceLayerPlan.trace,
-            route: [
-              ...sourceRoute,
-              {
-                route_type: "via",
-                ...boundaryViaPoint,
-                from_layer: preparedConnection.sourceLayer,
-                to_layer: targetLayer,
-                via_diameter: viaDiameter,
-                via_hole_diameter: viaHoleDiameter,
-              },
-              {
-                route_type: "wire",
-                ...boundaryViaPoint,
-                width: traceWidth,
-                layer: targetLayer,
-              },
-              {
-                route_type: "wire",
-                ...finalExitPoint,
-                width: traceWidth,
-                layer: targetLayer,
-              },
-            ],
+        continue
+      let targetLayerPlans: FanoutRoutePlan[] | undefined
+      if (!boundarySide) {
+        const targetSteps = routeViaMinimalWindingAlternativesSteps(
+          {
+            srj,
+            bus,
+            targetLayer,
+            terminals: bus.connections.map((connection, index) => ({
+              connection,
+              viaPoint: boundaryViaPoints[index]!,
+              exitPoint: finalExitPoints[index]!,
+            })),
+            acceptedPlans,
+            layerNames,
+            traceWidth,
+            viaDiameter,
+            viaHoleDiameter,
+            clearance,
+            allowBlindAndBuriedVias,
+            allowSameNetMerges,
+            maximumRouteOrderAttempts: 6,
+            reservedVias,
+            gridStepDivisor: 2,
+            alignGridToPads: true,
           },
+          1,
+          includeVisualization,
+        )
+        let targetResult = targetSteps.next()
+        while (!targetResult.done) {
+          yield {
+            phase: "via-minimal-winding",
+            busId: bus.busId,
+            targetLayer,
+            winding: targetResult.value,
+          }
+          targetResult = targetSteps.next()
+        }
+        targetLayerPlans = targetResult.value[0]
+        if (!targetLayerPlans) continue
+      }
+      const plans: FanoutRoutePlan[] = sourceLayerPlans.map(
+        (sourceLayerPlan, index) => {
+          const boundaryViaPoint = boundaryViaPoints[index]!
+          const finalExitPoint = finalExitPoints[index]!
+          const targetSegment: RoutedSegment = {
+            start: boundaryViaPoint,
+            end: finalExitPoint,
+            width: traceWidth,
+            layer: targetLayer,
+          }
+          const targetSegments = targetLayerPlans
+            ? targetLayerPlans[index]!.segments.filter(
+                (segment) => segment.layer === targetLayer,
+              )
+            : [targetSegment]
+          const via = {
+            center: boundaryViaPoint,
+            diameter: viaDiameter,
+            holeDiameter: viaHoleDiameter,
+            fromLayer: sourceLayer,
+            toLayer: targetLayer,
+            spanLayers: getViaSpanLayers({
+              fromLayer: sourceLayer,
+              toLayer: targetLayer,
+              layerNames,
+              allowBlindAndBuriedVias,
+            }),
+          }
+          const sourceRoute = sourceLayerPlan.trace.route.filter(
+            (item) => item.route_type === "wire",
+          )
+          return {
+            ...sourceLayerPlan,
+            ...(preferCornerBoundaryVia || bus.connections.length > 1
+              ? { sourceEscapeSegmentCount: sourceLayerPlan.segments.length }
+              : {}),
+            targetLayer,
+            exitPoint: finalExitPoint,
+            via,
+            segments: [...sourceLayerPlan.segments, ...targetSegments],
+            length:
+              sourceLayerPlan.length +
+              targetSegments.reduce(
+                (sum, segment) => sum + distance(segment.start, segment.end),
+                0,
+              ),
+            trace: {
+              ...sourceLayerPlan.trace,
+              route: [
+                ...sourceRoute,
+                {
+                  route_type: "via",
+                  ...boundaryViaPoint,
+                  from_layer: sourceLayer,
+                  to_layer: targetLayer,
+                  via_diameter: viaDiameter,
+                  via_hole_diameter: viaHoleDiameter,
+                },
+                {
+                  route_type: "wire",
+                  ...boundaryViaPoint,
+                  width: traceWidth,
+                  layer: targetLayer,
+                },
+                ...targetSegments.map((segment) => ({
+                  route_type: "wire" as const,
+                  ...segment.end,
+                  width: traceWidth,
+                  layer: targetLayer,
+                })),
+              ],
+            },
+          }
         },
-      ]
+      )
       const boundaryViaPlansAreClear = fanoutPlansAreClear({
         plans: [...acceptedPlans, ...plans],
         srj,
@@ -3168,35 +3405,39 @@ export function* routeBusAlternativesSteps(
         allowBlindAndBuriedVias,
         allowSameNetMerges,
       })
-      const reservedViasAreClear = reservedVias.every((reserved) => {
-        if (
-          reserved.connectionName === preparedConnection.connection.name ||
-          (allowSameNetMerges &&
-            connectionsShareElectricalNet(
-              srj,
-              reserved.connectionName,
-              preparedConnection.connection.name,
-            ))
-        )
-          return true
-        if (
-          via.spanLayers.some((layer) =>
-            reserved.via.spanLayers.includes(layer),
-          ) &&
-          distance(via.center, reserved.via.center) <
-            (via.diameter + reserved.via.diameter) / 2 + clearance - 1e-9
-        )
-          return false
-        return (
-          !reserved.via.spanLayers.includes(targetLayer) ||
-          distancePointToSegment(
-            reserved.via.center,
-            targetSegment.start,
-            targetSegment.end,
-          ) >=
-            reserved.via.diameter / 2 + traceWidth / 2 + clearance - 1e-9
-        )
-      })
+      const reservedViasAreClear = plans.every((plan) =>
+        reservedVias.every((reserved) => {
+          const via = plan.via!
+          if (
+            reserved.connectionName === plan.connectionName ||
+            (allowSameNetMerges &&
+              connectionsShareElectricalNet(
+                srj,
+                reserved.connectionName,
+                plan.connectionName,
+              ))
+          )
+            return true
+          if (
+            via.spanLayers.some((layer) =>
+              reserved.via.spanLayers.includes(layer),
+            ) &&
+            distance(via.center, reserved.via.center) <
+              (via.diameter + reserved.via.diameter) / 2 + clearance - 1e-9
+          )
+            return false
+          return plan.segments.every(
+            (segment) =>
+              !reserved.via.spanLayers.includes(segment.layer) ||
+              distancePointToSegment(
+                reserved.via.center,
+                segment.start,
+                segment.end,
+              ) >=
+                reserved.via.diameter / 2 + traceWidth / 2 + clearance - 1e-9,
+          )
+        }),
+      )
       if (boundaryViaPlansAreClear && reservedViasAreClear) {
         addAlternative(plans)
         return alternatives
