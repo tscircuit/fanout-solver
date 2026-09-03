@@ -1,6 +1,5 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
-import { shortenBusPlans } from "./shorten-bus-plans"
 import { type GraphicsObject, mergeGraphics } from "graphics-debug"
 import { addViaLayerMetadataToSrj } from "./add-via-layer-metadata"
 import { getCornerBandSide, getExitEdgeForDirection } from "./boundary-exit"
@@ -9,6 +8,7 @@ import {
   type CompleteOriginalEndpointsResult,
   completeOriginalEndpoints,
 } from "./complete-original-endpoints"
+import { inferDensePlaneRoutingHints } from "./infer-dense-plane-routing-hints"
 import {
   generateLayerAssignments,
   getCopperLayerNames,
@@ -34,6 +34,7 @@ import {
 } from "./route-bus"
 import { routeSingleLayerWithAdaptiveExitsSteps } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
+import { shortenBusPlans } from "./shorten-bus-plans"
 import type {
   AssignmentAttempt,
   Bounds,
@@ -912,8 +913,15 @@ export class FanoutSolver extends BaseSolver {
       ...inputSrj,
       obstacles: [...inputSrj.obstacles],
     }
-    this.config = resolveConfig(inputSrj, options)
+    const resolvedConfig = resolveConfig(inputSrj, options)
     this.preparedBuses = prepareFanoutBuses(this.routingSrj, options)
+    const inferredDensePlaneRoutingHints = inferDensePlaneRoutingHints(
+      this.preparedBuses,
+      options,
+    )
+    this.config = inferredDensePlaneRoutingHints
+      ? { ...resolvedConfig, ...inferredDensePlaneRoutingHints }
+      : resolvedConfig
     validateCornerBandCapacities(this.preparedBuses, this.config)
     for (const bus of this.preparedBuses) {
       for (const connection of bus.connections) {
