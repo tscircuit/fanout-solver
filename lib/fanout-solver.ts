@@ -4983,7 +4983,7 @@ export class FanoutSolver extends BaseSolver {
   private *evaluateAssignmentWithStrategySteps(
     assignmentIndex: number,
     busLayerAssignments: Readonly<Record<string, string>>,
-    routingStrategy: RoutingStrategy | undefined,
+    routingStrategy: RoutingStrategy,
     routingOrderBusIds?: readonly string[],
   ): Generator<FanoutWorkYield, EvaluatedAssignment, unknown> {
     let plans: AssignmentAttempt["plans"] = []
@@ -5138,7 +5138,7 @@ export class FanoutSolver extends BaseSolver {
       yield
     }
 
-    let routingPrefixKey = `${routingStrategy ?? "explicit-order"}|`
+    let routingPrefixKey = `${routingStrategy}|`
     let routedBusIndex = 0
     for (const bus of useSingleLayerPushAndShove || mixedTerminationState
       ? []
@@ -5328,6 +5328,7 @@ export class FanoutSolver extends BaseSolver {
       busLayerAssignments,
       "default",
     )
+    let bestRoutingStrategy: RoutingStrategy = "default"
     if (process.env.FANOUT_DEBUG_DENSE_ONLY === "1") return bestAttempt
     if (
       bestAttempt.summary.routedConnectionCount ===
@@ -5345,6 +5346,7 @@ export class FanoutSolver extends BaseSolver {
       )
       if (this.isAttemptBetter(attempt, bestAttempt)) {
         bestAttempt = attempt
+        bestRoutingStrategy = routingStrategy
       }
       if (
         bestAttempt.summary.routedConnectionCount ===
@@ -5388,7 +5390,7 @@ export class FanoutSolver extends BaseSolver {
       const repairedAttempt = yield* this.evaluateAssignmentWithStrategySteps(
         assignmentIndex,
         busLayerAssignments,
-        undefined,
+        bestRoutingStrategy,
         repairedRoutingOrderBusIds,
       )
       if (this.isAttemptBetter(repairedAttempt, bestAttempt)) {
