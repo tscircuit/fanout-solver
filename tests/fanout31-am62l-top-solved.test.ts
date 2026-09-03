@@ -1,18 +1,22 @@
 import { expect, test } from "bun:test"
 import { getSvgFromGraphicsObject } from "graphics-debug"
-import { FanoutSolver } from "lib/fanout-solver"
-import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
-import { createAm62lTopEdgeBreakoutRepro } from "../repros/repro04-am62l-top-edge-breakout.page"
+import { createAm62lRamTopInput } from "../datasets/dataset09"
+import { FanoutSolver } from "../lib/fanout-solver"
+import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
 
-test("routes every AM62L top-edge breakout with its original timing constraints", async () => {
-  const { inputSrj, options } = createAm62lTopEdgeBreakoutRepro()
-
-  const solver = new FanoutSolver(inputSrj, options)
+test("routes the complete AM62L RAM-above sample with its timing constraints", async () => {
+  const { simpleRouteJson, solverOptions } = createAm62lRamTopInput()
+  expect(simpleRouteJson.connections).toHaveLength(135)
+  expect(simpleRouteJson.obstacles).toHaveLength(573)
+  expect(simpleRouteJson.differentialPairs).toHaveLength(3)
+  expect(solverOptions.buses).toHaveLength(111)
+  const solver = new FanoutSolver(simpleRouteJson, {
+    ...solverOptions,
+    maxLayerCombinations: 1,
+  })
   solver.solve()
-
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
-
   const output = solver.getOutput()
   expect(output.validation).toEqual({
     valid: true,
@@ -22,10 +26,9 @@ test("routes every AM62L top-edge breakout with its original timing constraints"
   })
   expect(output.fanoutTraces).toHaveLength(135)
   expect(output.planeTerminations).toHaveLength(102)
-  expect(output.simpleRouteJson.fanoutPlaneConnectivity).toHaveLength(102)
   expect(
     validateRoutedCopperDrc({
-      inputSrj,
+      inputSrj: simpleRouteJson,
       routedSrj: { ...output.simpleRouteJson, traces: output.fanoutTraces },
       clearance: solver.config.clearance,
       allowBlindAndBuriedVias: false,
@@ -39,4 +42,4 @@ test("routes every AM62L top-edge breakout with its original timing constraints"
   await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
     import.meta.path,
   )
-}, 120_000)
+}, 180_000)

@@ -565,6 +565,67 @@ function getBusSkew(plans: readonly FanoutRoutePlan[]): number {
   return Math.max(...lengths) - Math.min(...lengths)
 }
 
+function* createSpreadLaneCandidates(
+  plan: FanoutRoutePlan,
+  clearance: number,
+): Generator<FanoutRoutePlan> {
+  for (const { segment, index } of plan.segments
+    .map((segment, index) => ({ segment, index }))
+    .filter(({ segment }) => segment.layer === plan.targetLayer)
+    .toSorted(
+      (a, b) =>
+        distance(b.segment.start, b.segment.end) -
+        distance(a.segment.start, a.segment.end),
+    )) {
+    const length = distance(segment.start, segment.end)
+    if (length <= EPSILON) continue
+    const dx = Math.abs(segment.end.x - segment.start.x)
+    const dy = Math.abs(segment.end.y - segment.start.y)
+    if (dx > EPSILON && dy > EPSILON && Math.abs(dx - dy) > EPSILON) continue
+    const tangent = {
+      x: (segment.end.x - segment.start.x) / length,
+      y: (segment.end.y - segment.start.y) / length,
+    }
+    const pitch = segment.width + clearance
+    for (const multiple of [2, 3, 4, 6]) {
+      const offset = pitch * multiple
+      if (length < 2 * offset + pitch) continue
+      for (const sign of [1, -1]) {
+        const normal = { x: -tangent.y * sign, y: tangent.x * sign }
+        const points = [
+          segment.start,
+          addScaled(addScaled(segment.start, tangent, offset), normal, offset),
+          addScaled(addScaled(segment.end, tangent, -offset), normal, offset),
+          segment.end,
+        ]
+        const replacement = points.slice(1).map((end, i) => ({
+          ...segment,
+          start: points[i]!,
+          end,
+        }))
+        const segments = [
+          ...plan.segments.slice(0, index),
+          ...replacement,
+          ...plan.segments.slice(index + 1),
+        ]
+        if (hasNonAdjacentSelfIntersection(segments)) continue
+        if (
+          !replacementCopperIsSelfClear({
+            plan,
+            segments,
+            replacementStartIndex: index,
+            replacementSegmentCount: replacement.length,
+            clearance,
+          })
+        )
+          continue
+        const candidate = createPlanWithSegments(plan, segments)
+        if (candidate) yield candidate
+      }
+    }
+  }
+}
+
 /**
  * Adds straight/45-degree meanders after the dense component escape. Matching
  * is atomic: a constrained bus either satisfies its declared skew with the
@@ -584,6 +645,8 @@ export function matchBusPlanLengths(params: {
    * revalidated and whose remaining dogbone capacity is checked atomically.
    */
   allowMatchingInsideDenseBounds?: boolean
+  /** Allow a differential pair's longer lane to move aside before tuning its mate. */
+  allowPairLaneSpreading?: boolean
   /**
    * Rejects a geometrically clear candidate when it would make a caller-owned
    * downstream assignment (such as pending plane dogbones) infeasible.
@@ -759,6 +822,49 @@ export function matchBusPlanLengths(params: {
           acceptedPlans = findMultiSpanCandidate(targetAddedLength)
         }
         if (acceptedPlans) break
+      }
+      if (
+        !acceptedPlans &&
+        params.allowPairLaneSpreading &&
+        bus.connections.length === 2
+      ) {
+        // A tightly packed pair may leave no space to lengthen the inner lane.
+        // Move the outer lane, then retune the complete pair atomically. Only
+        // four geometrically clear placements may start another matching pass.
+        const longer = busPlans.find((plan) => plan !== shortest)!
+        let attempts = 0
+        for (const candidate of createSpreadLaneCandidates(longer, clearance)) {
+          const nextPlans = matchedPlans.map((plan) =>
+            plan === longer ? candidate : plan,
+          )
+          if (
+            !fanoutPlansAreClear({
+              plans: nextPlans,
+              srj: inputSrj,
+              sharedBoundary,
+              clearance,
+              allowBlindAndBuriedVias,
+              allowSameNetMerges,
+            })
+          )
+            continue
+          if (
+            candidatePlansAreFeasible &&
+            !candidatePlansAreFeasible(nextPlans)
+          )
+            continue
+          const result = matchBusPlanLengths({
+            ...params,
+            plans: nextPlans,
+            preparedBuses: [bus],
+            allowPairLaneSpreading: false,
+          })
+          if (result.plans) {
+            acceptedPlans = result.plans
+            break
+          }
+          if (++attempts >= 4) break
+        }
       }
       if (!acceptedPlans) return { plans: null, failedBus: bus }
       matchedPlans = acceptedPlans

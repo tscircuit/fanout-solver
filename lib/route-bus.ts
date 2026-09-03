@@ -64,6 +64,8 @@ export interface RouteBusParams {
   viaMinimalOnly?: boolean
   /** Permit a singleton to move its provisional via near the boundary. */
   allowBoundarySideViaFallback?: boolean
+  /** Reserve corner tuning space when selecting a boundary-side via. */
+  preferCornerBoundaryVia?: boolean
   /** Retry blocked winding terminals ahead of already-routed terminals. */
   adaptiveWindingRouteOrder?: boolean
   /** Preserve pad-lattice channels in the automatic dense routing path. */
@@ -1611,8 +1613,10 @@ function segmentIsClearOfObstacles(params: {
     ) {
       continue
     }
+    // A winding escape can turn more than once while leaving its own pad.
     if (
-      segmentIndex === 0 &&
+      segmentIndex >= 0 &&
+      segmentIndex < (plan.sourceEscapeSegmentCount ?? 1) &&
       obstacle === plan.sourceObstacle &&
       segment.layer === plan.sourceLayer
     ) {
@@ -2003,7 +2007,9 @@ export function fanoutPlansAreClear(params: {
 }
 
 function routePlaneTerminatedBus(
-  params: RouteBusParams,
+  params: RouteBusParams & {
+    collectAlternative?: (plan: FanoutRoutePlan) => boolean
+  },
 ): FanoutRoutePlan[] | null {
   const {
     srj,
@@ -2037,6 +2043,8 @@ function routePlaneTerminatedBus(
         remainingPlaneCandidatesToSkip--
         continue
       }
+      if (params.collectAlternative && !params.collectAlternative(plan))
+        continue
       return plan
     }
     return undefined
@@ -2452,6 +2460,7 @@ export function* routeBusAlternativesSteps(
     reservedVias = [],
     viaMinimalOnly = false,
     allowBoundarySideViaFallback = false,
+    preferCornerBoundaryVia = false,
     adaptiveWindingRouteOrder = false,
     alignWindingGridToPads = false,
     fixedViaFallbackRouteOrderAttempts = 24,
@@ -2473,6 +2482,19 @@ export function* routeBusAlternativesSteps(
   }
   if (bus.termination.type === "plane") {
     const alternatives: FanoutRoutePlan[][] = []
+    if (bus.connections.length === 1 && maxAlternatives > 1) {
+      // Enumerate once instead of rebuilding and skipping every earlier route
+      // for each successive alternative. Keep the original candidate order.
+      routePlaneTerminatedBus({
+        ...params,
+        planeCandidateSkipCount: 0,
+        collectAlternative: (plan) => {
+          alternatives.push([plan])
+          return alternatives.length >= maxAlternatives
+        },
+      })
+      return alternatives
+    }
     for (
       let planeCandidateSkipCount = 0;
       planeCandidateSkipCount < maxAlternatives;
@@ -2801,14 +2823,19 @@ export function* routeBusAlternativesSteps(
       acceptedBoundaryPlansExist && !allowBlindAndBuriedVias
         ? [...mixedDogboneTerminalPatterns, ...uniformDogboneTerminalPatterns]
         : [...uniformDogboneTerminalPatterns, ...mixedDogboneTerminalPatterns]
+    const unreservedTerminalPatterns: CoordinatedTerminalPattern[] =
+      canUseViaInPadTerminals
+        ? planeTerminationsAlreadyOccupyTheFanout
+          ? [viaInPadTerminalPattern, ...dogboneTerminalPatterns]
+          : [...dogboneTerminalPatterns, viaInPadTerminalPattern]
+        : dogboneTerminalPatterns
+    // Automatically matched sites are candidates, not caller reservations.
+    // Keep the ordinary dogbone patterns available before adding crossover
+    // vias when that first site assignment cannot route the complete bus.
     const terminalPatterns: CoordinatedTerminalPattern[] =
-      fixedViaTerminalPatterns.length > 0
+      fixedViaPointsByConnectionIndex
         ? fixedViaTerminalPatterns
-        : canUseViaInPadTerminals
-          ? planeTerminationsAlreadyOccupyTheFanout
-            ? [viaInPadTerminalPattern, ...dogboneTerminalPatterns]
-            : [...dogboneTerminalPatterns, viaInPadTerminalPattern]
-          : dogboneTerminalPatterns
+        : [...fixedViaTerminalPatterns, ...unreservedTerminalPatterns]
     const seenTerminalSignatures = new Set<string>()
     for (const terminalPattern of terminalPatterns) {
       const terminals = bus.connections.map((preparedConnection) => {
@@ -2857,12 +2884,24 @@ export function* routeBusAlternativesSteps(
           ),
         }
       })
+      const alignGridToPads =
+        alignWindingGridToPads ||
+        Boolean(terminalPattern.getViaPoint && !fixedViaPointsByConnectionIndex)
+      const gridStepDivisor =
+        terminalPattern.getViaPoint &&
+        Math.min(bus.pitchX, bus.pitchY) -
+          2 * (viaDiameter / 2 + traceWidth / 2 + clearance) <
+          traceWidth + clearance
+          ? 2
+          : 1
       const terminalSignature = `${terminals
         .map(
           (terminal) =>
             `${terminal.connection.connectionIndex}:${terminal.viaPoint.x}:${terminal.viaPoint.y}:${terminal.exitPoint.x}:${terminal.exitPoint.y}`,
         )
-        .join("|")}:${terminalPattern.maximumRouteOrderAttempts ?? "all"}`
+        .join(
+          "|",
+        )}:${terminalPattern.maximumRouteOrderAttempts ?? "all"}:${gridStepDivisor}:${alignGridToPads}`
       if (seenTerminalSignatures.has(terminalSignature)) continue
       seenTerminalSignatures.add(terminalSignature)
       const windingSteps = routeViaMinimalWindingAlternativesSteps(
@@ -2881,17 +2920,9 @@ export function* routeBusAlternativesSteps(
           allowSameNetMerges,
           maximumRouteOrderAttempts: terminalPattern.maximumRouteOrderAttempts,
           adaptiveRouteOrder: adaptiveWindingRouteOrder,
-          alignGridToPads:
-            alignWindingGridToPads ||
-            Boolean(coordinatedViaPoints && !fixedViaPointsByConnectionIndex),
+          alignGridToPads,
           reservedVias,
-          gridStepDivisor:
-            coordinatedViaPoints &&
-            Math.min(bus.pitchX, bus.pitchY) -
-              2 * (viaDiameter / 2 + traceWidth / 2 + clearance) <
-              traceWidth + clearance
-              ? 2
-              : 1,
+          gridStepDivisor,
           preferTargetDirectedLaneBias:
             terminalPattern.preferTargetDirectedLaneBias,
         },
@@ -2962,11 +2993,24 @@ export function* routeBusAlternativesSteps(
     const preparedConnection = bus.connections[0]!
     const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
     const boundaryExitAxis = getExitAxis(bus, boundaryDirection)
-    const finalTrack = getBoundaryTargetTrack({
-      bus,
-      connection: preparedConnection,
-      boundaryDirection,
-    })
+    const finalTrack =
+      preferCornerBoundaryVia && getCornerSide(bus)
+        ? getCornerTargetTrack({
+            bus,
+            connection: preparedConnection,
+            cornerExitLaneOffset: cornerLaneOffsets.exit,
+            traceWidth,
+            viaDiameter,
+            clearance,
+            layerNames,
+            targetLayer,
+            cornerBandTargetTrackOffset,
+          })
+        : getBoundaryTargetTrack({
+            bus,
+            connection: preparedConnection,
+            boundaryDirection,
+          })
     const finalExitPoint = makePoint(
       boundaryExitAxis,
       finalTrack,
@@ -2992,13 +3036,27 @@ export function* routeBusAlternativesSteps(
       viaDiameter / 2 + clearance,
       Math.min(bus.pitchX, bus.pitchY) / 2,
     )
-    for (const multiple of [1, 2, 3, 4, 5]) {
+    const cornerSide = preferCornerBoundaryVia ? getCornerSide(bus) : undefined
+    const boundaryViaCandidates = [1, 2, 3, 4, 5].flatMap((multiple) => {
       const inset = multiple * insetStep
-      const boundaryViaPoint = makePoint(
+      const straight = makePoint(
         boundaryExitAxis - directionSign(boundaryDirection) * inset,
         finalTrack,
         boundaryDirection,
       )
+      if (!cornerSide) return [straight]
+      // Approach corner exits diagonally to leave the adjacent pair's tuning
+      // lane free of the through-via barrel. Retain the straight fallback.
+      return [
+        makePoint(
+          boundaryExitAxis - directionSign(boundaryDirection) * inset,
+          finalTrack + (cornerSide === "maximum" ? inset : -inset),
+          boundaryDirection,
+        ),
+        straight,
+      ]
+    })
+    for (const boundaryViaPoint of boundaryViaCandidates) {
       const sourceLayerSteps = routeViaMinimalWindingAlternativesSteps(
         {
           srj: sourceLayerSrj,
@@ -3065,6 +3123,9 @@ export function* routeBusAlternativesSteps(
       const plans: FanoutRoutePlan[] = [
         {
           ...sourceLayerPlan,
+          ...(preferCornerBoundaryVia
+            ? { sourceEscapeSegmentCount: sourceLayerPlan.segments.length }
+            : {}),
           targetLayer,
           exitPoint: finalExitPoint,
           via,
