@@ -62,7 +62,7 @@ jobs:
           if [[ -n "$BENCHMARK_SAMPLE" ]]; then
             args+=(--sample "$BENCHMARK_SAMPLE")
           fi
-          ./benchmark.sh "${args[@]}"
+          bun run benchmark:srj29 "${args[@]}"
 
       - name: Publish job summary
         if: always() && hashFiles('benchmark-results/srj29.md') != ''
