@@ -64,6 +64,8 @@ export interface RouteBusParams {
   viaMinimalOnly?: boolean
   /** Permit a singleton to move its provisional via near the boundary. */
   allowBoundarySideViaFallback?: boolean
+  /** Reserve corner tuning space when selecting a boundary-side via. */
+  preferCornerBoundaryVia?: boolean
   /** Retry blocked winding terminals ahead of already-routed terminals. */
   adaptiveWindingRouteOrder?: boolean
   /** Preserve pad-lattice channels in the automatic dense routing path. */
@@ -1577,13 +1579,21 @@ function addPlaneEndpointTerminal(params: {
 function segmentIsClearOfObstacles(params: {
   segment: RoutedSegment
   plan: FanoutRoutePlan
+  segmentIndex: number
   srj: SimpleRouteJson
   allowSameNetMerges: boolean
   obstacles: Obstacle[]
   clearance: number
 }): boolean {
-  const { segment, plan, srj, allowSameNetMerges, obstacles, clearance } =
-    params
+  const {
+    segment,
+    plan,
+    segmentIndex,
+    srj,
+    allowSameNetMerges,
+    obstacles,
+    clearance,
+  } = params
   for (const obstacle of obstacles) {
     if (!obstacle.layers.includes(segment.layer)) continue
     if (obstacle.connectedTo.includes(plan.connectionName)) continue
@@ -1605,6 +1615,8 @@ function segmentIsClearOfObstacles(params: {
     }
     // A winding escape can turn more than once while leaving its own pad.
     if (
+      segmentIndex >= 0 &&
+      segmentIndex < (plan.sourceEscapeSegmentCount ?? 1) &&
       obstacle === plan.sourceObstacle &&
       segment.layer === plan.sourceLayer
     ) {
@@ -1679,6 +1691,7 @@ function planIsStaticallyClear(params: {
       !segmentIsClearOfObstacles({
         segment: segments[index]!,
         plan,
+        segmentIndex: index < plan.segments.length ? index : -1,
         srj,
         allowSameNetMerges,
         obstacles: srj.obstacles,
@@ -2447,6 +2460,7 @@ export function* routeBusAlternativesSteps(
     reservedVias = [],
     viaMinimalOnly = false,
     allowBoundarySideViaFallback = false,
+    preferCornerBoundaryVia = false,
     adaptiveWindingRouteOrder = false,
     alignWindingGridToPads = false,
     fixedViaFallbackRouteOrderAttempts = 24,
@@ -2979,23 +2993,24 @@ export function* routeBusAlternativesSteps(
     const preparedConnection = bus.connections[0]!
     const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
     const boundaryExitAxis = getExitAxis(bus, boundaryDirection)
-    const finalTrack = getCornerSide(bus)
-      ? getCornerTargetTrack({
-          bus,
-          connection: preparedConnection,
-          cornerExitLaneOffset: cornerLaneOffsets.exit,
-          traceWidth,
-          viaDiameter,
-          clearance,
-          layerNames,
-          targetLayer,
-          cornerBandTargetTrackOffset,
-        })
-      : getBoundaryTargetTrack({
-          bus,
-          connection: preparedConnection,
-          boundaryDirection,
-        })
+    const finalTrack =
+      preferCornerBoundaryVia && getCornerSide(bus)
+        ? getCornerTargetTrack({
+            bus,
+            connection: preparedConnection,
+            cornerExitLaneOffset: cornerLaneOffsets.exit,
+            traceWidth,
+            viaDiameter,
+            clearance,
+            layerNames,
+            targetLayer,
+            cornerBandTargetTrackOffset,
+          })
+        : getBoundaryTargetTrack({
+            bus,
+            connection: preparedConnection,
+            boundaryDirection,
+          })
     const finalExitPoint = makePoint(
       boundaryExitAxis,
       finalTrack,
@@ -3021,7 +3036,7 @@ export function* routeBusAlternativesSteps(
       viaDiameter / 2 + clearance,
       Math.min(bus.pitchX, bus.pitchY) / 2,
     )
-    const cornerSide = getCornerSide(bus)
+    const cornerSide = preferCornerBoundaryVia ? getCornerSide(bus) : undefined
     const boundaryViaCandidates = [1, 2, 3, 4, 5].flatMap((multiple) => {
       const inset = multiple * insetStep
       const straight = makePoint(
@@ -3108,6 +3123,9 @@ export function* routeBusAlternativesSteps(
       const plans: FanoutRoutePlan[] = [
         {
           ...sourceLayerPlan,
+          ...(preferCornerBoundaryVia
+            ? { sourceEscapeSegmentCount: sourceLayerPlan.segments.length }
+            : {}),
           targetLayer,
           exitPoint: finalExitPoint,
           via,

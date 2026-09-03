@@ -2170,6 +2170,7 @@ export class FanoutSolver extends BaseSolver {
           reservedVias: getReservedVias(bus),
           viaMinimalOnly: process.env.FANOUT_DEBUG_ALLOW_EXTRA_VIAS !== "1",
           allowBoundarySideViaFallback: true,
+          preferCornerBoundaryVia: useConfiguredDensePlaneRouting,
           adaptiveWindingRouteOrder,
           alignWindingGridToPads:
             usePadAlignedDenseRouting && !useConfiguredDensePlaneRouting,
@@ -2302,7 +2303,7 @@ export class FanoutSolver extends BaseSolver {
                 ...routeParams,
                 fixedViaPointsByConnectionIndex: rematchedPoints,
                 reservedVias: getReservedVias(bus),
-                alignWindingGridToPads: true,
+                alignWindingGridToPads: useConfiguredDensePlaneRouting,
                 fixedViaFallbackRouteOrderAttempts: 3,
               },
               1,
