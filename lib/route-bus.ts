@@ -1577,21 +1577,13 @@ function addPlaneEndpointTerminal(params: {
 function segmentIsClearOfObstacles(params: {
   segment: RoutedSegment
   plan: FanoutRoutePlan
-  segmentIndex: number
   srj: SimpleRouteJson
   allowSameNetMerges: boolean
   obstacles: Obstacle[]
   clearance: number
 }): boolean {
-  const {
-    segment,
-    plan,
-    segmentIndex,
-    srj,
-    allowSameNetMerges,
-    obstacles,
-    clearance,
-  } = params
+  const { segment, plan, srj, allowSameNetMerges, obstacles, clearance } =
+    params
   for (const obstacle of obstacles) {
     if (!obstacle.layers.includes(segment.layer)) continue
     if (obstacle.connectedTo.includes(plan.connectionName)) continue
@@ -1611,8 +1603,8 @@ function segmentIsClearOfObstacles(params: {
     ) {
       continue
     }
+    // A winding escape can turn more than once while leaving its own pad.
     if (
-      segmentIndex === 0 &&
       obstacle === plan.sourceObstacle &&
       segment.layer === plan.sourceLayer
     ) {
@@ -1687,7 +1679,6 @@ function planIsStaticallyClear(params: {
       !segmentIsClearOfObstacles({
         segment: segments[index]!,
         plan,
-        segmentIndex: index < plan.segments.length ? index : -1,
         srj,
         allowSameNetMerges,
         obstacles: srj.obstacles,
@@ -2003,7 +1994,9 @@ export function fanoutPlansAreClear(params: {
 }
 
 function routePlaneTerminatedBus(
-  params: RouteBusParams,
+  params: RouteBusParams & {
+    collectAlternative?: (plan: FanoutRoutePlan) => boolean
+  },
 ): FanoutRoutePlan[] | null {
   const {
     srj,
@@ -2037,6 +2030,8 @@ function routePlaneTerminatedBus(
         remainingPlaneCandidatesToSkip--
         continue
       }
+      if (params.collectAlternative && !params.collectAlternative(plan))
+        continue
       return plan
     }
     return undefined
@@ -2473,6 +2468,19 @@ export function* routeBusAlternativesSteps(
   }
   if (bus.termination.type === "plane") {
     const alternatives: FanoutRoutePlan[][] = []
+    if (bus.connections.length === 1 && maxAlternatives > 1) {
+      // Enumerate once instead of rebuilding and skipping every earlier route
+      // for each successive alternative. Keep the original candidate order.
+      routePlaneTerminatedBus({
+        ...params,
+        planeCandidateSkipCount: 0,
+        collectAlternative: (plan) => {
+          alternatives.push([plan])
+          return alternatives.length >= maxAlternatives
+        },
+      })
+      return alternatives
+    }
     for (
       let planeCandidateSkipCount = 0;
       planeCandidateSkipCount < maxAlternatives;
@@ -2971,11 +2979,23 @@ export function* routeBusAlternativesSteps(
     const preparedConnection = bus.connections[0]!
     const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
     const boundaryExitAxis = getExitAxis(bus, boundaryDirection)
-    const finalTrack = getBoundaryTargetTrack({
-      bus,
-      connection: preparedConnection,
-      boundaryDirection,
-    })
+    const finalTrack = getCornerSide(bus)
+      ? getCornerTargetTrack({
+          bus,
+          connection: preparedConnection,
+          cornerExitLaneOffset: cornerLaneOffsets.exit,
+          traceWidth,
+          viaDiameter,
+          clearance,
+          layerNames,
+          targetLayer,
+          cornerBandTargetTrackOffset,
+        })
+      : getBoundaryTargetTrack({
+          bus,
+          connection: preparedConnection,
+          boundaryDirection,
+        })
     const finalExitPoint = makePoint(
       boundaryExitAxis,
       finalTrack,
@@ -3001,13 +3021,27 @@ export function* routeBusAlternativesSteps(
       viaDiameter / 2 + clearance,
       Math.min(bus.pitchX, bus.pitchY) / 2,
     )
-    for (const multiple of [1, 2, 3, 4, 5]) {
+    const cornerSide = getCornerSide(bus)
+    const boundaryViaCandidates = [1, 2, 3, 4, 5].flatMap((multiple) => {
       const inset = multiple * insetStep
-      const boundaryViaPoint = makePoint(
+      const straight = makePoint(
         boundaryExitAxis - directionSign(boundaryDirection) * inset,
         finalTrack,
         boundaryDirection,
       )
+      if (!cornerSide) return [straight]
+      // Approach corner exits diagonally to leave the adjacent pair's tuning
+      // lane free of the through-via barrel. Retain the straight fallback.
+      return [
+        makePoint(
+          boundaryExitAxis - directionSign(boundaryDirection) * inset,
+          finalTrack + (cornerSide === "maximum" ? inset : -inset),
+          boundaryDirection,
+        ),
+        straight,
+      ]
+    })
+    for (const boundaryViaPoint of boundaryViaCandidates) {
       const sourceLayerSteps = routeViaMinimalWindingAlternativesSteps(
         {
           srj: sourceLayerSrj,
