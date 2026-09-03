@@ -4431,15 +4431,17 @@ export class FanoutSolver extends BaseSolver {
         return bestAttempt
       }
     }
-    const repair = bestAttempt.summary.failedBusIds
-      .map((busId) => ({
-        busId,
-        beforeBusId: bestAttempt.blockingBusIdsByFailedBusId[busId]?.[0],
-      }))
-      .find(
-        (candidate): candidate is { busId: string; beforeBusId: string } =>
-          candidate.beforeBusId !== undefined,
-      )
+    const failedBusId =
+      bestAttempt.summary.failedBusIds.length === 1
+        ? bestAttempt.summary.failedBusIds[0]
+        : undefined
+    const beforeBusId = failedBusId
+      ? bestAttempt.blockingBusIdsByFailedBusId[failedBusId]?.[0]
+      : undefined
+    const repair =
+      failedBusId && beforeBusId
+        ? { busId: failedBusId, beforeBusId }
+        : undefined
     if (
       repair &&
       !this.routingOrderRepairEvaluated &&
