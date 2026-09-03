@@ -9,7 +9,7 @@ test("PR benchmark comments count failures, flag incomplete runs, and bound untr
   }
   const rows = ["solved", "partial", "error", "timeout"].map(
     (status, index) => ({
-      dataset: "dataset01",
+      dataset: "dataset31",
       sample: String(index),
       status,
       connections: 10,
@@ -18,7 +18,9 @@ test("PR benchmark comments count failures, flag incomplete runs, and bound untr
     }),
   )
   const report = {
-    version: 1,
+    version: 2,
+    dataset: "dataset31",
+    datasetSource: { commit: "b".repeat(40) },
     totalSamples: 5,
     configuration: { concurrency: 4, sampleTimeoutSeconds: 120 },
     rows,
@@ -27,7 +29,9 @@ test("PR benchmark comments count failures, flag incomplete runs, and bound untr
   expect(body).toContain("Solved 1/5")
   expect(body).toContain("Completed 4/5; partial 1; errors 1; timeouts 1")
   expect(body).toContain("Incomplete run")
-  expect(body).toContain("dataset01 | 1/4 | 1 | 1 | 1")
+  expect(body).toContain("Dataset 31 — AM62L fanout benchmark")
+  expect(body).toContain("Dataset revision: `bbbbbbb`")
+  expect(body).not.toMatch(/SRJ19|SRJ29|dataset0[1-8]/)
   const malicious = {
     ...report,
     rows: [{ ...rows[0], sample: "@everyone|<script>" }],
@@ -39,7 +43,6 @@ test("PR benchmark comments count failures, flag incomplete runs, and bound untr
   const many = Array.from({ length: 1000 }, (_, index) => ({
     ...rows[0],
     sample: `${index}-${"x".repeat(150)}`,
-    dataset: `dataset${index}`,
   }))
   expect(
     renderBenchmarkComment(
@@ -48,8 +51,20 @@ test("PR benchmark comments count failures, flag incomplete runs, and bound untr
     ).length,
   ).toBeLessThan(60000)
   expect(renderBenchmarkComment(null, options)).toContain(
-    "No readable benchmark report",
+    "No readable dataset 31 benchmark report",
   )
+  expect(() =>
+    renderBenchmarkComment({ ...report, version: 1 }, options),
+  ).toThrow("Invalid benchmark report")
+  expect(() =>
+    renderBenchmarkComment({ ...report, dataset: "all" }, options),
+  ).toThrow("Invalid benchmark report")
+  expect(() =>
+    renderBenchmarkComment(
+      { ...report, rows: [...rows, { ...rows[0], dataset: "srj29" }] },
+      options,
+    ),
+  ).toThrow("Invalid benchmark row")
   expect(() =>
     renderBenchmarkComment({ ...report, rows: [rows[0], rows[0]] }, options),
   ).toThrow("Duplicate")

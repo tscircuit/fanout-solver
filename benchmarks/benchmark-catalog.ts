@@ -1,30 +1,10 @@
-import { fanoutDatasets } from "../datasets"
-import { srj19FanoutSamples } from "../datasets/srj19"
-import { srj29FanoutSamples } from "../datasets/srj29"
-import type { BenchmarkSample } from "./benchmark-types"
+import { FANOUT_DIRECTION_CASES } from "../scripts/generate-repro/dataset31-source"
 
-export const benchmarkSamples: BenchmarkSample[] = [
-  ...fanoutDatasets.flatMap((dataset) =>
-    dataset.samples.map((sample) => ({
-      dataset: dataset.id,
-      id: sample.id,
-      simpleRouteJson: sample.simpleRouteJson,
-      solverOptions: sample.solverOptions,
-      requireOriginalEndpoints:
-        sample.solverOptions?.completeOriginalEndpoints === true,
-    })),
-  ),
-  ...srj19FanoutSamples.map((sample) => ({
-    ...sample,
-    dataset: "srj19",
-    requireOriginalEndpoints: false,
-  })),
-  ...srj29FanoutSamples.map((sample) => ({
-    ...sample,
-    dataset: "srj29",
-    requireOriginalEndpoints: true,
-  })),
-]
+export const benchmarkSamples = FANOUT_DIRECTION_CASES.map((sample) => ({
+  dataset: "dataset31" as const,
+  id: sample.id,
+  exitPosition: sample.exitPosition,
+}))
 
 const keys = benchmarkSamples.map((sample) => `${sample.dataset}/${sample.id}`)
 if (new Set(keys).size !== keys.length)
@@ -34,21 +14,19 @@ export function selectBenchmarkSamples(options: {
   dataset?: string
   sample?: string
   limit?: number
-}): BenchmarkSample[] {
-  const datasetIds =
-    options.dataset && options.dataset !== "all"
-      ? options.dataset.split(",")
-      : undefined
-  for (const id of datasetIds ?? []) {
-    if (!benchmarkSamples.some((sample) => sample.dataset === id))
-      throw new Error(`Unknown dataset: ${id}`)
-  }
+}) {
+  if (
+    options.dataset !== undefined &&
+    !["31", "dataset31", "fanout31", "dataset-fanout31-am62l"].includes(
+      options.dataset,
+    )
+  )
+    throw new Error("Only dataset31 is supported by this benchmark")
   let samples = benchmarkSamples.filter(
     (sample) =>
-      (!datasetIds || datasetIds.includes(sample.dataset)) &&
-      (!options.sample ||
-        sample.id === options.sample ||
-        `${sample.dataset}/${sample.id}` === options.sample),
+      !options.sample ||
+      sample.id === options.sample ||
+      `${sample.dataset}/${sample.id}` === options.sample,
   )
   if (samples.length === 0)
     throw new Error("No benchmark samples match the selection")

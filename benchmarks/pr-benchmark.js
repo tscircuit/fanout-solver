@@ -60,7 +60,7 @@ export async function preparePrBenchmark({ github, context, core }) {
     const comment = await github.rest.issues.createComment({
       ...context.repo,
       issue_number: Number(rawNumber),
-      body: `## Fanout benchmark\n\nQueued for \`${ref.slice(0, 7)}\` on Blacksmith. Every available sample will run with a per-sample deadline.\n\n[View run](${runUrl})`,
+      body: `## Dataset 31 — AM62L fanout benchmark\n\nQueued for \`${ref.slice(0, 7)}\` on Blacksmith. Only dataset-fanout31-am62l samples will run, with a per-sample deadline.\n\n[View run](${runUrl})`,
     })
     commentId = String(comment.data.id)
   }
@@ -86,7 +86,7 @@ const finite = (value) =>
 /** Render data only; never execute scripts or post raw Markdown supplied by the PR. */
 export function renderBenchmarkComment(report, { ref, runUrl, result }) {
   const header = [
-    "## Fanout benchmark",
+    "## Dataset 31 — AM62L fanout benchmark",
     "",
     `Commit: \`${ref.slice(0, 7)}\`. Blacksmith job: **${result}**.`,
     "",
@@ -96,10 +96,11 @@ export function renderBenchmarkComment(report, { ref, runUrl, result }) {
   if (!report)
     return [
       ...header,
-      "No readable benchmark report was produced. See the run logs for the failure.",
+      "No readable dataset 31 benchmark report was produced. See the run logs for the failure.",
     ].join("\n")
   if (
-    report.version !== 1 ||
+    report.version !== 2 ||
+    report.dataset !== "dataset31" ||
     !Array.isArray(report.rows) ||
     report.rows.length > 10000 ||
     !finite(report.totalSamples) ||
@@ -109,7 +110,7 @@ export function renderBenchmarkComment(report, { ref, runUrl, result }) {
   const keys = new Set()
   for (const row of report.rows) {
     if (
-      typeof row.dataset !== "string" ||
+      row.dataset !== "dataset31" ||
       typeof row.sample !== "string" ||
       !["solved", "partial", "error", "timeout"].includes(row.status) ||
       !finite(row.connections) ||
@@ -145,22 +146,15 @@ export function renderBenchmarkComment(report, { ref, runUrl, result }) {
       "",
     )
   header.push(
-    "Solved means validated fanout; SRJ29 additionally requires original-endpoint connectivity and independent emitted-copper DRC. Fanout-only success does not imply inter-chip routing.",
-    "",
-    "| Dataset | Solved / completed | Partial | Error | Timeout |",
-    "| --- | ---: | ---: | ---: | ---: |",
+    "Only dataset-fanout31-am62l is benchmarked. Solved means validated AM62L fanout with the original constraints, not RAM fanout or inter-chip routing.",
   )
-  const datasets = [...new Set(rows.map((row) => row.dataset))]
-  for (const dataset of datasets.slice(0, 100)) {
-    const group = rows.filter((row) => row.dataset === dataset)
-    header.push(
-      `| ${escape(dataset)} | ${count(group, "solved")}/${group.length} | ${count(group, "partial")} | ${count(group, "error")} | ${count(group, "timeout")} |`,
-    )
-  }
-  if (datasets.length > 100)
+  if (
+    report.datasetSource &&
+    /^[a-f0-9]{40}$/.test(report.datasetSource.commit)
+  )
     header.push(
       "",
-      "Additional dataset summaries are available in the report artifact.",
+      `Dataset revision: \`${report.datasetSource.commit.slice(0, 7)}\`.`,
     )
   header.push(
     "",
@@ -171,7 +165,7 @@ export function renderBenchmarkComment(report, { ref, runUrl, result }) {
   )
   let length = header.join("\n").length
   for (const [index, row] of rows.entries()) {
-    const line = `| ${escape(`${row.dataset}/${row.sample}`)} | ${row.status} | ${row.routed}/${row.connections} | ${(row.milliseconds / 1000).toFixed(2)} |`
+    const line = `| ${escape(row.sample)} | ${row.status} | ${row.routed}/${row.connections} | ${(row.milliseconds / 1000).toFixed(2)} |`
     if (length + line.length > 55000) {
       header.push(
         "",

@@ -5,9 +5,8 @@ import { runSampleProcess } from "../benchmarks/run-sample-process"
 
 test("a hung, crashed, or malformed benchmark worker cannot block subsequent samples", async () => {
   const sample: BenchmarkSample = {
-    dataset: "test",
+    dataset: "dataset31",
     id: "timeout",
-    requireOriginalEndpoints: false,
     simpleRouteJson: {
       layerCount: 2,
       minTraceWidth: 0.1,

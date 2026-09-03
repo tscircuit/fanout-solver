@@ -1,15 +1,21 @@
 import { expect, test } from "bun:test"
-import { selectBenchmarkSamples } from "../benchmarks/benchmark-catalog"
+import type { BenchmarkSample } from "../benchmarks/benchmark-types"
 import { solveBenchmarkSample } from "../benchmarks/benchmark-worker"
+import { createAm62lRamLeftSubset } from "../datasets/dataset08"
 
-test("benchmark preserves SRJ29 endpoint and DRC validation and records constructor errors", () => {
-  const sample = selectBenchmarkSamples({ sample: "srj29/sample001" })[0]!
-  const row = solveBenchmarkSample(sample)
+test("benchmark worker requires validated AM62L fanout and records constructor errors", () => {
+  // A reduced bus keeps this worker unit test fast; the actual catalog always
+  // captures all 135 connections from each upstream sample.
+  const sample: BenchmarkSample = {
+    dataset: "dataset31",
+    id: "worker-unit-test",
+    ...createAm62lRamLeftSubset({ busIds: ["DDR_BYTE1"] }),
+  }
+  const row = solveBenchmarkSample(sample, 1)
   expect(row.status).toBe("solved")
-  expect(row.scope).toBe("original-endpoints")
+  expect(row.scope).toBe("fanout")
+  expect(row.connections).toBe(8)
   expect(row.validatedBreakouts).toBe(row.connections)
-  expect(row.connectedOriginalConnections).toBe(row.connections)
-  expect(row.routedCopperDrcValid).toBe(true)
   const invalid = solveBenchmarkSample({
     ...sample,
     solverOptions: { ...sample.solverOptions, viaDiameter: -1 },

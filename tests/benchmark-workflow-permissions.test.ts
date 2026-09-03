@@ -26,8 +26,25 @@ test("comment reporting uses trusted workflow code on a different runner from PR
   )
   expect(checkout.with.ref).toBe("${{ needs.prepare.outputs.ref }}")
   expect(checkout.with["persist-credentials"]).toBe(false)
+  const command = benchmark.steps.find(
+    (step: any) => step.name === "Run all dataset 31 samples",
+  ).run
+  expect(command).toContain("./benchmark.sh")
+  expect(command).toContain("--dataset dataset31")
+  expect(command).not.toMatch(/--limit|--sample /)
+  const packageJson = await Bun.file(
+    new URL("../package.json", import.meta.url),
+  ).json()
   expect(
-    benchmark.steps.find((step: any) => step.name === "Run every sample").run,
-  ).toContain("./benchmark.sh")
+    Object.keys(packageJson.scripts).filter((name) =>
+      name.startsWith("benchmark"),
+    ),
+  ).toEqual(["benchmark"])
+  for (const name of ["srj29-benchmark.yml", "benchmark-testbox.yml"])
+    expect(
+      await Bun.file(
+        new URL(`../.github/workflows/${name}`, import.meta.url),
+      ).exists(),
+    ).toBe(false)
   expect(JSON.stringify(benchmark)).not.toContain("secrets.")
 })
