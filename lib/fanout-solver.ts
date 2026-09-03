@@ -4130,9 +4130,13 @@ export class FanoutSolver extends BaseSolver {
       })
       yield
     }
-    const busById = new Map(this.preparedBuses.map((bus) => [bus.busId, bus]))
     const busesInRoutingOrder = routingOrderBusIds
-      ? routingOrderBusIds.map((busId) => busById.get(busId)!)
+      ? (() => {
+          const busById = new Map(
+            this.preparedBuses.map((bus) => [bus.busId, bus]),
+          )
+          return routingOrderBusIds.map((busId) => busById.get(busId)!)
+        })()
       : [...this.preparedBuses].sort((a, b) => {
           const aUsesCoordinatedWinding = busUsesCoordinatedWinding(a)
           const bUsesCoordinatedWinding = busUsesCoordinatedWinding(b)
