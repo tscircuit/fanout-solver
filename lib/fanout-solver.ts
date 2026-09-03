@@ -1,6 +1,5 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
-import { shortenBusPlans } from "./shorten-bus-plans"
 import { type GraphicsObject, mergeGraphics } from "graphics-debug"
 import { addViaLayerMetadataToSrj } from "./add-via-layer-metadata"
 import { getCornerBandSide, getExitEdgeForDirection } from "./boundary-exit"
@@ -1381,12 +1380,8 @@ export class FanoutSolver extends BaseSolver {
   private *routeDenseThroughAllMixedTerminationSteps(params: {
     busLayerAssignments: Readonly<Record<string, string>>
     busesInRoutingOrder: readonly PreparedBus[]
-    denseRoutingStrategy?: "pad-aligned" | "boundary-aligned"
-    lengthMatchingStage?: "before-planes" | "after-planes"
   }): Generator<FanoutWorkYield, MixedTerminationState | null, unknown> {
     if (this.config.allowBlindAndBuriedVias) return null
-    const usePadAlignedDenseRouting =
-      params.denseRoutingStrategy !== "boundary-aligned"
     const debugDense = (...values: unknown[]) => {
       if (process.env.FANOUT_DEBUG_DENSE === "1") {
         if (
@@ -1419,9 +1414,6 @@ export class FanoutSolver extends BaseSolver {
     const useConfiguredDensePlaneRouting =
       this.config.densePlaneReservationBusIds.length > 0 ||
       this.config.denseUnrestrictedPlaneRoutingBusIds.length > 0
-    const matchLengthsAfterPlanes =
-      useConfiguredDensePlaneRouting &&
-      params.lengthMatchingStage !== "before-planes"
     const useJointBoundaryViaReservation = shouldUseJointBoundaryViaReservation(
       unsortedBoundaryBuses.map((bus) => bus.connections.length),
     )
@@ -1910,7 +1902,6 @@ export class FanoutSolver extends BaseSolver {
       ...singletonDeferralCandidates.filter((bus) => {
         const containingBus = getContainingWideSourceField(bus)
         const sharesContainingBusLayer =
-          usePadAlignedDenseRouting &&
           !useConfiguredDensePlaneRouting &&
           containingBus &&
           params.busLayerAssignments[containingBus.busId] ===
@@ -2169,11 +2160,9 @@ export class FanoutSolver extends BaseSolver {
           fixedViaPointsByConnectionIndex,
           reservedVias: getReservedVias(bus),
           viaMinimalOnly: process.env.FANOUT_DEBUG_ALLOW_EXTRA_VIAS !== "1",
-          allowBoundarySideViaFallback: true,
-          preferCornerBoundaryVia: useConfiguredDensePlaneRouting,
+          allowBoundarySideViaFallback: !useConfiguredDensePlaneRouting,
           adaptiveWindingRouteOrder,
-          alignWindingGridToPads:
-            usePadAlignedDenseRouting && !useConfiguredDensePlaneRouting,
+          alignWindingGridToPads: !useConfiguredDensePlaneRouting,
           fixedViaFallbackRouteOrderAttempts: adaptiveWindingRouteOrder
             ? 60
             : useConfiguredDensePlaneRouting
@@ -2229,7 +2218,7 @@ export class FanoutSolver extends BaseSolver {
         if (!busPlans && preferSingleLayerWinding) {
           busPlans = (yield* routeAlternatives(routeParams, 1))[0]
         }
-        if (!busPlans) {
+        if (!busPlans && !useConfiguredDensePlaneRouting) {
           const originalPoints = fixedViaPointsByConnectionIndex
           const originalOutward =
             preferBoundaryOutwardByBusId.get(bus.busId) ?? true
@@ -2303,7 +2292,6 @@ export class FanoutSolver extends BaseSolver {
                 ...routeParams,
                 fixedViaPointsByConnectionIndex: rematchedPoints,
                 reservedVias: getReservedVias(bus),
-                alignWindingGridToPads: useConfiguredDensePlaneRouting,
                 fixedViaFallbackRouteOrderAttempts: 3,
               },
               1,
@@ -2325,7 +2313,7 @@ export class FanoutSolver extends BaseSolver {
           // Only pay for additional A* variants when the first topology is so
           // skewed that compact meanders are unlikely to absorb the deficit.
           // This keeps already-near-matched buses on the single-attempt path.
-          if (needsRouteDiversity && !matchLengthsAfterPlanes) {
+          if (needsRouteDiversity) {
             busPlans = (yield* routeAlternatives(routeParams, 3)).toSorted(
               (first, second) => {
                 const firstLengths = first.map((plan) => plan.length)
@@ -2642,7 +2630,6 @@ export class FanoutSolver extends BaseSolver {
         let feasibleAlternatePlanePlans: FanoutRoutePlan[] = []
         const matchViaPointsAroundPlans = (
           candidatePlans: readonly FanoutRoutePlan[],
-          promotedAlternatePlaneBusIds: ReadonlySet<string> = new Set(),
         ): Map<number, { x: number; y: number }> | null => {
           feasibleAlternatePlanePlans = []
           const fixedBoundaryViaPoints = new Map(
@@ -2658,18 +2645,10 @@ export class FanoutSolver extends BaseSolver {
               segment,
             })),
           )
-          const preserveBoundaryCopper =
-            !useConfiguredDensePlaneRouting ||
-            candidatePlans.some(
-              (plan) =>
-                plan.segments.filter(
-                  (segment) => segment.layer === plan.sourceLayer,
-                ).length > 1,
-            )
-          const boundaryBusesToMatch = !preserveBoundaryCopper
+          const boundaryBusesToMatch = useConfiguredDensePlaneRouting
             ? boundaryBuses
             : []
-          const blockingVias = !preserveBoundaryCopper
+          const blockingVias = useConfiguredDensePlaneRouting
             ? []
             : candidatePlans.flatMap((plan) =>
                 [
@@ -2688,7 +2667,7 @@ export class FanoutSolver extends BaseSolver {
           // Completed boundary paths can reach their via with several source-
           // layer segments. Treat their actual copper as fixed obstacles instead
           // of reinterpreting each as a straight pad-to-via dogbone.
-          const retainedViaPoints = !preserveBoundaryCopper
+          const retainedViaPoints = useConfiguredDensePlaneRouting
             ? null
             : matchComponentDogboneViaSites(planeBuses, {
                 viaDiameter: this.config.viaDiameter,
@@ -2796,7 +2775,6 @@ export class FanoutSolver extends BaseSolver {
                   )
                 : []
             const additionalAlternatePlaneBusIds = new Set([
-              ...promotedAlternatePlaneBusIds,
               ...this.config.denseUnrestrictedPlaneRoutingBusIds,
               ...(process.env.FANOUT_DEBUG_ADDITIONAL_ALTERNATE_PLANE_BUS_IDS?.split(
                 ",",
@@ -3367,16 +3345,7 @@ export class FanoutSolver extends BaseSolver {
                 )[0]
                 if (!promotedPlans) {
                   debugDense("plane-route:promote-failed", planeBus.busId)
-                  // Let these newly blocked drops participate in the joint
-                  // choice. Each retry adds previously excluded plane buses,
-                  // so the recursion is bounded by the number of plane buses.
-                  return matchViaPointsAroundPlans(
-                    candidatePlans,
-                    new Set([
-                      ...promotedAlternatePlaneBusIds,
-                      ...zeroCandidatePlaneBuses.map((bus) => bus.busId),
-                    ]),
-                  )
+                  return null
                 }
                 feasibleAlternatePlanePlans.push(...promotedPlans)
               }
@@ -3497,25 +3466,22 @@ export class FanoutSolver extends BaseSolver {
             : null
         }
         debugDense("length-match:start", matchedPlans.length)
-        const matchedLengthResult = matchLengthsAfterPlanes
-          ? { plans: matchedPlans }
-          : matchBusPlanLengths({
-              plans: matchedPlans,
-              preparedBuses: this.preparedBuses,
-              inputSrj: this.inputSrj,
-              sharedBoundary: this.getValidationBoundary(),
-              clearance: this.config.clearance,
-              allowBlindAndBuriedVias: false,
-              allowSameNetMerges: this.config.allowSameNetMerges,
-              allowMatchingInsideDenseBounds: true,
-              candidatePlansAreFeasible: (candidatePlans) => {
-                const candidateViaPoints =
-                  matchViaPointsAroundPlans(candidatePlans)
-                if (!candidateViaPoints) return false
-                feasibleViaPoints = candidateViaPoints
-                return true
-              },
-            })
+        const matchedLengthResult = matchBusPlanLengths({
+          plans: matchedPlans,
+          preparedBuses: this.preparedBuses,
+          inputSrj: this.inputSrj,
+          sharedBoundary: this.getValidationBoundary(),
+          clearance: this.config.clearance,
+          allowBlindAndBuriedVias: false,
+          allowSameNetMerges: this.config.allowSameNetMerges,
+          allowMatchingInsideDenseBounds: true,
+          candidatePlansAreFeasible: (candidatePlans) => {
+            const candidateViaPoints = matchViaPointsAroundPlans(candidatePlans)
+            if (!candidateViaPoints) return false
+            feasibleViaPoints = candidateViaPoints
+            return true
+          },
+        })
         debugDense(
           "length-match:complete",
           matchedLengthResult.plans?.length ?? "failed",
@@ -3599,65 +3565,6 @@ export class FanoutSolver extends BaseSolver {
           yield
         }
       }
-      if (matchedRoutingSucceeded && matchLengthsAfterPlanes) {
-        // With the configured plane escape strategy, route those dogbones
-        // before tuning. Length matching can then check the actual complete
-        // copper instead of repeatedly searching for a new plane assignment
-        // for every prospective meander.
-        const lengthMatchingParams = {
-          plans: matchedPlans,
-          preparedBuses: this.preparedBuses,
-          inputSrj: this.inputSrj,
-          sharedBoundary: this.getValidationBoundary(),
-          clearance: this.config.clearance,
-          allowBlindAndBuriedVias: false,
-          allowSameNetMerges: this.config.allowSameNetMerges,
-          allowMatchingInsideDenseBounds: true,
-          allowPairLaneSpreading: true,
-        }
-        let matchedLengthResult = matchBusPlanLengths(lengthMatchingParams)
-        const shortenedBusIds = new Set<string>()
-        while (
-          !matchedLengthResult.plans &&
-          matchedLengthResult.failedBus &&
-          !shortenedBusIds.has(matchedLengthResult.failedBus.busId)
-        ) {
-          const bus = matchedLengthResult.failedBus
-          shortenedBusIds.add(bus.busId)
-          const shortened = shortenBusPlans({
-            plans: matchedPlans,
-            bus,
-            srj: this.inputSrj,
-            sharedBoundary: this.getValidationBoundary(),
-            layerNames: this.config.layerNames,
-            traceWidth: this.config.traceWidth,
-            viaDiameter: this.config.viaDiameter,
-            viaHoleDiameter: this.config.viaHoleDiameter,
-            clearance: this.config.clearance,
-            allowSameNetMerges: this.config.allowSameNetMerges,
-          })
-          if (shortened.every((plan, index) => plan === matchedPlans[index]))
-            break
-          matchedPlans = shortened
-          matchedLengthResult = matchBusPlanLengths({
-            ...lengthMatchingParams,
-            plans: matchedPlans,
-          })
-        }
-        if (matchedLengthResult.plans) {
-          matchedPlans = matchedLengthResult.plans
-        } else {
-          matchedRoutingSucceeded = false
-        }
-        this.setInProgressPlans({
-          phase: "match-dense-complete-lengths",
-          plans: matchedPlans,
-          strategy: "default",
-          unitIndex: ++denseWorkUnitIndex,
-          unitCount: denseWorkUnitCount,
-        })
-        yield
-      }
       const densePlansAreClear =
         matchedRoutingSucceeded &&
         fanoutPlansAreClear({
@@ -3679,30 +3586,7 @@ export class FanoutSolver extends BaseSolver {
       }
     }
 
-    if (matchLengthsAfterPlanes) {
-      return yield* this.routeDenseThroughAllMixedTerminationSteps({
-        ...params,
-        lengthMatchingStage: "before-planes",
-      })
-    }
-
-    // Pad-aligned windings can fence off a same-layer singleton even when
-    // every wide bus routes successfully. Before widening the search, retry
-    // the coordinated reservation with a boundary-aligned grid and let those
-    // singleton sites remain provisional until surrounding copper is fixed.
-    if (usePadAlignedDenseRouting && !useConfiguredDensePlaneRouting) {
-      const boundaryAlignedState =
-        yield* this.routeDenseThroughAllMixedTerminationSteps({
-          ...params,
-          denseRoutingStrategy: "boundary-aligned",
-        })
-      if (boundaryAlignedState) return boundaryAlignedState
-    }
-    if (
-      !usePadAlignedDenseRouting ||
-      process.env.FANOUT_DEBUG_DENSE_ONLY === "1"
-    )
-      return null
+    if (process.env.FANOUT_DEBUG_DENSE_ONLY === "1") return null
 
     const maximumStates = 8
     const getBoundaryStates = (

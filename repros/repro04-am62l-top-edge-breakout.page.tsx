@@ -99,9 +99,9 @@ export default function Am62lTopEdgeBreakoutReproPage() {
         </div>
 
         <div style={{ color: "#b45309", fontSize: 13 }}>
-          Routes all 135 connections, including 102 plane drops, with the
-          original bus and differential-pair length constraints. Use the
-          debugger controls to inspect the routing and length tuning.
+          Current behavior: the solver cannot complete the AM62L escape. The
+          captured core run reached 114/135 connections before failing. Use the
+          debugger controls to inspect the search.
         </div>
       </header>
 

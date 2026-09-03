@@ -7,7 +7,6 @@ import { fanoutDataset05 } from "./dataset05"
 import { fanoutDataset06 } from "./dataset06"
 import { fanoutDataset07 } from "./dataset07"
 import { fanoutDataset08 } from "./dataset08"
-import { fanoutDataset09 } from "./dataset09"
 
 export const fanoutDatasets: FanoutDataset[] = [
   {
@@ -65,13 +64,6 @@ export const fanoutDatasets: FanoutDataset[] = [
     description:
       "Sample 11-left-center from dataset-fanout31-am62l, captured from its TSX through core without modifying connections or constraints.",
     samples: fanoutDataset08,
-  },
-  {
-    id: "dataset09",
-    name: "AM62L RAM-above fanout",
-    description:
-      "Sample 02-top-center from dataset-fanout31-am62l with original geometry and timing constraints, plus explicit plane reservation hints.",
-    samples: fanoutDataset09,
   },
 ]
 
