@@ -27,7 +27,9 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
+      # GitHub may classify comments on pull requests under the
+      # pull_requests permission even though the REST endpoint is /issues.
+      pull-requests: write
       issues: write
     outputs:
       enabled: ${{ steps.prepare.outputs.enabled }}
@@ -98,6 +100,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: write
       issues: write
     steps:
       # Never run PR code in the job with permission to post comments.

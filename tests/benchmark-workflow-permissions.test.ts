@@ -14,6 +14,8 @@ test("comment reporting uses trusted workflow code on a different runner from PR
     "${{ vars.BENCHMARK_CONCURRENCY || '4' }}",
   )
   expect(benchmark.permissions).toEqual({ contents: "read" })
+  expect(prepare.permissions["pull-requests"]).toBe("write")
+  expect(report.permissions["pull-requests"]).toBe("write")
   expect(report.permissions.issues).toBe("write")
   expect(report.needs).toEqual(["prepare", "benchmark"])
   expect(report.if).toContain("always()")
