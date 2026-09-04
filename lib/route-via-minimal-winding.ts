@@ -74,6 +74,8 @@ export interface RouteViaMinimalWindingParams {
   alignGridToPads?: boolean
   /** Defer the outermost reversed target while routing the inner terminals. */
   includeReverseTargetRotation?: boolean
+  /** Bound each A* attempt so callers with alternate site reservations can fail over sooner. */
+  maximumExpandedStateCount?: number
 }
 
 export interface RouteViaMinimalWindingProgress {
@@ -643,6 +645,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
     adaptiveRouteOrder = false,
     alignGridToPads = false,
     includeReverseTargetRotation = false,
+    maximumExpandedStateCount = MAX_EXPANDED_STATE_COUNT,
   } = params
   if (
     maximumRouteOrderAttempts !== undefined &&
@@ -657,6 +660,14 @@ export function* routeViaMinimalWindingAlternativesSteps(
   if (gridStepDivisor !== 1 && gridStepDivisor !== 2) {
     throw new Error(
       `FanoutSolver: gridStepDivisor must be 1 or 2, received ${gridStepDivisor}`,
+    )
+  }
+  if (
+    !Number.isInteger(maximumExpandedStateCount) ||
+    maximumExpandedStateCount < 1
+  ) {
+    throw new Error(
+      `FanoutSolver: maximumExpandedStateCount must be a positive integer, received ${maximumExpandedStateCount}`,
     )
   }
   if (
@@ -1143,7 +1154,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
     let expandedStatesSinceYield = 0
     let searchBatch = 0
     let expandedBatchPoints: Point2D[] = []
-    while (heap.size > 0 && expandedStateCount < MAX_EXPANDED_STATE_COUNT) {
+    while (heap.size > 0 && expandedStateCount < maximumExpandedStateCount) {
       const current = heap.pop()!
       if (current.score >= bestGoalCost - EPSILON) break
       const state = current.node * 9 + current.direction

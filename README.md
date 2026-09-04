@@ -339,20 +339,20 @@ I/O failures are command failures (nonzero exit).
 
 Once `.github/workflows/benchmark.yml` is on the default branch, a repository
 writer can comment **`/benchmark`** on an open PR. The workflow captures that
-PR's exact head SHA, runs all 12 dataset 31 samples on a **32-vCPU Blacksmith ARM**
+PR's exact head SHA, runs all 12 dataset 31 samples on an **8-vCPU Blacksmith ARM**
 runner, then updates a status comment with solve totals, per-sample results,
 and a link to the complete JSON/Markdown reports and captured inputs. The Actions
 UI also supports a manual run, optionally supplying an open PR number. No custom
 bot token is required.
 
-The runner defaults to 32 processes and a 120-second per-sample deadline; set
+The runner defaults to 4 processes and a 120-second per-sample deadline; set
 repository variables `BENCHMARK_CONCURRENCY` and
 `BENCHMARK_SAMPLE_TIMEOUT_SECONDS` to change these. PR code runs with a read-only
 token and no persisted checkout credentials. A separate job uses the trusted
 workflow revision to validate report data and post comments; it never executes
 PR code. The trusted renderer rejects legacy or mixed-dataset reports, so PR
 comments contain only dataset 31 results. Only exact commands from non-bot users
-with current write, maintain, or admin access are accepted.
+whose event association is owner, member, or collaborator are accepted.
 
 ## Dataset 02
 

@@ -1,13 +1,18 @@
 import { expect, test } from "bun:test"
 import {
+  isAuthorizedBenchmarkActor,
   isBenchmarkComment,
   preparePrBenchmark,
 } from "../benchmarks/pr-benchmark.js"
 
-test("PR benchmark requires an exact human command and current repository write access", async () => {
+test("PR benchmark requires an exact human command and trusted repository association", async () => {
   const payload = {
     issue: { pull_request: {} },
-    comment: { body: " /benchmark\n", user: { type: "User", login: "writer" } },
+    comment: {
+      body: " /benchmark\n",
+      user: { type: "User", login: "writer" },
+      author_association: "CONTRIBUTOR",
+    },
   }
   expect(isBenchmarkComment(payload)).toBe(true)
   for (const body of [
@@ -26,15 +31,19 @@ test("PR benchmark requires an exact human command and current repository write 
       comment: { ...payload.comment, user: { type: "Bot" } },
     }),
   ).toBe(false)
+  expect(isAuthorizedBenchmarkActor(payload)).toBe(false)
+  for (const author_association of ["OWNER", "MEMBER", "COLLABORATOR"])
+    expect(
+      isAuthorizedBenchmarkActor({
+        ...payload,
+        comment: { ...payload.comment, author_association },
+      }),
+    ).toBe(true)
   const outputs: Record<string, string> = {}
   const comments: unknown[] = []
-  let permission = "read"
   const sha = "a".repeat(40)
   const github = {
     rest: {
-      repos: {
-        getCollaboratorPermissionLevel: async () => ({ data: { permission } }),
-      },
       pulls: {
         get: async () => ({
           data: {
@@ -70,7 +79,7 @@ test("PR benchmark requires an exact human command and current repository write 
   await preparePrBenchmark({ github, context, core })
   expect(outputs.enabled).toBe("false")
   expect(comments).toHaveLength(0)
-  permission = "write"
+  payload.comment.author_association = "MEMBER"
   await preparePrBenchmark({ github, context, core })
   expect(outputs).toEqual({
     enabled: "true",

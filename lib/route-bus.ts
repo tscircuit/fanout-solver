@@ -73,6 +73,8 @@ export interface RouteBusParams {
   alignWindingGridToPads?: boolean
   /** Bounds the final fixed-via winding fallback after ordered attempts. */
   fixedViaFallbackRouteOrderAttempts?: number
+  /** Bound each winding A* attempt when the caller can retry alternate via reservations. */
+  maximumWindingExpandedStates?: number
   /** Skip this many otherwise-clear plane escapes when enumerating alternatives. */
   planeCandidateSkipCount?: number
   /** Dense corner-band phase that preserves existing lane centers when leading lanes are prepended. */
@@ -2465,6 +2467,7 @@ export function* routeBusAlternativesSteps(
     adaptiveWindingRouteOrder = false,
     alignWindingGridToPads = false,
     fixedViaFallbackRouteOrderAttempts = 24,
+    maximumWindingExpandedStates,
     cornerBandTargetTrackOffset,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
@@ -3006,6 +3009,7 @@ export function* routeBusAlternativesSteps(
           gridStepDivisor,
           preferTargetDirectedLaneBias:
             terminalPattern.preferTargetDirectedLaneBias,
+          maximumExpandedStateCount: maximumWindingExpandedStates,
         },
         fixedViaPointsByConnectionIndex && viaMinimalOnly
           ? Math.min(2, Math.max(1, maxAlternatives - alternatives.length))
@@ -3261,6 +3265,7 @@ export function* routeBusAlternativesSteps(
           gridStepDivisor: 2,
           allowSourceLayerRouting: true,
           alignGridToPads: true,
+          maximumExpandedStateCount: maximumWindingExpandedStates,
         },
         1,
         includeVisualization,
@@ -3305,6 +3310,7 @@ export function* routeBusAlternativesSteps(
             reservedVias,
             gridStepDivisor: 2,
             alignGridToPads: true,
+            maximumExpandedStateCount: maximumWindingExpandedStates,
           },
           1,
           includeVisualization,
