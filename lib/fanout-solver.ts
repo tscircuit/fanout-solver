@@ -79,6 +79,8 @@ interface ResolvedFanoutConfig {
 
 interface EvaluatedAssignment extends AssignmentAttempt {
   blockingBusIds: string[]
+  blockingBusIdsByFailedBusId: Readonly<Record<string, readonly string[]>>
+  routingStrategy: RoutingStrategy
 }
 
 interface GroupedBeamState {
@@ -897,9 +899,11 @@ export class FanoutSolver extends BaseSolver {
       plans: AssignmentAttempt["plans"]
       failedBusIds: string[]
       blockingBusCounts: Map<string, number>
+      blockingBusIdsByFailedBusId: Readonly<Record<string, readonly string[]>>
     }
   >()
   private groupedBeamEvaluated = false
+  private routingOrderRepairEvaluated = false
   private routingInitialized = false
   private nextCandidateLayerBusIndex = 0
   private nextAssignmentIndex = 0
@@ -998,7 +1002,7 @@ export class FanoutSolver extends BaseSolver {
     const estimatedWorkUnitCount =
       this.boundaryBuses.length +
       1 +
-      this.config.maxLayerCombinations * workUnitsPerAssignment +
+      (this.config.maxLayerCombinations + 1) * workUnitsPerAssignment +
       this.preparedBuses.length * 2 +
       20
     this.MAX_ITERATIONS = Math.max(10_000, estimatedWorkUnitCount)
@@ -4314,10 +4318,12 @@ export class FanoutSolver extends BaseSolver {
     assignmentIndex: number,
     busLayerAssignments: Readonly<Record<string, string>>,
     routingStrategy: RoutingStrategy,
+    routingOrderRepair?: { busId: string; beforeBusId: string },
   ): Generator<FanoutWorkYield, EvaluatedAssignment, unknown> {
     let plans: AssignmentAttempt["plans"] = []
     let failedBusIds: string[] = []
     let blockingBusCounts = new Map<string, number>()
+    let blockingBusIdsByFailedBusId: Record<string, readonly string[]> = {}
     const isSingleLayerFanout = this.config.escapeLayers.length === 1
     const useSingleLayerPushAndShove =
       isSingleLayerFanout &&
@@ -4381,7 +4387,7 @@ export class FanoutSolver extends BaseSolver {
       })
       yield
     }
-    const busesInRoutingOrder = [...this.preparedBuses].sort((a, b) => {
+    let busesInRoutingOrder = [...this.preparedBuses].sort((a, b) => {
       const aUsesCoordinatedWinding = busUsesCoordinatedWinding(a)
       const bUsesCoordinatedWinding = busUsesCoordinatedWinding(b)
       const aLayerIndex = this.config.layerNames.indexOf(
@@ -4414,6 +4420,18 @@ export class FanoutSolver extends BaseSolver {
               : getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b)))
       )
     })
+    if (routingOrderRepair) {
+      const busIndex = busesInRoutingOrder.findIndex(
+        (bus) => bus.busId === routingOrderRepair.busId,
+      )
+      const blockerIndex = busesInRoutingOrder.findIndex(
+        (bus) => bus.busId === routingOrderRepair.beforeBusId,
+      )
+      if (busIndex > blockerIndex && blockerIndex >= 0) {
+        const [bus] = busesInRoutingOrder.splice(busIndex, 1)
+        busesInRoutingOrder.splice(blockerIndex, 0, bus!)
+      }
+    }
 
     let mixedTerminationState: MixedTerminationState | null = null
     if (!useSingleLayerPushAndShove && routingStrategy === "default") {
@@ -4482,6 +4500,9 @@ export class FanoutSolver extends BaseSolver {
         plans = [...cachedPrefix.plans]
         failedBusIds = [...cachedPrefix.failedBusIds]
         blockingBusCounts = new Map(cachedPrefix.blockingBusCounts)
+        blockingBusIdsByFailedBusId = {
+          ...cachedPrefix.blockingBusIdsByFailedBusId,
+        }
         this.setInProgressPlans({
           phase: "route-assignment",
           plans,
@@ -4512,6 +4533,13 @@ export class FanoutSolver extends BaseSolver {
       })
       if (!busPlans) {
         failedBusIds.push(bus.busId)
+        blockingBusIdsByFailedBusId[bus.busId] = [
+          ...currentBusBlockingCounts.entries(),
+        ]
+          .toSorted(
+            ([, firstCount], [, secondCount]) => secondCount - firstCount,
+          )
+          .map(([busId]) => busId)
         for (const [blockingBusId, count] of currentBusBlockingCounts) {
           blockingBusCounts.set(
             blockingBusId,
@@ -4525,6 +4553,9 @@ export class FanoutSolver extends BaseSolver {
         plans: [...plans],
         failedBusIds: [...failedBusIds],
         blockingBusCounts: new Map(blockingBusCounts),
+        blockingBusIdsByFailedBusId: {
+          ...blockingBusIdsByFailedBusId,
+        },
       })
       this.setInProgressPlans({
         phase: "route-assignment",
@@ -4559,6 +4590,7 @@ export class FanoutSolver extends BaseSolver {
             .filter((busId) => busId !== constrainedBus.busId),
         ]
         blockingBusCounts.clear()
+        blockingBusIdsByFailedBusId = {}
       }
     }
     let outputSrj = buildOutputSimpleRouteJson({
@@ -4577,6 +4609,7 @@ export class FanoutSolver extends BaseSolver {
       plans = []
       failedBusIds = this.preparedBuses.map((bus) => bus.busId)
       blockingBusCounts.clear()
+      blockingBusIdsByFailedBusId = {}
       outputSrj = buildOutputSimpleRouteJson({
         inputSrj: this.inputSrj,
         plans,
@@ -4619,6 +4652,8 @@ export class FanoutSolver extends BaseSolver {
       blockingBusIds: [...blockingBusCounts.entries()]
         .toSorted(([, firstCount], [, secondCount]) => secondCount - firstCount)
         .map(([busId]) => busId),
+      blockingBusIdsByFailedBusId,
+      routingStrategy,
       outputSrj,
     }
   }
@@ -4656,6 +4691,36 @@ export class FanoutSolver extends BaseSolver {
         this.getCoordinatedAdditionalViaCount(bestAttempt.plans) === 0
       ) {
         return bestAttempt
+      }
+    }
+    const repair = bestAttempt.summary.failedBusIds
+      .map((busId) => ({
+        busId,
+        beforeBusId: bestAttempt.blockingBusIdsByFailedBusId[busId]?.[0],
+      }))
+      .find(
+        (candidate): candidate is { busId: string; beforeBusId: string } =>
+          candidate.beforeBusId !== undefined,
+      )
+    if (
+      repair &&
+      !this.routingOrderRepairEvaluated &&
+      (!this.bestAttempt || this.isAttemptBetter(bestAttempt, this.bestAttempt))
+    ) {
+      // A valid early route can consume the only channel of a later bus.
+      // Retry the same assignment once with that blocked bus immediately
+      // before its highest-impact blocker.
+      // This is the routing-order counterpart of the layer-assignment repairs
+      // performed after an attempt and keeps the additional search bounded.
+      this.routingOrderRepairEvaluated = true
+      const repairedAttempt = yield* this.evaluateAssignmentWithStrategySteps(
+        assignmentIndex,
+        busLayerAssignments,
+        bestAttempt.routingStrategy,
+        repair,
+      )
+      if (this.isAttemptBetter(repairedAttempt, bestAttempt)) {
+        bestAttempt = repairedAttempt
       }
     }
     return bestAttempt
@@ -4960,6 +5025,8 @@ export class FanoutSolver extends BaseSolver {
       summary,
       plans: bestState.plans,
       blockingBusIds: [],
+      blockingBusIdsByFailedBusId: {},
+      routingStrategy: "default",
       outputSrj,
     }
   }
