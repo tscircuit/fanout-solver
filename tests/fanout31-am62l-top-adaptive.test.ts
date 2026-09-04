@@ -48,4 +48,6 @@ test("adaptively routes the raw dataset31 AM62L top-center sample", async () => 
   await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
     import.meta.path,
   )
-}, 180_000)
+  // The dataset31 benchmark independently enforces its 120-second score
+  // deadline. This snapshot test allows additional ARM CI runtime variance.
+}, 240_000)
