@@ -87,6 +87,22 @@ test("adaptive dense-plane routing selection is rotation invariant", () => {
   }
 })
 
+test("adaptive dense-plane routing selection is reflection invariant", () => {
+  for (const [sourceEdge, exitEdge] of [
+    ["left", "top"],
+    ["right", "top"],
+    ["left", "bottom"],
+    ["right", "bottom"],
+  ] as const) {
+    expect(
+      shouldUseAdaptiveDensePlaneRouting(
+        createMemoryField({ sourceEdge, exitEdge }),
+        false,
+      ),
+    ).toBe(true)
+  }
+})
+
 test("an edge-aligned memory field keeps the simpler routing strategy", () => {
   for (const edge of ["left", "top", "right", "bottom"] as const) {
     expect(
