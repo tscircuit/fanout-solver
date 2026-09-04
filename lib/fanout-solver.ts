@@ -1500,30 +1500,96 @@ export class FanoutSolver extends BaseSolver {
         )
       })
     }
+    const wideBusContainsSourceField = (
+      wideBus: PreparedBus,
+      bus: PreparedBus,
+    ): boolean => {
+      if (bus.connections.length >= 8) return false
+      const wideXCoordinates = wideBus.connections.map(
+        (connection) => connection.sourcePoint.x,
+      )
+      const wideYCoordinates = wideBus.connections.map(
+        (connection) => connection.sourcePoint.y,
+      )
+      const minimumX = Math.min(...wideXCoordinates)
+      const maximumX = Math.max(...wideXCoordinates)
+      const minimumY = Math.min(...wideYCoordinates)
+      const maximumY = Math.max(...wideYCoordinates)
+      return bus.connections.every(
+        (connection) =>
+          connection.sourcePoint.x >= minimumX - 1e-9 &&
+          connection.sourcePoint.x <= maximumX + 1e-9 &&
+          connection.sourcePoint.y >= minimumY - 1e-9 &&
+          connection.sourcePoint.y <= maximumY + 1e-9,
+      )
+    }
     const getContainingWideSourceField = (
       bus: PreparedBus,
-    ): PreparedBus | undefined => {
-      if (bus.connections.length >= 8) return undefined
-      return wideBoundaryBuses.find((wideBus) => {
-        const wideXCoordinates = wideBus.connections.map(
-          (connection) => connection.sourcePoint.x,
-        )
-        const wideYCoordinates = wideBus.connections.map(
-          (connection) => connection.sourcePoint.y,
-        )
-        const minimumX = Math.min(...wideXCoordinates)
-        const maximumX = Math.max(...wideXCoordinates)
-        const minimumY = Math.min(...wideYCoordinates)
-        const maximumY = Math.max(...wideYCoordinates)
-        return bus.connections.every(
-          (connection) =>
-            connection.sourcePoint.x >= minimumX - 1e-9 &&
-            connection.sourcePoint.x <= maximumX + 1e-9 &&
-            connection.sourcePoint.y >= minimumY - 1e-9 &&
-            connection.sourcePoint.y <= maximumY + 1e-9,
-        )
-      })
+    ): PreparedBus | undefined =>
+      wideBoundaryBuses.find((wideBus) =>
+        wideBusContainsSourceField(wideBus, bus),
+      )
+    const singletonSharesContainingWideLayer = (bus: PreparedBus): boolean => {
+      const containingWideBus = getContainingWideSourceField(bus)
+      return Boolean(
+        bus.connections.length === 1 &&
+          containingWideBus &&
+          params.busLayerAssignments[containingWideBus.busId] ===
+            params.busLayerAssignments[bus.busId],
+      )
     }
+    const boundaryCornerBandSides = new Set(
+      unsortedBoundaryBuses.flatMap((bus) => {
+        const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+        return side ? [side] : []
+      }),
+    )
+    const usesSingleBoundaryCornerBand = boundaryCornerBandSides.size === 1
+    const sourcePoints = this.preparedBuses.flatMap((bus) =>
+      bus.connections.map((connection) => connection.sourcePoint),
+    )
+    const sourceFieldCenter = {
+      x:
+        sourcePoints.reduce((sum, point) => sum + point.x, 0) /
+        sourcePoints.length,
+      y:
+        sourcePoints.reduce((sum, point) => sum + point.y, 0) /
+        sourcePoints.length,
+    }
+    const isCrossFieldDirectCenterBoundaryBus = (bus: PreparedBus): boolean => {
+      if (
+        !bus.exitEdge ||
+        bus.preferredExit !== bus.exitEdge ||
+        getExitEdgeForDirection(bus.direction) !== bus.exitEdge
+      ) {
+        return false
+      }
+      const sourceCenter = {
+        x:
+          bus.connections.reduce(
+            (sum, connection) => sum + connection.sourcePoint.x,
+            0,
+          ) / bus.connections.length,
+        y:
+          bus.connections.reduce(
+            (sum, connection) => sum + connection.sourcePoint.y,
+            0,
+          ) / bus.connections.length,
+      }
+      switch (bus.exitEdge) {
+        case "left":
+          return sourceCenter.x > sourceFieldCenter.x
+        case "right":
+          return sourceCenter.x < sourceFieldCenter.x
+        case "top":
+          return sourceCenter.y < sourceFieldCenter.y
+        case "bottom":
+          return sourceCenter.y > sourceFieldCenter.y
+      }
+    }
+    const shouldPrioritizeCrossFieldCenterBus = (bus: PreparedBus): boolean =>
+      isCrossFieldDirectCenterBoundaryBus(bus) &&
+      !(usesSingleBoundaryCornerBand && singletonSharesContainingWideLayer(bus))
     const narrowBusIsEmbeddedInWideSourceField = (bus: PreparedBus): boolean =>
       Boolean(getContainingWideSourceField(bus))
     const getThreeWideRoutingPriority = (bus: PreparedBus): number =>
@@ -1537,6 +1603,18 @@ export class FanoutSolver extends BaseSolver {
             : 3
     const initiallySortedBoundaryBuses = unsortedBoundaryBuses.toSorted(
       (first, second) => {
+        const directCenterSingletonDifference =
+          Number(
+            second.connections.length === 1 &&
+              shouldPrioritizeCrossFieldCenterBus(second),
+          ) -
+          Number(
+            first.connections.length === 1 &&
+              shouldPrioritizeCrossFieldCenterBus(first),
+          )
+        if (directCenterSingletonDifference !== 0) {
+          return directCenterSingletonDifference
+        }
         // Reserve the dense escape field for the widest buses first. Small
         // control groups can usually route around their copper, while routing
         // a two-line corner bus first can consume a critical channel needed by
@@ -1862,7 +1940,8 @@ export class FanoutSolver extends BaseSolver {
             const singletonTargetLayer =
               params.busLayerAssignments[singletonBus.busId]
             return Boolean(
-              singletonTargetLayer &&
+              !singletonSharesContainingWideLayer(singletonBus) &&
+                singletonTargetLayer &&
                 isDenseSingletonEmbeddedInMultiLayerWideBus({
                   singletonBus,
                   singletonTargetLayer,
@@ -1917,7 +1996,32 @@ export class FanoutSolver extends BaseSolver {
     const leadingWideSingletonBuses = [
       ...multiLayerLeadingSingletonBuses,
       ...throughAllLeadingBuses,
-    ].filter((bus, index, buses) => buses.indexOf(bus) === index)
+    ].filter(
+      (bus, index, buses) =>
+        buses.indexOf(bus) === index &&
+        !singletonSharesContainingWideLayer(bus),
+    )
+    const trailingWideBusBySingleton = new Map(
+      singletonBoundaryBuses.flatMap((singletonBus) => {
+        if (
+          !usesSingleBoundaryCornerBand ||
+          leadingWideSingletonBuses.includes(singletonBus) ||
+          shouldPrioritizeCrossFieldCenterBus(singletonBus)
+        ) {
+          return []
+        }
+        const containingWideBus = wideBoundaryBuses.find(
+          (wideBus) =>
+            wideBusContainsSourceField(wideBus, singletonBus) &&
+            params.busLayerAssignments[wideBus.busId] ===
+              params.busLayerAssignments[singletonBus.busId],
+        )
+        return containingWideBus
+          ? ([[singletonBus, containingWideBus]] as const)
+          : []
+      }),
+    )
+    const trailingWideSingletonBuses = [...trailingWideBusBySingleton.keys()]
     const leadingLaneCountByWideCornerBand = new Map<string, number>()
     if (boundaryBuses.length === 9 && leadingWideSingletonBuses.length > 0) {
       for (const bus of leadingWideSingletonBuses) {
@@ -2115,13 +2219,17 @@ export class FanoutSolver extends BaseSolver {
           .filter(
             (bus) =>
               !multiLayerLeadingSingletonBuses.includes(bus) &&
-              !throughAllLeadingBuses.includes(bus),
+              !throughAllLeadingBuses.includes(bus) &&
+              !trailingWideSingletonBuses.includes(bus),
           )
           .flatMap((bus) => [
             ...throughAllLeadingBuses.filter(
               (candidate) => getContainingWideSourceField(candidate) === bus,
             ),
             bus,
+            ...trailingWideSingletonBuses.filter(
+              (candidate) => trailingWideBusBySingleton.get(candidate) === bus,
+            ),
           ]),
       ]
       let fixedViaPointsByConnectionIndex: ReadonlyMap<
