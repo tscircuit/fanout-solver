@@ -1,6 +1,5 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
-import { shortenBusPlans } from "./shorten-bus-plans"
 import { type GraphicsObject, mergeGraphics } from "graphics-debug"
 import { addViaLayerMetadataToSrj } from "./add-via-layer-metadata"
 import { getCornerBandSide, getExitEdgeForDirection } from "./boundary-exit"
@@ -34,6 +33,8 @@ import {
 } from "./route-bus"
 import { routeSingleLayerWithAdaptiveExitsSteps } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
+import { getRuntimeProcess } from "./runtime-process"
+import { shortenBusPlans } from "./shorten-bus-plans"
 import type {
   AssignmentAttempt,
   Bounds,
@@ -48,6 +49,11 @@ import type {
 } from "./types"
 import { validateFanoutSolution } from "./validate-fanout-solution"
 import { visualizeSimpleRouteJson } from "./visualize-simple-route-json"
+
+// Browser Web Workers do not expose Node's `process` global. Keep a local,
+// browser-safe adapter so the optional debug environment flags still work in
+// Node and Bun without crashing browser-based routing.
+const process = getRuntimeProcess(globalThis)
 
 interface ResolvedFanoutConfig {
   traceWidth: number
