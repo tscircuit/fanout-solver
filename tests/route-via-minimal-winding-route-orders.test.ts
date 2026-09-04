@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test"
-import { iterateUniqueRouteOrders } from "lib/route-via-minimal-winding"
+import {
+  iterateUniqueRouteOrders,
+  type RouteViaMinimalWindingParams,
+  routeViaMinimalWindingAlternativesSteps,
+} from "lib/route-via-minimal-winding"
 
 test("bounded route-order iteration is lazy and preserves dedupe order", () => {
   const factoryCalls: string[] = []
@@ -46,4 +50,18 @@ test("bounded route-order iteration is lazy and preserves dedupe order", () => {
     ["C", "D", "A", "B"],
     ["D", "A", "B", "C"],
   ])
+})
+
+test("winding search expansion limits must be positive integers", () => {
+  for (const maximumExpandedStateCount of [0, -1, 1.5]) {
+    const steps = routeViaMinimalWindingAlternativesSteps(
+      {
+        maximumExpandedStateCount,
+      } as unknown as RouteViaMinimalWindingParams,
+      1,
+    )
+    expect(() => steps.next()).toThrow(
+      "maximumExpandedStateCount must be a positive integer",
+    )
+  }
 })

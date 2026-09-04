@@ -840,6 +840,10 @@ function getCandidateEscapeLayersForBus(params: {
     busAllowedLayers === undefined
       ? config.escapeLayers
       : config.escapeLayers.filter((layer) => busAllowedLayers.includes(layer))
+  // When only one layer is legal, an isolation route cannot narrow the
+  // candidate set. Avoid doing the full routing work twice before the real
+  // assignment has even started.
+  if (allowedEscapeLayers.length <= 1) return allowedEscapeLayers
   // A coordinated winding route is deliberately planned with the other buses'
   // committed escape vias present. Testing it in isolation is both expensive
   // and can reject a layer whose shared via field guides a valid bus ordering.
@@ -2336,6 +2340,9 @@ export class FanoutSolver extends BaseSolver {
             : useConfiguredDensePlaneRouting
               ? 6
               : 24,
+          maximumWindingExpandedStates: useAdaptiveDensePlaneRouting
+            ? 50_000
+            : undefined,
           cornerBandTargetTrackOffset: getCornerBandTargetTrackOffset(bus),
         } as const
         const routeAlternatives = function* (
