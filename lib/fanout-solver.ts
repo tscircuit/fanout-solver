@@ -1,5 +1,8 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
+import { selectCompatibleCandidates } from "./select-compatible-candidates"
+import { refineAdaptivePlaneReservationCore } from "./refine-adaptive-plane-reservations"
+import { shouldUseAdaptiveDensePlaneRouting } from "./should-use-adaptive-dense-plane-routing"
 import { type GraphicsObject, mergeGraphics } from "graphics-debug"
 import { addViaLayerMetadataToSrj } from "./add-via-layer-metadata"
 import { getCornerBandSide, getExitEdgeForDirection } from "./boundary-exit"
@@ -1041,7 +1044,11 @@ export class FanoutSolver extends BaseSolver {
           escapeLayersByBusId: this.escapeLayersByBusId,
           preferOrderedCoordinatedWindingLayers:
             this.config.densePlaneReservationBusIds.length > 0 ||
-            this.config.denseUnrestrictedPlaneRoutingBusIds.length > 0,
+            this.config.denseUnrestrictedPlaneRoutingBusIds.length > 0 ||
+            shouldUseAdaptiveDensePlaneRouting(
+              this.preparedBuses,
+              this.config.allowBlindAndBuriedVias,
+            ),
         }),
         generatedAssignments,
         maxAssignments: this.config.maxLayerCombinations,
@@ -1389,6 +1396,8 @@ export class FanoutSolver extends BaseSolver {
     busesInRoutingOrder: readonly PreparedBus[]
     denseRoutingStrategy?: "pad-aligned" | "boundary-aligned"
     lengthMatchingStage?: "before-planes" | "after-planes"
+    promotedPlaneReservationBusIds?: readonly string[]
+    planeReservationRetryCount?: number
   }): Generator<FanoutWorkYield, MixedTerminationState | null, unknown> {
     if (this.config.allowBlindAndBuriedVias) return null
     const usePadAlignedDenseRouting =
@@ -1404,6 +1413,8 @@ export class FanoutSolver extends BaseSolver {
             "plane-match:incremental-failed",
             "plane-route:alternate-candidate-counts",
             "plane-route:alternate-search",
+            "plane-route:csp",
+            "plane-reservation-core",
             "plane-route:promote-failed",
             "plane-route:alternate-choice",
             "plane-route:promote-zero-candidates",
@@ -1422,9 +1433,20 @@ export class FanoutSolver extends BaseSolver {
     const unsortedBoundaryBuses = params.busesInRoutingOrder.filter(
       (bus) => bus.termination.type === "boundary",
     )
-    const useConfiguredDensePlaneRouting =
+    const configuredDensePlaneRouting =
       this.config.densePlaneReservationBusIds.length > 0 ||
       this.config.denseUnrestrictedPlaneRoutingBusIds.length > 0
+    const useAdaptiveDensePlaneRouting =
+      !configuredDensePlaneRouting &&
+      shouldUseAdaptiveDensePlaneRouting(
+        this.preparedBuses,
+        this.config.allowBlindAndBuriedVias,
+      )
+    const useConfiguredDensePlaneRouting =
+      configuredDensePlaneRouting || useAdaptiveDensePlaneRouting
+    const useAdaptiveJointPlaneSelection =
+      useAdaptiveDensePlaneRouting &&
+      (params.planeReservationRetryCount ?? 0) === 0
     const matchLengthsAfterPlanes =
       useConfiguredDensePlaneRouting &&
       params.lengthMatchingStage !== "before-planes"
@@ -1663,6 +1685,17 @@ export class FanoutSolver extends BaseSolver {
                   : 8,
               )
             : planeBuses
+    if (params.promotedPlaneReservationBusIds) {
+      activeBoundaryReservationPlaneBuses = [
+        ...new Set([
+          ...activeBoundaryReservationPlaneBuses,
+          ...planeBuses.filter((bus) =>
+            params.promotedPlaneReservationBusIds!.includes(bus.busId),
+          ),
+        ]),
+      ]
+    }
+    const unroutablePlaneBusIds = new Set<string>()
     debugDense(
       "start",
       boundaryBuses.map((bus) => `${bus.busId}:${bus.connections.length}`),
@@ -1719,7 +1752,7 @@ export class FanoutSolver extends BaseSolver {
                 getCornerBandSide(bus.exitEdge, bus.preferredExit)
               ? getDenseSingletonBoundaryGeometry(bus).targetProjection > 0
               : getExitEdgeForDirection(bus.direction) !== bus.exitEdge
-          : bus.exitEdge === "top" && bus.connections.length >= 8
+          : hasThreeWideBoundaryBuses && bus.connections.length >= 8
             ? false
             : getExitEdgeForDirection(bus.direction) !== bus.exitEdge,
       ]),
@@ -2114,6 +2147,16 @@ export class FanoutSolver extends BaseSolver {
             return [
               {
                 connectionName: connection.connection.name,
+                sourceEscapeSegment: matchedPlans.some(
+                  (plan) => plan.connectionIndex === connection.connectionIndex,
+                )
+                  ? undefined
+                  : {
+                      start: connection.sourcePoint,
+                      end: center,
+                      layer: connection.sourceLayer,
+                      width: this.config.traceWidth,
+                    },
                 via: {
                   center,
                   diameter: this.config.viaDiameter,
@@ -2175,7 +2218,7 @@ export class FanoutSolver extends BaseSolver {
           fixedViaPointsByConnectionIndex,
           reservedVias: getReservedVias(bus),
           viaMinimalOnly: process.env.FANOUT_DEBUG_ALLOW_EXTRA_VIAS !== "1",
-          allowBoundarySideViaFallback: true,
+          allowBoundarySideViaFallback: bus.connections.length === 1,
           preferCornerBoundaryVia: useConfiguredDensePlaneRouting,
           adaptiveWindingRouteOrder,
           alignWindingGridToPads:
@@ -2316,7 +2359,21 @@ export class FanoutSolver extends BaseSolver {
             ))[0]
             if (busPlans) break
           }
-          if (!busPlans) fixedViaPointsByConnectionIndex = originalPoints
+          if (!busPlans) {
+            fixedViaPointsByConnectionIndex = originalPoints
+            if (bus.connections.length === 2) {
+              busPlans = (yield* routeAlternatives(
+                {
+                  ...routeParams,
+                  fixedViaPointsByConnectionIndex: originalPoints,
+                  reservedVias: getReservedVias(bus),
+                  allowBoundarySideViaFallback: true,
+                  fixedViaFallbackRouteOrderAttempts: 1,
+                },
+                1,
+              ))[0]
+            }
+          }
         }
         if (busPlans && bus.maxLengthSkew !== undefined) {
           const lengths = busPlans.map((plan) => plan.length)
@@ -3074,6 +3131,79 @@ export class FanoutSolver extends BaseSolver {
                     })),
                   }),
                 )
+                if (useAdaptiveJointPlaneSelection) {
+                  const acceptedPlans = [
+                    ...candidatePlans,
+                    ...feasibleAlternatePlanePlans,
+                  ]
+                  for (const planeBus of planeBuses) {
+                    if (
+                      matchedPlaneBuses.includes(planeBus) ||
+                      candidateSets.some((set) => set.planeBus === planeBus)
+                    )
+                      continue
+                    const candidates: IndependentPlaneRouteCandidate[] = []
+                    const sites = getComponentDogboneViaSiteCandidates(
+                      [planeBus],
+                      {
+                        viaDiameter: this.config.viaDiameter,
+                        viaHoleDiameter: this.config.viaHoleDiameter,
+                        traceWidth: this.config.traceWidth,
+                        clearance: this.config.clearance,
+                        blockingSegments: acceptedPlans.flatMap((plan) =>
+                          plan.segments.map((segment) => ({
+                            connectionIndex: plan.connectionIndex,
+                            segment,
+                          })),
+                        ),
+                        blockingVias: acceptedPlans.flatMap((plan) =>
+                          [
+                            plan.via,
+                            ...(plan.additionalVias ?? []),
+                            plan.planeEndpointVia,
+                          ]
+                            .filter((via) => via !== undefined)
+                            .map((via) => ({
+                              connectionIndex: plan.connectionIndex,
+                              center: via!.center,
+                              diameter: via!.diameter,
+                              spanLayers: via!.spanLayers,
+                            })),
+                        ),
+                        additionalObstacles: this.routingSrj.obstacles,
+                        preferPlaneCheckerboardSites: true,
+                        canShareCopper,
+                      },
+                    )
+                    for (const site of sites) {
+                      const plans = routeBus({
+                        srj: this.routingSrj,
+                        bus: planeBus,
+                        targetLayer:
+                          params.busLayerAssignments[planeBus.busId]!,
+                        acceptedPlans,
+                        layerNames: this.config.layerNames,
+                        traceWidth: this.config.traceWidth,
+                        viaDiameter: this.config.viaDiameter,
+                        viaHoleDiameter: this.config.viaHoleDiameter,
+                        clearance: this.config.clearance,
+                        compactBusTracks: this.config.compactBusTracks,
+                        allowBlindAndBuriedVias: false,
+                        allowSameNetMerges: this.config.allowSameNetMerges,
+                        fixedViaPointsByConnectionIndex: new Map([
+                          [site.connectionIndex, site.point],
+                        ]),
+                      })
+                      if (plans)
+                        candidates.push({
+                          key: `${planeBus.busId}:local:${candidates.length}`,
+                          planeBus,
+                          plans,
+                        })
+                    }
+                    candidateSets.push({ planeBus, candidates })
+                  }
+                }
                 debugDense(
                   "plane-route:alternate-candidate-counts",
                   candidateSets.map((candidateSet) => [
@@ -3081,6 +3211,10 @@ export class FanoutSolver extends BaseSolver {
                     candidateSet.candidates.length,
                   ]),
                 )
+                for (const candidateSet of candidateSets) {
+                  if (candidateSet.candidates.length === 0)
+                    unroutablePlaneBusIds.add(candidateSet.planeBus.busId)
+                }
                 const compatibilityByCandidatePair = new Map<string, boolean>()
                 const candidatesAreCompatible = (
                   first: IndependentPlaneRouteCandidate,
@@ -3207,10 +3341,82 @@ export class FanoutSolver extends BaseSolver {
                   )
                   return null
                 }
-                const selectedCandidates = selectCompatiblePlaneRoutes(
-                  candidateSets,
-                  [],
-                )
+                let selectedCandidates: IndependentPlaneRouteCandidate[] | null
+                if (useAdaptiveDensePlaneRouting) {
+                  const getUniqueDomains = (sets: typeof candidateSets) =>
+                    sets.map((set) => [
+                      ...new Map(
+                        set.candidates.map((candidate) => [
+                          JSON.stringify(
+                            candidate.plans.map((plan) => [
+                              plan.segments,
+                              plan.via,
+                              plan.additionalVias,
+                              plan.planeEndpointSegments,
+                              plan.planeEndpointVia,
+                            ]),
+                          ),
+                          candidate,
+                        ]),
+                      ).values(),
+                    ])
+                  const runCandidateSelection = (
+                    sets: typeof candidateSets,
+                    maximumSearchStates = maximumAlternatePlaneSearchStates,
+                  ) =>
+                    selectCompatibleCandidates({
+                      candidateSets: getUniqueDomains(sets),
+                      maximumSearchStates,
+                      areCompatible: (first, second) =>
+                        fanoutPlansAreMutuallyClear({
+                          plans: [...first.plans, ...second.plans],
+                          srj: this.routingSrj,
+                          clearance: this.config.clearance,
+                          allowSameNetMerges: this.config.allowSameNetMerges,
+                        }),
+                    })
+                  const result = runCandidateSelection(candidateSets)
+                  debugDense(
+                    "plane-route:csp",
+                    result.selection ? "complete" : "failed",
+                    result.searchStates,
+                    result.emptyDomainIndices.map(
+                      (index) => candidateSets[index]!.planeBus.busId,
+                    ),
+                  )
+                  selectedCandidates = result.selection
+                  alternatePlaneSearchStates = result.searchStates
+                  if (!result.selection && useAdaptiveDensePlaneRouting) {
+                    const expanded = result.emptyDomainIndices
+                      .map((index) => candidateSets[index]!.planeBus.busId)
+                      .filter(
+                        (id) =>
+                          !orderedAlternatePlaneBuses.some(
+                            (bus) => bus.busId === id,
+                          ),
+                      )
+                    if (expanded.length > 0) {
+                      debugDense("plane-route:expand-domains", expanded)
+                      return matchViaPointsAroundPlans(
+                        candidatePlans,
+                        new Set([...promotedAlternatePlaneBusIds, ...expanded]),
+                      )
+                    }
+                  }
+                  if (!result.selection)
+                    for (const index of (params.planeReservationRetryCount ??
+                      0) === 0
+                      ? result.conflictDomainIndices
+                      : result.emptyDomainIndices.slice(0, 1))
+                      unroutablePlaneBusIds.add(
+                        candidateSets[index]!.planeBus.busId,
+                      )
+                } else {
+                  selectedCandidates = selectCompatiblePlaneRoutes(
+                    candidateSets,
+                    [],
+                  )
+                }
                 alternatePlanePlans = selectedCandidates
                   ? [
                       ...feasibleAlternatePlanePlans,
@@ -3236,6 +3442,18 @@ export class FanoutSolver extends BaseSolver {
               )
               if (!alternatePlanePlans) return null
               feasibleAlternatePlanePlans = alternatePlanePlans
+              if (useAdaptiveJointPlaneSelection) {
+                matchedPlaneBusesInRoutingOrder = []
+                return new Map([
+                  ...fixedBoundaryViaPoints,
+                  ...alternatePlanePlans
+                    .filter((plan) => plan.via)
+                    .map(
+                      (plan) =>
+                        [plan.connectionIndex, plan.via!.center] as const,
+                    ),
+                ])
+              }
             }
             let planeBusIdsRoutedWithoutDogbones = new Set<string>()
             let allBlockingSegments = [...blockingSegments]
@@ -3685,6 +3903,39 @@ export class FanoutSolver extends BaseSolver {
       }
     }
 
+    if (
+      useAdaptiveDensePlaneRouting &&
+      unroutablePlaneBusIds.size > 0 &&
+      (params.planeReservationRetryCount ?? 0) < 5
+    ) {
+      const newlyPromoted = [...unroutablePlaneBusIds].filter(
+        (id) =>
+          !activeBoundaryReservationPlaneBuses.some((bus) => bus.busId === id),
+      )
+      const refinedPromotions =
+        (params.planeReservationRetryCount ?? 0) === 0
+          ? refineAdaptivePlaneReservationCore({
+              candidateBusIds: newlyPromoted,
+              activeBusIds: new Set(
+                activeBoundaryReservationPlaneBuses.map((bus) => bus.busId),
+              ),
+              planeBuses,
+            })
+          : newlyPromoted
+      if (refinedPromotions.length > 0) {
+        debugDense("plane-reservation-core", refinedPromotions)
+        debugDense("promote-reservations", refinedPromotions)
+        return yield* this.routeDenseThroughAllMixedTerminationSteps({
+          ...params,
+          promotedPlaneReservationBusIds: [
+            ...(params.promotedPlaneReservationBusIds ?? []),
+            ...refinedPromotions,
+          ],
+          planeReservationRetryCount:
+            (params.planeReservationRetryCount ?? 0) + 1,
+        })
+      }
+    }
     if (matchLengthsAfterPlanes) {
       return yield* this.routeDenseThroughAllMixedTerminationSteps({
         ...params,

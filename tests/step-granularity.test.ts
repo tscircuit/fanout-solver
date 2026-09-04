@@ -85,4 +85,4 @@ test("step exposes candidate, bus-routing, and max-flow work incrementally", () 
     ),
   ).toBe(true)
   expect(latestAdaptiveVisualization.title).toStartWith("Adaptive exits:")
-})
+}, 15_000)

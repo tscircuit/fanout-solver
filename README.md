@@ -306,6 +306,19 @@ To capture the inputs without solving, use `bun run generate:dataset31`.
 The optional `--dataset dataset31` flag is accepted for explicit CI invocation;
 other dataset selections are rejected.
 
+To isolate a failure without changing pads or clearance rules, reduce a captured
+input by bus or connection count. This is a diagnostic, not a benchmark score:
+
+```sh
+bun scripts/debug-dataset31.ts --input benchmark-results/inputs/10-left-bottom-offset.json --buses DDR_ADDR_CTRL --connection-limit 7 --output /tmp/address-seven
+bun scripts/debug-dataset31.ts --input benchmark-results/inputs/10-left-bottom-offset.json --buses DDR_ADDR_CTRL --output /tmp/address-eight
+```
+
+Each run has a hard process deadline and saves JSON progress and an SVG preview.
+Use `--dump-input <path> --capture-only` to save the exact reduced solver input
+as a regression fixture. Retained buses keep their original targets and timing
+limits; only removed connections and their differential-pair metadata are pruned.
+
 Each sample runs in an isolated process, with up to four concurrent processes
 locally and a **120-second hard timeout** by default. A synchronous solver hang,
 exception, or unsolved case does not prevent later samples from running.

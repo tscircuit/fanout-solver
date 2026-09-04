@@ -43,6 +43,8 @@ export interface ViaMinimalWindingTerminal {
 export interface ViaMinimalWindingReservedVia {
   connectionName: string
   via: Pick<RoutedVia, "center" | "diameter" | "spanLayers">
+  /** Keep the future pad-to-via dogbone available during source-layer escape. */
+  sourceEscapeSegment?: RoutedSegment
 }
 
 export interface RouteViaMinimalWindingParams {
@@ -70,6 +72,8 @@ export interface RouteViaMinimalWindingParams {
   adaptiveRouteOrder?: boolean
   /** Align a fine grid with pad/interstice centers instead of the boundary. */
   alignGridToPads?: boolean
+  /** Defer the outermost reversed target while routing the inner terminals. */
+  includeReverseTargetRotation?: boolean
 }
 
 export interface RouteViaMinimalWindingProgress {
@@ -638,6 +642,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
     allowSourceLayerRouting = false,
     adaptiveRouteOrder = false,
     alignGridToPads = false,
+    includeReverseTargetRotation = false,
   } = params
   if (
     maximumRouteOrderAttempts !== undefined &&
@@ -726,6 +731,20 @@ export function* routeViaMinimalWindingAlternativesSteps(
       Math.min(segment.start.y, segment.end.y) > maxY + margin
     )
   })
+  if (allowSourceLayerRouting) {
+    blockingSegments.push(
+      ...reservedVias.flatMap((reserved) =>
+        reserved.sourceEscapeSegment?.layer === targetLayer
+          ? [
+              {
+                connectionName: reserved.connectionName,
+                segment: reserved.sourceEscapeSegment,
+              },
+            ]
+          : [],
+      ),
+    )
+  }
   const blockingVias = blockingCopper.vias.filter(({ via }) => {
     if (!via.spanLayers.includes(targetLayer)) return false
     const margin = via.diameter / 2 + traceWidth / 2 + clearance
@@ -1341,6 +1360,15 @@ export function* routeViaMinimalWindingAlternativesSteps(
     ])
   } else if (viasAreAfterTargets) {
     initialRouteOrderFactories.push(() => [...targetOrderedTerminals].reverse())
+    if (includeReverseTargetRotation && targetOrderedTerminals.length > 2) {
+      // Routing the extreme target first can cut the remaining source field
+      // off from the boundary. The forward direction already tries a rotated
+      // order; retain its reverse counterpart for local via-site repairs.
+      initialRouteOrderFactories.push(() => [
+        ...targetOrderedTerminals.slice(0, -1).toReversed(),
+        targetOrderedTerminals.at(-1)!,
+      ])
+    }
   }
   initialRouteOrderFactories.push(
     ...(preferTargetDirectedLaneBias &&
