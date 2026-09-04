@@ -2,6 +2,7 @@ import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { selectCompatibleCandidates } from "./select-compatible-candidates"
 import { refineAdaptivePlaneReservationCore } from "./refine-adaptive-plane-reservations"
+import { shouldUseAdaptiveDensePlaneRouting } from "./should-use-adaptive-dense-plane-routing"
 import { type GraphicsObject, mergeGraphics } from "graphics-debug"
 import { addViaLayerMetadataToSrj } from "./add-via-layer-metadata"
 import { getCornerBandSide, getExitEdgeForDirection } from "./boundary-exit"
@@ -88,34 +89,6 @@ interface GroupedBeamState {
 interface MixedTerminationState {
   plans: FanoutRoutePlan[]
   failedBusIds: string[]
-}
-
-function shouldUseAdaptiveDensePlaneRouting(
-  buses: readonly PreparedBus[],
-  allowBlindAndBuriedVias: boolean,
-): boolean {
-  if (allowBlindAndBuriedVias) return false
-  const connectionCounts = buses
-    .filter((bus) => bus.termination.type === "boundary")
-    .map((bus) => bus.connections.length)
-    .toSorted((first, second) => first - second)
-  const planeCount = buses.filter(
-    (bus) => bus.termination.type === "plane" && bus.connections.length === 1,
-  ).length
-  const wideBoundaryBuses = buses.filter(
-    (bus) => bus.termination.type === "boundary" && bus.connections.length >= 8,
-  )
-  // Three byte/address groups plus three differential pairs and three
-  // controls are a common memory-controller topology. When that field also
-  // contains many through-via plane drops, route a small protected subset
-  // first and choose the rest jointly instead of fencing every signal in.
-  return (
-    connectionCounts.join(",") === "1,1,1,2,2,2,8,8,8" &&
-    planeCount >= 64 &&
-    // This adaptive reservation search is currently proven for a top-edge
-    // breakout. Keep the established dense paths for the other orientations.
-    wideBoundaryBuses.every((bus) => bus.exitEdge === "top")
-  )
 }
 
 type RoutingStrategy = "default" | "group-by-layer" | "deep-first"
@@ -1779,7 +1752,7 @@ export class FanoutSolver extends BaseSolver {
                 getCornerBandSide(bus.exitEdge, bus.preferredExit)
               ? getDenseSingletonBoundaryGeometry(bus).targetProjection > 0
               : getExitEdgeForDirection(bus.direction) !== bus.exitEdge
-          : bus.exitEdge === "top" && bus.connections.length >= 8
+          : hasThreeWideBoundaryBuses && bus.connections.length >= 8
             ? false
             : getExitEdgeForDirection(bus.direction) !== bus.exitEdge,
       ]),
