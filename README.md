@@ -345,7 +345,7 @@ and a link to the complete JSON/Markdown reports and captured inputs. The Action
 UI also supports a manual run, optionally supplying an open PR number. No custom
 bot token is required.
 
-The runner defaults to 8 processes and a 120-second per-sample deadline; set
+The runner defaults to 4 processes and a 120-second per-sample deadline; set
 repository variables `BENCHMARK_CONCURRENCY` and
 `BENCHMARK_SAMPLE_TIMEOUT_SECONDS` to change these. PR code runs with a read-only
 token and no persisted checkout credentials. A separate job uses the trusted
