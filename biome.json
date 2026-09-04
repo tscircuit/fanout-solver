@@ -11,7 +11,8 @@
       "!**/.vercel",
       "!**/cosmos-export",
       "!**/dist",
-      "!**/package.json"
+      "!**/package.json",
+      "!tests/fixtures/soc-dram/northeast/**"
     ]
   },
   "javascript": {
