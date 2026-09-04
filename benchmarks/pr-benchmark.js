@@ -4,6 +4,11 @@ export const isBenchmarkComment = (payload) =>
   payload.comment?.user?.type !== "Bot" &&
   payload.comment?.body?.trim() === "/benchmark"
 
+export const isAuthorizedBenchmarkActor = (payload) =>
+  ["OWNER", "MEMBER", "COLLABORATOR"].includes(
+    payload.comment?.author_association,
+  )
+
 export async function preparePrBenchmark({ github, context, core }) {
   core.setOutput("enabled", "false")
   if (
@@ -11,24 +16,14 @@ export async function preparePrBenchmark({ github, context, core }) {
     !isBenchmarkComment(context.payload)
   )
     return
-  // Check current access rather than trusting a comment's cached association.
-  const username =
-    context.eventName === "issue_comment"
-      ? context.payload.comment.user.login
-      : context.actor
-  let permission
-  try {
-    permission = (
-      await github.rest.repos.getCollaboratorPermissionLevel({
-        ...context.repo,
-        username,
-      })
-    ).data.permission
-  } catch (error) {
-    if (error.status !== 404) throw error
-  }
-  if (!["admin", "maintain", "write"].includes(permission)) {
-    core.notice("Only repository writers can request a benchmark")
+  // workflow_dispatch is already restricted to repository writers by GitHub.
+  // For issue comments, use the association GitHub recorded on the event. The
+  // default GITHUB_TOKEN cannot read collaborator permission levels.
+  if (
+    context.eventName === "issue_comment" &&
+    !isAuthorizedBenchmarkActor(context.payload)
+  ) {
+    core.notice("Only trusted repository members can request a benchmark")
     return
   }
   const rawNumber =

@@ -9,7 +9,10 @@ test("comment reporting uses trusted workflow code on a different runner from PR
   expect(workflow.on.issue_comment.types).toEqual(["created"])
   expect(workflow.permissions).toEqual({})
   const { prepare, benchmark, report } = workflow.jobs
-  expect(benchmark["runs-on"]).toBe("blacksmith-32vcpu-ubuntu-2404-arm")
+  expect(benchmark["runs-on"]).toBe("blacksmith-8vcpu-ubuntu-2404-arm")
+  expect(benchmark.env.BENCHMARK_CONCURRENCY).toBe(
+    "${{ vars.BENCHMARK_CONCURRENCY || '8' }}",
+  )
   expect(benchmark.permissions).toEqual({ contents: "read" })
   expect(report.permissions.issues).toBe("write")
   expect(report.needs).toEqual(["prepare", "benchmark"])

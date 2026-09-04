@@ -52,12 +52,12 @@ jobs:
   benchmark:
     needs: prepare
     if: needs.prepare.outputs.enabled == 'true'
-    runs-on: blacksmith-32vcpu-ubuntu-2404-arm
+    runs-on: blacksmith-8vcpu-ubuntu-2404-arm
     timeout-minutes: 120
     permissions:
       contents: read
     env:
-      BENCHMARK_CONCURRENCY: ${{ vars.BENCHMARK_CONCURRENCY || '32' }}
+      BENCHMARK_CONCURRENCY: ${{ vars.BENCHMARK_CONCURRENCY || '8' }}
       BENCHMARK_SAMPLE_TIMEOUT_SECONDS: ${{ vars.BENCHMARK_SAMPLE_TIMEOUT_SECONDS || '120' }}
     steps:
       # This job executes PR code, so it has no comment-writing token or secrets.
