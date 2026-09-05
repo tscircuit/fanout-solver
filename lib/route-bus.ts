@@ -3448,6 +3448,7 @@ export function* routeBusAlternativesSteps(
 
   if (viaMinimalOnly) return alternatives
 
+  const vacantViaPointsByConnection = new Map<PreparedConnection, Point2D[]>()
   const searchConnectionOrder = ({
     connectionOrder,
     viaHandedness,
@@ -3507,18 +3508,7 @@ export function* routeBusAlternativesSteps(
           ) === index,
       )
     const initialViaPoints = includeVacantSites
-      ? getBoundaryDogboneViaPoints({
-          bus,
-          preparedConnection,
-          targetLayer,
-          rules: {
-            viaDiameter,
-            viaHoleDiameter,
-            traceWidth,
-            clearance,
-            additionalObstacles: srj.obstacles,
-          },
-        })
+      ? [undefined, ...vacantViaPointsByConnection.get(preparedConnection)!]
       : [undefined]
     for (const initialViaPoint of initialViaPoints) {
       for (
@@ -3584,6 +3574,32 @@ export function* routeBusAlternativesSteps(
   // Preserve the established handedness/order search before extending it with
   // sparse-grid dogbones. A new site must still pass the complete plan DRC.
   for (const includeVacantSites of [false, true]) {
+    if (includeVacantSites) {
+      if (!targetUsesVia) return alternatives
+      for (const preparedConnection of bus.connections) {
+        vacantViaPointsByConnection.set(preparedConnection, [
+          ...getBoundaryDogboneViaPoints({
+            bus,
+            preparedConnection,
+            targetLayer,
+            rules: {
+              viaDiameter,
+              viaHoleDiameter,
+              traceWidth,
+              clearance,
+              additionalObstacles: srj.obstacles,
+            },
+          }),
+        ])
+      }
+      if (
+        ![...vacantViaPointsByConnection.values()].some(
+          (points) => points.length > 0,
+        )
+      ) {
+        return alternatives
+      }
+    }
     for (const viaHandedness of viaHandednesses) {
       for (const connectionOrder of getConnectionOrders(bus)) {
         searchConnectionOrder({

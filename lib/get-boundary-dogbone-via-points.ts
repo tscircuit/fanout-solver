@@ -16,8 +16,7 @@ export function* getBoundaryDogboneViaPoints({
   preparedConnection: PreparedConnection
   targetLayer: string
   rules: DogboneViaSiteGeometryRules
-}): Generator<Point2D | undefined> {
-  yield undefined
+}): Generator<Point2D> {
   if (targetLayer === preparedConnection.sourceLayer) return
 
   // Sparse BGAs can omit a neighboring ball. Search one pitch around the
@@ -38,6 +37,14 @@ export function* getBoundaryDogboneViaPoints({
         deltaX > EPSILON &&
         deltaY > EPSILON &&
         Math.abs(deltaX - deltaY) > EPSILON
+      )
+        continue
+      if (
+        bus.componentObstacles.some(
+          (obstacle) =>
+            Math.abs(obstacle.center.x - x) <= EPSILON &&
+            Math.abs(obstacle.center.y - y) <= EPSILON,
+        )
       )
         continue
       const candidates = getComponentDogboneViaSiteCandidates(
