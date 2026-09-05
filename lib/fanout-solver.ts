@@ -1401,8 +1401,9 @@ export class FanoutSolver extends BaseSolver {
     planeReservationRetryCount?: number
   }): Generator<FanoutWorkYield, MixedTerminationState | null, unknown> {
     if (this.config.allowBlindAndBuriedVias) return null
-    // Keep successful signal sites stable when a blocked plane promotes a new
-    // reservation. They remain preferences so true conflicts may still move.
+    // An outside-package singleton escape can depend on the completed signal
+    // field. Keep those sites as preferences when plane reservations change;
+    // actual conflicts may still move.
     let boundaryViaPointsForRetry = params.preferredBoundaryViaPoints
     const usePadAlignedDenseRouting =
       params.denseRoutingStrategy !== "boundary-aligned"
@@ -1878,26 +1879,44 @@ export class FanoutSolver extends BaseSolver {
             )
           })
         : []
-    // Embedded corner lanes need to leave before the surrounding wide bus
-    // closes the shared target-layer corridor.
+    // A corner singleton on the outward source row must leave before its
+    // surrounding wide bus closes the shared target-layer corridor.
     const throughAllLeadingSingletonBuses = hasThreeWideBoundaryBuses
       ? singletonBoundaryBuses.filter((singletonBus) => {
           const containingWideBus = getContainingWideSourceField(singletonBus)
           const singletonTargetLayer =
             params.busLayerAssignments[singletonBus.busId]
+          if (!containingWideBus || !singletonTargetLayer) return false
           const containingWideLayers =
-            containingWideBus?.routableEscapeLayers ??
-            containingWideBus?.allowedLayers ??
+            containingWideBus.routableEscapeLayers ??
+            containingWideBus.allowedLayers ??
             []
+          const sourceAxis =
+            singletonBus.exitEdge === "left" ||
+            singletonBus.exitEdge === "right"
+              ? "x"
+              : "y"
+          const wideCoordinates = containingWideBus.connections.map(
+            (connection) => connection.sourcePoint[sourceAxis],
+          )
+          const outwardSourceCoordinate =
+            singletonBus.exitEdge === "left" ||
+            singletonBus.exitEdge === "bottom"
+              ? Math.min(...wideCoordinates)
+              : Math.max(...wideCoordinates)
+          const isOnOutwardSourceEdge = singletonBus.connections.every(
+            (connection) =>
+              Math.abs(
+                connection.sourcePoint[sourceAxis] - outwardSourceCoordinate,
+              ) < 1e-9,
+          )
           return Boolean(
-            containingWideBus &&
-              singletonTargetLayer &&
-              (!containingWideLayers.includes(singletonTargetLayer) ||
-                Boolean(
-                  getCornerBandSide(
-                    singletonBus.exitEdge,
-                    singletonBus.preferredExit,
-                  ),
+            !containingWideLayers.includes(singletonTargetLayer) ||
+              (useAdaptiveDensePlaneRouting &&
+                isOnOutwardSourceEdge &&
+                getCornerBandSide(
+                  singletonBus.exitEdge,
+                  singletonBus.preferredExit,
                 )),
           )
         })
@@ -2432,10 +2451,23 @@ export class FanoutSolver extends BaseSolver {
         matchedPlans.push(...busPlans)
         if (
           matchedPlans.length ===
-          boundaryBuses.reduce(
-            (sum, candidate) => sum + candidate.connections.length,
-            0,
-          )
+            boundaryBuses.reduce(
+              (sum, candidate) => sum + candidate.connections.length,
+              0,
+            ) &&
+          matchedPlans.some((plan) => {
+            const bus = boundaryBuses.find(
+              (candidate) => candidate.busId === plan.busId,
+            )
+            if (bus?.connections.length !== 1 || !plan.via) return false
+            const { center } = plan.via
+            return (
+              center.x < bus.componentBounds.minX ||
+              center.x > bus.componentBounds.maxX ||
+              center.y < bus.componentBounds.minY ||
+              center.y > bus.componentBounds.maxY
+            )
+          })
         )
           boundaryViaPointsForRetry = new Map(
             matchedPlans
@@ -3880,6 +3912,7 @@ export class FanoutSolver extends BaseSolver {
           allowSameNetMerges: this.config.allowSameNetMerges,
           allowMatchingInsideDenseBounds: true,
           allowPairLaneSpreading: true,
+          allowUnconstrainedLaneRerouting: true,
         }
         let matchedLengthResult = matchBusPlanLengths(lengthMatchingParams)
         const shortenedBusIds = new Set<string>()
