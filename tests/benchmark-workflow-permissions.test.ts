@@ -11,6 +11,8 @@ test("comment reporting uses trusted workflow code on a different runner from PR
   const { prepare, benchmark, report } = workflow.jobs
   expect(benchmark["runs-on"]).toBe("blacksmith-32vcpu-ubuntu-2404-arm")
   expect(benchmark.permissions).toEqual({ contents: "read" })
+  expect(prepare.permissions["pull-requests"]).toBe("write")
+  expect(report.permissions["pull-requests"]).toBe("write")
   expect(report.permissions.issues).toBe("write")
   expect(report.needs).toEqual(["prepare", "benchmark"])
   expect(report.if).toContain("always()")

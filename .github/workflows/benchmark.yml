@@ -27,7 +27,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
+      # PR comments require pull-request write access, even via the issues API.
+      pull-requests: write
       issues: write
     outputs:
       enabled: ${{ steps.prepare.outputs.enabled }}
@@ -98,6 +99,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: write
       issues: write
     steps:
       # Never run PR code in the job with permission to post comments.
