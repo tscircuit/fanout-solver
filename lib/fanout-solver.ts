@@ -2934,7 +2934,14 @@ export class FanoutSolver extends BaseSolver {
               let alternatePlaneSearchStates = 0
               const maximumAlternatePlaneSearchStates = Number(
                 process.env.FANOUT_DEBUG_ALTERNATE_SEARCH_STATES ??
-                  (useConfiguredDensePlaneRouting ? 3_000_000 : 1_000),
+                  // Try a small joint search before promoting conflicting
+                  // plane reservations and rerouting the boundary buses.
+                  // Later repairs retain the full candidate search budget.
+                  (useAdaptiveJointPlaneSelection
+                    ? 10_000
+                    : useConfiguredDensePlaneRouting
+                      ? 3_000_000
+                      : 1_000),
               )
               const maximumAlternatePlaneRoutes = Number(
                 process.env.FANOUT_DEBUG_ALTERNATE_ROUTE_COUNT ??
