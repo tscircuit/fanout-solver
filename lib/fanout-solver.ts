@@ -2221,8 +2221,10 @@ export class FanoutSolver extends BaseSolver {
           allowBoundarySideViaFallback: bus.connections.length === 1,
           preferCornerBoundaryVia: useConfiguredDensePlaneRouting,
           adaptiveWindingRouteOrder,
+          // Retain pad-aligned channels even when plane sites are reserved
+          // adaptively; the boundary grid can fence off a turning wide bus.
           alignWindingGridToPads:
-            usePadAlignedDenseRouting && !useConfiguredDensePlaneRouting,
+            usePadAlignedDenseRouting && !configuredDensePlaneRouting,
           fixedViaFallbackRouteOrderAttempts: adaptiveWindingRouteOrder
             ? 60
             : useConfiguredDensePlaneRouting
