@@ -27,6 +27,24 @@ test("routes every OSM-S AM62L carrier fanout connection", async () => {
     issues: [],
   })
   expect(output.fanoutTraces).toHaveLength(96)
+  const totalFanoutLength = output.fanoutTraces.reduce(
+    (totalLength, trace) =>
+      totalLength +
+      trace.route
+        .slice(1)
+        .reduce((traceLength, routePoint, routePointIndex) => {
+          const previousRoutePoint = trace.route[routePointIndex]!
+          return (
+            traceLength +
+            Math.hypot(
+              routePoint.x - previousRoutePoint.x,
+              routePoint.y - previousRoutePoint.y,
+            )
+          )
+        }, 0),
+    0,
+  )
+  expect(totalFanoutLength).toBeLessThan(1_400)
   expect(
     validateRoutedCopperDrc({
       inputSrj,
