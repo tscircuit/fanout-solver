@@ -90,6 +90,12 @@ interface TrackCandidate {
   kind: "corridor" | "gap" | "margin" | "preferred"
 }
 
+interface CornerChamfer {
+  requestedChamferLength: number
+  minimumChamferLength: number
+  minimumStraightLength: number
+}
+
 type ViaHandedness = -1 | 0 | 1
 
 function allowsViaInPad(srj: SimpleRouteJson): boolean {
@@ -869,10 +875,30 @@ function appendSegment(
   segments.push({ start, end, width, layer })
 }
 
-function chamferOrthogonalPolyline(
-  points: Point2D[],
-  requestedChamfer: number,
-): Point2D[] {
+function getMaximumChamferLength(params: {
+  segmentLength: number
+  minimumChamfer: number
+  minimumStraightLength: number
+}): number {
+  const { segmentLength, minimumChamfer, minimumStraightLength } = params
+  return Math.min(
+    segmentLength / 2,
+    Math.max(minimumChamfer, (segmentLength - minimumStraightLength) / 2),
+  )
+}
+
+function chamferOrthogonalPolyline(params: {
+  points: Point2D[]
+  requestedChamferLength: number
+  minimumStraightLength?: number
+  minimumChamferLength?: number
+}): Point2D[] {
+  const {
+    points,
+    requestedChamferLength,
+    minimumStraightLength = 0,
+    minimumChamferLength = 0,
+  } = params
   if (points.length < 3) return points
   const chamfered: Point2D[] = [points[0]!]
 
@@ -899,9 +925,17 @@ function chamferOrthogonalPolyline(
     }
 
     const chamfer = Math.min(
-      requestedChamfer,
-      incomingLength / 2,
-      outgoingLength / 2,
+      requestedChamferLength,
+      getMaximumChamferLength({
+        segmentLength: incomingLength,
+        minimumChamfer: minimumChamferLength,
+        minimumStraightLength,
+      }),
+      getMaximumChamferLength({
+        segmentLength: outgoingLength,
+        minimumChamfer: minimumChamferLength,
+        minimumStraightLength,
+      }),
     )
     chamfered.push({
       x: corner.x - incomingUnit.x * chamfer,
@@ -915,6 +949,33 @@ function chamferOrthogonalPolyline(
 
   chamfered.push(points.at(-1)!)
   return chamfered
+}
+
+function getCornerChamferCandidates(params: {
+  bus: PreparedBus
+  traceWidth: number
+  viaDiameter: number
+  clearance: number
+}): CornerChamfer[] {
+  const { bus, traceWidth, viaDiameter, clearance } = params
+  const minimumChamferLength = Math.max(traceWidth + clearance, traceWidth * 2)
+  const compactChamfer = {
+    requestedChamferLength: minimumChamferLength,
+    minimumChamferLength,
+    minimumStraightLength: 0,
+  }
+  if (!getCornerSide(bus)) return [compactChamfer]
+
+  return [
+    {
+      // The polyline clips this to each adjacent segment while preserving the
+      // straight boundary rail needed by other buses sharing the corner.
+      requestedChamferLength: Number.POSITIVE_INFINITY,
+      minimumChamferLength,
+      minimumStraightLength: viaDiameter + clearance * 2,
+    },
+    compactChamfer,
+  ]
 }
 
 function getInitialViaPoint(params: {
@@ -990,6 +1051,7 @@ function buildPlan(params: {
   initialViaPoint?: Point2D
   sourceEscapePath?: readonly Point2D[]
   cornerBandTargetTrackOffset?: number
+  cornerChamfer?: CornerChamfer
 }): FanoutRoutePlan {
   const {
     preparedConnection,
@@ -1013,6 +1075,7 @@ function buildPlan(params: {
     initialViaPoint,
     sourceEscapePath,
     cornerBandTargetTrackOffset,
+    cornerChamfer,
   } = params
   const sourcePoint = {
     x: preparedConnection.sourcePoint.x,
@@ -1240,8 +1303,8 @@ function buildPlan(params: {
 
   const additionalVias: NonNullable<FanoutRoutePlan["additionalVias"]> = []
   if (usesLayeredWindingChannel && windingCrossoverLayer) {
-    const escapePoints = chamferOrthogonalPolyline(
-      [
+    const escapePoints = chamferOrthogonalPolyline({
+      points: [
         viaPoint,
         ...(useNestedSpread ? [spreadPoint] : []),
         doglegPoint,
@@ -1250,8 +1313,8 @@ function buildPlan(params: {
           : []),
         windingInputTransitionPoint,
       ],
-      Math.max(traceWidth + clearance, traceWidth * 2),
-    )
+      requestedChamferLength: Math.max(traceWidth + clearance, traceWidth * 2),
+    })
     appendLayerPath(escapePoints, escapeLayer)
 
     const appendTransitionVia = (
@@ -1310,8 +1373,8 @@ function buildPlan(params: {
     const targetLayerPoints = terminateAtVia
       ? [viaPoint]
       : cornerSide
-        ? chamferOrthogonalPolyline(
-            [
+        ? chamferOrthogonalPolyline({
+            points: [
               viaPoint,
               ...(useNestedSpread ? [spreadPoint] : []),
               doglegPoint,
@@ -1323,13 +1386,20 @@ function buildPlan(params: {
               boundaryChannelTargetPoint,
               exitPoint,
             ],
-            Math.max(traceWidth + clearance, traceWidth * 2),
-          )
-        : useNestedSpread
-          ? chamferOrthogonalPolyline(
-              [viaPoint, spreadPoint, doglegPoint, exitPoint],
+            requestedChamferLength:
+              cornerChamfer?.requestedChamferLength ??
               Math.max(traceWidth + clearance, traceWidth * 2),
-            )
+            minimumStraightLength: cornerChamfer?.minimumStraightLength,
+            minimumChamferLength: cornerChamfer?.minimumChamferLength,
+          })
+        : useNestedSpread
+          ? chamferOrthogonalPolyline({
+              points: [viaPoint, spreadPoint, doglegPoint, exitPoint],
+              requestedChamferLength: Math.max(
+                traceWidth + clearance,
+                traceWidth * 2,
+              ),
+            })
           : [viaPoint, doglegPoint, exitPoint]
     appendLayerPath(targetLayerPoints, escapeLayer)
   }
@@ -3206,9 +3276,17 @@ export function* routeBusAlternativesSteps(
 
   if (viaMinimalOnly) return alternatives
 
+  const cornerChamferCandidates = getCornerChamferCandidates({
+    bus,
+    traceWidth,
+    viaDiameter,
+    clearance,
+  })
+
   const searchConnectionOrder = (
     connectionOrder: PreparedConnection[],
     viaHandedness: ViaHandedness,
+    cornerChamfer: CornerChamfer,
     connectionIndex: number,
     candidatePlans: FanoutRoutePlan[],
   ): void => {
@@ -3286,6 +3364,7 @@ export function* routeBusAlternativesSteps(
         terminateAtVia: false,
         allowBlindAndBuriedVias,
         cornerBandTargetTrackOffset,
+        cornerChamfer,
       })
       if (
         !planIsClear({
@@ -3293,7 +3372,7 @@ export function* routeBusAlternativesSteps(
           otherPlans: [...acceptedPlans, ...candidatePlans],
           staticClearanceCache,
           blockingBusCounts,
-          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}`,
+          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${cornerChamfer.requestedChamferLength}:${cornerChamfer.minimumChamferLength}:${cornerChamfer.minimumStraightLength}`,
           srj,
           sharedBoundary: bus.sharedBoundary,
           clearance,
@@ -3306,6 +3385,7 @@ export function* routeBusAlternativesSteps(
       searchConnectionOrder(
         connectionOrder,
         viaHandedness,
+        cornerChamfer,
         connectionIndex + 1,
         [...candidatePlans, plan],
       )
@@ -3314,10 +3394,18 @@ export function* routeBusAlternativesSteps(
     }
   }
 
-  for (const viaHandedness of viaHandednesses) {
-    for (const connectionOrder of getConnectionOrders(bus)) {
-      searchConnectionOrder(connectionOrder, viaHandedness, 0, [])
-      if (alternatives.length >= maxAlternatives) return alternatives
+  for (const cornerChamfer of cornerChamferCandidates) {
+    for (const viaHandedness of viaHandednesses) {
+      for (const connectionOrder of getConnectionOrders(bus)) {
+        searchConnectionOrder(
+          connectionOrder,
+          viaHandedness,
+          cornerChamfer,
+          0,
+          [],
+        )
+        if (alternatives.length >= maxAlternatives) return alternatives
+      }
     }
   }
 
