@@ -21,6 +21,7 @@ import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
 import { getDogboneSideVariants } from "./get-dogbone-side-variants"
 import { getViaSpanLayers } from "./layer-names"
 import { matchComponentDogboneViaSites } from "./match-component-dogbone-via-sites"
+import { getBoundaryDogboneViaPoints } from "./get-boundary-dogbone-via-points"
 import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
@@ -3447,12 +3448,20 @@ export function* routeBusAlternativesSteps(
 
   if (viaMinimalOnly) return alternatives
 
-  const searchConnectionOrder = (
-    connectionOrder: PreparedConnection[],
-    viaHandedness: ViaHandedness,
-    connectionIndex: number,
-    candidatePlans: FanoutRoutePlan[],
-  ): void => {
+  const vacantViaPointsByConnection = new Map<PreparedConnection, Point2D[]>()
+  const searchConnectionOrder = ({
+    connectionOrder,
+    viaHandedness,
+    connectionIndex,
+    candidatePlans,
+    includeVacantSites,
+  }: {
+    connectionOrder: PreparedConnection[]
+    viaHandedness: ViaHandedness
+    connectionIndex: number
+    candidatePlans: FanoutRoutePlan[]
+    includeVacantSites: boolean
+  }): void => {
     if (alternatives.length >= maxAlternatives) return
     if (connectionIndex >= connectionOrder.length) {
       addAlternative(candidatePlans)
@@ -3498,67 +3507,110 @@ export function* routeBusAlternativesSteps(
             (candidate) => Math.abs(candidate.value - track.value) < 1e-9,
           ) === index,
       )
-    for (
-      let trackIndex = 0;
-      trackIndex < trackCandidates.length;
-      trackIndex++
-    ) {
-      const track = trackCandidates[trackIndex]!
-      const plan = buildPlan({
-        preparedConnection,
-        bus,
-        targetLayer,
-        track: track.value,
-        exitAxis,
-        layerNames,
-        traceWidth,
-        viaDiameter,
-        viaHoleDiameter,
-        viaHandedness,
-        interstitialEscape,
-        spreadLaneIndex: Math.min(
-          connectionRank,
-          bus.connections.length - connectionRank - 1,
-        ),
-        cornerExitLaneOffset: cornerLaneOffsets.exit,
-        cornerLocalChannelLaneOffset: cornerLaneOffsets.localChannel,
-        cornerBoundaryChannelLaneOffset: cornerLaneOffsets.boundaryChannel,
-        clearance,
-        terminateAtVia: false,
-        allowBlindAndBuriedVias,
-        cornerBandTargetTrackOffset,
-      })
-      if (
-        !planIsClear({
-          plan,
-          otherPlans: [...acceptedPlans, ...candidatePlans],
-          staticClearanceCache,
-          blockingBusCounts,
-          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}`,
-          srj,
-          sharedBoundary: bus.sharedBoundary,
-          clearance,
-          allowBlindAndBuriedVias,
-          allowSameNetMerges,
-        })
+    const initialViaPoints = includeVacantSites
+      ? [undefined, ...vacantViaPointsByConnection.get(preparedConnection)!]
+      : [undefined]
+    for (const initialViaPoint of initialViaPoints) {
+      for (
+        let trackIndex = 0;
+        trackIndex < trackCandidates.length;
+        trackIndex++
       ) {
-        continue
+        const track = trackCandidates[trackIndex]!
+        const plan = buildPlan({
+          preparedConnection,
+          bus,
+          targetLayer,
+          track: track.value,
+          exitAxis,
+          layerNames,
+          traceWidth,
+          viaDiameter,
+          viaHoleDiameter,
+          viaHandedness,
+          interstitialEscape,
+          spreadLaneIndex: Math.min(
+            connectionRank,
+            bus.connections.length - connectionRank - 1,
+          ),
+          cornerExitLaneOffset: cornerLaneOffsets.exit,
+          cornerLocalChannelLaneOffset: cornerLaneOffsets.localChannel,
+          cornerBoundaryChannelLaneOffset: cornerLaneOffsets.boundaryChannel,
+          clearance,
+          terminateAtVia: false,
+          allowBlindAndBuriedVias,
+          cornerBandTargetTrackOffset,
+          initialViaPoint,
+        })
+        if (
+          !planIsClear({
+            plan,
+            otherPlans: [...acceptedPlans, ...candidatePlans],
+            staticClearanceCache,
+            blockingBusCounts,
+            cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${initialViaPoint ? `${initialViaPoint.x},${initialViaPoint.y}` : "default"}`,
+            srj,
+            sharedBoundary: bus.sharedBoundary,
+            clearance,
+            allowBlindAndBuriedVias,
+            allowSameNetMerges,
+          })
+        ) {
+          continue
+        }
+        searchConnectionOrder({
+          connectionOrder,
+          viaHandedness,
+          connectionIndex: connectionIndex + 1,
+          candidatePlans: [...candidatePlans, plan],
+          includeVacantSites,
+        })
+        if (alternatives.length >= maxAlternatives) return
+        if (maxAlternatives === 1) return
       }
-      searchConnectionOrder(
-        connectionOrder,
-        viaHandedness,
-        connectionIndex + 1,
-        [...candidatePlans, plan],
-      )
-      if (alternatives.length >= maxAlternatives) return
-      if (maxAlternatives === 1) return
     }
   }
 
-  for (const viaHandedness of viaHandednesses) {
-    for (const connectionOrder of getConnectionOrders(bus)) {
-      searchConnectionOrder(connectionOrder, viaHandedness, 0, [])
-      if (alternatives.length >= maxAlternatives) return alternatives
+  // Preserve the established handedness/order search before extending it with
+  // sparse-grid dogbones. A new site must still pass the complete plan DRC.
+  for (const includeVacantSites of [false, true]) {
+    if (includeVacantSites) {
+      if (!targetUsesVia) return alternatives
+      for (const preparedConnection of bus.connections) {
+        vacantViaPointsByConnection.set(preparedConnection, [
+          ...getBoundaryDogboneViaPoints({
+            bus,
+            preparedConnection,
+            targetLayer,
+            rules: {
+              viaDiameter,
+              viaHoleDiameter,
+              traceWidth,
+              clearance,
+              additionalObstacles: srj.obstacles,
+            },
+          }),
+        ])
+      }
+      if (
+        ![...vacantViaPointsByConnection.values()].some(
+          (points) => points.length > 0,
+        )
+      ) {
+        return alternatives
+      }
+    }
+    for (const viaHandedness of viaHandednesses) {
+      for (const connectionOrder of getConnectionOrders(bus)) {
+        searchConnectionOrder({
+          connectionOrder,
+          viaHandedness,
+          connectionIndex: 0,
+          candidatePlans: [],
+          includeVacantSites,
+        })
+        if (alternatives.length >= maxAlternatives) return alternatives
+      }
     }
   }
 
