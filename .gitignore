@@ -8,7 +8,8 @@ out
 dist
 cosmos-export
 verification-pngs
-benchmark-results
+/benchmark-results/*
+!/benchmark-results/*.svg
 *.tgz
 .vercel
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { BenchmarkReport } from "../benchmarks/benchmark-types"
@@ -7,6 +7,9 @@ import type { BenchmarkReport } from "../benchmarks/benchmark-types"
 test("benchmark shell entrypoint writes complete ordered JSON and Markdown reports", async () => {
   const directory = await mkdtemp(join(tmpdir(), "fanout-benchmark-test-"))
   try {
+    await writeFile(join(directory, "01-top-left-offset.svg"), "stale")
+    await writeFile(join(directory, "02-top-center.svg"), "stale")
+    await writeFile(join(directory, "11-left-center.svg"), "unselected")
     const child = Bun.spawn(
       [
         "bash",
@@ -46,7 +49,15 @@ test("benchmark shell entrypoint writes complete ordered JSON and Markdown repor
           join(directory, "inputs", `${row.sample}.json`),
         ).exists(),
       ).toBe(true)
+      const snapshot = Bun.file(join(directory, `${row.sample}.svg`))
+      expect(await snapshot.exists()).toBe(row.status === "solved")
+      if (row.status === "solved")
+        expect(await snapshot.text()).toContain("<svg")
+      expect(row).not.toHaveProperty("svg")
     }
+    expect(await readFile(join(directory, "11-left-center.svg"), "utf8")).toBe(
+      "unselected",
+    )
     expect(report.configuration.maxLayerCombinations).toBeUndefined()
     expect(report.configuration.sampleTimeoutSeconds).toBe(1)
     const markdown = await readFile(join(directory, "benchmark.md"), "utf8")

@@ -22,6 +22,11 @@ export interface BenchmarkRow {
   error?: string
 }
 
+/** Worker-only payload; SVGs are saved separately from the compact reports. */
+export interface BenchmarkWorkerResult extends BenchmarkRow {
+  svg?: string
+}
+
 export interface BenchmarkConfiguration {
   concurrency: number
   sampleTimeoutSeconds: number
