@@ -301,4 +301,5 @@ test("length matches a crowded pair by rerouting one unconstrained singleton", a
       }),
     ),
   ).toMatchSvgSnapshot(import.meta.path)
-})
+  // The rejected-candidate search can exceed Bun's default timeout on ARM CI.
+}, 30_000)
