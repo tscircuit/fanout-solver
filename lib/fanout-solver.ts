@@ -1397,9 +1397,13 @@ export class FanoutSolver extends BaseSolver {
     denseRoutingStrategy?: "pad-aligned" | "boundary-aligned"
     lengthMatchingStage?: "before-planes" | "after-planes"
     promotedPlaneReservationBusIds?: readonly string[]
+    preferredBoundaryViaPoints?: ReadonlyMap<number, { x: number; y: number }>
     planeReservationRetryCount?: number
   }): Generator<FanoutWorkYield, MixedTerminationState | null, unknown> {
     if (this.config.allowBlindAndBuriedVias) return null
+    // Keep successful signal sites stable when a blocked plane promotes a new
+    // reservation. They remain preferences so true conflicts may still move.
+    let boundaryViaPointsForRetry = params.preferredBoundaryViaPoints
     const usePadAlignedDenseRouting =
       params.denseRoutingStrategy !== "boundary-aligned"
     const debugDense = (...values: unknown[]) => {
@@ -1444,9 +1448,12 @@ export class FanoutSolver extends BaseSolver {
       )
     const useConfiguredDensePlaneRouting =
       configuredDensePlaneRouting || useAdaptiveDensePlaneRouting
+    // A completed boundary assignment remains worth repairing jointly after
+    // plane reservations change; a greedy refill can discard that assignment.
     const useAdaptiveJointPlaneSelection =
       useAdaptiveDensePlaneRouting &&
-      (params.planeReservationRetryCount ?? 0) === 0
+      ((params.planeReservationRetryCount ?? 0) === 0 ||
+        Boolean(params.preferredBoundaryViaPoints))
     const matchLengthsAfterPlanes =
       useConfiguredDensePlaneRouting &&
       params.lengthMatchingStage !== "before-planes"
@@ -1871,6 +1878,8 @@ export class FanoutSolver extends BaseSolver {
             )
           })
         : []
+    // Embedded corner lanes need to leave before the surrounding wide bus
+    // closes the shared target-layer corridor.
     const throughAllLeadingSingletonBuses = hasThreeWideBoundaryBuses
       ? singletonBoundaryBuses.filter((singletonBus) => {
           const containingWideBus = getContainingWideSourceField(singletonBus)
@@ -1883,7 +1892,13 @@ export class FanoutSolver extends BaseSolver {
           return Boolean(
             containingWideBus &&
               singletonTargetLayer &&
-              !containingWideLayers.includes(singletonTargetLayer),
+              (!containingWideLayers.includes(singletonTargetLayer) ||
+                Boolean(
+                  getCornerBandSide(
+                    singletonBus.exitEdge,
+                    singletonBus.preferredExit,
+                  ),
+                )),
           )
         })
       : []
@@ -1994,6 +2009,8 @@ export class FanoutSolver extends BaseSolver {
             traceWidth: this.config.traceWidth,
             clearance: this.config.clearance,
             maximumSearchStates: 100_000,
+            preferredViaPointsByConnectionIndex:
+              params.preferredBoundaryViaPoints,
             preferredBoundaryPerpendicularSideByBusId,
             preferBoundaryOutwardByBusId,
             additionalObstacles: denseAdditionalObstacles,
@@ -2012,6 +2029,8 @@ export class FanoutSolver extends BaseSolver {
           traceWidth: this.config.traceWidth,
           clearance: this.config.clearance,
           maximumSearchStates: 20_000,
+          preferredViaPointsByConnectionIndex:
+            params.preferredBoundaryViaPoints,
           preferredBoundaryPerpendicularSideByBusId,
           preferBoundaryOutwardByBusId,
           additionalObstacles: denseAdditionalObstacles,
@@ -2070,6 +2089,8 @@ export class FanoutSolver extends BaseSolver {
             traceWidth: this.config.traceWidth,
             clearance: this.config.clearance,
             maximumSearchStates: 100_000,
+            preferredViaPointsByConnectionIndex:
+              params.preferredBoundaryViaPoints,
             preferredBoundaryPerpendicularSideByBusId,
             preferBoundaryOutwardByBusId,
             fixedViaPointsByConnectionIndex: seedViaPoints,
@@ -2409,6 +2430,18 @@ export class FanoutSolver extends BaseSolver {
           return false
         }
         matchedPlans.push(...busPlans)
+        if (
+          matchedPlans.length ===
+          boundaryBuses.reduce(
+            (sum, candidate) => sum + candidate.connections.length,
+            0,
+          )
+        )
+          boundaryViaPointsForRetry = new Map(
+            matchedPlans
+              .filter((plan) => plan.via)
+              .map((plan) => [plan.connectionIndex, plan.via!.center]),
+          )
         debugDense("route:complete", bus.busId, busPlans.length)
         return true
       }.bind(this)
@@ -2934,10 +2967,10 @@ export class FanoutSolver extends BaseSolver {
               let alternatePlaneSearchStates = 0
               const maximumAlternatePlaneSearchStates = Number(
                 process.env.FANOUT_DEBUG_ALTERNATE_SEARCH_STATES ??
-                  // Try a small joint search before promoting conflicting
-                  // plane reservations and rerouting the boundary buses.
-                  // Later repairs retain the full candidate search budget.
-                  (useAdaptiveJointPlaneSelection
+                  // Keep the initial search short before reserving blocked
+                  // plane sites. Later joint repairs retain the full budget.
+                  (useAdaptiveDensePlaneRouting &&
+                  (params.planeReservationRetryCount ?? 0) === 0
                     ? 10_000
                     : useConfiguredDensePlaneRouting
                       ? 3_000_000
@@ -3936,6 +3969,7 @@ export class FanoutSolver extends BaseSolver {
         debugDense("promote-reservations", refinedPromotions)
         return yield* this.routeDenseThroughAllMixedTerminationSteps({
           ...params,
+          preferredBoundaryViaPoints: boundaryViaPointsForRetry,
           promotedPlaneReservationBusIds: [
             ...(params.promotedPlaneReservationBusIds ?? []),
             ...refinedPromotions,
