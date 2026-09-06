@@ -1982,14 +1982,15 @@ export class FanoutSolver extends BaseSolver {
         : []),
       ...singletonDeferralCandidates.filter((bus) => {
         const containingBus = getContainingWideSourceField(bus)
-        const sharesContainingBusLayer =
+        // A wide bus can consume an embedded singleton's last source-layer
+        // dogbone site even when they escape onto different target layers.
+        const reserveEmbeddedSourceEscape =
           usePadAlignedDenseRouting &&
           !useConfiguredDensePlaneRouting &&
-          containingBus &&
-          params.busLayerAssignments[containingBus.busId] ===
-            params.busLayerAssignments[bus.busId]
+          Boolean(containingBus)
         return (
-          !leadingWideSingletonBuses.includes(bus) && !sharesContainingBusLayer
+          !leadingWideSingletonBuses.includes(bus) &&
+          !reserveEmbeddedSourceEscape
         )
       }),
       ...(hasThreeWideBoundaryBuses
