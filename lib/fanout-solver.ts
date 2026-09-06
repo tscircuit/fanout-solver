@@ -2248,12 +2248,28 @@ export class FanoutSolver extends BaseSolver {
           ]),
       ]
       for (const [bus] of adjacentCenteredFieldByTurningBus) {
+        const axis =
+          bus.direction === "up" || bus.direction === "down" ? "y" : "x"
+        const sign =
+          bus.direction === "up" || bus.direction === "right" ? 1 : -1
+        const backwardEnd = Math.min(
+          ...bus.connections.map(
+            (connection) => sign * connection.sourcePoint[axis],
+          ),
+        )
         const index = denseBoundaryBusesInRoutingOrder.indexOf(bus)
         const earlierCornerIndex = denseBoundaryBusesInRoutingOrder.findIndex(
           (candidate) =>
             candidate !== bus &&
             candidate.connections.length >= 8 &&
             candidate.componentId === bus.componentId &&
+            candidate.direction === bus.direction &&
+            Math.max(
+              ...candidate.connections.map(
+                (connection) => sign * connection.sourcePoint[axis],
+              ),
+            ) <=
+              backwardEnd + 1e-9 &&
             candidate.exitEdge === bus.exitEdge &&
             getCornerBandSide(candidate.exitEdge, candidate.preferredExit) ===
               getCornerBandSide(bus.exitEdge, bus.preferredExit),
