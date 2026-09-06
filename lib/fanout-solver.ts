@@ -467,6 +467,9 @@ function createInitialLayerAssignment(params: {
   escapeLayers: string[]
   escapeLayersByBusId: Readonly<Record<string, readonly string[]>>
   preferOrderedCoordinatedWindingLayers: boolean
+  traceWidth: number
+  viaDiameter: number
+  clearance: number
 }): Readonly<Record<string, string>> {
   const {
     buses,
@@ -513,10 +516,66 @@ function createInitialLayerAssignment(params: {
         preferOrderedCoordinatedWindingLayers &&
         busUsesCoordinatedWinding(bus)
       ) {
-        // Coordinated winding treats allowedLayers as an ordered preference.
-        // A global round-robin index can otherwise skip a bus's first choice
-        // just because a previous bus had a different set of legal layers.
-        assignment[bus.busId] = viaLayers[0]!
+        // Keep caller layer preferences when the corner band is free. A
+        // centered bus with one explicit target layer already occupies that
+        // boundary corridor, so prefer another legal layer for a wide turn.
+        const cornerSide = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+        const getCenteredBoundaryCongestion = (layer: string): number => {
+          if (!cornerSide || !bus.exitEdge || bus.connections.length < 8)
+            return 0
+          const horizontalEdge =
+            bus.exitEdge === "left" || bus.exitEdge === "right"
+          const axis = horizontalEdge ? "y" : "x"
+          const minimum = horizontalEdge
+            ? bus.sharedBoundary.minY
+            : bus.sharedBoundary.minX
+          const maximum = horizontalEdge
+            ? bus.sharedBoundary.maxY
+            : bus.sharedBoundary.maxX
+          const bandCenter =
+            minimum +
+            (maximum - minimum) * (cornerSide === "minimum" ? 0.25 : 0.75)
+          const pitch = Math.max(
+            params.traceWidth + params.clearance,
+            params.viaDiameter + params.clearance,
+          )
+          const bandHalfWidth =
+            ((Math.max(
+              bus.connections.length,
+              bus.cornerBandConnectionCount ?? 0,
+            ) -
+              1) *
+              pitch) /
+            2
+          return buses.reduce((count, other) => {
+            if (
+              other === bus ||
+              other.termination.type !== "boundary" ||
+              other.componentId !== bus.componentId ||
+              other.exitEdge !== bus.exitEdge ||
+              getCornerBandSide(other.exitEdge, other.preferredExit) ||
+              getCommonExplicitExitTargetLayer(other) !== layer
+            )
+              return count
+            return (
+              count +
+              other.connections.filter((connection) => {
+                const target =
+                  connection.exitTargetPoint ?? connection.targetPoint
+                const track = Math.max(minimum, Math.min(maximum, target[axis]))
+                return (
+                  Math.abs(track - bandCenter) <=
+                  bandHalfWidth + params.traceWidth + params.clearance
+                )
+              }).length
+            )
+          }, 0)
+        }
+        assignment[bus.busId] = viaLayers.toSorted(
+          (first, second) =>
+            getCenteredBoundaryCongestion(first) -
+            getCenteredBoundaryCongestion(second),
+        )[0]!
         continue
       }
       const componentDirections = directionsByComponent.get(bus.componentId)!
@@ -1046,6 +1105,9 @@ export class FanoutSolver extends BaseSolver {
           buses: this.preparedBuses,
           escapeLayers: this.config.escapeLayers,
           escapeLayersByBusId: this.escapeLayersByBusId,
+          traceWidth: this.config.traceWidth,
+          viaDiameter: this.config.viaDiameter,
+          clearance: this.config.clearance,
           preferOrderedCoordinatedWindingLayers:
             this.config.densePlaneReservationBusIds.length > 0 ||
             this.config.denseUnrestrictedPlaneRoutingBusIds.length > 0 ||
@@ -2285,7 +2347,6 @@ export class FanoutSolver extends BaseSolver {
       ): boolean => {
         if (
           !usePadAlignedDenseRouting ||
-          useConfiguredDensePlaneRouting ||
           first.componentId !== second.componentId ||
           first.exitEdge !== second.exitEdge ||
           first.direction !== second.direction ||
@@ -2349,7 +2410,7 @@ export class FanoutSolver extends BaseSolver {
       // turning pair instead leaves its adjacent singleton room to escape
       // before searching for an outside-package via.
       const centeredPairPromotionGroups = new Set<string>()
-      for (const singleton of multiLayerLeadingSingletonBuses) {
+      for (const singleton of leadingWideSingletonBuses) {
         if (getCornerBandSide(singleton.exitEdge, singleton.preferredExit))
           continue
         for (const pair of boundaryBuses) {
@@ -2662,6 +2723,34 @@ export class FanoutSolver extends BaseSolver {
               ))[0]
             }
           }
+        }
+        // Fixed dogbones can close a turning bus's own escape channel. Retry
+        // local sites while retaining every other connection's reservations.
+        if (
+          !busPlans &&
+          useAdaptiveDensePlaneRouting &&
+          bus.connections.length >= 8 &&
+          getCornerBandSide(bus.exitEdge, bus.preferredExit)
+        ) {
+          busPlans = (yield* routeAlternatives(
+            {
+              ...routeParams,
+              fixedViaPointsByConnectionIndex: undefined,
+              reservedVias: getReservedVias(bus),
+            },
+            1,
+          ))[0]
+          if (busPlans) {
+            fixedViaPointsByConnectionIndex = new Map([
+              ...fixedViaPointsByConnectionIndex,
+              ...busPlans
+                .filter((plan) => plan.via)
+                .map(
+                  (plan) => [plan.connectionIndex, plan.via!.center] as const,
+                ),
+            ])
+          }
+          debugDense("local-sites", bus.busId, busPlans?.length ?? "failed")
         }
         // Retry a blocked wide bus with provisional plane sites as search
         // costs. A turning bus beside a centered field may also need that

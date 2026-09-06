@@ -2734,6 +2734,14 @@ export function* routeBusAlternativesSteps(
   const alternatives: FanoutRoutePlan[][] = []
   const seenAlternativeKeys = new Set<string>()
   const cornerLaneOffsets = getCornerLaneOffsets(bus, acceptedPlans)
+  if (alignWindingGridToPads && busUsesCoordinatedWindingChannel(bus)) {
+    // Dense boundary lanes on different copper layers may reuse tracks without
+    // consuming the limited corner corridor on this bus's assigned layer.
+    cornerLaneOffsets.exit = getCornerLaneOffsets(
+      bus,
+      acceptedPlans.filter((plan) => plan.targetLayer === targetLayer),
+    ).exit
+  }
 
   const addAlternative = (plans: FanoutRoutePlan[]): void => {
     const key = plans
