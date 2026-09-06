@@ -1486,6 +1486,64 @@ export class FanoutSolver extends BaseSolver {
     const wideBoundaryBuses = unsortedBoundaryBuses.filter(
       (bus) => bus.connections.length >= 8,
     )
+    // A single-layer turning bus beside the end of a centered source field
+    // has fewer escape choices than a corner bus farther behind it. Reserve
+    // that turning channel before the farther bus fences its local via sites.
+    const adjacentCenteredFieldByTurningBus = new Map<
+      PreparedBus,
+      PreparedBus
+    >()
+    if (usePadAlignedDenseRouting && !configuredDensePlaneRouting) {
+      for (const bus of wideBoundaryBuses) {
+        if (
+          !getCornerBandSide(bus.exitEdge, bus.preferredExit) ||
+          new Set(bus.routableEscapeLayers ?? bus.allowedLayers ?? []).size !==
+            1
+        )
+          continue
+        const axis =
+          bus.direction === "up" || bus.direction === "down" ? "y" : "x"
+        const track = axis === "x" ? "y" : "x"
+        const sign =
+          bus.direction === "up" || bus.direction === "right" ? 1 : -1
+        const forwardEnd = Math.max(
+          ...bus.connections.map((c) => sign * c.sourcePoint[axis]),
+        )
+        const minTrack = Math.min(
+          ...bus.connections.map((c) => c.sourcePoint[track]),
+        )
+        const maxTrack = Math.max(
+          ...bus.connections.map((c) => c.sourcePoint[track]),
+        )
+        const pitch = axis === "x" ? bus.pitchX : bus.pitchY
+        const field = wideBoundaryBuses.find((candidate) => {
+          if (
+            candidate === bus ||
+            candidate.componentId !== bus.componentId ||
+            candidate.exitEdge !== bus.exitEdge ||
+            getCornerBandSide(candidate.exitEdge, candidate.preferredExit)
+          )
+            return false
+          const nearEnd = Math.min(
+            ...candidate.connections.map((c) => sign * c.sourcePoint[axis]),
+          )
+          const gap = nearEnd - forwardEnd
+          return (
+            gap >= -1e-9 &&
+            gap <= pitch + 1e-9 &&
+            Math.min(
+              ...candidate.connections.map((c) => c.sourcePoint[track]),
+            ) <=
+              maxTrack + 1e-9 &&
+            Math.max(
+              ...candidate.connections.map((c) => c.sourcePoint[track]),
+            ) >=
+              minTrack - 1e-9
+          )
+        })
+        if (field) adjacentCenteredFieldByTurningBus.set(bus, field)
+      }
+    }
     const hasThreeWideBoundaryBuses =
       useConfiguredDensePlaneRouting && wideBoundaryBuses.length === 3
     const getBoundaryTargetSpan = (bus: PreparedBus) => {
@@ -2189,6 +2247,22 @@ export class FanoutSolver extends BaseSolver {
             bus,
           ]),
       ]
+      for (const [bus] of adjacentCenteredFieldByTurningBus) {
+        const index = denseBoundaryBusesInRoutingOrder.indexOf(bus)
+        const earlierCornerIndex = denseBoundaryBusesInRoutingOrder.findIndex(
+          (candidate) =>
+            candidate !== bus &&
+            candidate.connections.length >= 8 &&
+            candidate.componentId === bus.componentId &&
+            candidate.exitEdge === bus.exitEdge &&
+            getCornerBandSide(candidate.exitEdge, candidate.preferredExit) ===
+              getCornerBandSide(bus.exitEdge, bus.preferredExit),
+        )
+        if (earlierCornerIndex >= 0 && earlierCornerIndex < index) {
+          denseBoundaryBusesInRoutingOrder.splice(index, 1)
+          denseBoundaryBusesInRoutingOrder.splice(earlierCornerIndex, 0, bus)
+        }
+      }
       const areAdjacentInvertedNarrowBuses = (
         first: PreparedBus,
         second: PreparedBus,
@@ -2297,6 +2371,25 @@ export class FanoutSolver extends BaseSolver {
           if (singletonIndex > pairIndex) {
             denseBoundaryBusesInRoutingOrder.splice(singletonIndex, 1)
             denseBoundaryBusesInRoutingOrder.splice(pairIndex, 0, singleton)
+          }
+        }
+      }
+      for (const field of adjacentCenteredFieldByTurningBus.values()) {
+        for (const pair of boundaryBuses) {
+          if (
+            pair.connections.length !== 2 ||
+            getContainingWideSourceField(pair) !== field
+          )
+            continue
+          for (const singleton of singletonBoundaryBuses) {
+            if (!areAdjacentInvertedNarrowBuses(singleton, pair)) continue
+            const pairIndex = denseBoundaryBusesInRoutingOrder.indexOf(pair)
+            const singletonIndex =
+              denseBoundaryBusesInRoutingOrder.indexOf(singleton)
+            if (singletonIndex > pairIndex) {
+              denseBoundaryBusesInRoutingOrder.splice(singletonIndex, 1)
+              denseBoundaryBusesInRoutingOrder.splice(pairIndex, 0, singleton)
+            }
           }
         }
       }
@@ -2554,24 +2647,30 @@ export class FanoutSolver extends BaseSolver {
             }
           }
         }
-        // Once wide-bus copper constrains the field, retry a blocked wide bus
-        // with provisional plane sites as search costs. Future boundary sites
-        // remain fixed, and a complete joint rematch must validate the repair.
+        // Retry a blocked wide bus with provisional plane sites as search
+        // costs. A turning bus beside a centered field may also need that
+        // neighboring field's uncommitted sites to move. Keep every committed
+        // route and narrow reservation hard, then require a complete rematch.
         if (
           !busPlans &&
           bus.connections.length >= 8 &&
-          boundaryBuses.some(
-            (candidate) =>
-              candidate.connections.length >= 8 &&
-              matchedPlans.some((plan) => plan.busId === candidate.busId),
-          )
+          (adjacentCenteredFieldByTurningBus.has(bus) ||
+            boundaryBuses.some(
+              (candidate) =>
+                candidate.connections.length >= 8 &&
+                matchedPlans.some((plan) => plan.busId === candidate.busId),
+            ))
         ) {
           const committedNames = new Set(
             matchedPlans.map((plan) => plan.connectionName),
           )
-          const futurePlaneNames = new Set(
+          const provisionalReservationNames = new Set(
             this.preparedBuses
-              .filter((candidate) => candidate.termination.type === "plane")
+              .filter(
+                (candidate) =>
+                  candidate.termination.type === "plane" ||
+                  candidate === adjacentCenteredFieldByTurningBus.get(bus),
+              )
               .flatMap((candidate) =>
                 candidate.connections.map(
                   (connection) => connection.connection.name,
@@ -2584,10 +2683,11 @@ export class FanoutSolver extends BaseSolver {
               ...routeParams,
               fixedViaPointsByConnectionIndex: undefined,
               reservedVias: routeParams.reservedVias.filter(
-                (reserved) => !futurePlaneNames.has(reserved.connectionName),
+                (reserved) =>
+                  !provisionalReservationNames.has(reserved.connectionName),
               ),
               softReservedVias: routeParams.reservedVias.filter((reserved) =>
-                futurePlaneNames.has(reserved.connectionName),
+                provisionalReservationNames.has(reserved.connectionName),
               ),
             },
             1,
