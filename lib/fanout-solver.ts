@@ -2617,7 +2617,7 @@ export class FanoutSolver extends BaseSolver {
           useConfiguredDensePlaneRouting &&
           singleLayerBus !== bus &&
           !embeddedNarrowBusAlreadyRouted
-        let usedSoftPlaneRepair = false
+        let usedRepairedViaSites = false
         let busPlans = (yield* routeAlternatives(
           preferSingleLayerWinding
             ? { ...routeParams, bus: singleLayerBus }
@@ -2741,6 +2741,7 @@ export class FanoutSolver extends BaseSolver {
             1,
           ))[0]
           if (busPlans) {
+            usedRepairedViaSites = true
             fixedViaPointsByConnectionIndex = new Map([
               ...fixedViaPointsByConnectionIndex,
               ...busPlans
@@ -2835,7 +2836,7 @@ export class FanoutSolver extends BaseSolver {
             if (rematchedPoints) {
               busPlans = freePlans
               fixedViaPointsByConnectionIndex = rematchedPoints
-              usedSoftPlaneRepair = true
+              usedRepairedViaSites = true
             }
           }
         }
@@ -2852,12 +2853,12 @@ export class FanoutSolver extends BaseSolver {
           // Only pay for additional A* variants when the first topology is so
           // skewed that compact meanders are unlikely to absorb the deficit.
           // This keeps already-near-matched buses on the single-attempt path.
-          // Keep the jointly rematched repair: routeParams still carries the
+          // Keep repaired via sites: routeParams still carries the
           // earlier provisional sites and cannot safely replace its geometry.
           if (
             needsRouteDiversity &&
             !matchLengthsAfterPlanes &&
-            !usedSoftPlaneRepair
+            !usedRepairedViaSites
           ) {
             busPlans = (yield* routeAlternatives(routeParams, 3)).toSorted(
               (first, second) => {
