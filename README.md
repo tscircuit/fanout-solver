@@ -282,8 +282,8 @@ extents.
 
 ## Dataset 31 benchmark
 
-Run `./benchmark.sh` (or `bun run benchmark`) to benchmark **all 24 dataset 31
-directional cases: 12 AM62L and 12 RK3308** from
+Run `./benchmark.sh` (or `bun run benchmark`) to benchmark **all 36 dataset 31
+directional cases: 12 AM62L, 12 RK3308, and 12 K230** from
 [`tscircuit/dataset-fanout31-am62l`](https://github.com/tscircuit/dataset-fanout31-am62l).
 The upstream revision is pinned in `scripts/generate-repro/package.json` and
 recorded in every report. Other datasets remain available for regression tests
@@ -294,6 +294,7 @@ and the debugger, but have no benchmark commands or workflows.
 ./benchmark.sh --list
 ./benchmark.sh --sample 11-left-center
 ./benchmark.sh --sample 13-rk3308-top-left-offset
+./benchmark.sh --sample 25-k230-top-left-offset
 ./benchmark.sh --concurrency 8 --sample-timeout-seconds 300
 ```
 
@@ -307,11 +308,16 @@ constraints:
 | --- | ---: | ---: | ---: | ---: | ---: |
 | AM62L | 12 | 33 | 102 | 135 | 573 |
 | RK3308 | 12 | 49 | 113 | 162 | 451 |
+| K230 | 12 | 65 | 106 | 171 | 790 |
 
-Both families have nine DDR signal buses. The RK3308 samples use a 355-ball SoC
-and 96-ball DDR3L RAM, with the RAM placed on each side at three offsets.
-The timed workers run
-**this checkout's solver**, not the upstream package's released solver.
+AM62L and RK3308 have nine DDR signal buses each. The RK3308 samples use a
+355-ball SoC and 96-ball DDR3L RAM. The K230 samples use a 390-ball SoC and two
+200-ball x16 LPDDR4 RAM packages, with 17 signal buses and six differential pairs.
+Each family places its RAM on all four sides at three offsets per side. K230
+retains both physical RAM endpoints of its shared RESET net; the two RAM packages
+have separate breakout regions. All 790 pads in each K230 case remain obstacles,
+including unused signal and supply pads. The timed workers run **this checkout's
+solver**, not the upstream package's released solver.
 To capture the inputs without solving, use `bun run generate:dataset31`.
 The optional `--dataset dataset31` flag is accepted for explicit CI invocation;
 other dataset selections are rejected.
@@ -343,20 +349,21 @@ Timed-out workers do not retain their in-flight routing counts.
 Every solved case also writes `benchmark-results/<sample-id>.svg`. These SVGs
 are committed so route changes can be reviewed in Git. A run replaces the selected
 cases' snapshots and removes their stale SVGs if they no longer solve; filtered
-runs preserve unselected snapshots. JSON reports and captured inputs remain
-ignored. CI includes the SVGs in its benchmark artifacts.
+runs preserve unselected snapshots. The latest JSON and Markdown reports are
+also committed; captured inputs remain ignored. CI includes the reports, inputs,
+and SVGs in its benchmark artifacts.
 Compare reports with the same dataset revision and budgets to track progress.
 A case is solved only when every SoC connection has validated fanout: all 135
-connections for AM62L or all 162 for RK3308. This covers the SoC fanout phase; RAM
-fanout and downstream inter-chip routing are separate phases. Partial, error,
-and timeout rows are benchmark results (exit 0); invalid CLI arguments or report
+connections for AM62L, all 162 for RK3308, or all 171 for K230. This covers the SoC
+fanout phase; RAM fanout and downstream inter-chip routing are separate phases.
+Partial, error, and timeout rows are benchmark results (exit 0); invalid CLI arguments or report
 I/O failures are command failures (nonzero exit).
 
 ### PR comment trigger
 
 Once `.github/workflows/benchmark.yml` is on the default branch, a repository
 writer can comment **`/benchmark`** on an open PR. The workflow captures that
-PR's exact head SHA, runs all 24 dataset 31 samples on a **32-vCPU Blacksmith ARM**
+PR's exact head SHA, runs all 36 dataset 31 samples on a **32-vCPU Blacksmith ARM**
 runner, then updates a status comment with solve totals, per-sample results,
 and a link to the complete JSON/Markdown reports and captured inputs. The Actions
 UI also supports a manual run, optionally supplying an open PR number. No custom
@@ -522,8 +529,8 @@ bun run render:dataset
 bun run start
 ```
 
-The benchmark runs all 24 dataset 31 AM62L and RK3308 cases and reports solve
-counts, validation, and timing. `bun run start` opens all regression
+The benchmark runs all 36 dataset 31 AM62L, RK3308, and K230 cases and reports
+solve counts, validation, and timing. `bun run start` opens all regression
 datasets in the standard tscircuit solver debugger. `bun run
 render:dataset` writes `graphics-debug` PNGs under one subdirectory per dataset,
 with a red shared boundary, gray component courtyards, and green fanout-exit
