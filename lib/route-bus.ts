@@ -363,8 +363,8 @@ function getDistributedBoundaryTargetTracks(params: {
   for (const [index, track] of tracks.entries()) {
     blocks.push({ start: index, count: 1, mean: track - index * pitch })
     while (blocks.length > 1 && blocks.at(-2)!.mean > blocks.at(-1)!.mean) {
-      const second = blocks.pop()!,
-        first = blocks.pop()!
+      const second = blocks.pop()!
+      const first = blocks.pop()!
       blocks.push({
         start: first.start,
         count: first.count + second.count,
@@ -3303,51 +3303,66 @@ export function* routeBusAlternativesSteps(
             ),
           )
         : []
-    const singletonMatchedVia =
-      bus.connections.length === 1
-        ? fixedViaPointsByConnectionIndex.get(
-            bus.connections[0]!.connectionIndex,
-          )
-        : undefined
-    const packageEdgeViaCandidates = singletonMatchedVia
-      ? [
-          {
-            distance: sourceCenter.x - bus.componentBounds.minX,
-            point: {
-              x: bus.componentBounds.minX - 2 * insetStep,
-              y: singletonMatchedVia.y,
-            },
-          },
-          {
-            distance: bus.componentBounds.maxX - sourceCenter.x,
-            point: {
-              x: bus.componentBounds.maxX + 2 * insetStep,
-              y: singletonMatchedVia.y,
-            },
-          },
-          {
-            distance: sourceCenter.y - bus.componentBounds.minY,
-            point: {
-              x: singletonMatchedVia.x,
-              y: bus.componentBounds.minY - 2 * insetStep,
-            },
-          },
-          {
-            distance: bus.componentBounds.maxY - sourceCenter.y,
-            point: {
-              x: singletonMatchedVia.x,
-              y: bus.componentBounds.maxY + 2 * insetStep,
-            },
-          },
-        ]
-          .toSorted((first, second) => first.distance - second.distance)
-          .map(({ point }) => [point])
-      : []
+    const matchedVias = bus.connections.map(
+      (connection) =>
+        fixedViaPointsByConnectionIndex.get(connection.connectionIndex)!,
+    )
+    const packageEdgeViaCandidates = [
+      {
+        distance: sourceCenter.x - bus.componentBounds.minX,
+        axis: "x" as const,
+        value: bus.componentBounds.minX - 2 * insetStep,
+      },
+      {
+        distance: bus.componentBounds.maxX - sourceCenter.x,
+        axis: "x" as const,
+        value: bus.componentBounds.maxX + 2 * insetStep,
+      },
+      {
+        distance: sourceCenter.y - bus.componentBounds.minY,
+        axis: "y" as const,
+        value: bus.componentBounds.minY - 2 * insetStep,
+      },
+      {
+        distance: bus.componentBounds.maxY - sourceCenter.y,
+        axis: "y" as const,
+        value: bus.componentBounds.maxY + 2 * insetStep,
+      },
+    ]
+      .toSorted((a, b) => a.distance - b.distance)
+      .flatMap(({ axis, value }) => {
+        const otherAxis = axis === "x" ? "y" : "x"
+        const mean =
+          matchedVias.reduce((sum, via) => sum + via[otherAxis], 0) /
+          matchedVias.length
+        const order = matchedVias
+          .map((via, index) => ({ index, track: via[otherAxis] }))
+          .toSorted((a, b) => a.track - b.track || a.index - b.index)
+        const pitch = viaDiameter + clearance
+        const points = matchedVias.map((via, index) => ({
+          ...via,
+          [axis]: value,
+          [otherAxis]:
+            order.length === 2 &&
+            Math.abs(order[1]!.track - order[0]!.track) < pitch
+              ? mean + (order.findIndex((v) => v.index === index) - 0.5) * pitch
+              : via[otherAxis],
+        }))
+        return points.length === 2
+          ? [points, [points[1]!, points[0]!]]
+          : [points]
+      })
     const viaCandidates = [
       ...displacedViaCandidates.map((points) => ({
         points,
         boundarySide: false,
       })),
+      ...(bus.connections.length === 2 ? packageEdgeViaCandidates : []).map(
+        (points) => ({
+          points,
+          boundarySide: false,
+        }),
+      ),
       ...boundaryViaCandidates.map((points) => ({
         points,
         boundarySide: true,
@@ -3355,10 +3370,12 @@ export function* routeBusAlternativesSteps(
       // Preserve existing singleton escapes before trying a short source-layer
       // route beyond the package. The target layer can then wind to the exit
       // without a local via being fenced in by an already-routed wide bus.
-      ...packageEdgeViaCandidates.map((points) => ({
-        points,
-        boundarySide: false,
-      })),
+      ...(bus.connections.length === 1 ? packageEdgeViaCandidates : []).map(
+        (points) => ({
+          points,
+          boundarySide: false,
+        }),
+      ),
     ]
     for (const { points: boundaryViaPoints, boundarySide } of viaCandidates) {
       const boundaryVias = bus.connections.map((connection, index) => ({

@@ -2189,6 +2189,110 @@ export class FanoutSolver extends BaseSolver {
             bus,
           ]),
       ]
+      const areAdjacentInvertedNarrowBuses = (
+        first: PreparedBus,
+        second: PreparedBus,
+      ): boolean => {
+        if (
+          !usePadAlignedDenseRouting ||
+          useConfiguredDensePlaneRouting ||
+          first.componentId !== second.componentId ||
+          first.exitEdge !== second.exitEdge ||
+          first.direction !== second.direction ||
+          getCornerBandSide(first.exitEdge, first.preferredExit) !==
+            getCornerBandSide(second.exitEdge, second.preferredExit) ||
+          params.busLayerAssignments[first.busId] !==
+            params.busLayerAssignments[second.busId] ||
+          getContainingWideSourceField(first) !==
+            getContainingWideSourceField(second) ||
+          !getContainingWideSourceField(first)
+        )
+          return false
+        const firstCenter = {
+          x:
+            first.connections.reduce(
+              (sum, connection) => sum + connection.sourcePoint.x,
+              0,
+            ) / first.connections.length,
+          y:
+            first.connections.reduce(
+              (sum, connection) => sum + connection.sourcePoint.y,
+              0,
+            ) / first.connections.length,
+        }
+        const secondCenter = {
+          x:
+            second.connections.reduce(
+              (sum, connection) => sum + connection.sourcePoint.x,
+              0,
+            ) / second.connections.length,
+          y:
+            second.connections.reduce(
+              (sum, connection) => sum + connection.sourcePoint.y,
+              0,
+            ) / second.connections.length,
+        }
+        if (
+          Math.hypot(
+            firstCenter.x - secondCenter.x,
+            firstCenter.y - secondCenter.y,
+          ) >
+          1.5 * Math.min(first.pitchX, first.pitchY)
+        )
+          return false
+        const axis =
+          first.exitEdge === "left" || first.exitEdge === "right" ? "y" : "x"
+        const targetTrack = (bus: PreparedBus) =>
+          bus.connections.reduce(
+            (sum, connection) =>
+              sum +
+              (connection.exitTargetPoint ?? connection.targetPoint)[axis],
+            0,
+          ) / bus.connections.length
+        return (
+          (firstCenter[axis] - secondCenter[axis]) *
+            (targetTrack(first) - targetTrack(second)) <
+          -1e-9
+        )
+      }
+      // Preserve a centered pair's channel before its leading singleton. A
+      // turning pair instead leaves its adjacent singleton room to escape
+      // before searching for an outside-package via.
+      for (const singleton of multiLayerLeadingSingletonBuses) {
+        if (getCornerBandSide(singleton.exitEdge, singleton.preferredExit))
+          continue
+        for (const pair of boundaryBuses) {
+          if (
+            pair.connections.length !== 2 ||
+            !areAdjacentInvertedNarrowBuses(pair, singleton)
+          )
+            continue
+          const pairIndex = denseBoundaryBusesInRoutingOrder.indexOf(pair)
+          const singletonIndex =
+            denseBoundaryBusesInRoutingOrder.indexOf(singleton)
+          if (pairIndex > singletonIndex) {
+            denseBoundaryBusesInRoutingOrder.splice(pairIndex, 1)
+            denseBoundaryBusesInRoutingOrder.splice(singletonIndex, 0, pair)
+          }
+        }
+      }
+      for (const pair of boundaryBuses) {
+        if (
+          pair.connections.length !== 2 ||
+          !getCornerBandSide(pair.exitEdge, pair.preferredExit)
+        )
+          continue
+        for (const singleton of singletonBoundaryBuses) {
+          if (!areAdjacentInvertedNarrowBuses(singleton, pair)) continue
+          const singletonIndex =
+            denseBoundaryBusesInRoutingOrder.indexOf(singleton)
+          const pairIndex = denseBoundaryBusesInRoutingOrder.indexOf(pair)
+          if (singletonIndex > pairIndex) {
+            denseBoundaryBusesInRoutingOrder.splice(singletonIndex, 1)
+            denseBoundaryBusesInRoutingOrder.splice(pairIndex, 0, singleton)
+          }
+        }
+      }
       let fixedViaPointsByConnectionIndex: ReadonlyMap<
         number,
         { x: number; y: number }
