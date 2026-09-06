@@ -1,4 +1,6 @@
 import { getCornerBandSide } from "./boundary-exit"
+import { getFreeBoundaryTracks } from "./get-free-boundary-tracks"
+import { routeViaMinimalWindingAlternativesSteps } from "./route-via-minimal-winding"
 import {
   getCornerTargetTrack,
   routeBusAlternativesSteps,
@@ -219,6 +221,67 @@ export function* routeReservedNarrowBusesSteps(
           if (result) return result
           if (attempts >= maximumAttempts) return null
         }
+      }
+    }
+    // A singleton has no intra-bus track ordering to preserve. If the ordinary
+    // bands fail, use free intervals on its original edge and declared half-band.
+    for (const bus of remaining) {
+      if (bus.connections.length !== 1 || !bus.exitEdge) continue
+      const connection = bus.connections[0]!
+      const viaPoint = params.fixedViaPointsByConnectionIndex?.get(
+        connection.connectionIndex,
+      )
+      if (!viaPoint) continue
+      const reservedVias = params.reservedVias?.filter(
+        (reserved) => reserved.connectionName !== connection.connection.name,
+      )
+      const tracks = getFreeBoundaryTracks({
+        ...params,
+        bus,
+        acceptedPlans: accepted,
+        reservedVias,
+      })
+      for (const track of tracks) {
+        if (attempts++ >= maximumAttempts) return null
+        const boundary = bus.sharedBoundary
+        const exitPoint =
+          bus.exitEdge === "left"
+            ? { x: boundary.minX, y: track }
+            : bus.exitEdge === "right"
+              ? { x: boundary.maxX, y: track }
+              : bus.exitEdge === "bottom"
+                ? { x: track, y: boundary.minY }
+                : { x: track, y: boundary.maxY }
+        const steps = routeViaMinimalWindingAlternativesSteps(
+          {
+            ...params,
+            bus,
+            acceptedPlans: accepted,
+            reservedVias,
+            terminals: [{ connection, viaPoint, exitPoint }],
+            gridStep: pitch / 2,
+            alignGridToPads: true,
+            maximumRouteOrderAttempts: 3,
+          },
+          1,
+          false,
+        )
+        let result = steps.next()
+        while (!result.done) {
+          yield {
+            phase: "via-minimal-winding",
+            busId: bus.busId,
+            targetLayer: params.targetLayer,
+            winding: result.value,
+          }
+          result = steps.next()
+        }
+        if (!result.value.length) continue
+        const complete = yield* search(
+          remaining.filter((candidate) => candidate !== bus),
+          [...accepted, ...result.value[0]!],
+        )
+        if (complete) return complete
       }
     }
     return null
