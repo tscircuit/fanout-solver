@@ -132,6 +132,145 @@ export function* routeReservedNarrowBusesSteps(
       (aSide === "maximum" ? 1 : -1) * (sourceMean(a, "y") - sourceMean(b, "y"))
     )
   })
+  // An edge-only singleton can reserve a separating channel before the
+  // corner-guided pairs. Keep this ordered retry bounded; each bus may also
+  // move its complete, ordered track envelope into a free edge interval.
+  if (params.buses.length > 1) {
+    const intervalOrder = ordered.toSorted((a, b) => {
+      const singleton = (bus: PreparedBus) =>
+        bus.connections.length === 1 &&
+        !getCornerBandSide(bus.exitEdge, bus.preferredExit)
+      return Number(singleton(b)) - Number(singleton(a))
+    })
+    const intervalAttemptLimit = Math.min(maximumAttempts, attempts + 48)
+    function* orderedIntervals(
+      index: number,
+      accepted: FanoutRoutePlan[],
+    ): Generator<RouteBusAlternativesProgress, FanoutRoutePlan[] | null, void> {
+      if (index === intervalOrder.length) return accepted
+      if (attempts >= intervalAttemptLimit) return null
+      const bus = intervalOrder[index]!
+      const ordinary = yield* route(bus, accepted)
+      for (const plans of ordinary) {
+        const result = yield* orderedIntervals(index + 1, [
+          ...accepted,
+          ...plans,
+        ])
+        if (result) return result
+      }
+      const alternatives = yield* freeIntervals(
+        bus,
+        accepted,
+        intervalAttemptLimit,
+      )
+      for (const plans of alternatives) {
+        const result = yield* orderedIntervals(index + 1, [
+          ...accepted,
+          ...plans,
+        ])
+        if (result) return result
+      }
+      return null
+    }
+    const intervalPlans = yield* orderedIntervals(0, [...params.acceptedPlans])
+    if (intervalPlans)
+      return restore(intervalPlans.slice(params.acceptedPlans.length))
+  }
+  function* freeIntervals(
+    bus: PreparedBus,
+    accepted: FanoutRoutePlan[],
+    attemptLimit: number,
+  ): Generator<RouteBusAlternativesProgress, FanoutRoutePlan[][], void> {
+    if (!bus.exitEdge) return []
+    const reservedVias = params.reservedVias?.filter(
+      (reserved) =>
+        !bus.connections.some(
+          (connection) =>
+            connection.connection.name === reserved.connectionName,
+        ),
+    )
+    const common = { ...params, bus, acceptedPlans: accepted, reservedVias }
+    const side = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+    const vertical = bus.exitEdge === "left" || bus.exitEdge === "right"
+    const boundary = bus.sharedBoundary
+    const lower = vertical ? boundary.minY : boundary.minX
+    const upper = vertical ? boundary.maxY : boundary.maxX
+    const middle = (lower + upper) / 2
+    const alternatives: FanoutRoutePlan[][] = []
+    for (const track of getFreeBoundaryTracks(common)) {
+      if (attempts >= attemptLimit) break
+      const preferredExit = side
+        ? bus.preferredExit
+        : guidance(bus).find(
+            (candidate) =>
+              getCornerBandSide(bus.exitEdge, candidate) ===
+              (track > middle ? "maximum" : "minimum"),
+          )
+      const reference = bus.connections.map((connection) =>
+        getCornerTargetTrack({
+          ...common,
+          bus: { ...bus, preferredExit },
+          connection,
+          cornerExitLaneOffset: 0,
+          windingOrderIndex: 0,
+        }),
+      )
+      const mean =
+        reference.reduce((sum, value) => sum + value, 0) / reference.length
+      const tracks = reference.map((value) => value - mean + track)
+      if (
+        tracks.some(
+          (value) =>
+            value <= lower + params.traceWidth / 2 ||
+            value >= upper - params.traceWidth / 2 ||
+            (side === "minimum" && value >= middle) ||
+            (side === "maximum" && value <= middle),
+        )
+      )
+        continue
+      const terminals = bus.connections.map((connection, index) => {
+        const viaPoint = params.fixedViaPointsByConnectionIndex?.get(
+          connection.connectionIndex,
+        )
+        const along = tracks[index]!
+        const exitPoint =
+          bus.exitEdge === "left"
+            ? { x: boundary.minX, y: along }
+            : bus.exitEdge === "right"
+              ? { x: boundary.maxX, y: along }
+              : bus.exitEdge === "bottom"
+                ? { x: along, y: boundary.minY }
+                : { x: along, y: boundary.maxY }
+        return { connection, viaPoint: viaPoint!, exitPoint }
+      })
+      if (terminals.some((terminal) => !terminal.viaPoint)) return []
+      attempts++
+      const steps = routeViaMinimalWindingAlternativesSteps(
+        {
+          ...common,
+          terminals,
+          gridStep: pitch / 2,
+          alignGridToPads: true,
+          maximumRouteOrderAttempts: bus.connections.length === 1 ? 3 : 16,
+          adaptiveRouteOrder: true,
+        },
+        1,
+        false,
+      )
+      let result = steps.next()
+      while (!result.done) {
+        yield {
+          phase: "via-minimal-winding",
+          busId: bus.busId,
+          targetLayer: params.targetLayer,
+          winding: result.value,
+        }
+        result = steps.next()
+      }
+      alternatives.push(...result.value)
+    }
+    return alternatives
+  }
   function guidance(bus: PreparedBus): (FanoutBorderTarget | undefined)[] {
     if (getCornerBandSide(bus.exitEdge, bus.preferredExit))
       return [bus.preferredExit]

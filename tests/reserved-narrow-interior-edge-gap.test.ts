@@ -252,7 +252,76 @@ test("recovers a fixed-via singleton through an interior gap in its original cor
       }),
     )?.[0]?.exitPoint.y,
   ).toBeLessThan(0)
-  await expect(
-    getSvgFromGraphicsObject(visualizeSimpleRouteJson(output)),
-  ).toMatchSvgSnapshot(import.meta.path)
+  const graphics = visualizeSimpleRouteJson(output)
+  graphics.lines!.unshift(
+    {
+      points: [
+        { x: -5, y: 0 },
+        { x: -5, y: 5 },
+      ],
+      strokeColor: "#86b697",
+      strokeWidth: 0.035,
+    },
+    {
+      points: [
+        { x: -5, y: -1 },
+        { x: -5, y: 0 },
+      ],
+      strokeColor: "#b0b0b0",
+      strokeWidth: 0.035,
+    },
+    {
+      points: [
+        { x: -5, y: 0 },
+        { x: 1, y: 0 },
+      ],
+      strokeColor: "#a0a0a0",
+      strokeWidth: 0.025,
+      strokeDash: [0.1, 0.1],
+    },
+  )
+  graphics.points!.push({ x: -5, y: 2.5, color: "#dc2626" })
+  graphics.texts = [
+    {
+      x: -4.7,
+      y: 4,
+      text: "Original target retained",
+      fontSize: 0.22,
+      anchorSide: "center_left",
+      color: "#666666",
+    },
+    {
+      x: -4.7,
+      y: 2.5,
+      text: "Blocked corner track",
+      fontSize: 0.22,
+      anchorSide: "center_left",
+      color: "#dc2626",
+    },
+    {
+      x: -1,
+      y: 1.2,
+      text: "Accepted copper",
+      fontSize: 0.22,
+      color: "#2563eb",
+    },
+    {
+      x: -5.2,
+      y: 0.325,
+      text: "0.325",
+      fontSize: 0.18,
+      anchorSide: "center_right",
+      color: "#2563eb",
+    },
+    {
+      x: -2.5,
+      y: -0.7,
+      text: "Outside top-left band",
+      fontSize: 0.22,
+      color: "#888888",
+    },
+  ]
+  await expect(getSvgFromGraphicsObject(graphics)).toMatchSvgSnapshot(
+    import.meta.path,
+  )
 })

@@ -522,15 +522,6 @@ export function buildViaMinimalWindingPlan(params: {
       "FanoutSolver: source escape must connect the source pad to its first via",
     )
   }
-  if (
-    sourcePoints.length < 2 ||
-    distance(sourcePoints[0]!, sourcePoint) > EPSILON ||
-    distance(sourcePoints.at(-1)!, terminal.viaPoint) > EPSILON
-  ) {
-    throw new Error(
-      "FanoutSolver: source escape must connect the source pad to its first via",
-    )
-  }
   const sourceSegments = getSegments(
     [...sourcePoints],
     traceWidth,
