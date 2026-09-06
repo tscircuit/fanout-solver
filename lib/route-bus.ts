@@ -2186,6 +2186,65 @@ export function fanoutPlansAreClear(params: {
   return true
 }
 
+/** Reuse clearance results while a caller replaces immutable route plans.
+ * Keep one validator per fixed SRJ, boundary and rule set. A replacement plan
+ * is checked against every other plan; no changed copper inherits cached checks.
+ */
+export function createFanoutPlanClearanceValidator(
+  params: Omit<Parameters<typeof fanoutPlansAreClear>[0], "plans">,
+): (plans: readonly FanoutRoutePlan[]) => boolean {
+  const {
+    srj,
+    sharedBoundary,
+    clearance,
+    allowBlindAndBuriedVias = true,
+    allowSameNetMerges = false,
+  } = params
+  const staticResults = new WeakMap<FanoutRoutePlan, boolean>()
+  const mutualResults = new WeakMap<
+    FanoutRoutePlan,
+    WeakMap<FanoutRoutePlan, boolean>
+  >()
+  return (plans) => {
+    for (const plan of plans) {
+      let staticClear = staticResults.get(plan)
+      if (staticClear === undefined) {
+        staticClear = planIsStaticallyClear({
+          plan,
+          srj,
+          sharedBoundary,
+          clearance,
+          allowBlindAndBuriedVias,
+          allowSameNetMerges,
+        })
+        staticResults.set(plan, staticClear)
+      }
+      if (!staticClear) return false
+      let pairs = mutualResults.get(plan)
+      if (!pairs) {
+        pairs = new WeakMap()
+        mutualResults.set(plan, pairs)
+      }
+      for (const other of plans) {
+        if (other === plan) continue
+        let clear = pairs.get(other)
+        if (clear === undefined) {
+          clear = planIsClearOfPlans({
+            plan,
+            otherPlans: [other],
+            srj,
+            clearance,
+            allowSameNetMerges,
+          })
+          pairs.set(other, clear)
+        }
+        if (!clear) return false
+      }
+    }
+    return true
+  }
+}
+
 function routePlaneTerminatedBus(
   params: RouteBusParams & {
     collectAlternative?: (plan: FanoutRoutePlan) => boolean

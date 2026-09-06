@@ -9,7 +9,10 @@ import {
   segmentsAreClear,
 } from "./geometry"
 import { getCopperLayerNames } from "./layer-names"
-import { fanoutPlansAreClear, fanoutPlansAreMutuallyClear } from "./route-bus"
+import {
+  createFanoutPlanClearanceValidator,
+  fanoutPlansAreMutuallyClear,
+} from "./route-bus"
 import { routeViaMinimalWinding } from "./route-via-minimal-winding"
 import type {
   Bounds,
@@ -253,6 +256,17 @@ function hasNonAdjacentSelfIntersection(
         continue
       }
       if (
+        Math.min(first.start.x, first.end.x) >
+          Math.max(second.start.x, second.end.x) + EPSILON ||
+        Math.min(second.start.x, second.end.x) >
+          Math.max(first.start.x, first.end.x) + EPSILON ||
+        Math.min(first.start.y, first.end.y) >
+          Math.max(second.start.y, second.end.y) + EPSILON ||
+        Math.min(second.start.y, second.end.y) >
+          Math.max(first.start.y, first.end.y) + EPSILON
+      )
+        continue
+      if (
         distanceSegmentToSegment(
           first.start,
           first.end,
@@ -284,34 +298,35 @@ function replacementCopperIsSelfClear(params: {
   const replacementEndIndex =
     replacementStartIndex + replacementSegmentCount - 1
   const vias = getPlanVias(plan)
+  // A candidate preserves a connected path except at layer changes. Prefix
+  // lengths make each local-adjacency exemption constant time even when a
+  // negotiated route contains hundreds of short chamfered segments.
+  const pathGroups = new Int32Array(segments.length)
+  const pathLengths = new Float64Array(segments.length + 1)
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index]!,
+      previous = segments[index - 1]
+    pathGroups[index] =
+      index === 0
+        ? 0
+        : pathGroups[index - 1]! +
+          Number(
+            previous!.layer !== segment.layer ||
+              !pointsMatch(previous!.end, segment.start),
+          )
+    pathLengths[index + 1] =
+      pathLengths[index]! + distance(segment.start, segment.end)
+  }
   const getConnectedPathDistance = (
     firstIndex: number,
     secondIndex: number,
   ): number => {
     if (firstIndex === secondIndex) return 0
+    if (pathGroups[firstIndex] !== pathGroups[secondIndex])
+      return Number.POSITIVE_INFINITY
     const startIndex = Math.min(firstIndex, secondIndex)
     const endIndex = Math.max(firstIndex, secondIndex)
-    const startSegment = segments[startIndex]!
-    const endSegment = segments[endIndex]!
-    if (startSegment.layer !== endSegment.layer) {
-      return Number.POSITIVE_INFINITY
-    }
-    let currentPoint = startSegment.end
-    let pathDistance = 0
-    for (let index = startIndex + 1; index < endIndex; index++) {
-      const segment = segments[index]!
-      if (
-        segment.layer !== startSegment.layer ||
-        !pointsMatch(currentPoint, segment.start)
-      ) {
-        return Number.POSITIVE_INFINITY
-      }
-      pathDistance += distance(segment.start, segment.end)
-      currentPoint = segment.end
-    }
-    return pointsMatch(currentPoint, segments[endIndex]!.start)
-      ? pathDistance
-      : Number.POSITIVE_INFINITY
+    return Math.max(0, pathLengths[endIndex]! - pathLengths[startIndex + 1]!)
   }
   for (
     let replacementIndex = replacementStartIndex;
@@ -468,7 +483,7 @@ function createMeanderPoints(params: {
   )
 }
 
-function createTunedPlanCandidates(params: {
+function* createTunedPlanCandidates(params: {
   plan: FanoutRoutePlan
   bus: PreparedBus
   targetAddedLength: number
@@ -476,7 +491,7 @@ function createTunedPlanCandidates(params: {
   sharedBoundary: Bounds
   allowInsideDenseBounds?: boolean
   denseBoundarySplitApplied?: boolean
-}): FanoutRoutePlan[] {
+}): Generator<FanoutRoutePlan> {
   const {
     plan,
     bus,
@@ -486,7 +501,6 @@ function createTunedPlanCandidates(params: {
     allowInsideDenseBounds = false,
     denseBoundarySplitApplied = false,
   } = params
-  const candidates: FanoutRoutePlan[] = []
   const denseCopperBounds = getDenseCopperBounds(bus)
   const denseMargin = plan.segments[0]?.width
     ? plan.segments[0].width / 2 + clearance
@@ -563,12 +577,12 @@ function createTunedPlanCandidates(params: {
             continue
           }
           const candidate = createPlanWithSegments(plan, segments)
-          if (candidate) candidates.push(candidate)
+          if (candidate) yield candidate
         }
       }
     }
   }
-  if (denseBoundarySplitApplied) return candidates
+  if (denseBoundarySplitApplied) return
   const splitSegments = plan.segments.flatMap((segment) =>
     splitSegmentAtDenseBounds({
       segment,
@@ -577,13 +591,12 @@ function createTunedPlanCandidates(params: {
     }),
   )
   const splitPlan = createPlanWithSegments(plan, splitSegments)
-  if (!splitPlan) return candidates
-  const splitCandidates = createTunedPlanCandidates({
+  if (!splitPlan) return
+  yield* createTunedPlanCandidates({
     ...params,
     plan: splitPlan,
     denseBoundarySplitApplied: true,
   })
-  return [...candidates, ...splitCandidates]
 }
 
 function getBusSkew(plans: readonly FanoutRoutePlan[]): number {
@@ -693,6 +706,13 @@ export function matchBusPlanLengths(params: {
     allowMatchingInsideDenseBounds = false,
     candidatePlansAreFeasible,
   } = params
+  const plansAreClear = createFanoutPlanClearanceValidator({
+    srj: inputSrj,
+    sharedBoundary,
+    clearance,
+    allowBlindAndBuriedVias,
+    allowSameNetMerges,
+  })
   let matchedPlans = [...params.plans]
   const constrainedBuses = preparedBuses.filter(
     (bus) => bus.maxLengthSkew !== undefined && bus.connections.length > 1,
@@ -750,16 +770,7 @@ export function matchBusPlanLengths(params: {
           (plan) => plan.busId === bus.busId,
         )
         if (getBusSkew(nextBusPlans) > skew + EPSILON) return null
-        if (
-          !fanoutPlansAreClear({
-            plans: nextPlans,
-            srj: inputSrj,
-            sharedBoundary,
-            clearance,
-            allowBlindAndBuriedVias,
-            allowSameNetMerges,
-          })
-        ) {
+        if (!plansAreClear(nextPlans)) {
           return null
         }
         if (
@@ -803,8 +814,8 @@ export function matchBusPlanLengths(params: {
           }
           if (stagesRemaining <= 0) return null
           const stageAddedLength = remainingAddition / stagesRemaining
-          const candidates = sampleCandidates(
-            createTunedPlanCandidates({
+          const candidates = sampleCandidates([
+            ...createTunedPlanCandidates({
               plan: currentPlan,
               bus,
               targetAddedLength: stageAddedLength,
@@ -812,7 +823,7 @@ export function matchBusPlanLengths(params: {
               sharedBoundary: bus.sharedBoundary,
               allowInsideDenseBounds: allowMatchingInsideDenseBounds,
             }),
-          )
+          ])
           for (const candidate of candidates) {
             searchedStateCount++
             if (searchedStateCount > maximumSearchStates) return null
@@ -865,17 +876,7 @@ export function matchBusPlanLengths(params: {
           const nextPlans = matchedPlans.map((plan) =>
             plan === longer ? candidate : plan,
           )
-          if (
-            !fanoutPlansAreClear({
-              plans: nextPlans,
-              srj: inputSrj,
-              sharedBoundary,
-              clearance,
-              allowBlindAndBuriedVias,
-              allowSameNetMerges,
-            })
-          )
-            continue
+          if (!plansAreClear(nextPlans)) continue
           if (
             candidatePlansAreFeasible &&
             !candidatePlansAreFeasible(nextPlans)
@@ -910,17 +911,7 @@ export function matchBusPlanLengths(params: {
             allowInsideDenseBounds: allowMatchingInsideDenseBounds,
           })
           for (const candidate of candidates) {
-            if (
-              !fanoutPlansAreClear({
-                plans: [candidate],
-                srj: inputSrj,
-                sharedBoundary,
-                clearance,
-                allowBlindAndBuriedVias,
-                allowSameNetMerges,
-              })
-            )
-              continue
+            if (!plansAreClear([candidate])) continue
             const blockers = matchedPlans.filter(
               (plan) =>
                 plan !== shortest &&
@@ -994,14 +985,7 @@ export function matchBusPlanLengths(params: {
                   repairedPlans.filter((plan) => plan.busId === bus.busId),
                 ) >
                   maxLengthSkew + EPSILON ||
-                !fanoutPlansAreClear({
-                  plans: repairedPlans,
-                  srj: inputSrj,
-                  sharedBoundary,
-                  clearance,
-                  allowBlindAndBuriedVias,
-                  allowSameNetMerges,
-                }) ||
+                !plansAreClear(repairedPlans) ||
                 (candidatePlansAreFeasible &&
                   !candidatePlansAreFeasible(repairedPlans))
               )
