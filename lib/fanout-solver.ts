@@ -2258,7 +2258,7 @@ export class FanoutSolver extends BaseSolver {
       // Preserve a centered pair's channel before its leading singleton. A
       // turning pair instead leaves its adjacent singleton room to escape
       // before searching for an outside-package via.
-      let centeredPairWasPromoted = false
+      const centeredPairPromotionGroups = new Set<string>()
       for (const singleton of multiLayerLeadingSingletonBuses) {
         if (getCornerBandSide(singleton.exitEdge, singleton.preferredExit))
           continue
@@ -2274,12 +2274,17 @@ export class FanoutSolver extends BaseSolver {
           if (pairIndex > singletonIndex) {
             denseBoundaryBusesInRoutingOrder.splice(pairIndex, 1)
             denseBoundaryBusesInRoutingOrder.splice(singletonIndex, 0, pair)
-            centeredPairWasPromoted = true
+            centeredPairPromotionGroups.add(
+              `${pair.componentId}:${pair.exitEdge}`,
+            )
           }
         }
       }
-      for (const pair of centeredPairWasPromoted ? boundaryBuses : []) {
+      for (const pair of boundaryBuses) {
         if (
+          !centeredPairPromotionGroups.has(
+            `${pair.componentId}:${pair.exitEdge}`,
+          ) ||
           pair.connections.length !== 2 ||
           !getCornerBandSide(pair.exitEdge, pair.preferredExit)
         )
@@ -2442,6 +2447,7 @@ export class FanoutSolver extends BaseSolver {
           useConfiguredDensePlaneRouting &&
           singleLayerBus !== bus &&
           !embeddedNarrowBusAlreadyRouted
+        let usedSoftPlaneRepair = false
         let busPlans = (yield* routeAlternatives(
           preferSingleLayerWinding
             ? { ...routeParams, bus: singleLayerBus }
@@ -2624,6 +2630,7 @@ export class FanoutSolver extends BaseSolver {
             if (rematchedPoints) {
               busPlans = freePlans
               fixedViaPointsByConnectionIndex = rematchedPoints
+              usedSoftPlaneRepair = true
             }
           }
         }
@@ -2640,7 +2647,13 @@ export class FanoutSolver extends BaseSolver {
           // Only pay for additional A* variants when the first topology is so
           // skewed that compact meanders are unlikely to absorb the deficit.
           // This keeps already-near-matched buses on the single-attempt path.
-          if (needsRouteDiversity && !matchLengthsAfterPlanes) {
+          // Keep the jointly rematched repair: routeParams still carries the
+          // earlier provisional sites and cannot safely replace its geometry.
+          if (
+            needsRouteDiversity &&
+            !matchLengthsAfterPlanes &&
+            !usedSoftPlaneRepair
+          ) {
             busPlans = (yield* routeAlternatives(routeParams, 3)).toSorted(
               (first, second) => {
                 const firstLengths = first.map((plan) => plan.length)
