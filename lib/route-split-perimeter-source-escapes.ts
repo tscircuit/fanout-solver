@@ -248,14 +248,12 @@ export function* routeSplitPerimeterSourceEscapesSteps(
     return {
       connectionIndex: connection.connectionIndex,
       connectionName: connection.connection.name,
-      segments: ps
-        .slice(1)
-        .map((end, i) => ({
-          start: ps[i]!,
-          end,
-          width: w,
-          layer: connection.sourceLayer,
-        })),
+      segments: ps.slice(1).map((end, i) => ({
+        start: ps[i]!,
+        end,
+        width: w,
+        layer: connection.sourceLayer,
+      })),
       via: {
         center: ps.at(-1)!,
         diameter: d,

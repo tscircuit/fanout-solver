@@ -96,14 +96,12 @@ test("reroutes an untunable pair while preserving its vias and neighboring coppe
   const plans: FanoutRoutePlan[] = fixtures.map(
     ({ name, path: coordinates }, connectionIndex) => {
       const path = coordinates.map(([x, y]) => ({ x: x!, y: y! })),
-        segments: RoutedSegment[] = path
-          .slice(1)
-          .map((end, i) => ({
-            start: path[i]!,
-            end,
-            width: traceWidth,
-            layer: i === 0 ? "top" : "bottom",
-          }))
+        segments: RoutedSegment[] = path.slice(1).map((end, i) => ({
+          start: path[i]!,
+          end,
+          width: traceWidth,
+          layer: i === 0 ? "top" : "bottom",
+        }))
       return {
         busId: connectionIndex < 2 ? "PAIR" : "NEIGHBOR",
         connectionIndex,
@@ -155,17 +153,15 @@ test("reroutes an untunable pair while preserving its vias and neighboring coppe
               via_diameter: 0.24,
               via_hole_diameter: 0.1,
             },
-            ...path
-              .slice(1)
-              .map((p, i) => ({
-                route_type: "wire" as const,
-                ...p,
-                layer: "bottom",
-                width: traceWidth,
-                ...(i === path.length - 2
-                  ? { end_pcb_port_id: `exit:${name}` }
-                  : {}),
-              })),
+            ...path.slice(1).map((p, i) => ({
+              route_type: "wire" as const,
+              ...p,
+              layer: "bottom",
+              width: traceWidth,
+              ...(i === path.length - 2
+                ? { end_pcb_port_id: `exit:${name}` }
+                : {}),
+            })),
           ],
         },
       }
