@@ -75,6 +75,8 @@ export interface RouteBusParams {
   alignWindingGridToPads?: boolean
   /** Bounds the final fixed-via winding fallback after ordered attempts. */
   fixedViaFallbackRouteOrderAttempts?: number
+  /** Retry caller-fixed sites while preserving future exit gaps during recovery. */
+  allowFixedViaReservedExitFallback?: boolean
   /** Skip this many otherwise-clear plane escapes when enumerating alternatives. */
   planeCandidateSkipCount?: number
   /** Dense corner-band phase that preserves existing lane centers when leading lanes are prepended. */
@@ -2606,6 +2608,7 @@ export function* routeBusAlternativesSteps(
     adaptiveWindingRouteOrder = false,
     alignWindingGridToPads = false,
     fixedViaFallbackRouteOrderAttempts = 24,
+    allowFixedViaReservedExitFallback = false,
     cornerBandTargetTrackOffset,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
@@ -2993,6 +2996,29 @@ export function* routeBusAlternativesSteps(
                       allowLayerInterleaving: true,
                     })),
                 ).flat()
+              : []),
+            // A single-layer target permutation can also let an early lane
+            // close a future terminal's exit gap. Keep the original attempts
+            // first, then retry the same fixed sites with every exit reserved.
+            ...(allowFixedViaReservedExitFallback &&
+            fixedViaPointsByConnectionIndex &&
+            !getCornerSide(bus) &&
+            windingTargetOrderCount === 1 &&
+            bus.connections.length > 2
+              ? [true, false].map((preferTargetDirectedLaneBias) => ({
+                  label: `fixed-vias-reserved-exits-${preferTargetDirectedLaneBias}`,
+                  useViaInPad: false,
+                  getViaHandedness: () => 0 as const,
+                  getViaPoint: (connection: PreparedConnection) =>
+                    coordinatedViaPoints.get(connection.connectionIndex)!,
+                  maximumRouteOrderAttempts: Math.min(
+                    maximumThroughAllRouteOrderAttempts,
+                    fixedViaFallbackRouteOrderAttempts,
+                  ),
+                  windingOrderIndex: 0,
+                  preferTargetDirectedLaneBias,
+                  reserveTerminalExitPoints: true,
+                }))
               : []),
           ]
         : []

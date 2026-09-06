@@ -32,10 +32,9 @@ export default function CoreProgressiveDramReproPage() {
           SoC fanout phase. Full connectivity lists and existing copper are
           retained.
         </div>
-        <div style={{ color: "#b45309", fontSize: 13 }}>
-          Known result: the best attempt routes 125 of 143 connections. This
-          remains an incomplete routing reproduction; use the debugger to
-          inspect the remaining failures.
+        <div style={{ color: "#166534", fontSize: 13 }}>
+          All 143 connections route with the original options. The regression
+          checks every breakout, bus length skew, and copper clearance.
         </div>
       </header>
 

@@ -1551,6 +1551,11 @@ export class FanoutSolver extends BaseSolver {
     promotedPlaneReservationBusIds?: readonly string[]
     preferredBoundaryViaPoints?: ReadonlyMap<number, { x: number; y: number }>
     planeReservationRetryCount?: number
+    boundaryRecovery?: {
+      busId: string
+      preferOutward: boolean
+      perpendicularSide: -1 | 1
+    }
   }): Generator<FanoutWorkYield, MixedTerminationState | null, unknown> {
     if (this.config.allowBlindAndBuriedVias) return null
     // An outside-package singleton escape can depend on the completed signal
@@ -1601,12 +1606,16 @@ export class FanoutSolver extends BaseSolver {
       )
     const useConfiguredDensePlaneRouting =
       configuredDensePlaneRouting || useAdaptiveDensePlaneRouting
+    const useBoundaryRecovery = params.boundaryRecovery !== undefined
+    const useJointPlaneRepair =
+      useConfiguredDensePlaneRouting || useBoundaryRecovery
     // A completed boundary assignment remains worth repairing jointly after
     // plane reservations change; a greedy refill can discard that assignment.
-    const useAdaptiveJointPlaneSelection =
-      useAdaptiveDensePlaneRouting &&
-      ((params.planeReservationRetryCount ?? 0) === 0 ||
-        Boolean(params.preferredBoundaryViaPoints))
+    const useJointPlaneSelection =
+      useBoundaryRecovery ||
+      (useAdaptiveDensePlaneRouting &&
+        ((params.planeReservationRetryCount ?? 0) === 0 ||
+          Boolean(params.preferredBoundaryViaPoints)))
     const matchLengthsAfterPlanes =
       useConfiguredDensePlaneRouting &&
       params.lengthMatchingStage !== "before-planes"
@@ -1852,7 +1861,9 @@ export class FanoutSolver extends BaseSolver {
       process.env.FANOUT_DEBUG_BOUNDARY_ORDER?.split(",") ??
       (process.env.FANOUT_DEBUG_FIRST_BOUNDARY_BUS
         ? [process.env.FANOUT_DEBUG_FIRST_BOUNDARY_BUS]
-        : [])
+        : params.boundaryRecovery
+          ? [params.boundaryRecovery.busId]
+          : [])
     const boundaryBuses =
       debugBoundaryOrder.length > 0
         ? initiallySortedBoundaryBuses.toSorted((first, second) => {
@@ -1914,6 +1925,7 @@ export class FanoutSolver extends BaseSolver {
       ]
     }
     const unroutablePlaneBusIds = new Set<string>()
+    let failedWideBoundaryBus: PreparedBus | undefined
     debugDense(
       "start",
       boundaryBuses.map((bus) => `${bus.busId}:${bus.connections.length}`),
@@ -2014,6 +2026,16 @@ export class FanoutSolver extends BaseSolver {
       })
       if (entersNeighboringSourceField)
         preferBoundaryOutwardByBusId.set(bus.busId, false)
+    }
+    if (params.boundaryRecovery) {
+      preferredBoundaryPerpendicularSideByBusId.set(
+        params.boundaryRecovery.busId,
+        params.boundaryRecovery.perpendicularSide,
+      )
+      preferBoundaryOutwardByBusId.set(
+        params.boundaryRecovery.busId,
+        params.boundaryRecovery.preferOutward,
+      )
     }
     const debugFlippedBoundaryBus = process.env.FANOUT_DEBUG_FLIP_BOUNDARY_BUS
     if (debugFlippedBoundaryBus) {
@@ -2653,6 +2675,7 @@ export class FanoutSolver extends BaseSolver {
           allowBoundarySideViaFallback: bus.connections.length === 1,
           preferCornerBoundaryVia: useConfiguredDensePlaneRouting,
           adaptiveWindingRouteOrder,
+          allowFixedViaReservedExitFallback: useBoundaryRecovery,
           // Retain pad-aligned channels even when plane sites are reserved
           // adaptively; the boundary grid can fence off a turning wide bus.
           alignWindingGridToPads:
@@ -3035,6 +3058,7 @@ export class FanoutSolver extends BaseSolver {
           }
         }
         if (!busPlans) {
+          if (bus.connections.length >= 8) failedWideBoundaryBus ??= bus
           debugDense("route:failed", bus.busId)
           return false
         }
@@ -3365,6 +3389,7 @@ export class FanoutSolver extends BaseSolver {
           promotedAlternatePlaneBusIds: ReadonlySet<string> = new Set(),
         ): Map<number, { x: number; y: number }> | null => {
           feasibleAlternatePlanePlans = []
+          matchedPlaneBusesInRoutingOrder = null
           const fixedBoundaryViaPoints = new Map(
             candidatePlans.flatMap((plan) =>
               plan.via
@@ -3431,11 +3456,16 @@ export class FanoutSolver extends BaseSolver {
           if (retainedViaPoints)
             return new Map([...fixedBoundaryViaPoints, ...retainedViaPoints])
           if (
-            useConfiguredDensePlaneRouting ||
+            useJointPlaneRepair ||
             process.env.FANOUT_DEBUG_INCREMENTAL_PLANE_MATCH === "1"
           ) {
             let incrementalViaPoints = new Map(fixedBoundaryViaPoints)
-            const matchedPlaneBuses = [...activeBoundaryReservationPlaneBuses]
+            // Reservations guided the boundary search, but their copper is
+            // still uncommitted. Recovery must choose local and longer plane
+            // escapes together instead of locking every provisional site.
+            const matchedPlaneBuses = useBoundaryRecovery
+              ? []
+              : [...activeBoundaryReservationPlaneBuses]
             for (const planeBus of matchedPlaneBuses) {
               for (const connection of planeBus.connections) {
                 const reservedPoint = fixedViaPointsByConnectionIndex.get(
@@ -3581,7 +3611,7 @@ export class FanoutSolver extends BaseSolver {
                 independentlyUnmatchablePlaneBuses.map((bus) => bus.busId),
               )
               if (
-                !useConfiguredDensePlaneRouting &&
+                !useJointPlaneRepair &&
                 process.env.FANOUT_DEBUG_ROUTE_UNMATCHED_PLANES !== "1"
               ) {
                 return null
@@ -3596,7 +3626,9 @@ export class FanoutSolver extends BaseSolver {
                     ? 10_000
                     : useConfiguredDensePlaneRouting
                       ? 3_000_000
-                      : 1_000),
+                      : useBoundaryRecovery
+                        ? 10_000
+                        : 1_000),
               )
               const maximumAlternatePlaneRoutes = Number(
                 process.env.FANOUT_DEBUG_ALTERNATE_ROUTE_COUNT ??
@@ -3774,7 +3806,7 @@ export class FanoutSolver extends BaseSolver {
               }
               let alternatePlanePlans: FanoutRoutePlan[] | null
               if (
-                useConfiguredDensePlaneRouting ||
+                useJointPlaneRepair ||
                 process.env.FANOUT_DEBUG_EXACT_COVER_ALTERNATES === "1"
               ) {
                 type IndependentPlaneRouteCandidate = {
@@ -3795,7 +3827,7 @@ export class FanoutSolver extends BaseSolver {
                     })),
                   }),
                 )
-                if (useAdaptiveJointPlaneSelection) {
+                if (useJointPlaneSelection) {
                   const acceptedPlans = [
                     ...candidatePlans,
                     ...feasibleAlternatePlanePlans,
@@ -4106,7 +4138,7 @@ export class FanoutSolver extends BaseSolver {
               )
               if (!alternatePlanePlans) return null
               feasibleAlternatePlanePlans = alternatePlanePlans
-              if (useAdaptiveJointPlaneSelection) {
+              if (useJointPlaneSelection) {
                 matchedPlaneBusesInRoutingOrder = []
                 return new Map([
                   ...fixedBoundaryViaPoints,
@@ -4620,6 +4652,33 @@ export class FanoutSolver extends BaseSolver {
           denseRoutingStrategy: "boundary-aligned",
         })
       if (boundaryAlignedState) return boundaryAlignedState
+      // A later wide bus can be fenced by provisional through-vias even
+      // though its requested exit order is routable. After both existing
+      // grids fail, give that bus first choice of the field and retry the
+      // four dogbone orientations. The marker bounds recursion and enables
+      // joint selection of the remaining uncommitted plane escapes.
+      if (!useBoundaryRecovery && failedWideBoundaryBus) {
+        const busId = failedWideBoundaryBus.busId
+        const outward = preferBoundaryOutwardByBusId.get(busId) ?? true
+        const side = preferredBoundaryPerpendicularSideByBusId.get(busId) ?? 1
+        for (const [preferOutward, perpendicularSide] of [
+          [!outward, -side],
+          [!outward, side],
+          [outward, -side],
+          [outward, side],
+        ] as const) {
+          const recoveredState =
+            yield* this.routeDenseThroughAllMixedTerminationSteps({
+              ...params,
+              boundaryRecovery: {
+                busId,
+                preferOutward,
+                perpendicularSide: perpendicularSide as -1 | 1,
+              },
+            })
+          if (recoveredState) return recoveredState
+        }
+      }
     }
     if (
       !usePadAlignedDenseRouting ||
