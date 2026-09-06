@@ -68,6 +68,8 @@ export interface RouteViaMinimalWindingParams {
   gridStepDivisor?: 1 | 2
   /** Exact grid spacing for staged routing through narrow via channels. */
   gridStep?: number
+  /** Optional lattice origin for staged paths whose retained cuts lie on a grid. */
+  gridOrigin?: Point2D
   /** Search priority weight; values above one return the first valid goal. */
   heuristicWeight?: number
   /** Deterministic terminal order for a caller that has ordered escape ports. */
@@ -809,8 +811,8 @@ export function* routeViaMinimalWindingAlternativesSteps(
       : baseGridStep)
   if (!Number.isFinite(gridStep) || gridStep <= 0) return []
   const { minX, maxX, minY, maxY } = bus.sharedBoundary
-  const originX = bus.xCoordinates[0] ?? minX
-  const originY = bus.yCoordinates[0] ?? minY
+  const originX = params.gridOrigin?.x ?? bus.xCoordinates[0] ?? minX
+  const originY = params.gridOrigin?.y ?? bus.yCoordinates[0] ?? minY
   const gridMinX = alignGridToPitch
     ? originX + Math.ceil((minX - originX) / gridStep) * gridStep
     : minX
@@ -931,19 +933,23 @@ export function* routeViaMinimalWindingAlternativesSteps(
       )
     }),
   )
-  const terminalVias: BlockingVia[] = terminals.map((terminal) => ({
-    connectionName: terminal.connection.connection.name,
-    via: {
-      center: terminal.viaPoint,
-      diameter: viaDiameter,
-      spanLayers: getViaSpanLayers({
-        fromLayer: terminal.connection.sourceLayer,
-        toLayer: targetLayer,
-        layerNames,
-        allowBlindAndBuriedVias,
-      }),
-    },
-  }))
+  // A retained same-layer path cut is not a physical via. Actual barrels
+  // remain in acceptedPlans/reservedVias, including the route's original via.
+  const terminalVias: BlockingVia[] = terminals
+    .filter((terminal) => terminal.connection.sourceLayer !== targetLayer)
+    .map((terminal) => ({
+      connectionName: terminal.connection.connection.name,
+      via: {
+        center: terminal.viaPoint,
+        diameter: viaDiameter,
+        spanLayers: getViaSpanLayers({
+          fromLayer: terminal.connection.sourceLayer,
+          toLayer: targetLayer,
+          layerNames,
+          allowBlindAndBuriedVias,
+        }),
+      },
+    }))
   const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
   const sharesNet = (first: string, second: string): boolean =>
     first === second ||
