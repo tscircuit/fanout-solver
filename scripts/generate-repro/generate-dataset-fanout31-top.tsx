@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { createAm62lFanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-am62l-fanout-sample"
+import { dataset31Source } from "./dataset31-source"
 
 // The upstream TSX renders the paired AM62L/LPDDR4 breakouts through core's
 // renderUntilSettled and intercepts the constructor after implicit winding.
@@ -8,8 +9,7 @@ import { createAm62lFanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/c
 const sample = await createAm62lFanoutSample("topside_center")
 const fixture = {
   generatedFrom: {
-    repository: "https://github.com/tscircuit/dataset-fanout31-am62l",
-    commit: "8c73befb36b125c84651c07454a9b940b3c6500a",
+    ...dataset31Source,
     sample: "samples/02-top-center.tsx",
     generator: "scripts/generate-repro/generate-dataset-fanout31-top.tsx",
   },

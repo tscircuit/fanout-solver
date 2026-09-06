@@ -12,7 +12,7 @@ const escape = (value: string) =>
 export function renderBenchmarkMarkdown(report: BenchmarkReport): string {
   const { rows, configuration } = report
   const lines = [
-    "# Dataset 31 — AM62L fanout benchmark",
+    "# Dataset 31 — AM62L and RK3308 fanout benchmark",
     "",
     `Commit: ${report.commit ?? "unknown"}. Generated: ${report.generatedAt}.`,
     `Dataset source: ${report.datasetSource.repository} at ${report.datasetSource.commit}.`,
@@ -21,7 +21,7 @@ export function renderBenchmarkMarkdown(report: BenchmarkReport): string {
     "",
     `Concurrency: ${configuration.concurrency}; per-sample timeout: ${configuration.sampleTimeoutSeconds}s; assignment budget: ${configuration.maxLayerCombinations ?? "sample defaults"}; wall time: ${(report.wallClockMilliseconds / 1000).toFixed(2)}s.`,
     "",
-    "Only dataset-fanout31-am62l is benchmarked. Solved means all 135 AM62L connections have validated fanout with the original clearance and length-skew constraints. It does not imply RAM fanout or inter-chip routing.",
+    "Only dataset-fanout31-am62l is benchmarked: 12 AM62L and 12 RK3308 cases. A case is solved only when all its SoC connections have validated fanout with the original clearance and length-skew constraints (135 for AM62L; 162 for RK3308). RAM fanout and inter-chip routing are separate phases.",
   ]
   lines.push(
     "",

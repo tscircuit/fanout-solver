@@ -1,6 +1,6 @@
-import { FANOUT_DIRECTION_CASES } from "../scripts/generate-repro/dataset31-source"
+import { DATASET31_DIRECTION_CASES } from "../scripts/generate-repro/dataset31-source"
 
-export const benchmarkSamples = FANOUT_DIRECTION_CASES.map((sample) => ({
+export const benchmarkSamples = DATASET31_DIRECTION_CASES.map((sample) => ({
   dataset: "dataset31" as const,
   id: sample.id,
   exitPosition: sample.exitPosition,

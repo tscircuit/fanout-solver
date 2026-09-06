@@ -5,7 +5,10 @@ import { join } from "node:path"
 import { benchmarkSamples } from "../benchmarks/benchmark-catalog"
 import { prepareDataset31Samples } from "../benchmarks/prepare-dataset31"
 import { createAm62lRamLeftInput } from "../datasets/dataset08"
-import { dataset31Source } from "../scripts/generate-repro/dataset31-source"
+import {
+  DATASET31_DIRECTION_CASES,
+  dataset31Source,
+} from "../scripts/generate-repro/dataset31-source"
 
 test("dataset 31 capture preserves every upstream connection, obstacle, and bus constraint", async () => {
   const directory = await mkdtemp(join(tmpdir(), "fanout-dataset31-capture-"))
@@ -14,25 +17,39 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
       benchmarkSamples.map((sample) => sample.id),
       directory,
     )
-    expect(samples).toHaveLength(12)
+    expect(samples).toHaveLength(24)
+    expect(samples.map((sample) => sample.id)).toEqual(
+      DATASET31_DIRECTION_CASES.map((sample) => sample.id),
+    )
+    const definitionsById = new Map(
+      DATASET31_DIRECTION_CASES.map((sample) => [sample.id, sample]),
+    )
+    const chips = { am62l: 0, rk3308: 0 }
+    const edges = { am62l: new Set<string>(), rk3308: new Set<string>() }
     const uniqueInputs = new Set<string>()
-    const edges = new Set<string>()
     for (const sample of samples) {
+      const definition = definitionsById.get(sample.id)!
+      const isRk3308 = definition.chip === "rk3308"
+      chips[definition.chip] += 1
       expect(sample.dataset).toBe("dataset31")
-      expect(sample.simpleRouteJson.connections).toHaveLength(135)
-      expect(sample.simpleRouteJson.obstacles).toHaveLength(573)
+      expect(sample.simpleRouteJson.connections).toHaveLength(
+        isRk3308 ? 162 : 135,
+      )
+      expect(sample.simpleRouteJson.obstacles).toHaveLength(
+        isRk3308 ? 451 : 573,
+      )
       expect(sample.simpleRouteJson.layerCount).toBe(8)
       expect(sample.simpleRouteJson.differentialPairs).toHaveLength(3)
-      expect(sample.solverOptions?.buses).toHaveLength(111)
+      expect(sample.solverOptions?.buses).toHaveLength(isRk3308 ? 122 : 111)
       expect(
         sample.solverOptions?.buses?.filter(
           (bus) => bus.termination?.type === "plane",
         ),
-      ).toHaveLength(102)
+      ).toHaveLength(isRk3308 ? 113 : 102)
       expect(
         sample.solverOptions?.buses?.find((bus) => bus.busId === "DDR_BYTE1")
           ?.maxLengthSkew,
-      ).toBe(14.5)
+      ).toBe(isRk3308 ? 8 : 14.5)
       // No callbacks or non-JSON constraints may be lost in worker transport.
       expect(JSON.parse(JSON.stringify(sample))).toEqual(sample)
       const captured = await Bun.file(
@@ -47,10 +64,15 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
       uniqueInputs.add(
         JSON.stringify([sample.simpleRouteJson, sample.solverOptions]),
       )
-      edges.add(captured.directionCase.exitEdge)
+      expect(captured.directionCase.id).toBe(definition.id)
+      expect(captured.directionCase.exitPosition).toBe(definition.exitPosition)
+      expect(captured.directionCase.exitEdge).toBe(definition.exitEdge)
+      edges[definition.chip].add(captured.directionCase.exitEdge)
     }
-    expect(uniqueInputs.size).toBe(12)
-    expect(edges).toEqual(new Set(["top", "right", "bottom", "left"]))
+    expect(uniqueInputs.size).toBe(24)
+    expect(chips).toEqual({ am62l: 12, rk3308: 12 })
+    for (const chipEdges of Object.values(edges))
+      expect(chipEdges).toEqual(new Set(["top", "right", "bottom", "left"]))
     // Prove the existing RAM-left repro is unchanged by the new capture path.
     const left = samples.find((sample) => sample.id === "11-left-center")!
     const original = createAm62lRamLeftInput()

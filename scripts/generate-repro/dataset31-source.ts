@@ -1,4 +1,5 @@
 import { FANOUT_DIRECTION_CASES } from "@tscircuit/dataset-fanout31-am62l/lib/fanout-directions"
+import { RK3308_FANOUT_DIRECTION_CASES } from "@tscircuit/dataset-fanout31-am62l/lib/rk3308-fanout-directions"
 import generatorPackage from "./package.json"
 
 const dependency =
@@ -13,4 +14,16 @@ export const dataset31Source = {
   repository: "https://github.com/tscircuit/dataset-fanout31-am62l",
   commit,
 }
-export { FANOUT_DIRECTION_CASES }
+export { FANOUT_DIRECTION_CASES, RK3308_FANOUT_DIRECTION_CASES }
+
+// Keep --list/--help lightweight: circuit factories are loaded by the generator.
+export const DATASET31_DIRECTION_CASES = [
+  ...FANOUT_DIRECTION_CASES.map((sample) => ({
+    ...sample,
+    chip: "am62l" as const,
+  })),
+  ...RK3308_FANOUT_DIRECTION_CASES.map((sample) => ({
+    ...sample,
+    chip: "rk3308" as const,
+  })),
+]
