@@ -516,13 +516,12 @@ function createInitialLayerAssignment(params: {
         preferOrderedCoordinatedWindingLayers &&
         busUsesCoordinatedWinding(bus)
       ) {
-        // Keep caller layer preferences when the corner band is free. A
-        // centered bus with one explicit target layer already occupies that
-        // boundary corridor, so prefer another legal layer for a wide turn.
+        // Preserve caller preferences when boundary corridors are free. A
+        // fixed-layer centered or turning bus can occupy the same boundary
+        // band, so prefer another legal layer for a wide route through it.
         const cornerSide = getCornerBandSide(bus.exitEdge, bus.preferredExit)
-        const getCenteredBoundaryCongestion = (layer: string): number => {
-          if (!cornerSide || !bus.exitEdge || bus.connections.length < 8)
-            return 0
+        const getBoundaryCongestion = (layer: string): number => {
+          if (!bus.exitEdge || bus.connections.length < 8) return 0
           const horizontalEdge =
             bus.exitEdge === "left" || bus.exitEdge === "right"
           const axis = horizontalEdge ? "y" : "x"
@@ -532,6 +531,93 @@ function createInitialLayerAssignment(params: {
           const maximum = horizontalEdge
             ? bus.sharedBoundary.maxY
             : bus.sharedBoundary.maxX
+          if (!cornerSide) {
+            const tracks = bus.connections.map((connection) => {
+              const target =
+                connection.exitTargetPoint ?? connection.targetPoint
+              return Math.max(minimum, Math.min(maximum, target[axis]))
+            })
+            const bandMinimum = Math.min(...tracks)
+            const bandMaximum = Math.max(...tracks)
+            const forwardAxis = horizontalEdge ? "x" : "y"
+            const sign =
+              bus.exitEdge === "right" || bus.exitEdge === "top" ? 1 : -1
+            const sourceNearEnd = Math.min(
+              ...bus.connections.map(
+                (connection) => sign * connection.sourcePoint[forwardAxis],
+              ),
+            )
+            const sourceMinimum = Math.min(
+              ...bus.connections.map(
+                (connection) => connection.sourcePoint[axis],
+              ),
+            )
+            const sourceMaximum = Math.max(
+              ...bus.connections.map(
+                (connection) => connection.sourcePoint[axis],
+              ),
+            )
+            return buses.reduce((count, other) => {
+              const otherCorner = getCornerBandSide(
+                other.exitEdge,
+                other.preferredExit,
+              )
+              if (
+                other === bus ||
+                other.termination.type !== "boundary" ||
+                other.componentId !== bus.componentId ||
+                other.exitEdge !== bus.exitEdge ||
+                !otherCorner ||
+                getCommonExplicitExitTargetLayer(other) !== layer
+              )
+                return count
+              const center =
+                minimum +
+                (maximum - minimum) * (otherCorner === "minimum" ? 0.25 : 0.75)
+              const halfWidth =
+                ((Math.max(
+                  other.connections.length,
+                  other.cornerBandConnectionCount ?? 0,
+                ) -
+                  1) *
+                  Math.max(
+                    params.traceWidth + params.clearance,
+                    params.viaDiameter + params.clearance,
+                  )) /
+                2
+              const margin = params.traceWidth + params.clearance
+              const overlapsBoundaryBand =
+                bandMaximum + margin >= center - halfWidth &&
+                bandMinimum - margin <= center + halfWidth
+              // A turning bus behind this source field must also pass its lanes
+              // on the way to the edge, even when its final band is elsewhere.
+              const crossesSourceField =
+                Math.max(
+                  ...other.connections.map(
+                    (connection) => sign * connection.sourcePoint[forwardAxis],
+                  ),
+                ) <
+                  sourceNearEnd - 1e-9 &&
+                Math.min(
+                  ...other.connections.map(
+                    (connection) => connection.sourcePoint[axis],
+                  ),
+                ) <=
+                  sourceMaximum + margin &&
+                Math.max(
+                  ...other.connections.map(
+                    (connection) => connection.sourcePoint[axis],
+                  ),
+                ) >=
+                  sourceMinimum - margin
+              return (
+                count +
+                (overlapsBoundaryBand || crossesSourceField
+                  ? other.connections.length
+                  : 0)
+              )
+            }, 0)
+          }
           const bandCenter =
             minimum +
             (maximum - minimum) * (cornerSide === "minimum" ? 0.25 : 0.75)
@@ -573,8 +659,7 @@ function createInitialLayerAssignment(params: {
         }
         assignment[bus.busId] = viaLayers.toSorted(
           (first, second) =>
-            getCenteredBoundaryCongestion(first) -
-            getCenteredBoundaryCongestion(second),
+            getBoundaryCongestion(first) - getBoundaryCongestion(second),
         )[0]!
         continue
       }
