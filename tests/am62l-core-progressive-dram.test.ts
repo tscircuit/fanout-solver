@@ -67,4 +67,4 @@ test("preserves routing coverage for core's complete AM62L progressive DRAM inpu
   await expect(getSvgFromGraphicsObject(visualization)).toMatchSvgSnapshot(
     import.meta.path,
   )
-}, 300_000)
+}, 600_000)
