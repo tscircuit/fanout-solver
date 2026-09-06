@@ -282,8 +282,8 @@ extents.
 
 ## Dataset 31 benchmark
 
-Run `./benchmark.sh` (or `bun run benchmark`) to benchmark **only the 12 AM62L
-directional cases** from
+Run `./benchmark.sh` (or `bun run benchmark`) to benchmark **all 24 dataset 31
+directional cases: 12 AM62L and 12 RK3308** from
 [`tscircuit/dataset-fanout31-am62l`](https://github.com/tscircuit/dataset-fanout31-am62l).
 The upstream revision is pinned in `scripts/generate-repro/package.json` and
 recorded in every report. Other datasets remain available for regression tests
@@ -293,14 +293,24 @@ and the debugger, but have no benchmark commands or workflows.
 ./benchmark.sh
 ./benchmark.sh --list
 ./benchmark.sh --sample 11-left-center
+./benchmark.sh --sample 13-rk3308-top-left-offset
 ./benchmark.sh --concurrency 8 --sample-timeout-seconds 300
 ```
 
 Before timing the solver, the benchmark renders the selected upstream TSX/core
 circuits and captures their exact fanout-solver constructor inputs into
-`benchmark-results/inputs/<sample-id>.json`. Each case retains all 135 AM62L
-connections, 573 pad obstacles, nine DDR buses, 102 plane drops, and the original
-clearance, differential-pair, and length-skew constraints. The timed workers run
+`benchmark-results/inputs/<sample-id>.json`. Each case retains its complete
+SoC fanout workload and the original clearance, differential-pair, and length-skew
+constraints:
+
+| SoC | Cases | Signal connections | Plane drops | Total connections | Pad obstacles |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| AM62L | 12 | 33 | 102 | 135 | 573 |
+| RK3308 | 12 | 49 | 113 | 162 | 451 |
+
+Both families have nine DDR signal buses. The RK3308 samples use a 355-ball SoC
+and 96-ball DDR3L RAM, with the RAM placed on each side at three offsets.
+The timed workers run
 **this checkout's solver**, not the upstream package's released solver.
 To capture the inputs without solving, use `bun run generate:dataset31`.
 The optional `--dataset dataset31` flag is accepted for explicit CI invocation;
@@ -335,8 +345,10 @@ are committed so route changes can be reviewed in Git. A run replaces the select
 cases' snapshots and removes their stale SVGs if they no longer solve; filtered
 runs preserve unselected snapshots. JSON reports and captured inputs remain
 ignored. CI includes the SVGs in its benchmark artifacts.
-Compare reports with the same budgets to track progress. Solved means validated
-AM62L fanout, not RAM fanout or downstream inter-chip routing. Partial, error,
+Compare reports with the same dataset revision and budgets to track progress.
+A case is solved only when every SoC connection has validated fanout: all 135
+connections for AM62L or all 162 for RK3308. This covers the SoC fanout phase; RAM
+fanout and downstream inter-chip routing are separate phases. Partial, error,
 and timeout rows are benchmark results (exit 0); invalid CLI arguments or report
 I/O failures are command failures (nonzero exit).
 
@@ -344,7 +356,7 @@ I/O failures are command failures (nonzero exit).
 
 Once `.github/workflows/benchmark.yml` is on the default branch, a repository
 writer can comment **`/benchmark`** on an open PR. The workflow captures that
-PR's exact head SHA, runs all 12 dataset 31 samples on a **32-vCPU Blacksmith ARM**
+PR's exact head SHA, runs all 24 dataset 31 samples on a **32-vCPU Blacksmith ARM**
 runner, then updates a status comment with solve totals, per-sample results,
 and a link to the complete JSON/Markdown reports and captured inputs. The Actions
 UI also supports a manual run, optionally supplying an open PR number. No custom
@@ -510,8 +522,8 @@ bun run render:dataset
 bun run start
 ```
 
-The benchmark runs only the 12 dataset 31 AM62L cases and reports solve counts,
-validation, and timing. `bun run start` opens all regression
+The benchmark runs all 24 dataset 31 AM62L and RK3308 cases and reports solve
+counts, validation, and timing. `bun run start` opens all regression
 datasets in the standard tscircuit solver debugger. `bun run
 render:dataset` writes `graphics-debug` PNGs under one subdirectory per dataset,
 with a red shared boundary, gray component courtyards, and green fanout-exit
