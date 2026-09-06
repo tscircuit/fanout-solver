@@ -61,6 +61,10 @@ export interface RouteBusParams {
   rejectedViaMinimalCandidates?: FanoutRoutePlan[][]
   stopAfterFirstRejectedViaMinimalCandidate?: boolean
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
+  /** Actual copper before the first via for previously reserved source escapes. */
+  sourceEscapePaths?: ReadonlyMap<number, readonly Point2D[]>
+  /** Exact winding spacing for staged narrow-channel routing. */
+  windingGridStep?: number
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
   /** Provisional site preferences; successful callers must rematch future vias. */
   softReservedVias?: readonly ViaMinimalWindingReservedVia[]
@@ -467,7 +471,7 @@ export function getBoundaryTargetTrack(params: {
   return Math.max(boundaryMinimum, Math.min(boundaryMaximum, requestedTrack))
 }
 
-function getCornerTargetTrack(params: {
+export function getCornerTargetTrack(params: {
   bus: PreparedBus
   connection: PreparedConnection
   cornerExitLaneOffset: number
@@ -1332,6 +1336,7 @@ function buildPlan(params: {
     })
   }
 
+  const sourceEscapeSegmentCount = segments.length
   let via: FanoutRoutePlan["via"]
   if (targetLayer !== preparedConnection.sourceLayer) {
     const spanLayers = getViaSpanLayers({
@@ -1512,6 +1517,7 @@ function buildPlan(params: {
       route,
     },
     segments,
+    ...(sourceEscapeSegmentCount > 1 ? { sourceEscapeSegmentCount } : {}),
     via,
     ...(additionalVias.length > 0 ? { additionalVias } : {}),
     length: segments.reduce(
@@ -2224,7 +2230,15 @@ function routePlaneTerminatedBus(
         terminateAtVia: true,
         allowBlindAndBuriedVias,
         initialViaPoint: fixedViaPoint,
-        sourceEscapePath: [sourcePoint, fixedViaPoint],
+        sourceEscapePath: params.sourceEscapePaths?.get(
+          preparedConnection.connectionIndex,
+        )
+          ? [
+              ...params.sourceEscapePaths.get(
+                preparedConnection.connectionIndex,
+              )!,
+            ]
+          : [sourcePoint, fixedViaPoint],
       })
       const endpointViaCandidates = getPlaneEndpointViaCandidates({
         preparedConnection,
@@ -3237,6 +3251,8 @@ export function* routeBusAlternativesSteps(
           softReservedVias,
           reserveTerminalExitPoints: terminalPattern.reserveTerminalExitPoints,
           gridStepDivisor,
+          gridStep: params.windingGridStep,
+          sourceEscapePaths: params.sourceEscapePaths,
           preferTargetDirectedLaneBias:
             terminalPattern.preferTargetDirectedLaneBias,
         },
