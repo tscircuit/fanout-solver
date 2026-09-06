@@ -33,6 +33,11 @@ export function* routeBottomCrossbarBusSteps(
   params: RouteBusParams & {
     sourceEscapes: readonly PeripheralSourceEscape[]
     sourceBoundary: Bounds
+    oppositeLayout?: {
+      sourcePortOffset: number
+      rowOffset: number
+      compactRows: boolean
+    }
   },
 ): Generator<RouteViaMinimalWindingProgress, FanoutRoutePlan[] | null, void> {
   const {
@@ -47,6 +52,7 @@ export function* routeBottomCrossbarBusSteps(
     viaDiameter,
   } = params
   const oppositeSide = bus.exitEdge === "left"
+  const layout = oppositeSide ? params.oppositeLayout : undefined
   const allowedLayers = bus.routableEscapeLayers ?? bus.allowedLayers ?? []
   const sourceLayer = bus.connections[0]!.sourceLayer
   const crossoverLayer = oppositeSide
@@ -78,7 +84,8 @@ export function* routeBottomCrossbarBusSteps(
   const viaPoints = ownSources.map((source) => source!.via.center)
   const firstPortColumn = Math.round(
     ((oppositeSide
-      ? (sourceBoundary.minX + sourceBoundary.maxX) / 2
+      ? (sourceBoundary.minX + sourceBoundary.maxX) / 2 +
+        (layout?.sourcePortOffset ?? 0)
       : Math.min(...viaPoints.map((point) => point.x))) +
       portPitch -
       sourceBoundary.minX) /
@@ -234,9 +241,11 @@ export function* routeBottomCrossbarBusSteps(
   const viaTraceDistance = viaDiameter / 2 + width / 2 + clearance
   // Diagonally staggered crossbar vias need trace-to-via spacing on each
   // axis; the final physical check also verifies their diagonal via clearance.
-  const crossingPitch = usesLowerBand
-    ? Math.max(viaTraceDistance, (viaDiameter + clearance) / Math.SQRT2) + 1e-5
-    : portPitch
+  const crossingPitch =
+    usesLowerBand || layout?.compactRows
+      ? Math.max(viaTraceDistance, (viaDiameter + clearance) / Math.SQRT2) +
+        1e-5
+      : portPitch
   const lowestAcceptedCopper = Math.min(
     ...acceptedPlans
       .flatMap((plan) => plan.segments)
@@ -244,7 +253,10 @@ export function* routeBottomCrossbarBusSteps(
       .flatMap((segment) => [segment.start.y, segment.end.y]),
   )
   const annulusTop = Math.min(
-    sourceBoundary.minY - viaDiameter / 2 - clearance,
+    sourceBoundary.minY -
+      viaDiameter / 2 -
+      clearance -
+      (layout?.rowOffset ?? 0),
     usesLowerBand ? lowestAcceptedCopper - viaTraceDistance - 1e-5 : Infinity,
   )
   const annulusBottom = annulusTop - (count - 1) * crossingPitch
@@ -325,7 +337,7 @@ export function* routeBottomCrossbarBusSteps(
       (via) =>
         via.spanLayers.includes(targetLayer) &&
         via.center.x + via.diameter / 2 + width / 2 + clearance >=
-          minimumColumn &&
+          (oppositeSide ? bus.sharedBoundary.minX : minimumColumn) &&
         via.center.x - via.diameter / 2 - width / 2 - clearance <=
           bus.sharedBoundary.maxX,
     )
@@ -376,6 +388,7 @@ export function* routeBottomCrossbarBusSteps(
             (sum, segment) => sum + distance(segment.start, segment.end),
             0,
           ) +
+          (layout?.compactRows ? 2 * columns[count - 1 - rank]! : 0) +
           prefix.length +
           exitY -
           prefix.exitPoint.x,
@@ -485,7 +498,9 @@ export function* routeBottomCrossbarBusSteps(
     ]
     return plan
   })
-  if (bus.maxLengthSkew !== undefined) {
+  // A compact opposite crossbar may need the caller's normal complete-bus
+  // length matching. Physical clearance is still checked before returning it.
+  if (bus.maxLengthSkew !== undefined && !layout?.compactRows) {
     const lengths = plans.map((plan) => plan.length)
     if (Math.max(...lengths) - Math.min(...lengths) > bus.maxLengthSkew + 1e-6)
       return null

@@ -13,7 +13,23 @@ export function* routeOppositeBottomCrossbarBusSteps(
   },
 ): Generator<RouteViaMinimalWindingProgress, FanoutRoutePlan[] | null, void> {
   if (params.bus.exitEdge !== "right") return null
-  const plans = yield* routeBottomCrossbarBusSteps(reflectFanoutX(params))
+  const mirrored = reflectFanoutX(params)
+  const padPitch = Math.min(params.bus.pitchX, params.bus.pitchY)
+  const pitch = params.traceWidth + params.clearance
+  const layouts = [
+    undefined,
+    { sourcePortOffset: -padPitch, rowOffset: 0, compactRows: false },
+    ...[0, 1, 2, 3].map((row) => ({
+      sourcePortOffset: -padPitch,
+      rowOffset: row * pitch,
+      compactRows: true,
+    })),
+  ]
+  let plans: FanoutRoutePlan[] | null = null
+  for (const oppositeLayout of layouts) {
+    plans = yield* routeBottomCrossbarBusSteps({ ...mirrored, oppositeLayout })
+    if (plans) break
+  }
   if (!plans) return null
   const byIndex = new Map(
     params.bus.connections.map((connection) => [

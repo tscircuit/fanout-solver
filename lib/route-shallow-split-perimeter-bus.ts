@@ -140,9 +140,14 @@ export function* routeShallowSplitPerimeterBusSteps(
     .filter((y) => y > last.end.y + EPSILON && y < last.start.y - EPSILON)
     .sort((a, b) => a - b)
     .slice(0, 4)
-  const fixedIndices = new Set(
-    bus.connections.map((connection) => connection.connectionIndex),
-  )
+  const fixedIndices = new Set([
+    ...bus.connections.map((connection) => connection.connectionIndex),
+    // A nonlocal source escape already commits its topology before its first
+    // via. Only ordinary one-segment dogbones may move around the new band.
+    ...params.sourceEscapes
+      .filter((source) => source.segments.length > 1)
+      .map((source) => source.connectionIndex),
+  ])
   const movableBuses = params.buses
     .map((owner) => ({
       ...owner,
@@ -250,7 +255,7 @@ export function* routeShallowSplitPerimeterBusSteps(
       return {
         plans,
         sourceEscapes: sources,
-        sourceBoundary,
+        sourceBoundary: { ...params.sourceBoundary },
         viaPointsByConnectionIndex: viaPoints,
         remoteConnectionIndices: new Set(params.remoteConnectionIndices),
         bottomRemoteConnectionIndices: new Set(

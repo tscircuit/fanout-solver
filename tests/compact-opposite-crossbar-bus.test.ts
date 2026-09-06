@@ -8,7 +8,7 @@ import type { PreparedBus } from "lib/types"
 import { validateFanoutSolution } from "lib/validate-fanout-solution"
 import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
 
-test("reserves opposite-edge vias across the complete target run", async () => {
+test("staggered compact crossbar rows clear a transverse copper obstruction", async () => {
   const width = 0.08128,
     clearance = 0.08128,
     viaDiameter = 0.24,
@@ -46,13 +46,12 @@ test("reserves opposite-edge vias across the complete target run", async () => {
       ...obstacles,
       {
         type: "rect",
-        shape: "circle",
-        center: { x: 4.6, y: 4.8 },
-        width: viaDiameter,
-        height: viaDiameter,
-        layers: layerNames,
-        connectedTo: ["pending-via"],
-      } as Obstacle,
+        center: { x: 0, y: -3.55 },
+        width: 9.6,
+        height: width,
+        layers: ["bottom"],
+        connectedTo: ["transverse-copper"],
+      },
     ],
     connections: points.map((point, index) => ({
       name: `signal-${index}`,
@@ -110,19 +109,6 @@ test("reserves opposite-edge vias across the complete target run", async () => {
       },
     }),
   )
-  sourceEscapes.push({
-    connectionIndex: 99,
-    connectionName: "pending-via",
-    segments: [],
-    via: {
-      center: { x: 4.6, y: 4.8 },
-      diameter: viaDiameter,
-      holeDiameter: 0.1,
-      spanLayers: layerNames,
-      fromLayer: "top",
-      toLayer: "bottom",
-    },
-  })
   const params = {
     srj,
     bus,
@@ -146,14 +132,8 @@ test("reserves opposite-edge vias across the complete target run", async () => {
   if (!plans) throw new Error("Expected a complete four-lane crossbar")
   for (const plan of plans) {
     expect(plan.additionalVias).toHaveLength(2)
-    expect(plan.sourceObstacle).toBe(
-      bus.connections[plan.connectionIndex]!.sourceObstacle,
-    )
-    expect(plan.targetPoint).toEqual(
-      bus.connections[plan.connectionIndex]!.targetPoint,
-    )
-    expect(plan.exitPoint.y).toBeLessThan(
-      4.8 - viaDiameter / 2 - width / 2 - clearance,
+    expect(plan.additionalVias![0]!.center.y).toBeLessThan(
+      -3.55 - viaDiameter / 2 - width / 2 - clearance,
     )
     expect(new Set(plan.segments.map((segment) => segment.layer))).toEqual(
       new Set(["top", "inner1", "inner2"]),

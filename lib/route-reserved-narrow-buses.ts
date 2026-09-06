@@ -86,6 +86,33 @@ export function* routeReservedNarrowBusesSteps(
           c.sourcePoint)[axis],
       0,
     ) / bus.connections.length
+  // Commit the most constrained corner exits first, then sweep across the
+  // source field. Two complete greedy orders cheaply resolve cases where the
+  // recursive search otherwise spends its budget revisiting center lanes.
+  if (params.buses.length > 1) {
+    for (const sign of [1, -1]) {
+      const sweep = params.buses.toSorted((a, b) => {
+        const aCorner =
+          getCornerBandSide(a.exitEdge, a.preferredExit) !== undefined
+        const bCorner =
+          getCornerBandSide(b.exitEdge, b.preferredExit) !== undefined
+        if (aCorner !== bCorner) return Number(bCorner) - Number(aCorner)
+        const axis = a.exitEdge === "left" || a.exitEdge === "right" ? "y" : "x"
+        return sign * (sourceMean(a, axis) - sourceMean(b, axis))
+      })
+      let accepted = [...params.acceptedPlans]
+      for (const bus of sweep) {
+        const alternatives = yield* route(bus, accepted)
+        if (!alternatives.length) {
+          accepted = []
+          break
+        }
+        accepted.push(...alternatives[0]!)
+      }
+      if (accepted.length)
+        return restore(accepted.slice(params.acceptedPlans.length))
+    }
+  }
   const ordered = params.buses.toSorted((a, b) => {
     const aSide = getCornerBandSide(a.exitEdge, a.preferredExit)
     const bSide = getCornerBandSide(b.exitEdge, b.preferredExit)

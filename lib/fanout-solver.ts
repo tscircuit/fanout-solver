@@ -1582,14 +1582,7 @@ export class FanoutSolver extends BaseSolver {
     })
   }
 
-  /**
-   * Through-all source vias from a wide boundary bus can consume the only
-   * legal dogbone channel for nearby plane pads. Conversely, routing hundreds
-   * of singleton plane drops first can strand the boundary bus. Search a tiny
-   * number of whole-bus boundary alternatives, then fill the remaining plane
-   * dogbones. This is intentionally bounded independently of the number of
-   * plane drops so dense power fields cannot explode the general beam search.
-   */
+  /** Reserve source escapes before joining complete buses around the package. */
   private *routePeripheralMixedTerminationSteps(params: {
     busLayerAssignments: Readonly<Record<string, string>>
     busesInRoutingOrder: readonly PreparedBus[]
@@ -1710,6 +1703,14 @@ export class FanoutSolver extends BaseSolver {
     return { plans, failedBusIds: [], stopAfterCompleteValidation: true }
   }
 
+  /**
+   * Through-all source vias from a wide boundary bus can consume the only
+   * legal dogbone channel for nearby plane pads. Conversely, routing hundreds
+   * of singleton plane drops first can strand the boundary bus. Search a tiny
+   * number of whole-bus boundary alternatives, then fill the remaining plane
+   * dogbones. This is intentionally bounded independently of the number of
+   * plane drops so dense power fields cannot explode the general beam search.
+   */
   private *routeDenseThroughAllMixedTerminationSteps(params: {
     busLayerAssignments: Readonly<Record<string, string>>
     busesInRoutingOrder: readonly PreparedBus[]

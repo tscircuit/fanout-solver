@@ -47,9 +47,7 @@ test("shortens a lower perimeter while preserving all pending source escapes", a
   if (!result) throw new Error("Expected a complete shortened address bus")
   expect(sources).toEqual(originalSources)
   expect(result.sourceEscapes).toHaveLength(162)
-  expect(result.sourceBoundary.minY).toBeGreaterThan(
-    sources.sourceBoundary.minY,
-  )
+  expect(result.sourceBoundary).toEqual(sources.sourceBoundary)
   expect(
     Math.max(...result.plans.map((plan) => plan.length)) -
       Math.min(...result.plans.map((plan) => plan.length)),
