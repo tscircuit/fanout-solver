@@ -1,4 +1,3 @@
-import { allocateBoundaryTargetTracks } from "./allocate-boundary-target-tracks"
 import type {
   Obstacle,
   SimpleRouteJson,
@@ -355,9 +354,7 @@ function getDistributedBoundaryTargetTracks(params: {
   boundaryDirection: FanoutDirection
   traceWidth: number
   clearance: number
-  acceptedPlans?: readonly FanoutRoutePlan[]
   allowLayerInterleaving?: boolean
-  targetLayer?: string
 }): number[] | undefined {
   const { bus, boundaryDirection, traceWidth, clearance } = params
   if (getCornerSide(bus) || !busUsesCoordinatedWindingChannel(bus))
@@ -425,27 +422,7 @@ function getDistributedBoundaryTargetTracks(params: {
     for (let index = block.start; index < block.start + block.count; index++)
       tracks[index] = mean + index * pitch
   }
-  const occupiedTracks = (params.acceptedPlans ?? [])
-    .filter(
-      (plan) =>
-        plan.termination.type === "boundary" &&
-        plan.targetLayer === params.targetLayer &&
-        Math.abs(
-          getAxis(plan.exitPoint, boundaryDirection) -
-            getExitAxis(bus, boundaryDirection),
-        ) < 1e-9,
-    )
-    .map((plan) => getPerpendicularAxis(plan.exitPoint, boundaryDirection))
-    .toSorted((a, b) => a - b)
-  return [
-    ...allocateBoundaryTargetTracks({
-      requestedTracks: tracks,
-      occupiedTracks,
-      minimum,
-      maximum,
-      minimumPitch: pitch,
-    }),
-  ]
+  return tracks
 }
 
 export function getBoundaryTargetTrack(params: {
@@ -457,7 +434,6 @@ export function getBoundaryTargetTrack(params: {
   layerNames?: readonly string[]
   targetLayer?: string
   windingOrderIndex?: number
-  acceptedPlans?: readonly FanoutRoutePlan[]
   allowLayerInterleaving?: boolean
 }): number {
   const requestedTrack = getPerpendicularAxis(
@@ -2786,8 +2762,6 @@ export function* routeBusAlternativesSteps(
     const usesDistributedWindingTargets = Boolean(
       cornerSide ||
         getDistributedBoundaryTargetTracks({
-          acceptedPlans,
-          targetLayer,
           bus,
           boundaryDirection,
           traceWidth,
@@ -3114,7 +3088,6 @@ export function* routeBusAlternativesSteps(
             })
           : getBoundaryTargetTrack({
               allowLayerInterleaving: terminalPattern.allowLayerInterleaving,
-              acceptedPlans,
               bus,
               connection: preparedConnection,
               boundaryDirection,
@@ -3315,7 +3288,6 @@ export function* routeBusAlternativesSteps(
             cornerBandTargetTrackOffset,
           })
         : getBoundaryTargetTrack({
-            acceptedPlans,
             bus,
             connection: preparedConnection,
             boundaryDirection,
