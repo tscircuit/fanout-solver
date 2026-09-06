@@ -23,6 +23,7 @@ import {
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import {
   getComponentDogboneViaSiteCandidates,
+  getSingleDogboneViaSiteRepairs,
   matchComponentDogboneViaSites,
 } from "./match-component-dogbone-via-sites"
 import { connectionsShareElectricalNet } from "./net-identity"
@@ -2837,6 +2838,80 @@ export class FanoutSolver extends BaseSolver {
             ])
           }
           debugDense("local-sites", bus.busId, busPlans?.length ?? "failed")
+        }
+        // A first turning bus can be fenced by one diagonal site even though
+        // every provisional dogbone is individually legal. Try moving one of
+        // its own sites while retaining all other through-via reservations.
+        if (
+          !busPlans &&
+          useAdaptiveDensePlaneRouting &&
+          bus.connections.length >= 8 &&
+          getCornerBandSide(bus.exitEdge, bus.preferredExit) &&
+          new Set(bus.routableEscapeLayers ?? bus.allowedLayers ?? []).size ===
+            1 &&
+          !matchedPlans.some((plan) =>
+            wideBoundaryBuses.some(
+              (candidate) => candidate.busId === plan.busId,
+            ),
+          )
+        ) {
+          const reservedVias = getReservedVias(bus)
+          const siteRepairs = getSingleDogboneViaSiteRepairs(
+            bus,
+            {
+              viaDiameter: this.config.viaDiameter,
+              viaHoleDiameter: this.config.viaHoleDiameter,
+              traceWidth: this.config.traceWidth,
+              clearance: this.config.clearance,
+              additionalObstacles: this.routingSrj.obstacles,
+              blockingSegments: [
+                ...matchedPlans.flatMap((plan) =>
+                  plan.segments.map((segment) => ({
+                    connectionIndex: plan.connectionIndex,
+                    segment,
+                  })),
+                ),
+                ...reservedVias.flatMap((reserved) =>
+                  reserved.sourceEscapeSegment
+                    ? [
+                        {
+                          connectionIndex: -1,
+                          segment: reserved.sourceEscapeSegment,
+                        },
+                      ]
+                    : [],
+                ),
+              ],
+              blockingVias: [
+                ...matchedPlans.flatMap((plan) =>
+                  plan.via
+                    ? [{ connectionIndex: plan.connectionIndex, ...plan.via }]
+                    : [],
+                ),
+                ...reservedVias.map((reserved) => ({
+                  connectionIndex: -1,
+                  ...reserved.via,
+                })),
+              ],
+            },
+            fixedViaPointsByConnectionIndex,
+          )
+          for (const replacementPoints of siteRepairs) {
+            const replacementPlans = (yield* routeAlternatives(
+              {
+                ...routeParams,
+                fixedViaPointsByConnectionIndex: replacementPoints,
+                reservedVias,
+                fixedViaFallbackRouteOrderAttempts: 1,
+              },
+              1,
+            ))[0]
+            if (!replacementPlans) continue
+            busPlans = replacementPlans
+            fixedViaPointsByConnectionIndex = replacementPoints
+            usedRepairedViaSites = true
+            break
+          }
         }
         // Retry a blocked wide bus with provisional plane sites as search
         // costs. A turning bus beside a centered field may also need that
