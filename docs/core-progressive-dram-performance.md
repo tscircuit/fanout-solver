@@ -69,3 +69,11 @@ identical attempt/statistics hashes. The original full search still reaches
 125/143 after eight assignments; these optimizations do not fix the missing
 escapes. The debugger page `repros/repro06-core-progressive-dram.page.tsx` exposes
 that complete original input for further investigation.
+
+With the original full constructor options, the last local run took 232.556 s
+and produced exactly the same eight attempt records and final statistics as the
+baseline. The baseline took 242.331 s under the profiler, and 240.15 s in the
+independent regression run. Treat this small full-input wall-time improvement as
+indicative: the runs occurred at different times, and some validation overlapped
+other work. The sequential first-assignment CPU comparison above is the stronger
+controlled measurement. The complete input remains slow and incomplete.
