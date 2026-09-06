@@ -61,6 +61,8 @@ export interface RouteBusParams {
   rejectedViaMinimalCandidates?: FanoutRoutePlan[][]
   stopAfterFirstRejectedViaMinimalCandidate?: boolean
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
+  /** Complete boundary tracks for this bus, keyed by stable connection identity. */
+  fixedBoundaryTracksByConnectionIndex?: ReadonlyMap<number, number>
   /** Actual copper before the first via for previously reserved source escapes. */
   sourceEscapePaths?: ReadonlyMap<number, readonly Point2D[]>
   /** Exact winding spacing for staged narrow-channel routing. */
@@ -444,7 +446,13 @@ export function getBoundaryTargetTrack(params: {
   targetLayer?: string
   windingOrderIndex?: number
   allowLayerInterleaving?: boolean
+  fixedBoundaryTracksByConnectionIndex?: ReadonlyMap<number, number>
 }): number {
+  const fixedTrack = params.fixedBoundaryTracksByConnectionIndex?.get(
+    params.connection.connectionIndex,
+  )
+  if (fixedTrack !== undefined) return fixedTrack
+
   const requestedTrack = getPerpendicularAxis(
     params.connection.exitTargetPoint ?? params.connection.targetPoint,
     params.boundaryDirection,
@@ -485,7 +493,13 @@ export function getCornerTargetTrack(params: {
   targetLayer: string
   windingOrderIndex?: number
   cornerBandTargetTrackOffset?: number
+  fixedBoundaryTracksByConnectionIndex?: ReadonlyMap<number, number>
 }): number {
+  const fixedTrack = params.fixedBoundaryTracksByConnectionIndex?.get(
+    params.connection.connectionIndex,
+  )
+  if (fixedTrack !== undefined) return fixedTrack
+
   const {
     bus,
     connection,
@@ -1136,12 +1150,13 @@ function buildPlan(params: {
   initialViaPoint?: Point2D
   sourceEscapePath?: readonly Point2D[]
   cornerBandTargetTrackOffset?: number
+  fixedBoundaryTracksByConnectionIndex?: ReadonlyMap<number, number>
 }): FanoutRoutePlan {
   const {
     preparedConnection,
     bus,
     targetLayer,
-    track,
+    track: requestedTrack,
     exitAxis,
     layerNames,
     traceWidth,
@@ -1159,7 +1174,21 @@ function buildPlan(params: {
     initialViaPoint,
     sourceEscapePath,
     cornerBandTargetTrackOffset,
+    fixedBoundaryTracksByConnectionIndex,
   } = params
+  const fixedBoundaryTrack = fixedBoundaryTracksByConnectionIndex?.get(
+    preparedConnection.connectionIndex,
+  )
+  const cornerSide = getCornerSide(bus)
+  const boundaryDirection = bus.exitEdge
+    ? getDirectionForExitEdge(bus.exitEdge)
+    : bus.direction
+  const track =
+    fixedBoundaryTrack !== undefined &&
+    !cornerSide &&
+    bus.direction === boundaryDirection
+      ? fixedBoundaryTrack
+      : requestedTrack
   const sourcePoint = {
     x: preparedConnection.sourcePoint.x,
     y: preparedConnection.sourcePoint.y,
@@ -1223,14 +1252,11 @@ function buildPlan(params: {
     ? getAxis(spreadPoint, bus.direction)
     : viaAxis + sign * Math.abs(track - viaPerpendicularAxis)
   const doglegPoint = makePoint(targetLayerDoglegAxis, track, bus.direction)
-  const cornerSide = getCornerSide(bus)
-  const boundaryDirection = bus.exitEdge
-    ? getDirectionForExitEdge(bus.exitEdge)
-    : bus.direction
   const boundarySign = directionSign(boundaryDirection)
   const boundaryExitAxis = getExitAxis(bus, boundaryDirection)
   const boundaryTargetTrack =
-    cornerSide && bus.exitEdge
+    fixedBoundaryTrack ??
+    (cornerSide && bus.exitEdge
       ? getCornerTargetTrack({
           bus,
           connection: preparedConnection,
@@ -1252,7 +1278,7 @@ function buildPlan(params: {
             layerNames,
             targetLayer,
           })
-        : track
+        : track)
   const connectionRank = getConnectionRank(bus, preparedConnection)
   const localCornerSide = getLocalCornerSide(bus)
   const localChannelLaneIndex =
@@ -1301,7 +1327,9 @@ function buildPlan(params: {
       : makePoint(boundaryChannelAxis, track, boundaryDirection)
   const exitPoint = terminateAtVia
     ? viaPoint
-    : cornerSide || usesLayeredWindingChannel
+    : cornerSide ||
+        usesLayeredWindingChannel ||
+        fixedBoundaryTrack !== undefined
       ? makePoint(boundaryExitAxis, boundaryTargetTrack, boundaryDirection)
       : makePoint(exitAxis, track, bus.direction)
   const segments: RoutedSegment[] = []
@@ -2617,6 +2645,7 @@ export function* routeBusAlternativesSteps(
     rejectedViaMinimalCandidates,
     stopAfterFirstRejectedViaMinimalCandidate = false,
     fixedViaPointsByConnectionIndex,
+    fixedBoundaryTracksByConnectionIndex,
     reservedVias = [],
     softReservedVias = [],
     viaMinimalOnly = false,
@@ -2679,6 +2708,29 @@ export function* routeBusAlternativesSteps(
       alternatives.push(plan)
     }
     return alternatives
+  }
+  if (fixedBoundaryTracksByConnectionIndex) {
+    if (!bus.exitEdge)
+      throw new Error(
+        "FanoutSolver: fixed boundary tracks require an exit edge",
+      )
+    const vertical = bus.exitEdge === "left" || bus.exitEdge === "right"
+    const minimum = vertical ? bus.sharedBoundary.minY : bus.sharedBoundary.minX
+    const maximum = vertical ? bus.sharedBoundary.maxY : bus.sharedBoundary.maxX
+    for (const connection of bus.connections) {
+      const track = fixedBoundaryTracksByConnectionIndex.get(
+        connection.connectionIndex,
+      )
+      if (
+        track === undefined ||
+        !Number.isFinite(track) ||
+        track < minimum - 1e-9 ||
+        track > maximum + 1e-9
+      )
+        throw new Error(
+          `FanoutSolver: invalid fixed boundary track for ${connection.connection.name}`,
+        )
+    }
   }
   const exitAxis = getExitAxis(bus)
   const sourceObstacle = bus.connections[0]?.sourceObstacle
@@ -2744,6 +2796,20 @@ export function* routeBusAlternativesSteps(
   }
 
   const addAlternative = (plans: FanoutRoutePlan[]): void => {
+    if (
+      fixedBoundaryTracksByConnectionIndex &&
+      plans.some((plan) => {
+        const track = fixedBoundaryTracksByConnectionIndex.get(
+          plan.connectionIndex,
+        )!
+        const actual =
+          bus.exitEdge === "left" || bus.exitEdge === "right"
+            ? plan.exitPoint.y
+            : plan.exitPoint.x
+        return Math.abs(actual - track) > 1e-9
+      })
+    )
+      return
     const key = plans
       .map(
         (plan) =>
@@ -2786,7 +2852,12 @@ export function* routeBusAlternativesSteps(
             )!,
             exitPoint: makePoint(
               getExitAxis(bus, boundaryDirection),
-              getBoundaryTargetTrack({ bus, connection, boundaryDirection }),
+              getBoundaryTargetTrack({
+                fixedBoundaryTracksByConnectionIndex,
+                bus,
+                connection,
+                boundaryDirection,
+              }),
               boundaryDirection,
             ),
           },
@@ -3227,6 +3298,7 @@ export function* routeBusAlternativesSteps(
           terminalPattern.getViaHandedness(preparedConnection)
         const boundaryTrack = cornerSide
           ? getCornerTargetTrack({
+              fixedBoundaryTracksByConnectionIndex,
               bus,
               connection: preparedConnection,
               cornerExitLaneOffset:
@@ -3240,6 +3312,7 @@ export function* routeBusAlternativesSteps(
               cornerBandTargetTrackOffset,
             })
           : getBoundaryTargetTrack({
+              fixedBoundaryTracksByConnectionIndex,
               allowLayerInterleaving: terminalPattern.allowLayerInterleaving,
               bus,
               connection: preparedConnection,
@@ -3433,6 +3506,7 @@ export function* routeBusAlternativesSteps(
     const finalTracks = bus.connections.map((preparedConnection) =>
       preferCornerBoundaryVia && getCornerSide(bus)
         ? getCornerTargetTrack({
+            fixedBoundaryTracksByConnectionIndex,
             bus,
             connection: preparedConnection,
             cornerExitLaneOffset: cornerLaneOffsets.exit,
@@ -3444,6 +3518,7 @@ export function* routeBusAlternativesSteps(
             cornerBandTargetTrackOffset,
           })
         : getBoundaryTargetTrack({
+            fixedBoundaryTracksByConnectionIndex,
             bus,
             connection: preparedConnection,
             boundaryDirection,
@@ -3873,7 +3948,16 @@ export function* routeBusAlternativesSteps(
     }
   }
 
-  if (viaMinimalOnly) return alternatives
+  // The analytic fallback chooses its own dogbone and checks accepted copper
+  // only. It cannot replace an explicit source prefix or occupy a future hard
+  // reservation after the reservation-aware winding alternatives have failed.
+  if (
+    viaMinimalOnly ||
+    fixedViaPointsByConnectionIndex ||
+    params.sourceEscapePaths ||
+    reservedVias.length > 0
+  )
+    return alternatives
 
   const searchConnectionOrder = (
     connectionOrder: PreparedConnection[],
@@ -3955,6 +4039,7 @@ export function* routeBusAlternativesSteps(
         terminateAtVia: false,
         allowBlindAndBuriedVias,
         cornerBandTargetTrackOffset,
+        fixedBoundaryTracksByConnectionIndex,
       })
       if (
         !planIsClear({
@@ -3962,7 +4047,7 @@ export function* routeBusAlternativesSteps(
           otherPlans: [...acceptedPlans, ...candidatePlans],
           staticClearanceCache,
           blockingBusCounts,
-          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}`,
+          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
           srj,
           sharedBoundary: bus.sharedBoundary,
           clearance,
