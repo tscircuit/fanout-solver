@@ -9,7 +9,9 @@ import {
   distanceSegmentToSegment,
 } from "./geometry"
 import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
+import { getViaChannelGridPhase } from "./get-via-channel-grid-phase"
 import { normalizeLayeredPath } from "./normalize-layered-path"
+import { repairBoundaryRouteTails } from "./repair-boundary-route-tails"
 import { fanoutPlansAreClear } from "./route-bus"
 import {
   buildViaMinimalWindingPlan,
@@ -41,6 +43,10 @@ export interface RouteReservedViaBusesParams {
   viaHoleDiameter: number
   maximumIterations?: number
   shuffleSeed?: number
+  /** Align a uniform grid and its center keepouts with narrow via channels. */
+  tightViaChannels?: boolean
+  ripCost?: number
+  maximumRipEvents?: number
   /** Additional conservative spacing beyond the physical edge clearance. */
   traceMarginExtra?: number
 }
@@ -73,6 +79,7 @@ interface NegotiatedRouter {
   failed: boolean
   iterations: number
   MAX_ITERATIONS: number
+  MAX_RIPS: number
   planeSize: number
   cellCenterX: Float64Array
   cellCenterY: Float64Array
@@ -345,6 +352,15 @@ export function* routeReservedViaBusesSteps(
   const maximumIterations = params.maximumIterations ?? 30_000_000
   if (!Number.isSafeInteger(maximumIterations) || maximumIterations < 1)
     throw new Error("maximumIterations must be a positive safe integer")
+  const ripCost = params.ripCost ?? 8
+  if (!Number.isFinite(ripCost) || ripCost <= 0)
+    throw new Error("ripCost must be finite and positive")
+  if (
+    params.maximumRipEvents !== undefined &&
+    (!Number.isSafeInteger(params.maximumRipEvents) ||
+      params.maximumRipEvents < 1)
+  )
+    throw new Error("maximumRipEvents must be a positive safe integer")
   const marginExtra = params.traceMarginExtra ?? traceWidth / 2
   if (!Number.isFinite(marginExtra) || marginExtra < 0)
     throw new Error("traceMarginExtra must be finite and non-negative")
@@ -507,6 +523,27 @@ export function* routeReservedViaBusesSteps(
       })),
     ),
   }
+  if (params.tightViaChannels) {
+    const phase = getViaChannelGridPhase({
+      vias: [...params.fixedViaPointsByConnectionIndex].map(
+        ([connectionIndex, center]) => ({
+          connectionIndex,
+          center,
+          diameter: viaDiameter,
+        }),
+      ),
+      activeConnectionIndices: expected,
+      traceWidth,
+      clearance,
+      gridStep: traceWidth,
+    })
+    for (const axis of ["x", "y"] as const) {
+      const first = (axis === "x" ? bounds.minX : bounds.minY) + traceWidth / 2
+      node.center[axis] +=
+        phase[axis] -
+        (first + Math.round((phase[axis] - first) / traceWidth) * traceWidth)
+    }
+  }
   const factory = new PortfolioSingleIntraNodeSolver({
     nodeWithPortPoints: node,
     traceWidth,
@@ -536,6 +573,7 @@ export function* routeReservedViaBusesSteps(
     hyperParameters: {
       shuffleSeed: params.shuffleSeed ?? 1,
       greedyMultiplier: 1.5,
+      ripCost,
     },
   })
   const setup = router._setup.bind(router),
@@ -586,6 +624,8 @@ export function* routeReservedViaBusesSteps(
     setup()
     if (router.failed) return
     router.MAX_ITERATIONS = maximumIterations
+    if (params.maximumRipEvents !== undefined)
+      router.MAX_RIPS = params.maximumRipEvents
     // Static tests and emitted copper must use exactly the same coordinates.
     router.gridToBoundsTransform = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 }
     const pop = router.heap.pop.bind(router.heap)
@@ -599,17 +639,29 @@ export function* routeReservedViaBusesSteps(
     const point = pointAt(sourceCell),
       radius = router.traceKeepoutRadius
     router.forEachCellNearCircle(point.x, point.y, radius, (cell) => {
-      const dx = Math.max(
-          router.cellMinX[cell]! - point.x,
-          0,
-          point.x - router.cellMaxX[cell]!,
-        ),
-        dy = Math.max(
-          router.cellMinY[cell]! - point.y,
-          0,
-          point.y - router.cellMaxY[cell]!,
-        )
-      if (dx * dx + dy * dy > radius * radius) return
+      const dx = params.tightViaChannels
+          ? router.cellCenterX[cell]! - point.x
+          : Math.max(
+              router.cellMinX[cell]! - point.x,
+              0,
+              point.x - router.cellMaxX[cell]!,
+            ),
+        dy = params.tightViaChannels
+          ? router.cellCenterY[cell]! - point.y
+          : Math.max(
+              router.cellMinY[cell]! - point.y,
+              0,
+              point.y - router.cellMaxY[cell]!,
+            )
+      // Center keepouts retain legal two-lane channels on a uniform grid.
+      // Exact validation below also checks the off-grid terminal connectors.
+      const effectiveRadius = radius - (params.tightViaChannels ? 1e-9 : 0)
+      if (
+        params.tightViaChannels
+          ? dx * dx + dy * dy >= effectiveRadius * effectiveRadius
+          : dx * dx + dy * dy > effectiveRadius * effectiveRadius
+      )
+        return
       const flat = z * router.planeSize + cell
       if (
         cell !== sourceCell &&
@@ -711,13 +763,69 @@ export function* routeReservedViaBusesSteps(
     }
   }
   if (!router.solved || router.failed) return null
-  const routes = router.getOutput()
+  let routes = router.getOutput()
   if (
     routes.length !== connections.length ||
     new Set(routes.map((route) => route.connectionName)).size !==
       connections.length
   )
     return null
+  const alreadyRouted = new Set([
+    ...expected,
+    ...params.acceptedPlans.map((plan) => plan.connectionIndex),
+  ])
+  const prefixes = allBuses.flatMap((bus) =>
+    bus.connections
+      .filter((connection) => !alreadyRouted.has(connection.connectionIndex))
+      .map((connection) => {
+        const viaPoint = params.fixedViaPointsByConnectionIndex.get(
+            connection.connectionIndex,
+          )!,
+          prefixLayer =
+            bus.termination.type === "plane"
+              ? bus.termination.layer
+              : (bus.allowedLayers ?? layerNames).find(
+                  (layer) => layer !== connection.sourceLayer,
+                )!
+        return buildViaMinimalWindingPlan({
+          ...params,
+          bus,
+          terminal: { connection, viaPoint, exitPoint: viaPoint },
+          targetLayer: prefixLayer,
+          targetLayerPoints: [viaPoint],
+          sourceEscapePoints: paths.get(connection.connectionIndex),
+          allowBlindAndBuriedVias: false,
+        })
+      }),
+  )
+  const rawPlans = convertRoutes(params, routes, paths)
+  if (!rawPlans) return null
+  const repairedPlans = repairBoundaryRouteTails({
+    ...params,
+    inputSrj: srj,
+    plans: rawPlans,
+    preparedBuses: buses,
+    reservedPlans: [...params.acceptedPlans, ...prefixes],
+    allowBlindAndBuriedVias: false,
+    allowSameNetMerges: false,
+  })
+  if (!repairedPlans) return null
+  routes = repairedPlans.map((plan) => {
+    const firstVia = plan.trace.route.findIndex(
+      (point) => point.route_type === "via",
+    )
+    return {
+      connectionName: plan.connectionName,
+      route: plan.trace.route
+        .slice(firstVia + 1)
+        .flatMap((point) =>
+          point.route_type === "wire"
+            ? [{ x: point.x, y: point.y, z: layerNames.indexOf(point.layer) }]
+            : [],
+        ),
+      vias: (plan.additionalVias ?? []).map((via) => via.center),
+    }
+  })
   const addRouteCopper = (route: HdRoute): void => {
     for (let i = 1; i < route.route.length; i++) {
       const a = route.route[i - 1]!,
@@ -784,33 +892,6 @@ export function* routeReservedViaBusesSteps(
     })
   )
     return null
-  const alreadyRouted = new Set(
-    [...plans, ...params.acceptedPlans].map((plan) => plan.connectionIndex),
-  )
-  const prefixes = allBuses.flatMap((bus) =>
-    bus.connections
-      .filter((connection) => !alreadyRouted.has(connection.connectionIndex))
-      .map((connection) => {
-        const viaPoint = params.fixedViaPointsByConnectionIndex.get(
-            connection.connectionIndex,
-          )!,
-          prefixLayer =
-            bus.termination.type === "plane"
-              ? bus.termination.layer
-              : (bus.allowedLayers ?? layerNames).find(
-                  (layer) => layer !== connection.sourceLayer,
-                )!
-        return buildViaMinimalWindingPlan({
-          ...params,
-          bus,
-          terminal: { connection, viaPoint, exitPoint: viaPoint },
-          targetLayer: prefixLayer,
-          targetLayerPoints: [viaPoint],
-          sourceEscapePoints: paths.get(connection.connectionIndex),
-          allowBlindAndBuriedVias: false,
-        })
-      }),
-  )
   const traces = [
     ...(srj.traces ?? []),
     ...[...plans, ...params.acceptedPlans, ...prefixes].flatMap((plan) => [

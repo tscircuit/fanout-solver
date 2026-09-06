@@ -164,6 +164,26 @@ test("joint fixed-via routing crosses a blocked layer while preserving every sou
       allowBlindAndBuriedVias: false,
     }),
   ).toMatchObject({ valid: true, issues: [], checkedTraceCount: 2 })
+  const tightSteps = routeReservedViaBusesSteps({
+    ...params,
+    tightViaChannels: true,
+    ripCost: 64,
+    maximumRipEvents: 200,
+  })
+  let tight = tightSteps.next()
+  while (!tight.done) tight = tightSteps.next()
+  expect(tight.value).not.toBeNull()
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: srj,
+      routedSrj: {
+        ...srj,
+        traces: [...tight.value!.map((plan) => plan.trace), prefix.trace],
+      },
+      clearance: rules.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, issues: [], checkedTraceCount: 2 })
   const forbidden = routeReservedViaBusesSteps({
     ...params,
     transitLayers: ["inner2"],
