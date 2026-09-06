@@ -1951,6 +1951,8 @@ function planIsClearOfPlans(params: {
     clearance,
     blockingBusCounts,
   } = params
+  const planSegments = getPlanSegments(plan)
+  const planVias = getPlanVias(plan)
   for (const otherPlan of otherPlans) {
     if (
       allowSameNetMerges &&
@@ -1975,9 +1977,7 @@ function planIsClearOfPlans(params: {
         (blockingBusCounts.get(otherPlan.busId) ?? 0) + 1,
       )
     }
-    const planSegments = getPlanSegments(plan)
     const otherSegments = getPlanSegments(otherPlan)
-    const planVias = getPlanVias(plan)
     const otherVias = getPlanVias(otherPlan)
     for (const segment of planSegments) {
       for (const otherSegment of otherSegments) {

@@ -190,6 +190,25 @@ export function segmentsAreClear(
 ): boolean {
   if (first.layer !== second.layer) return true
   const requiredDistance = (first.width + second.width) / 2 + clearance
+  // Axis separation is a lower bound on the distance between the segments.
+  // Leave a conservative tolerance band to the exact check below.
+  const broadPhaseDistance = requiredDistance + EPSILON
+  if (
+    Math.min(first.start.x, first.end.x) -
+      Math.max(second.start.x, second.end.x) >
+      broadPhaseDistance ||
+    Math.min(second.start.x, second.end.x) -
+      Math.max(first.start.x, first.end.x) >
+      broadPhaseDistance ||
+    Math.min(first.start.y, first.end.y) -
+      Math.max(second.start.y, second.end.y) >
+      broadPhaseDistance ||
+    Math.min(second.start.y, second.end.y) -
+      Math.max(first.start.y, first.end.y) >
+      broadPhaseDistance
+  ) {
+    return true
+  }
   return (
     distanceSegmentToSegment(
       first.start,

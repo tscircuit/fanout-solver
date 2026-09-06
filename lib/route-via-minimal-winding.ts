@@ -824,6 +824,13 @@ export function* routeViaMinimalWindingAlternativesSteps(
   const sharesNet = (first: string, second: string): boolean =>
     first === second ||
     (allowSameNetMerges && connectionsShareElectricalNet(srj, first, second))
+  const boundedBlockingSegments = blockingSegments.map((blocker) => ({
+    ...blocker,
+    minX: Math.min(blocker.segment.start.x, blocker.segment.end.x),
+    maxX: Math.max(blocker.segment.start.x, blocker.segment.end.x),
+    minY: Math.min(blocker.segment.start.y, blocker.segment.end.y),
+    maxY: Math.max(blocker.segment.start.y, blocker.segment.end.y),
+  }))
   const allBlockingVias = [...blockingVias, ...terminalVias]
   const maximumViaToTraceDistance = allBlockingVias.reduce(
     (maximum, { via }) =>
@@ -850,6 +857,10 @@ export function* routeViaMinimalWindingAlternativesSteps(
   }): boolean => {
     const { segment, terminal, acceptedAttemptSegments } = params
     const connectionName = terminal.connection.connection.name
+    const segmentMinX = Math.min(segment.start.x, segment.end.x)
+    const segmentMaxX = Math.max(segment.start.x, segment.end.x)
+    const segmentMinY = Math.min(segment.start.y, segment.end.y)
+    const segmentMaxY = Math.max(segment.start.y, segment.end.y)
     const requiredObstacleClearance = segment.width / 2 + clearance
     for (const obstacle of targetLayerObstacleIndex.querySegment(
       segment,
@@ -869,8 +880,19 @@ export function* routeViaMinimalWindingAlternativesSteps(
         return false
       }
     }
-    for (const blocker of blockingSegments) {
+    for (const blocker of boundedBlockingSegments) {
       if (sharesNet(connectionName, blocker.connectionName)) continue
+      const margin = (segment.width + blocker.segment.width) / 2 + clearance
+      // Keep the full clearance margin in the broad phase; the exact check
+      // retains the existing tolerance for nearby copper.
+      if (
+        segmentMaxX + margin < blocker.minX ||
+        segmentMinX - margin > blocker.maxX ||
+        segmentMaxY + margin < blocker.minY ||
+        segmentMinY - margin > blocker.maxY
+      ) {
+        continue
+      }
       if (
         distanceSegmentToSegment(
           segment.start,
@@ -878,7 +900,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
           blocker.segment.start,
           blocker.segment.end,
         ) <
-        (segment.width + blocker.segment.width) / 2 + clearance - EPSILON
+        margin - EPSILON
       ) {
         return false
       }
@@ -887,13 +909,13 @@ export function* routeViaMinimalWindingAlternativesSteps(
       if (sharesNet(connectionName, blocker.connectionName)) continue
       const margin = (segment.width + blocker.segment.width) / 2 + clearance
       if (
-        Math.max(segment.start.x, segment.end.x) + margin <
+        segmentMaxX + margin <
           Math.min(blocker.segment.start.x, blocker.segment.end.x) ||
-        Math.min(segment.start.x, segment.end.x) - margin >
+        segmentMinX - margin >
           Math.max(blocker.segment.start.x, blocker.segment.end.x) ||
-        Math.max(segment.start.y, segment.end.y) + margin <
+        segmentMaxY + margin <
           Math.min(blocker.segment.start.y, blocker.segment.end.y) ||
-        Math.min(segment.start.y, segment.end.y) - margin >
+        segmentMinY - margin >
           Math.max(blocker.segment.start.y, blocker.segment.end.y)
       )
         continue
@@ -917,10 +939,6 @@ export function* routeViaMinimalWindingAlternativesSteps(
       )
         return false
     }
-    const segmentMinX = Math.min(segment.start.x, segment.end.x)
-    const segmentMaxX = Math.max(segment.start.x, segment.end.x)
-    const segmentMinY = Math.min(segment.start.y, segment.end.y)
-    const segmentMaxY = Math.max(segment.start.y, segment.end.y)
     for (
       let viaIndex = getFirstViaAtOrAfterX(
         segmentMinX - maximumViaToTraceDistance,
@@ -1151,18 +1169,33 @@ export function* routeViaMinimalWindingAlternativesSteps(
     )
     const previous = new Int32Array(stateCount).fill(-1)
     const heap = new MinHeap()
-    const heuristic = (point: Point2D): number => {
+    // A node is revisited with different incoming directions. Its distance
+    // estimate and lane penalty stay fixed throughout this terminal search.
+    const remainingDistances = new Float64Array(nodeCount)
+    const lanePenalties = new Float64Array(nodeCount)
+    const targetTrack = getPerpendicularAxis(
+      terminal.exitPoint,
+      boundaryDirection,
+    )
+    for (let nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++) {
+      const point = nodes[nodeIndex]!.point
       const deltaX = Math.abs(point.x - terminal.exitPoint.x)
       const deltaY = Math.abs(point.y - terminal.exitPoint.y)
-      return (
+      remainingDistances[nodeIndex] =
         Math.max(deltaX, deltaY) + (Math.SQRT2 - 1) * Math.min(deltaX, deltaY)
-      )
+      const nextTrack = getPerpendicularAxis(point, boundaryDirection)
+      lanePenalties[nodeIndex] =
+        laneBias === 0
+          ? 0
+          : laneBias > 0
+            ? Math.max(0, targetTrack - nextTrack) * 0.2
+            : Math.max(0, nextTrack - targetTrack) * 0.2
     }
     for (const start of starts) {
       const state = start.nodeIndex * 9 + 8
       if (start.length >= distances[state]!) continue
       distances[state] = start.length
-      const remaining = heuristic(nodes[start.nodeIndex]!.point)
+      const remaining = remainingDistances[start.nodeIndex]!
       heap.push({
         node: start.nodeIndex,
         direction: 8,
@@ -1179,6 +1212,16 @@ export function* routeViaMinimalWindingAlternativesSteps(
       [0, -1],
       [1, -1],
     ] as const
+    // Preserve the original ascending neighbor order, but do not reconsider
+    // the five disallowed turns every time a directed state is expanded.
+    const nextDirectionsByIncoming = Array.from({ length: 9 }, (_, incoming) =>
+      directions.flatMap((_, directionIndex) => {
+        const delta = Math.abs(incoming - directionIndex)
+        return incoming === 8 || Math.min(delta, 8 - delta) <= 1
+          ? [directionIndex]
+          : []
+      }),
+    )
     const startsByNode = new Map<number, ConnectorCandidate[]>()
     for (const start of starts) {
       const values = startsByNode.get(start.nodeIndex) ?? []
@@ -1198,7 +1241,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
       const currentDistance = distances[state]!
       if (
         current.score >
-        currentDistance + heuristic(nodes[current.node]!.point) + EPSILON
+        currentDistance + remainingDistances[current.node]! + EPSILON
       )
         continue
       expandedStateCount++
@@ -1257,17 +1300,9 @@ export function* routeViaMinimalWindingAlternativesSteps(
         }
       }
       const node = nodes[current.node]!
-      for (
-        let directionIndex = 0;
-        directionIndex < directions.length;
-        directionIndex++
-      ) {
-        if (current.direction !== 8) {
-          const rawDirectionDelta = Math.abs(current.direction - directionIndex)
-          if (Math.min(rawDirectionDelta, 8 - rawDirectionDelta) > 1) {
-            continue
-          }
-        }
+      for (const directionIndex of nextDirectionsByIncoming[
+        current.direction
+      ]!) {
         const [deltaColumn, deltaRow] = directions[directionIndex]!
         const column = node.column + deltaColumn
         const row = node.row + deltaRow
@@ -1278,17 +1313,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
         const nextPoint = nodes[nextNode]!.point
         const addsTurn =
           current.direction !== 8 && current.direction !== directionIndex
-        const nextTrack = getPerpendicularAxis(nextPoint, boundaryDirection)
-        const targetTrack = getPerpendicularAxis(
-          terminal.exitPoint,
-          boundaryDirection,
-        )
-        const lanePenalty =
-          laneBias === 0
-            ? 0
-            : laneBias > 0
-              ? Math.max(0, targetTrack - nextTrack) * 0.2
-              : Math.max(0, nextTrack - targetTrack) * 0.2
+        const lanePenalty = lanePenalties[nextNode]!
         const nextDistance =
           currentDistance +
           (deltaColumn !== 0 && deltaRow !== 0
@@ -1319,7 +1344,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
         if (edgeClearance[edgeIndex] === 2) continue
         distances[nextState] = nextDistance
         previous[nextState] = state
-        const remaining = heuristic(nextPoint)
+        const remaining = remainingDistances[nextNode]!
         heap.push({
           node: nextNode,
           direction: directionIndex,
@@ -1488,6 +1513,14 @@ export function* routeViaMinimalWindingAlternativesSteps(
 
   const alternatives: FanoutRoutePlan[][] = []
   const seenAlternativeKeys = new Set<string>()
+  // Different complete route orders can share the same unsuccessful prefix.
+  // Static obstacles/vias, grid and search limits belong to this invocation;
+  // the terminal, lane bias and already accepted copper identify the rest.
+  // A reused failure still emits its normal completion progress below.
+  const failedSearches = new Map<
+    string,
+    { expandedStateCount: number; searchBatch: number }
+  >()
   let routeOrderAttemptCount = 0
   for (const routeOrder of adaptiveRouteOrders()) {
     for (const laneBias of laneBiases) {
@@ -1507,13 +1540,36 @@ export function* routeViaMinimalWindingAlternativesSteps(
         terminalIndex++
       ) {
         const terminal = routeOrder[terminalIndex]!
+        const failedSearchKey = JSON.stringify([
+          terminals.indexOf(terminal),
+          laneBias,
+          acceptedAttemptSegments.map(({ connectionName, segment }) => [
+            connectionName,
+            segment.start.x,
+            segment.start.y,
+            segment.end.x,
+            segment.end.y,
+            segment.width,
+            segment.layer,
+          ]),
+        ])
+        const cachedFailure = failedSearches.get(failedSearchKey)
         const connectionSteps = routeOneSteps({
           terminal,
           acceptedAttemptSegments,
           laneBias,
         })
-        let connectionResult = connectionSteps.next()
-        let searchBatch = 0
+        let connectionResult: ReturnType<typeof connectionSteps.next> =
+          cachedFailure === undefined
+            ? connectionSteps.next()
+            : {
+                done: true,
+                value: {
+                  points: null,
+                  expandedStateCount: cachedFailure.expandedStateCount,
+                },
+              }
+        let searchBatch = cachedFailure?.searchBatch ?? 0
         let expandedStateCount = 0
         while (!connectionResult.done) {
           expandedStateCount = connectionResult.value.expandedStateCount
@@ -1560,6 +1616,10 @@ export function* routeViaMinimalWindingAlternativesSteps(
             : {}),
         }
         if (!points) {
+          failedSearches.set(failedSearchKey, {
+            expandedStateCount: finalExpandedStateCount,
+            searchBatch,
+          })
           if (
             adaptiveRouteOrder &&
             maximumRouteOrderAttempts !== undefined &&
