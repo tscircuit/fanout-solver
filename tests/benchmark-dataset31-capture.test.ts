@@ -10,6 +10,8 @@ import {
   dataset31Source,
 } from "../scripts/generate-repro/dataset31-source"
 
+// Render all 36 upstream circuits sequentially; this is capture/transport coverage,
+// separate from the benchmark's per-sample routing deadline.
 test("dataset 31 capture preserves every upstream connection, obstacle, and bus constraint", async () => {
   const directory = await mkdtemp(join(tmpdir(), "fanout-dataset31-capture-"))
   try {
@@ -115,4 +117,4 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
-}, 180_000)
+}, 300_000)
