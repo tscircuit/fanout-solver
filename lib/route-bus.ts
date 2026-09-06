@@ -3356,12 +3356,14 @@ export function* routeBusAlternativesSteps(
           ? [points, [points[1]!, points[0]!]]
           : [points]
       })
+    const preferPackageEdgeVias =
+      bus.connections.length === 2 && Boolean(getCornerSide(bus))
     const viaCandidates = [
       ...displacedViaCandidates.map((points) => ({
         points,
         boundarySide: false,
       })),
-      ...(bus.connections.length === 2 ? packageEdgeViaCandidates : []).map(
+      ...(preferPackageEdgeVias ? packageEdgeViaCandidates : []).map(
         (points) => ({
           points,
           boundarySide: false,
@@ -3371,10 +3373,10 @@ export function* routeBusAlternativesSteps(
         points,
         boundarySide: true,
       })),
-      // Preserve existing singleton escapes before trying a short source-layer
-      // route beyond the package. The target layer can then wind to the exit
+      // Preserve existing centered and singleton escapes before trying a short
+      // source-layer route beyond the package. The target layer can then wind to the exit
       // without a local via being fenced in by an already-routed wide bus.
-      ...(bus.connections.length === 1 ? packageEdgeViaCandidates : []).map(
+      ...(!preferPackageEdgeVias ? packageEdgeViaCandidates : []).map(
         (points) => ({
           points,
           boundarySide: false,
