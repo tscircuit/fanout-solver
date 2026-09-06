@@ -89,6 +89,7 @@ jobs:
           path: |
             benchmark-results/benchmark.json
             benchmark-results/benchmark.md
+            benchmark-results/*.svg
             benchmark-results/inputs/*.json
           if-no-files-found: warn
 

@@ -3,6 +3,7 @@ import type {
   BenchmarkConfiguration,
   BenchmarkRow,
   BenchmarkSample,
+  BenchmarkWorkerResult,
 } from "./benchmark-types"
 
 /** A process deadline also interrupts a solver stuck inside one synchronous step. */
@@ -10,7 +11,7 @@ export async function runSampleProcess(
   sample: BenchmarkSample,
   configuration: BenchmarkConfiguration,
   workerPath = fileURLToPath(new URL("./benchmark-worker.ts", import.meta.url)),
-): Promise<BenchmarkRow> {
+): Promise<BenchmarkWorkerResult> {
   const startedAt = performance.now()
   const failure = (
     status: "error" | "timeout",
@@ -59,7 +60,9 @@ export async function runSampleProcess(
         "error",
         stderr.trim().slice(-2000) || `Worker exited with code ${exitCode}`,
       )
-    const row = JSON.parse(stdout.trim().split("\n").at(-1)!) as BenchmarkRow
+    const row = JSON.parse(
+      stdout.trim().split("\n").at(-1)!,
+    ) as BenchmarkWorkerResult
     if (
       row.dataset !== sample.dataset ||
       row.sample !== sample.id ||

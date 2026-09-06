@@ -1,4 +1,4 @@
-import { mkdir, rename, writeFile } from "node:fs/promises"
+import { mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { availableParallelism } from "node:os"
 import { join } from "node:path"
 import { parseArgs } from "node:util"
@@ -41,7 +41,7 @@ Failures and timeouts are results, not fatal errors.
   --concurrency <count>            Parallel processes (default: up to 4)
   --sample-timeout-seconds <count>  Hard per-process deadline (default: 120)
   --max-layer-combinations <count> Override sample assignment budgets
-  --output-directory <path>        JSON/Markdown directory (default: benchmark-results)
+  --output-directory <path>        Report/SVG directory (default: benchmark-results)
   --list                          List selected samples without solving
   --help                          Show help`)
     return
@@ -101,6 +101,13 @@ Failures and timeouts are results, not fatal errors.
     revision.exitCode === 0 ? revision.stdout.toString().trim() : null
   const results = new Map<number, BenchmarkRow>()
   await mkdir(outputDirectory, { recursive: true })
+  // A selected case that regresses must not retain an old successful picture.
+  // Filtered runs leave snapshots of unselected cases untouched.
+  await Promise.all(
+    samples.map((sample) =>
+      rm(join(outputDirectory, `${sample.id}.svg`), { force: true }),
+    ),
+  )
   // Ordered partial reports survive a later sample crash or whole-job timeout.
   let writes = Promise.resolve()
   const save = () => {
@@ -149,7 +156,14 @@ Failures and timeouts are results, not fatal errors.
         while (nextIndex < samples.length) {
           const index = nextIndex++
           const sample = samples[index]!
-          const row = await runSampleProcess(sample, configuration)
+          const { svg, ...row } = await runSampleProcess(sample, configuration)
+          if (row.status === "solved") {
+            if (!svg)
+              throw new Error(`Missing SVG for solved sample ${sample.id}`)
+            const svgPath = join(outputDirectory, `${sample.id}.svg`)
+            await writeFile(`${svgPath}.tmp`, svg)
+            await rename(`${svgPath}.tmp`, svgPath)
+          }
           results.set(index, row)
           console.log(
             `[${results.size}/${samples.length}] ${sample.dataset}/${sample.id}: ${row.status}, ${row.routed}/${row.connections}, ${(row.milliseconds / 1000).toFixed(2)}s`,
@@ -166,7 +180,7 @@ Failures and timeouts are results, not fatal errors.
     `Solved ${rows.filter((row) => row.status === "solved").length}/${samples.length}; partial ${rows.filter((row) => row.status === "partial").length}; errors ${rows.filter((row) => row.status === "error").length}; timeouts ${rows.filter((row) => row.status === "timeout").length}`,
   )
   console.log(
-    `Reports: ${join(outputDirectory, "benchmark.json")} and ${join(outputDirectory, "benchmark.md")}`,
+    `Reports: ${join(outputDirectory, "benchmark.json")} and ${join(outputDirectory, "benchmark.md")}; solved SVGs: ${join(outputDirectory, "*.svg")}`,
   )
 }
 

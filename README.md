@@ -330,6 +330,11 @@ the solver commit, dataset revision, configuration, solve totals, every sample's
 status and timing, and partial routing/validation counts. Reports are saved after
 every completed sample, including the total selected count to identify incomplete runs.
 Timed-out workers do not retain their in-flight routing counts.
+Every solved case also writes `benchmark-results/<sample-id>.svg`. These SVGs
+are committed so route changes can be reviewed in Git. A run replaces the selected
+cases' snapshots and removes their stale SVGs if they no longer solve; filtered
+runs preserve unselected snapshots. JSON reports and captured inputs remain
+ignored. CI includes the SVGs in its benchmark artifacts.
 Compare reports with the same budgets to track progress. Solved means validated
 AM62L fanout, not RAM fanout or downstream inter-chip routing. Partial, error,
 and timeout rows are benchmark results (exit 0); invalid CLI arguments or report

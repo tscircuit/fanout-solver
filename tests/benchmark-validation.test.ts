@@ -16,10 +16,13 @@ test("benchmark worker requires validated AM62L fanout and records constructor e
   expect(row.scope).toBe("fanout")
   expect(row.connections).toBe(8)
   expect(row.validatedBreakouts).toBe(row.connections)
+  expect(row.svg).toContain("<svg")
+  expect(row.svg).not.toMatch(/[\t ]+\n/)
   const invalid = solveBenchmarkSample({
     ...sample,
     solverOptions: { ...sample.solverOptions, viaDiameter: -1 },
   })
   expect(invalid.status).toBe("error")
   expect(invalid.error).toBeTruthy()
+  expect(invalid.svg).toBeUndefined()
 }, 30_000)

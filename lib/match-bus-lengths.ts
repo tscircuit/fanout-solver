@@ -8,7 +8,9 @@ import {
   distanceSegmentToSegment,
   segmentsAreClear,
 } from "./geometry"
-import { fanoutPlansAreClear } from "./route-bus"
+import { getCopperLayerNames } from "./layer-names"
+import { fanoutPlansAreClear, fanoutPlansAreMutuallyClear } from "./route-bus"
+import { routeViaMinimalWinding } from "./route-via-minimal-winding"
 import type {
   Bounds,
   FanoutRoutePlan,
@@ -647,6 +649,8 @@ export function matchBusPlanLengths(params: {
   allowMatchingInsideDenseBounds?: boolean
   /** Allow a differential pair's longer lane to move aside before tuning its mate. */
   allowPairLaneSpreading?: boolean
+  /** Allow one unconstrained boundary lane to move around a tuning meander. */
+  allowUnconstrainedLaneRerouting?: boolean
   /**
    * Rejects a geometrically clear candidate when it would make a caller-owned
    * downstream assignment (such as pending plane dogbones) infeasible.
@@ -864,6 +868,124 @@ export function matchBusPlanLengths(params: {
             break
           }
           if (++attempts >= 4) break
+        }
+      }
+      if (!acceptedPlans && params.allowUnconstrainedLaneRerouting) {
+        // A neighboring singleton may occupy the only tuning window. Keep its
+        // source dogbone, via and boundary endpoint fixed, and reroute only its
+        // target-layer copper around a complete meander. Constrained buses and
+        // plane routes are never displaced by this bounded repair.
+        let rerouteAttempts = 0
+        candidateSearch: for (const targetAddedLength of targetAddedLengths) {
+          const candidates = createTunedPlanCandidates({
+            plan: shortest,
+            bus,
+            targetAddedLength,
+            clearance,
+            sharedBoundary: bus.sharedBoundary,
+            allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+          })
+          for (const candidate of candidates) {
+            if (
+              !fanoutPlansAreClear({
+                plans: [candidate],
+                srj: inputSrj,
+                sharedBoundary,
+                clearance,
+                allowBlindAndBuriedVias,
+                allowSameNetMerges,
+              })
+            )
+              continue
+            const blockers = matchedPlans.filter(
+              (plan) =>
+                plan !== shortest &&
+                !fanoutPlansAreMutuallyClear({
+                  plans: [candidate, plan],
+                  srj: inputSrj,
+                  clearance,
+                  allowSameNetMerges,
+                }),
+            )
+            if (blockers.length !== 1) continue
+            const blocker = blockers[0]!
+            const blockerBus = preparedBuses.find(
+              (prepared) => prepared.busId === blocker.busId,
+            )
+            if (
+              !blockerBus ||
+              blockerBus.termination.type !== "boundary" ||
+              blockerBus.maxLengthSkew !== undefined ||
+              blockerBus.connections.length !== 1 ||
+              !blocker.via ||
+              blocker.additionalVias?.length ||
+              blocker.planeEndpointVia ||
+              blocker.segments.filter(
+                (segment) => segment.layer === blocker.sourceLayer,
+              ).length !== 1
+            )
+              continue
+            const nextPlans = matchedPlans.map((plan) =>
+              plan === shortest ? candidate : plan,
+            )
+            for (const alignGridToPads of [true, false]) {
+              if (rerouteAttempts++ >= 4) break candidateSearch
+              const rerouted = routeViaMinimalWinding({
+                srj: inputSrj,
+                bus: blockerBus,
+                terminals: [
+                  {
+                    connection: blockerBus.connections[0]!,
+                    viaPoint: blocker.via.center,
+                    exitPoint: blocker.exitPoint,
+                  },
+                ],
+                targetLayer: blocker.targetLayer,
+                acceptedPlans: nextPlans.filter((plan) => plan !== blocker),
+                layerNames: getCopperLayerNames(inputSrj.layerCount),
+                traceWidth: blocker.segments[0]!.width,
+                viaDiameter: blocker.via.diameter,
+                viaHoleDiameter: blocker.via.holeDiameter,
+                clearance,
+                allowBlindAndBuriedVias,
+                allowSameNetMerges,
+                gridStepDivisor: 2,
+                alignGridToPads,
+                maximumRouteOrderAttempts: 1,
+                preferTargetDirectedLaneBias: true,
+              })?.[0]
+              if (!rerouted) continue
+              // Rebuild from the original plan to preserve its route identity,
+              // endpoint metadata and physical via span exactly.
+              const repaired = createPlanWithSegments(blocker, [
+                blocker.segments[0]!,
+                ...rerouted.segments.slice(1),
+              ])
+              if (!repaired) continue
+              const repairedPlans = nextPlans.map((plan) =>
+                plan === blocker ? repaired : plan,
+              )
+              if (
+                getBusSkew(
+                  repairedPlans.filter((plan) => plan.busId === bus.busId),
+                ) >
+                  maxLengthSkew + EPSILON ||
+                !fanoutPlansAreClear({
+                  plans: repairedPlans,
+                  srj: inputSrj,
+                  sharedBoundary,
+                  clearance,
+                  allowBlindAndBuriedVias,
+                  allowSameNetMerges,
+                }) ||
+                (candidatePlansAreFeasible &&
+                  !candidatePlansAreFeasible(repairedPlans))
+              )
+                continue
+              acceptedPlans = repairedPlans
+              break candidateSearch
+            }
+          }
         }
       }
       if (!acceptedPlans) return { plans: null, failedBus: bus }

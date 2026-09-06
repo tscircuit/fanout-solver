@@ -3060,9 +3060,9 @@ export function* routeBusAlternativesSteps(
   // A through-via does not have to sit next to the source pad. A narrow bus
   // embedded in another bus's source field can have every local dogbone site
   // occupied while still having a clear source-layer escape. A pair first
-  // relocates its two vias just outside the nearest package edge; a singleton
-  // retains the boundary-side-via fallback. Both forms preserve one via per
-  // signal without weakening any clearance rule.
+  // relocates its two vias just outside the nearest package edge. A singleton
+  // tries the existing boundary-side vias before searching outside the package.
+  // Both forms preserve one via per signal without weakening clearance rules.
   if (
     alternatives.length === 0 &&
     allowBoundarySideViaFallback &&
@@ -3182,6 +3182,46 @@ export function* routeBusAlternativesSteps(
             ),
           )
         : []
+    const singletonMatchedVia =
+      bus.connections.length === 1
+        ? fixedViaPointsByConnectionIndex.get(
+            bus.connections[0]!.connectionIndex,
+          )
+        : undefined
+    const packageEdgeViaCandidates = singletonMatchedVia
+      ? [
+          {
+            distance: sourceCenter.x - bus.componentBounds.minX,
+            point: {
+              x: bus.componentBounds.minX - 2 * insetStep,
+              y: singletonMatchedVia.y,
+            },
+          },
+          {
+            distance: bus.componentBounds.maxX - sourceCenter.x,
+            point: {
+              x: bus.componentBounds.maxX + 2 * insetStep,
+              y: singletonMatchedVia.y,
+            },
+          },
+          {
+            distance: sourceCenter.y - bus.componentBounds.minY,
+            point: {
+              x: singletonMatchedVia.x,
+              y: bus.componentBounds.minY - 2 * insetStep,
+            },
+          },
+          {
+            distance: bus.componentBounds.maxY - sourceCenter.y,
+            point: {
+              x: singletonMatchedVia.x,
+              y: bus.componentBounds.maxY + 2 * insetStep,
+            },
+          },
+        ]
+          .toSorted((first, second) => first.distance - second.distance)
+          .map(({ point }) => [point])
+      : []
     const viaCandidates = [
       ...displacedViaCandidates.map((points) => ({
         points,
@@ -3190,6 +3230,13 @@ export function* routeBusAlternativesSteps(
       ...boundaryViaCandidates.map((points) => ({
         points,
         boundarySide: true,
+      })),
+      // Preserve existing singleton escapes before trying a short source-layer
+      // route beyond the package. The target layer can then wind to the exit
+      // without a local via being fenced in by an already-routed wide bus.
+      ...packageEdgeViaCandidates.map((points) => ({
+        points,
+        boundarySide: false,
       })),
     ]
     for (const { points: boundaryViaPoints, boundarySide } of viaCandidates) {
@@ -3355,7 +3402,9 @@ export function* routeBusAlternativesSteps(
           )
           return {
             ...sourceLayerPlan,
-            ...(preferCornerBoundaryVia || bus.connections.length > 1
+            ...(preferCornerBoundaryVia ||
+            bus.connections.length > 1 ||
+            !boundarySide
               ? { sourceEscapeSegmentCount: sourceLayerPlan.segments.length }
               : {}),
             targetLayer,

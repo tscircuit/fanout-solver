@@ -1,13 +1,15 @@
 import { readFileSync } from "node:fs"
+import { getSvgFromGraphicsObject } from "graphics-debug"
 import { FanoutSolver } from "../lib/fanout-solver"
-import type { BenchmarkRow, BenchmarkSample } from "./benchmark-types"
+import type { BenchmarkSample, BenchmarkWorkerResult } from "./benchmark-types"
 
 export function solveBenchmarkSample(
   sample: BenchmarkSample,
   maxLayerCombinations?: number,
-): BenchmarkRow {
+): BenchmarkWorkerResult {
   const startedAt = performance.now()
-  const row: BenchmarkRow = {
+  let solvedSolver: FanoutSolver | undefined
+  const row: BenchmarkWorkerResult = {
     dataset: sample.dataset,
     sample: sample.id,
     status: "error",
@@ -45,13 +47,24 @@ export function solveBenchmarkSample(
         output.validation.valid &&
         output.validation.checkedConnectionCount === row.connections &&
         row.validatedBreakouts === row.connections
-      if (fanoutValid) row.status = "solved"
+      if (fanoutValid) {
+        row.status = "solved"
+        solvedSolver = solver
+      }
     } else row.error = solver.error ?? "No complete validated solution"
   } catch (error) {
     row.status = "error"
     row.error = error instanceof Error ? error.message : String(error)
   }
   row.milliseconds = Math.round(performance.now() - startedAt)
+  // Preserve solver timing; render only complete, validated solutions.
+  if (solvedSolver) {
+    row.svg = `${getSvgFromGraphicsObject(solvedSolver.visualize())
+      .trimEnd()
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .join("\n")}\n`
+  }
   return row
 }
 
