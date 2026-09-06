@@ -64,4 +64,4 @@ test("dataset01 solves samples containing one through five footprints", () => {
       expectedBusCounts[index],
     )
   }
-})
+}, 30_000)

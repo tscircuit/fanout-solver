@@ -62,6 +62,8 @@ export interface RouteBusParams {
   stopAfterFirstRejectedViaMinimalCandidate?: boolean
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
+  /** Provisional site preferences; successful callers must rematch future vias. */
+  softReservedVias?: readonly ViaMinimalWindingReservedVia[]
   viaMinimalOnly?: boolean
   /** Permit a singleton or pair to move provisional vias near the boundary. */
   allowBoundarySideViaFallback?: boolean
@@ -311,10 +313,89 @@ function getWindingCrossoverLayer(params: {
   )
 }
 
+function getDistributedBoundaryTargetTracks(params: {
+  bus: PreparedBus
+  boundaryDirection: FanoutDirection
+  traceWidth: number
+  clearance: number
+}): number[] | undefined {
+  const { bus, boundaryDirection, traceWidth, clearance } = params
+  if (getCornerSide(bus) || !busUsesCoordinatedWindingChannel(bus))
+    return undefined
+  const layers = new Set(
+    bus.connections.map(
+      (connection) =>
+        connection.exitTargetPoint?.layer ??
+        getPointLayer(connection.targetPoint),
+    ),
+  )
+  if (layers.size < 2) return undefined
+  const minimum = isHorizontal(boundaryDirection)
+    ? bus.sharedBoundary.minY
+    : bus.sharedBoundary.minX
+  const maximum = isHorizontal(boundaryDirection)
+    ? bus.sharedBoundary.maxY
+    : bus.sharedBoundary.maxX
+  const tracks = bus.connections
+    .map((connection) =>
+      Math.max(
+        minimum,
+        Math.min(
+          maximum,
+          getPerpendicularAxis(
+            connection.exitTargetPoint ?? connection.targetPoint,
+            boundaryDirection,
+          ),
+        ),
+      ),
+    )
+    .toSorted((a, b) => a - b)
+  const pitch = traceWidth + clearance
+  if (
+    tracks.every(
+      (track, index) =>
+        index === 0 || track - tracks[index - 1]! >= pitch - 1e-9,
+    )
+  )
+    return undefined
+  if (maximum - minimum < (tracks.length - 1) * pitch - 1e-9) return undefined
+  // Pool neighboring overlaps while preserving their mean requested location.
+  // Subtracting the pitch reduces the clearance constraint to monotonicity.
+  const blocks: { start: number; count: number; mean: number }[] = []
+  for (const [index, track] of tracks.entries()) {
+    blocks.push({ start: index, count: 1, mean: track - index * pitch })
+    while (blocks.length > 1 && blocks.at(-2)!.mean > blocks.at(-1)!.mean) {
+      const second = blocks.pop()!
+      const first = blocks.pop()!
+      blocks.push({
+        start: first.start,
+        count: first.count + second.count,
+        mean:
+          (first.mean * first.count + second.mean * second.count) /
+          (first.count + second.count),
+      })
+    }
+  }
+  for (const block of blocks) {
+    const mean = Math.max(
+      minimum,
+      Math.min(maximum - (tracks.length - 1) * pitch, block.mean),
+    )
+    for (let index = block.start; index < block.start + block.count; index++)
+      tracks[index] = mean + index * pitch
+  }
+  return tracks
+}
+
 export function getBoundaryTargetTrack(params: {
   bus: PreparedBus
   connection: PreparedConnection
   boundaryDirection: FanoutDirection
+  traceWidth?: number
+  clearance?: number
+  layerNames?: readonly string[]
+  targetLayer?: string
+  windingOrderIndex?: number
 }): number {
   const requestedTrack = getPerpendicularAxis(
     params.connection.exitTargetPoint ?? params.connection.targetPoint,
@@ -326,6 +407,22 @@ export function getBoundaryTargetTrack(params: {
   const boundaryMaximum = isHorizontal(params.boundaryDirection)
     ? params.bus.sharedBoundary.maxY
     : params.bus.sharedBoundary.maxX
+  const distributedTracks =
+    params.traceWidth !== undefined && params.clearance !== undefined
+      ? getDistributedBoundaryTargetTracks({
+          ...params,
+          traceWidth: params.traceWidth,
+          clearance: params.clearance,
+        })
+      : undefined
+  if (distributedTracks && params.layerNames && params.targetLayer) {
+    const { rank } = getWindingTargetRank({
+      ...params,
+      layerNames: params.layerNames,
+      targetLayer: params.targetLayer,
+    })
+    return distributedTracks[rank]!
+  }
   return Math.max(boundaryMinimum, Math.min(boundaryMaximum, requestedTrack))
 }
 
@@ -1102,6 +1199,10 @@ function buildPlan(params: {
             bus,
             connection: preparedConnection,
             boundaryDirection,
+            traceWidth,
+            clearance,
+            layerNames,
+            targetLayer,
           })
         : track
   const connectionRank = getConnectionRank(bus, preparedConnection)
@@ -2459,6 +2560,7 @@ export function* routeBusAlternativesSteps(
     stopAfterFirstRejectedViaMinimalCandidate = false,
     fixedViaPointsByConnectionIndex,
     reservedVias = [],
+    softReservedVias = [],
     viaMinimalOnly = false,
     allowBoundarySideViaFallback = false,
     preferCornerBoundaryVia = false,
@@ -2608,14 +2710,21 @@ export function* routeBusAlternativesSteps(
       localDogboneRepair?: boolean
     }
     const maximumThroughAllRouteOrderAttempts = 24
-    const windingTargetOrderCount = cornerSide
-      ? getWindingTargetOrders({
-          bus,
-          boundaryDirection,
-          layerNames,
-          targetLayer,
-        }).orders.length
-      : 1
+    const windingTargetOrderCount =
+      cornerSide ||
+      getDistributedBoundaryTargetTracks({
+        bus,
+        boundaryDirection,
+        traceWidth,
+        clearance,
+      })
+        ? getWindingTargetOrders({
+            bus,
+            boundaryDirection,
+            layerNames,
+            targetLayer,
+          }).orders.length
+        : 1
     const uniformDogboneTerminalPatterns: CoordinatedTerminalPattern[] =
       viaHandednesses.map((viaHandedness) => ({
         label: `uniform-${viaHandedness}`,
@@ -2760,7 +2869,13 @@ export function* routeBusAlternativesSteps(
     const coordinatedViaPoints =
       fixedViaPointsByConnectionIndex ??
       (!allowBlindAndBuriedVias &&
-      bus.connections.length >= 8 &&
+      (bus.connections.length >= 8 ||
+        getDistributedBoundaryTargetTracks({
+          bus,
+          boundaryDirection,
+          traceWidth,
+          clearance,
+        })) &&
       reservedVias.length === 0
         ? matchComponentDogboneViaSites([bus], {
             viaDiameter,
@@ -2902,6 +3017,11 @@ export function* routeBusAlternativesSteps(
               bus,
               connection: preparedConnection,
               boundaryDirection,
+              traceWidth,
+              clearance,
+              layerNames,
+              targetLayer,
+              windingOrderIndex: terminalPattern.windingOrderIndex,
             })
         return {
           connection: preparedConnection,
@@ -3003,6 +3123,7 @@ export function* routeBusAlternativesSteps(
           alignGridToPads,
           includeReverseTargetRotation: terminalPattern.localDogboneRepair,
           reservedVias,
+          softReservedVias,
           gridStepDivisor,
           preferTargetDirectedLaneBias:
             terminalPattern.preferTargetDirectedLaneBias,
@@ -3095,6 +3216,10 @@ export function* routeBusAlternativesSteps(
             bus,
             connection: preparedConnection,
             boundaryDirection,
+            traceWidth,
+            clearance,
+            layerNames,
+            targetLayer,
           }),
     )
     const finalExitPoints = finalTracks.map((track) =>
@@ -3182,47 +3307,64 @@ export function* routeBusAlternativesSteps(
             ),
           )
         : []
-    const singletonMatchedVia =
-      bus.connections.length === 1
-        ? fixedViaPointsByConnectionIndex.get(
-            bus.connections[0]!.connectionIndex,
-          )
-        : undefined
-    const packageEdgeViaCandidates = singletonMatchedVia
-      ? [
-          {
-            distance: sourceCenter.x - bus.componentBounds.minX,
-            point: {
-              x: bus.componentBounds.minX - 2 * insetStep,
-              y: singletonMatchedVia.y,
-            },
-          },
-          {
-            distance: bus.componentBounds.maxX - sourceCenter.x,
-            point: {
-              x: bus.componentBounds.maxX + 2 * insetStep,
-              y: singletonMatchedVia.y,
-            },
-          },
-          {
-            distance: sourceCenter.y - bus.componentBounds.minY,
-            point: {
-              x: singletonMatchedVia.x,
-              y: bus.componentBounds.minY - 2 * insetStep,
-            },
-          },
-          {
-            distance: bus.componentBounds.maxY - sourceCenter.y,
-            point: {
-              x: singletonMatchedVia.x,
-              y: bus.componentBounds.maxY + 2 * insetStep,
-            },
-          },
-        ]
-          .toSorted((first, second) => first.distance - second.distance)
-          .map(({ point }) => [point])
-      : []
+    const matchedVias = bus.connections.map(
+      (connection) =>
+        fixedViaPointsByConnectionIndex.get(connection.connectionIndex)!,
+    )
+    const packageEdgeViaCandidates = [
+      {
+        distance: sourceCenter.x - bus.componentBounds.minX,
+        axis: "x" as const,
+        value: bus.componentBounds.minX - 2 * insetStep,
+      },
+      {
+        distance: bus.componentBounds.maxX - sourceCenter.x,
+        axis: "x" as const,
+        value: bus.componentBounds.maxX + 2 * insetStep,
+      },
+      {
+        distance: sourceCenter.y - bus.componentBounds.minY,
+        axis: "y" as const,
+        value: bus.componentBounds.minY - 2 * insetStep,
+      },
+      {
+        distance: bus.componentBounds.maxY - sourceCenter.y,
+        axis: "y" as const,
+        value: bus.componentBounds.maxY + 2 * insetStep,
+      },
+    ]
+      .toSorted((a, b) => a.distance - b.distance)
+      .flatMap(({ axis, value }) => {
+        const otherAxis = axis === "x" ? "y" : "x"
+        const mean =
+          matchedVias.reduce((sum, via) => sum + via[otherAxis], 0) /
+          matchedVias.length
+        const order = matchedVias
+          .map((via, index) => ({ index, track: via[otherAxis] }))
+          .toSorted((a, b) => a.track - b.track || a.index - b.index)
+        const pitch = viaDiameter + clearance
+        const points = matchedVias.map((via, index) => ({
+          ...via,
+          [axis]: value,
+          [otherAxis]:
+            order.length === 2 &&
+            Math.abs(order[1]!.track - order[0]!.track) < pitch
+              ? mean + (order.findIndex((v) => v.index === index) - 0.5) * pitch
+              : via[otherAxis],
+        }))
+        return points.length === 2
+          ? [points, [points[1]!, points[0]!]]
+          : [points]
+      })
+    const preferPackageEdgeVias =
+      bus.connections.length === 2 && Boolean(getCornerSide(bus))
     const viaCandidates = [
+      ...(preferPackageEdgeVias ? packageEdgeViaCandidates : []).map(
+        (points) => ({
+          points,
+          boundarySide: false,
+        }),
+      ),
       ...displacedViaCandidates.map((points) => ({
         points,
         boundarySide: false,
@@ -3231,13 +3373,15 @@ export function* routeBusAlternativesSteps(
         points,
         boundarySide: true,
       })),
-      // Preserve existing singleton escapes before trying a short source-layer
-      // route beyond the package. The target layer can then wind to the exit
+      // Preserve existing centered and singleton escapes before trying a short
+      // source-layer route beyond the package. The target layer can then wind to the exit
       // without a local via being fenced in by an already-routed wide bus.
-      ...packageEdgeViaCandidates.map((points) => ({
-        points,
-        boundarySide: false,
-      })),
+      ...(!preferPackageEdgeVias ? packageEdgeViaCandidates : []).map(
+        (points) => ({
+          points,
+          boundarySide: false,
+        }),
+      ),
     ]
     for (const { points: boundaryViaPoints, boundarySide } of viaCandidates) {
       const boundaryVias = bus.connections.map((connection, index) => ({
@@ -3301,6 +3445,7 @@ export function* routeBusAlternativesSteps(
           allowBlindAndBuriedVias,
           allowSameNetMerges,
           maximumRouteOrderAttempts: bus.connections.length === 1 ? 3 : 6,
+          softReservedVias,
           reservedVias:
             bus.connections.length > 1
               ? [...reservedVias, ...boundaryVias]
@@ -3350,6 +3495,7 @@ export function* routeBusAlternativesSteps(
             allowSameNetMerges,
             maximumRouteOrderAttempts: 6,
             reservedVias,
+            softReservedVias,
             gridStepDivisor: 2,
             alignGridToPads: true,
           },
