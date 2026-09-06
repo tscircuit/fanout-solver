@@ -1,3 +1,4 @@
+import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
 import type {
   Obstacle,
   SimpleRouteJson,
@@ -1980,6 +1981,7 @@ function planIsClearOfPlans(params: {
   srj: SimpleRouteJson
   allowSameNetMerges: boolean
   clearance: number
+  segmentIndexes?: WeakMap<FanoutRoutePlan, RouteSegmentSpatialIndex>
   blockingBusCounts?: Map<string, number>
 }): boolean {
   const {
@@ -1989,6 +1991,7 @@ function planIsClearOfPlans(params: {
     allowSameNetMerges,
     clearance,
     blockingBusCounts,
+    segmentIndexes,
   } = params
   const planSegments = getPlanSegments(plan)
   const planVias = getPlanVias(plan)
@@ -2018,8 +2021,16 @@ function planIsClearOfPlans(params: {
     }
     const otherSegments = getPlanSegments(otherPlan)
     const otherVias = getPlanVias(otherPlan)
+    let segmentIndex = segmentIndexes?.get(otherPlan)
+    if (segmentIndexes && !segmentIndex) {
+      segmentIndex = new RouteSegmentSpatialIndex(otherSegments)
+      segmentIndexes.set(otherPlan, segmentIndex)
+    }
     for (const segment of planSegments) {
-      for (const otherSegment of otherSegments) {
+      for (const otherSegment of segmentIndex?.querySegment(
+        segment,
+        clearance,
+      ) ?? otherSegments) {
         if (!segmentsAreClear(segment, otherSegment, clearance)) {
           recordBlocker()
           return false
@@ -2037,7 +2048,8 @@ function planIsClearOfPlans(params: {
       }
     }
     for (const planVia of planVias) {
-      for (const otherSegment of otherSegments) {
+      for (const otherSegment of segmentIndex?.queryVia(planVia, clearance) ??
+        otherSegments) {
         if (
           planVia.spanLayers.includes(otherSegment.layer) &&
           distancePointToSegment(
@@ -2200,13 +2212,17 @@ export function createFanoutPlanClearanceValidator(
     allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
   } = params
+  const segmentIndexes = new WeakMap<
+    FanoutRoutePlan,
+    RouteSegmentSpatialIndex
+  >()
   const staticResults = new WeakMap<FanoutRoutePlan, boolean>()
   const mutualResults = new WeakMap<
     FanoutRoutePlan,
     WeakMap<FanoutRoutePlan, boolean>
   >()
   return (plans) => {
-    for (const plan of plans) {
+    for (const [index, plan] of plans.entries()) {
       let staticClear = staticResults.get(plan)
       if (staticClear === undefined) {
         staticClear = planIsStaticallyClear({
@@ -2225,13 +2241,14 @@ export function createFanoutPlanClearanceValidator(
         pairs = new WeakMap()
         mutualResults.set(plan, pairs)
       }
-      for (const other of plans) {
-        if (other === plan) continue
+      for (const [otherIndex, other] of plans.entries()) {
+        if (otherIndex === index) continue
         let clear = pairs.get(other)
         if (clear === undefined) {
           clear = planIsClearOfPlans({
             plan,
             otherPlans: [other],
+            segmentIndexes,
             srj,
             clearance,
             allowSameNetMerges,

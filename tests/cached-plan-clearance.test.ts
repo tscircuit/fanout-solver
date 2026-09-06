@@ -121,6 +121,7 @@ test("cached clearance rechecks replacement traces and vias during length tuning
       expect(cached(plans)).toBe(fanoutPlansAreClear({ ...rules, plans }))
     }
   }
+  expect(cached([a, a])).toBe(fanoutPlansAreClear({ ...rules, plans: [a, a] }))
   expect(
     createFanoutPlanClearanceValidator({ ...rules, clearance: 1 })([a, b]),
   ).toBe(false)
