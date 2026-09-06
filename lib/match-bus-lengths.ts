@@ -698,6 +698,7 @@ export function matchBusPlanLengths(params: {
     (bus) => bus.maxLengthSkew !== undefined && bus.connections.length > 1,
   )
   if (constrainedBuses.length === 0) return { plans: matchedPlans }
+  let currentCopperIsClear: boolean | undefined
 
   for (const bus of constrainedBuses) {
     if (bus.termination.type !== "boundary") {
@@ -750,18 +751,45 @@ export function matchBusPlanLengths(params: {
           (plan) => plan.busId === bus.busId,
         )
         if (getBusSkew(nextBusPlans) > skew + EPSILON) return null
-        if (
-          !fanoutPlansAreClear({
-            plans: nextPlans,
-            srj: inputSrj,
-            sharedBoundary,
-            clearance,
-            allowBlindAndBuriedVias,
-            allowSameNetMerges,
-          })
-        ) {
-          return null
-        }
+        // Once the current set is clear, replacing this lane cannot change
+        // clearance between any other pair. Preserve the full-set fallback
+        // for callers whose original copper still needs a matching repair.
+        currentCopperIsClear ??= fanoutPlansAreClear({
+          plans: matchedPlans,
+          srj: inputSrj,
+          sharedBoundary,
+          clearance,
+          allowBlindAndBuriedVias,
+          allowSameNetMerges,
+        })
+        const clear = currentCopperIsClear
+          ? fanoutPlansAreClear({
+              plans: [candidate],
+              srj: inputSrj,
+              sharedBoundary,
+              clearance,
+              allowBlindAndBuriedVias,
+              allowSameNetMerges,
+            }) &&
+            matchedPlans.every(
+              (plan) =>
+                plan === shortest ||
+                fanoutPlansAreMutuallyClear({
+                  plans: [candidate, plan],
+                  srj: inputSrj,
+                  clearance,
+                  allowSameNetMerges,
+                }),
+            )
+          : fanoutPlansAreClear({
+              plans: nextPlans,
+              srj: inputSrj,
+              sharedBoundary,
+              clearance,
+              allowBlindAndBuriedVias,
+              allowSameNetMerges,
+            })
+        if (!clear) return null
         if (
           candidatePlansAreFeasible &&
           !candidatePlansAreFeasible(nextPlans)
@@ -1014,6 +1042,7 @@ export function matchBusPlanLengths(params: {
       }
       if (!acceptedPlans) return { plans: null, failedBus: bus }
       matchedPlans = acceptedPlans
+      currentCopperIsClear = true
     }
     const matchedBusPlans = matchedPlans.filter(
       (plan) => plan.busId === bus.busId,
