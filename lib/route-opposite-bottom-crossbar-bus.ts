@@ -16,6 +16,20 @@ export function* routeOppositeBottomCrossbarBusSteps(
   const mirrored = reflectFanoutX(params)
   const padPitch = Math.min(params.bus.pitchX, params.bus.pitchY)
   const pitch = params.traceWidth + params.clearance
+  const portPitch =
+    Math.ceil((params.viaDiameter + params.clearance) / pitch) * pitch
+  const maximumPortShift = Math.max(
+    0,
+    Math.min(
+      8,
+      Math.floor(
+        ((mirrored.sourceBoundary.maxX - mirrored.sourceBoundary.minX) / 2 -
+          params.bus.connections.length * portPitch -
+          pitch) /
+          padPitch,
+      ),
+    ),
+  )
   const layouts = [
     undefined,
     { sourcePortOffset: -padPitch, rowOffset: 0, compactRows: false },
@@ -24,6 +38,18 @@ export function* routeOppositeBottomCrossbarBusSteps(
       rowOffset: row * pitch,
       compactRows: true,
     })),
+    // Earlier crossbars can occupy the central source ports. Try bounded
+    // outward windows that still fit every source port inside the same border.
+    ...Array.from(
+      { length: maximumPortShift },
+      (_, index) => maximumPortShift - index,
+    ).flatMap((shift) =>
+      [0, 1, 2, 3].map((row) => ({
+        sourcePortOffset: shift * padPitch,
+        rowOffset: row * pitch,
+        compactRows: true,
+      })),
+    ),
   ]
   let plans: FanoutRoutePlan[] | null = null
   for (const oppositeLayout of layouts) {
