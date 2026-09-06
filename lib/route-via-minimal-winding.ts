@@ -28,7 +28,7 @@ import type {
 } from "./types"
 
 const EPSILON = 1e-7
-const MAX_GRID_NODE_COUNT = 120_000
+const MAX_GRID_NODE_COUNT = 160_000
 const MAX_EXPANDED_STATE_COUNT = 240_000
 const EXPANDED_STATES_PER_STEP = 5_000
 const MAX_CONNECTOR_COUNT = 24
@@ -116,6 +116,96 @@ interface ConnectorCandidate {
 interface BlockingSegment {
   connectionName: string
   segment: RoutedSegment
+}
+
+interface IndexedBlockingSegment extends BlockingSegment {
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+}
+
+/** Conservative broad phase; exact segment clearance remains the final check. */
+class SegmentSpatialIndex {
+  private readonly cells: Array<IndexedBlockingSegment[] | undefined>
+  private readonly columnCount: number
+  private readonly rowCount: number
+  private readonly seen = new Map<IndexedBlockingSegment, number>()
+  private queryCount = 0
+
+  constructor(
+    segments: readonly BlockingSegment[],
+    private readonly minX: number,
+    private readonly minY: number,
+    maxX: number,
+    maxY: number,
+    private readonly cellSize: number,
+    traceWidth: number,
+    clearance: number,
+  ) {
+    this.columnCount = Math.max(1, Math.ceil((maxX - minX) / cellSize))
+    this.rowCount = Math.max(1, Math.ceil((maxY - minY) / cellSize))
+    this.cells = new Array(this.columnCount * this.rowCount)
+    for (const blocker of segments) {
+      const indexed: IndexedBlockingSegment = {
+        ...blocker,
+        minX: Math.min(blocker.segment.start.x, blocker.segment.end.x),
+        maxX: Math.max(blocker.segment.start.x, blocker.segment.end.x),
+        minY: Math.min(blocker.segment.start.y, blocker.segment.end.y),
+        maxY: Math.max(blocker.segment.start.y, blocker.segment.end.y),
+      }
+      const margin = (blocker.segment.width + traceWidth) / 2 + clearance
+      const firstColumn = this.column(indexed.minX - margin)
+      const lastColumn = this.column(indexed.maxX + margin)
+      const firstRow = this.row(indexed.minY - margin)
+      const lastRow = this.row(indexed.maxY + margin)
+      for (let row = firstRow; row <= lastRow; row++) {
+        for (let column = firstColumn; column <= lastColumn; column++) {
+          const index = row * this.columnCount + column
+          ;(this.cells[index] ??= []).push(indexed)
+        }
+      }
+    }
+  }
+
+  private column(x: number): number {
+    return Math.max(
+      0,
+      Math.min(
+        this.columnCount - 1,
+        Math.floor((x - this.minX) / this.cellSize),
+      ),
+    )
+  }
+
+  private row(y: number): number {
+    return Math.max(
+      0,
+      Math.min(this.rowCount - 1, Math.floor((y - this.minY) / this.cellSize)),
+    )
+  }
+
+  querySegment(segment: RoutedSegment): readonly IndexedBlockingSegment[] {
+    const firstColumn = this.column(Math.min(segment.start.x, segment.end.x))
+    const lastColumn = this.column(Math.max(segment.start.x, segment.end.x))
+    const firstRow = this.row(Math.min(segment.start.y, segment.end.y))
+    const lastRow = this.row(Math.max(segment.start.y, segment.end.y))
+    if (firstColumn === lastColumn && firstRow === lastRow)
+      return this.cells[firstRow * this.columnCount + firstColumn] ?? []
+    const candidates: IndexedBlockingSegment[] = []
+    const query = ++this.queryCount
+    for (let row = firstRow; row <= lastRow; row++) {
+      for (let column = firstColumn; column <= lastColumn; column++) {
+        for (const blocker of this.cells[row * this.columnCount + column] ??
+          []) {
+          if (this.seen.get(blocker) === query) continue
+          this.seen.set(blocker, query)
+          candidates.push(blocker)
+        }
+      }
+    }
+    return candidates
+  }
 }
 
 interface BlockingVia {
@@ -850,13 +940,18 @@ export function* routeViaMinimalWindingAlternativesSteps(
   const sharesNet = (first: string, second: string): boolean =>
     first === second ||
     (allowSameNetMerges && connectionsShareElectricalNet(srj, first, second))
-  const boundedBlockingSegments = blockingSegments.map((blocker) => ({
-    ...blocker,
-    minX: Math.min(blocker.segment.start.x, blocker.segment.end.x),
-    maxX: Math.max(blocker.segment.start.x, blocker.segment.end.x),
-    minY: Math.min(blocker.segment.start.y, blocker.segment.end.y),
-    maxY: Math.max(blocker.segment.start.y, blocker.segment.end.y),
-  }))
+  const createSegmentIndex = (segments: readonly BlockingSegment[]) =>
+    new SegmentSpatialIndex(
+      segments,
+      minX,
+      minY,
+      maxX,
+      maxY,
+      gridStep * 8,
+      traceWidth,
+      clearance,
+    )
+  const blockingSegmentIndex = createSegmentIndex(blockingSegments)
   const allBlockingVias = [...blockingVias, ...terminalVias]
   const maximumViaToTraceDistance = allBlockingVias.reduce(
     (maximum, { via }) =>
@@ -879,9 +974,9 @@ export function* routeViaMinimalWindingAlternativesSteps(
   const segmentIsClear = (params: {
     segment: RoutedSegment
     terminal: ViaMinimalWindingTerminal
-    acceptedAttemptSegments: BlockingSegment[]
+    acceptedAttemptSegmentIndex: SegmentSpatialIndex
   }): boolean => {
-    const { segment, terminal, acceptedAttemptSegments } = params
+    const { segment, terminal, acceptedAttemptSegmentIndex } = params
     const connectionName = terminal.connection.connection.name
     const segmentMinX = Math.min(segment.start.x, segment.end.x)
     const segmentMaxX = Math.max(segment.start.x, segment.end.x)
@@ -906,7 +1001,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
         return false
       }
     }
-    for (const blocker of boundedBlockingSegments) {
+    for (const blocker of blockingSegmentIndex.querySegment(segment)) {
       if (sharesNet(connectionName, blocker.connectionName)) continue
       const margin = (segment.width + blocker.segment.width) / 2 + clearance
       // Keep the full clearance margin in the broad phase; the exact check
@@ -931,18 +1026,14 @@ export function* routeViaMinimalWindingAlternativesSteps(
         return false
       }
     }
-    for (const blocker of acceptedAttemptSegments) {
+    for (const blocker of acceptedAttemptSegmentIndex.querySegment(segment)) {
       if (sharesNet(connectionName, blocker.connectionName)) continue
       const margin = (segment.width + blocker.segment.width) / 2 + clearance
       if (
-        segmentMaxX + margin <
-          Math.min(blocker.segment.start.x, blocker.segment.end.x) ||
-        segmentMinX - margin >
-          Math.max(blocker.segment.start.x, blocker.segment.end.x) ||
-        segmentMaxY + margin <
-          Math.min(blocker.segment.start.y, blocker.segment.end.y) ||
-        segmentMinY - margin >
-          Math.max(blocker.segment.start.y, blocker.segment.end.y)
+        segmentMaxX + margin < blocker.minX ||
+        segmentMinX - margin > blocker.maxX ||
+        segmentMaxY + margin < blocker.minY ||
+        segmentMinY - margin > blocker.maxY
       )
         continue
       if (
@@ -1000,36 +1091,59 @@ export function* routeViaMinimalWindingAlternativesSteps(
   const connectorCandidates = (params: {
     terminal: ViaMinimalWindingTerminal
     endpoint: Point2D
-    acceptedAttemptSegments: BlockingSegment[]
+    acceptedAttemptSegmentIndex: SegmentSpatialIndex
   }): ConnectorCandidate[] => {
-    const { terminal, endpoint, acceptedAttemptSegments } = params
+    const { terminal, endpoint, acceptedAttemptSegmentIndex } = params
     const candidates: ConnectorCandidate[] = []
-    for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
-      const node = nodes[nodeIndex]!
-      const connectorDistance = distance(endpoint, node.point)
-      if (connectorDistance > gridStep * CONNECTOR_RADIUS_IN_STEPS) continue
-      for (const points of getConnectorVariants(endpoint, node.point)) {
-        const segments = getSegments(points, traceWidth, targetLayer)
-        if (
-          !segments.every((segment) =>
-            segmentIsClear({
-              segment,
-              terminal,
-              acceptedAttemptSegments,
-            }),
-          )
-        ) {
-          continue
+    // Only nearby nodes can produce connectors. Keep one extra cell around
+    // the radius for floating-point boundary rounding, then use the original
+    // exact distance filter and ascending node order.
+    const radius = gridStep * CONNECTOR_RADIUS_IN_STEPS
+    const minimumColumn = Math.max(
+      0,
+      Math.ceil((endpoint.x - radius - gridMinX) / gridStep) - 1,
+    )
+    const maximumColumn = Math.min(
+      columnCount - 1,
+      Math.floor((endpoint.x + radius - gridMinX) / gridStep) + 1,
+    )
+    const minimumRow = Math.max(
+      0,
+      Math.ceil((endpoint.y - radius - gridMinY) / gridStep) - 1,
+    )
+    const maximumRow = Math.min(
+      rowCount - 1,
+      Math.floor((endpoint.y + radius - gridMinY) / gridStep) + 1,
+    )
+    for (let row = minimumRow; row <= maximumRow; row++) {
+      for (let column = minimumColumn; column <= maximumColumn; column++) {
+        const nodeIndex = row * columnCount + column
+        const node = nodes[nodeIndex]!
+        const connectorDistance = distance(endpoint, node.point)
+        if (connectorDistance > gridStep * CONNECTOR_RADIUS_IN_STEPS) continue
+        for (const points of getConnectorVariants(endpoint, node.point)) {
+          const segments = getSegments(points, traceWidth, targetLayer)
+          if (
+            !segments.every((segment) =>
+              segmentIsClear({
+                segment,
+                terminal,
+                acceptedAttemptSegmentIndex,
+              }),
+            )
+          ) {
+            continue
+          }
+          candidates.push({
+            nodeIndex,
+            points,
+            radialDistance: connectorDistance,
+            length: segments.reduce(
+              (total, segment) => total + distance(segment.start, segment.end),
+              0,
+            ),
+          })
         }
-        candidates.push({
-          nodeIndex,
-          points,
-          radialDistance: connectorDistance,
-          length: segments.reduce(
-            (total, segment) => total + distance(segment.start, segment.end),
-            0,
-          ),
-        })
       }
     }
     return candidates
@@ -1166,15 +1280,18 @@ export function* routeViaMinimalWindingAlternativesSteps(
     void
   > {
     const { terminal, acceptedAttemptSegments, laneBias } = params
+    const acceptedAttemptSegmentIndex = createSegmentIndex(
+      acceptedAttemptSegments,
+    )
     const starts = connectorCandidates({
       terminal,
       endpoint: terminal.viaPoint,
-      acceptedAttemptSegments,
+      acceptedAttemptSegmentIndex,
     })
     const ends = connectorCandidates({
       terminal,
       endpoint: terminal.exitPoint,
-      acceptedAttemptSegments,
+      acceptedAttemptSegmentIndex,
     })
     if (starts.length === 0 || ends.length === 0) {
       return { points: null, expandedStateCount: 0 }
@@ -1314,7 +1431,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
                 segmentIsClear({
                   segment,
                   terminal,
-                  acceptedAttemptSegments,
+                  acceptedAttemptSegmentIndex,
                 }),
               )
             ) {
@@ -1360,7 +1477,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
               layer: targetLayer,
             },
             terminal,
-            acceptedAttemptSegments,
+            acceptedAttemptSegmentIndex,
           })
           edgeClearance[edgeIndex] = clear ? 1 : 2
           edgeClearance[nextNode * 8 + ((directionIndex + 4) % 8)] = clear
