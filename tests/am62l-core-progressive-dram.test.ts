@@ -4,7 +4,7 @@ import { FanoutSolver } from "../lib/fanout-solver"
 import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
 import { createAm62lCoreProgressiveDramInput } from "./fixtures/create-am62l-core-progressive-dram-input"
 
-test("preserves routing coverage for core's complete AM62L progressive DRAM input", async () => {
+test("routes every connection in core's complete AM62L progressive DRAM input", async () => {
   // Unlike the older six-bus fixture, this exact constructor capture retains
   // core's full connectivity lists, all 217 obstacles, and 135 prior traces.
   const { inputSrj, options } = createAm62lCoreProgressiveDramInput()
@@ -15,34 +15,33 @@ test("preserves routing coverage for core's complete AM62L progressive DRAM inpu
     0,
     ...solver.attempts.map((attempt) => attempt.routedConnectionCount),
   )
-  expect(solver.solved || solver.failed).toBe(true)
-  // The baseline routes 125/143. A faster search must preserve that coverage,
-  // and a future complete solution must also meet the original DRC rules.
-  expect(bestRoutedConnectionCount).toBeGreaterThanOrEqual(125)
-  if (solver.solved) {
-    const output = solver.getOutput()
-    expect(output.validation).toEqual({
-      valid: true,
-      checkedConnectionCount: 143,
-      brokenOutConnectionCount: 143,
-      issues: [],
-    })
-    expect(
-      validateRoutedCopperDrc({
-        inputSrj,
-        routedSrj: {
-          ...output.simpleRouteJson,
-          traces: output.fanoutTraces,
-        },
-        clearance: inputSrj.minViaEdgeToPadEdgeClearance!,
-        allowBlindAndBuriedVias: false,
-      }),
-    ).toMatchObject({ valid: true, checkedTraceCount: 143, issues: [] })
-  } else {
-    expect(() => solver.getOutput()).toThrow(
-      "getOutput() called before a complete fanout was solved",
-    )
-  }
+  expect(solver.failed).toBe(false)
+  expect(solver.solved).toBe(true)
+  expect(solver.attempts).toHaveLength(1)
+  expect(bestRoutedConnectionCount).toBe(143)
+  const output = solver.getOutput()
+  expect(output.fanoutTraces).toHaveLength(143)
+  expect(
+    new Set(output.fanoutTraces.map((trace) => trace.connection_name)),
+  ).toEqual(new Set(inputSrj.connections.map((connection) => connection.name)))
+  expect(output.simpleRouteJson.traces?.slice(0, 135)).toEqual(inputSrj.traces)
+  expect(output.validation).toEqual({
+    valid: true,
+    checkedConnectionCount: 143,
+    brokenOutConnectionCount: 143,
+    issues: [],
+  })
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj,
+      routedSrj: {
+        ...output.simpleRouteJson,
+        traces: output.fanoutTraces,
+      },
+      clearance: inputSrj.minViaEdgeToPadEdgeClearance!,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, checkedTraceCount: 143, issues: [] })
 
   const visualization = mergeGraphics(solver.visualize(), {
     texts: [
