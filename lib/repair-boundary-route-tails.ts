@@ -333,6 +333,8 @@ export function repairBoundaryRouteTails(
           bus,
           terminals,
           targetLayer: layer,
+          // These temporary terminals start at retained same-layer cuts.
+          sourceEscapePaths: undefined,
           acceptedPlans: blockers,
           reservedVias: blockers.flatMap((p) =>
             [p.via, ...(p.additionalVias ?? []), p.planeEndpointVia]

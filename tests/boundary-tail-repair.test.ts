@@ -117,6 +117,16 @@ test("repairs a boundary endpoint cluster while preserving the complete bus and 
   const before = structuredClone(original),
     repaired = repairBoundaryRouteTails({
       ...config,
+      // A caller may pass its original routing context through to this helper.
+      // Those pad prefixes must not be reused for temporary same-layer cuts.
+      ...{
+        sourceEscapePaths: new Map(
+          original.map((plan) => [
+            plan.connectionIndex,
+            [plan.sourcePoint, plan.via!.center],
+          ]),
+        ),
+      },
       inputSrj,
       preparedBuses: [bus],
       plans: original,

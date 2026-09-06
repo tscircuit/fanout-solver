@@ -733,12 +733,23 @@ export function* routeReservedViaBusesSteps(
       router._moveCost = -1
       return
     }
-    const edgeKey = previousCell * router.planeSize + nextCell
+    const edgeKey =
+      (z * router.planeSize + previousCell) * router.planeSize + nextCell
     const usesTerminal =
       previousCell === segment.startCellId || nextCell === segment.endCellId
     let blockers = usesTerminal ? undefined : edgeBlockers.get(edgeKey)
     if (!blockers) {
-      blockers = index.nearby(a, b)
+      // Keep unrelated copper layers out of the hot move-check loop. The
+      // complete index remains available for through-via clearance checks.
+      blockers = index
+        .nearby(a, b)
+        .filter((blocker) =>
+          blocker.kind === "obstacle"
+            ? blocker.obstacle.layers.includes(layer)
+            : blocker.kind === "segment"
+              ? blocker.segment.layer === layer
+              : blocker.layers.includes(layer),
+        )
       if (!usesTerminal) edgeBlockers.set(edgeKey, blockers)
     }
     const clear = segmentIsClear(a, b, layer, name, blockers)
