@@ -62,6 +62,8 @@ export interface RouteViaMinimalWindingParams {
   allowSameNetMerges?: boolean
   maximumRouteOrderAttempts?: number
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
+  /** Cost hints for provisional sites that the caller must rematch before commit. */
+  softReservedVias?: readonly ViaMinimalWindingReservedVia[]
   /** Use a finer uniform grid for narrow channels between reserved vias. */
   gridStepDivisor?: 1 | 2
   /** Bias bounded fixed-site searches toward the remote target band. */
@@ -637,6 +639,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
     allowSameNetMerges = false,
     maximumRouteOrderAttempts,
     reservedVias = [],
+    softReservedVias = [],
     gridStepDivisor = 1,
     preferTargetDirectedLaneBias = false,
     allowSourceLayerRouting = false,
@@ -702,6 +705,40 @@ export function* routeViaMinimalWindingAlternativesSteps(
       point: { x: gridMinX + column * gridStep, y: gridMinY + row * gridStep },
     }
   })
+  // Provisional plane barrels guide search without being fixed obstacles.
+  // Touch only the small grid rectangles around each disk, not every node.
+  const softViaCosts = softReservedVias.length
+    ? new Float32Array(nodeCount)
+    : undefined
+  if (softViaCosts) {
+    for (const { via } of softReservedVias) {
+      if (!via.spanLayers.includes(targetLayer)) continue
+      const radius = via.diameter / 2 + traceWidth / 2 + clearance
+      const minimumColumn = Math.max(
+        0,
+        Math.ceil((via.center.x - radius - gridMinX) / gridStep),
+      )
+      const maximumColumn = Math.min(
+        columnCount - 1,
+        Math.floor((via.center.x + radius - gridMinX) / gridStep),
+      )
+      const minimumRow = Math.max(
+        0,
+        Math.ceil((via.center.y - radius - gridMinY) / gridStep),
+      )
+      const maximumRow = Math.min(
+        rowCount - 1,
+        Math.floor((via.center.y + radius - gridMinY) / gridStep),
+      )
+      for (let row = minimumRow; row <= maximumRow; row++) {
+        for (let column = minimumColumn; column <= maximumColumn; column++) {
+          const index = row * columnCount + column
+          if (distance(nodes[index]!.point, via.center) < radius)
+            softViaCosts[index] = softViaCosts[index]! + 25 * gridStep
+        }
+      }
+    }
+  }
   const sampledGridPoints = includeVisualization
     ? nodes
         .filter(
@@ -1247,7 +1284,8 @@ export function* routeViaMinimalWindingAlternativesSteps(
             ? gridStep * Math.SQRT2
             : gridStep) +
           (addsTurn ? gridStep * 0.2 : 0) +
-          lanePenalty
+          lanePenalty +
+          (softViaCosts?.[nextNode] ?? 0)
         const nextState = nextNode * 9 + directionIndex
         if (nextDistance >= distances[nextState]! - EPSILON) continue
         const edgeIndex = current.node * 8 + directionIndex

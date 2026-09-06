@@ -2546,6 +2546,85 @@ export class FanoutSolver extends BaseSolver {
             }
           }
         }
+        // Once wide-bus copper constrains the field, retry a blocked wide bus
+        // with provisional plane sites as search costs. Future boundary sites
+        // remain fixed, and a complete joint rematch must validate the repair.
+        if (
+          !busPlans &&
+          bus.connections.length >= 8 &&
+          boundaryBuses.some(
+            (candidate) =>
+              candidate.connections.length >= 8 &&
+              matchedPlans.some((plan) => plan.busId === candidate.busId),
+          )
+        ) {
+          const committedNames = new Set(
+            matchedPlans.map((plan) => plan.connectionName),
+          )
+          const futurePlaneNames = new Set(
+            this.preparedBuses
+              .filter((candidate) => candidate.termination.type === "plane")
+              .flatMap((candidate) =>
+                candidate.connections.map(
+                  (connection) => connection.connection.name,
+                ),
+              )
+              .filter((name) => !committedNames.has(name)),
+          )
+          const freePlans = (yield* routeAlternatives(
+            {
+              ...routeParams,
+              fixedViaPointsByConnectionIndex: undefined,
+              reservedVias: routeParams.reservedVias.filter(
+                (reserved) => !futurePlaneNames.has(reserved.connectionName),
+              ),
+              softReservedVias: routeParams.reservedVias.filter((reserved) =>
+                futurePlaneNames.has(reserved.connectionName),
+              ),
+            },
+            1,
+          ))[0]
+          if (freePlans) {
+            const allPlans = [...matchedPlans, ...freePlans]
+            const rematchedPoints = matchComponentDogboneViaSites(
+              this.preparedBuses,
+              {
+                viaDiameter: this.config.viaDiameter,
+                viaHoleDiameter: this.config.viaHoleDiameter,
+                traceWidth: this.config.traceWidth,
+                clearance: this.config.clearance,
+                maximumSearchStates: 3_000_000,
+                preferredBoundaryPerpendicularSideByBusId,
+                preferBoundaryOutwardByBusId,
+                fixedViaPointsByConnectionIndex: new Map(
+                  allPlans
+                    .filter((plan) => plan.via)
+                    .map((plan) => [plan.connectionIndex, plan.via!.center]),
+                ),
+                preferredViaPointsByConnectionIndex:
+                  fixedViaPointsByConnectionIndex,
+                blockingSegments: allPlans.flatMap((plan) =>
+                  plan.segments.map((segment) => ({
+                    connectionIndex: plan.connectionIndex,
+                    segment,
+                  })),
+                ),
+                additionalObstacles: this.routingSrj.obstacles,
+                preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
+                canShareCopper,
+              },
+            )
+            debugDense(
+              "free-sites:rematched",
+              bus.busId,
+              rematchedPoints?.size ?? "failed",
+            )
+            if (rematchedPoints) {
+              busPlans = freePlans
+              fixedViaPointsByConnectionIndex = rematchedPoints
+            }
+          }
+        }
         if (busPlans && bus.maxLengthSkew !== undefined) {
           const lengths = busPlans.map((plan) => plan.length)
           const rawSkew = Math.max(...lengths) - Math.min(...lengths)

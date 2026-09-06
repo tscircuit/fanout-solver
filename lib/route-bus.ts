@@ -62,6 +62,8 @@ export interface RouteBusParams {
   stopAfterFirstRejectedViaMinimalCandidate?: boolean
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
+  /** Provisional site preferences; successful callers must rematch future vias. */
+  softReservedVias?: readonly ViaMinimalWindingReservedVia[]
   viaMinimalOnly?: boolean
   /** Permit a singleton or pair to move provisional vias near the boundary. */
   allowBoundarySideViaFallback?: boolean
@@ -2558,6 +2560,7 @@ export function* routeBusAlternativesSteps(
     stopAfterFirstRejectedViaMinimalCandidate = false,
     fixedViaPointsByConnectionIndex,
     reservedVias = [],
+    softReservedVias = [],
     viaMinimalOnly = false,
     allowBoundarySideViaFallback = false,
     preferCornerBoundaryVia = false,
@@ -3120,6 +3123,7 @@ export function* routeBusAlternativesSteps(
           alignGridToPads,
           includeReverseTargetRotation: terminalPattern.localDogboneRepair,
           reservedVias,
+          softReservedVias,
           gridStepDivisor,
           preferTargetDirectedLaneBias:
             terminalPattern.preferTargetDirectedLaneBias,
@@ -3439,6 +3443,7 @@ export function* routeBusAlternativesSteps(
           allowBlindAndBuriedVias,
           allowSameNetMerges,
           maximumRouteOrderAttempts: bus.connections.length === 1 ? 3 : 6,
+          softReservedVias,
           reservedVias:
             bus.connections.length > 1
               ? [...reservedVias, ...boundaryVias]
@@ -3488,6 +3493,7 @@ export function* routeBusAlternativesSteps(
             allowSameNetMerges,
             maximumRouteOrderAttempts: 6,
             reservedVias,
+            softReservedVias,
             gridStepDivisor: 2,
             alignGridToPads: true,
           },
