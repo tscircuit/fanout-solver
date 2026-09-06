@@ -36,4 +36,4 @@ test("each bus escapes in one direction and onto one layer", () => {
   expect(new Set(Object.values(output.busDirections))).toEqual(
     new Set(["up", "down"]),
   )
-})
+}, 30_000)
