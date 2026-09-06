@@ -27,6 +27,8 @@ interface FlowRoutingParams {
   traceWidth: number
   clearance: number
   availableBoundaryRegions?: AvailableBoundaryRegion[]
+  /** Provisional clear source prefixes; callers must preserve unmatched inputs. */
+  onPartialRoutes?: (plans: FanoutRoutePlan[]) => void
   onProgress?: (
     visualization: GraphicsObject,
     stats: Record<string, unknown>,
@@ -1231,6 +1233,7 @@ function* routeWithAdaptiveExitsSteps(params: {
   traceWidth: number
   clearance: number
   availableBoundaryRegions?: AvailableBoundaryRegion[]
+  onPartialRoutes?: (plans: FanoutRoutePlan[]) => void
   reportProgress: ReportFlowProgress
 }): Generator<void, FanoutRoutePlan[] | null, unknown> {
   const {
@@ -1240,6 +1243,7 @@ function* routeWithAdaptiveExitsSteps(params: {
     traceWidth,
     clearance,
     availableBoundaryRegions,
+    onPartialRoutes,
     reportProgress,
   } = params
   const availableDirections = availableBoundaryRegions
@@ -1275,6 +1279,23 @@ function* routeWithAdaptiveExitsSteps(params: {
         reportProgress,
       })
       if (!result) continue
+      if (
+        onPartialRoutes &&
+        result.routes.length > 0 &&
+        result.routes.length < items.length
+      ) {
+        const plans = result.routes.map((route) => buildPlan(route, traceWidth))
+        if (
+          plansHaveRequiredClearance({
+            plans,
+            items,
+            obstacles,
+            traceWidth,
+            clearance,
+          })
+        )
+          onPartialRoutes(plans)
+      }
       if (!bestResult || result.routes.length > bestResult.routes.length) {
         bestResult = result
       }
@@ -1451,6 +1472,7 @@ export function* routeSingleLayerWithAdaptiveExitsSteps(
     traceWidth,
     clearance,
     availableBoundaryRegions,
+    onPartialRoutes,
     onProgress,
   } = params
   if (buses.some((bus) => bus.connections.length !== 1)) return null
@@ -1512,6 +1534,7 @@ export function* routeSingleLayerWithAdaptiveExitsSteps(
     traceWidth,
     clearance,
     availableBoundaryRegions,
+    onPartialRoutes,
     reportProgress,
   })
   if (adaptivePlans) return adaptivePlans
