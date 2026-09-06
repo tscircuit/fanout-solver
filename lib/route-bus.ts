@@ -2710,14 +2710,6 @@ export function* routeBusAlternativesSteps(
   const alternatives: FanoutRoutePlan[][] = []
   const seenAlternativeKeys = new Set<string>()
   const cornerLaneOffsets = getCornerLaneOffsets(bus, acceptedPlans)
-  if (alignWindingGridToPads && busUsesCoordinatedWindingChannel(bus)) {
-    // Dense boundary lanes on different copper layers may reuse tracks without
-    // consuming the limited corner corridor on this bus's assigned layer.
-    cornerLaneOffsets.exit = getCornerLaneOffsets(
-      bus,
-      acceptedPlans.filter((plan) => plan.targetLayer === targetLayer),
-    ).exit
-  }
 
   const addAlternative = (plans: FanoutRoutePlan[]): void => {
     const key = plans
@@ -2756,6 +2748,7 @@ export function* routeBusAlternativesSteps(
       preferTargetDirectedLaneBias?: boolean
       localDogboneRepair?: boolean
       reserveTerminalExitPoints?: boolean
+      cornerExitLaneOffset?: number
       allowLayerInterleaving?: boolean
     }
     const maximumThroughAllRouteOrderAttempts = 24
@@ -3068,6 +3061,23 @@ export function* routeBusAlternativesSteps(
         }
       }
     }
+    if (alignWindingGridToPads && cornerSide) {
+      const layerLocalExitOffset = getCornerLaneOffsets(
+        bus,
+        acceptedPlans.filter((plan) => plan.targetLayer === targetLayer),
+      ).exit
+      if (layerLocalExitOffset !== cornerLaneOffsets.exit) {
+        // Preserve successful shared-band routes first. If those patterns
+        // fail, reuse the corner slots occupied only on other copper layers.
+        terminalPatterns.push(
+          ...terminalPatterns.map((pattern) => ({
+            ...pattern,
+            label: `${pattern.label}-layer-local-corner`,
+            cornerExitLaneOffset: layerLocalExitOffset,
+          })),
+        )
+      }
+    }
     const seenTerminalSignatures = new Set<string>()
     for (const terminalPattern of terminalPatterns) {
       const terminals = bus.connections.map((preparedConnection) => {
@@ -3077,7 +3087,8 @@ export function* routeBusAlternativesSteps(
           ? getCornerTargetTrack({
               bus,
               connection: preparedConnection,
-              cornerExitLaneOffset: cornerLaneOffsets.exit,
+              cornerExitLaneOffset:
+                terminalPattern.cornerExitLaneOffset ?? cornerLaneOffsets.exit,
               traceWidth,
               viaDiameter,
               clearance,
