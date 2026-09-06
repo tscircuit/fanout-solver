@@ -311,10 +311,89 @@ function getWindingCrossoverLayer(params: {
   )
 }
 
+function getDistributedBoundaryTargetTracks(params: {
+  bus: PreparedBus
+  boundaryDirection: FanoutDirection
+  traceWidth: number
+  clearance: number
+}): number[] | undefined {
+  const { bus, boundaryDirection, traceWidth, clearance } = params
+  if (getCornerSide(bus) || !busUsesCoordinatedWindingChannel(bus))
+    return undefined
+  const layers = new Set(
+    bus.connections.map(
+      (connection) =>
+        connection.exitTargetPoint?.layer ??
+        getPointLayer(connection.targetPoint),
+    ),
+  )
+  if (layers.size < 2) return undefined
+  const minimum = isHorizontal(boundaryDirection)
+    ? bus.sharedBoundary.minY
+    : bus.sharedBoundary.minX
+  const maximum = isHorizontal(boundaryDirection)
+    ? bus.sharedBoundary.maxY
+    : bus.sharedBoundary.maxX
+  const tracks = bus.connections
+    .map((connection) =>
+      Math.max(
+        minimum,
+        Math.min(
+          maximum,
+          getPerpendicularAxis(
+            connection.exitTargetPoint ?? connection.targetPoint,
+            boundaryDirection,
+          ),
+        ),
+      ),
+    )
+    .toSorted((a, b) => a - b)
+  const pitch = traceWidth + clearance
+  if (
+    tracks.every(
+      (track, index) =>
+        index === 0 || track - tracks[index - 1]! >= pitch - 1e-9,
+    )
+  )
+    return undefined
+  if (maximum - minimum < (tracks.length - 1) * pitch - 1e-9) return undefined
+  // Pool neighboring overlaps while preserving their mean requested location.
+  // Subtracting the pitch reduces the clearance constraint to monotonicity.
+  const blocks: { start: number; count: number; mean: number }[] = []
+  for (const [index, track] of tracks.entries()) {
+    blocks.push({ start: index, count: 1, mean: track - index * pitch })
+    while (blocks.length > 1 && blocks.at(-2)!.mean > blocks.at(-1)!.mean) {
+      const second = blocks.pop()!,
+        first = blocks.pop()!
+      blocks.push({
+        start: first.start,
+        count: first.count + second.count,
+        mean:
+          (first.mean * first.count + second.mean * second.count) /
+          (first.count + second.count),
+      })
+    }
+  }
+  for (const block of blocks) {
+    const mean = Math.max(
+      minimum,
+      Math.min(maximum - (tracks.length - 1) * pitch, block.mean),
+    )
+    for (let index = block.start; index < block.start + block.count; index++)
+      tracks[index] = mean + index * pitch
+  }
+  return tracks
+}
+
 export function getBoundaryTargetTrack(params: {
   bus: PreparedBus
   connection: PreparedConnection
   boundaryDirection: FanoutDirection
+  traceWidth?: number
+  clearance?: number
+  layerNames?: readonly string[]
+  targetLayer?: string
+  windingOrderIndex?: number
 }): number {
   const requestedTrack = getPerpendicularAxis(
     params.connection.exitTargetPoint ?? params.connection.targetPoint,
@@ -326,6 +405,22 @@ export function getBoundaryTargetTrack(params: {
   const boundaryMaximum = isHorizontal(params.boundaryDirection)
     ? params.bus.sharedBoundary.maxY
     : params.bus.sharedBoundary.maxX
+  const distributedTracks =
+    params.traceWidth !== undefined && params.clearance !== undefined
+      ? getDistributedBoundaryTargetTracks({
+          ...params,
+          traceWidth: params.traceWidth,
+          clearance: params.clearance,
+        })
+      : undefined
+  if (distributedTracks && params.layerNames && params.targetLayer) {
+    const { rank } = getWindingTargetRank({
+      ...params,
+      layerNames: params.layerNames,
+      targetLayer: params.targetLayer,
+    })
+    return distributedTracks[rank]!
+  }
   return Math.max(boundaryMinimum, Math.min(boundaryMaximum, requestedTrack))
 }
 
@@ -1102,6 +1197,10 @@ function buildPlan(params: {
             bus,
             connection: preparedConnection,
             boundaryDirection,
+            traceWidth,
+            clearance,
+            layerNames,
+            targetLayer,
           })
         : track
   const connectionRank = getConnectionRank(bus, preparedConnection)
@@ -2608,14 +2707,21 @@ export function* routeBusAlternativesSteps(
       localDogboneRepair?: boolean
     }
     const maximumThroughAllRouteOrderAttempts = 24
-    const windingTargetOrderCount = cornerSide
-      ? getWindingTargetOrders({
-          bus,
-          boundaryDirection,
-          layerNames,
-          targetLayer,
-        }).orders.length
-      : 1
+    const windingTargetOrderCount =
+      cornerSide ||
+      getDistributedBoundaryTargetTracks({
+        bus,
+        boundaryDirection,
+        traceWidth,
+        clearance,
+      })
+        ? getWindingTargetOrders({
+            bus,
+            boundaryDirection,
+            layerNames,
+            targetLayer,
+          }).orders.length
+        : 1
     const uniformDogboneTerminalPatterns: CoordinatedTerminalPattern[] =
       viaHandednesses.map((viaHandedness) => ({
         label: `uniform-${viaHandedness}`,
@@ -2760,7 +2866,13 @@ export function* routeBusAlternativesSteps(
     const coordinatedViaPoints =
       fixedViaPointsByConnectionIndex ??
       (!allowBlindAndBuriedVias &&
-      bus.connections.length >= 8 &&
+      (bus.connections.length >= 8 ||
+        getDistributedBoundaryTargetTracks({
+          bus,
+          boundaryDirection,
+          traceWidth,
+          clearance,
+        })) &&
       reservedVias.length === 0
         ? matchComponentDogboneViaSites([bus], {
             viaDiameter,
@@ -2902,6 +3014,11 @@ export function* routeBusAlternativesSteps(
               bus,
               connection: preparedConnection,
               boundaryDirection,
+              traceWidth,
+              clearance,
+              layerNames,
+              targetLayer,
+              windingOrderIndex: terminalPattern.windingOrderIndex,
             })
         return {
           connection: preparedConnection,
@@ -3095,6 +3212,10 @@ export function* routeBusAlternativesSteps(
             bus,
             connection: preparedConnection,
             boundaryDirection,
+            traceWidth,
+            clearance,
+            layerNames,
+            targetLayer,
           }),
     )
     const finalExitPoints = finalTracks.map((track) =>
