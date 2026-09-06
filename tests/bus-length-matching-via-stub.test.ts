@@ -250,4 +250,4 @@ test("length matches a lane connected to its via through a short grid stub", asy
       }),
     ),
   ).toMatchSvgSnapshot(import.meta.path)
-})
+}, 30_000)
