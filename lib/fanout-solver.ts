@@ -5,7 +5,11 @@ import { refineAdaptivePlaneReservationCore } from "./refine-adaptive-plane-rese
 import { shouldUseAdaptiveDensePlaneRouting } from "./should-use-adaptive-dense-plane-routing"
 import { type GraphicsObject, mergeGraphics } from "graphics-debug"
 import { addViaLayerMetadataToSrj } from "./add-via-layer-metadata"
-import { getCornerBandSide, getExitEdgeForDirection } from "./boundary-exit"
+import {
+  getCornerBandSide,
+  getDirectionForExitEdge,
+  getExitEdgeForDirection,
+} from "./boundary-exit"
 import { buildOutputSimpleRouteJson } from "./build-output"
 import {
   type CompleteOriginalEndpointsResult,
@@ -1982,12 +1986,32 @@ export class FanoutSolver extends BaseSolver {
         : []),
       ...singletonDeferralCandidates.filter((bus) => {
         const containingBus = getContainingWideSourceField(bus)
-        // A wide bus can consume an embedded singleton's last source-layer
-        // dogbone site even when they escape onto different target layers.
+        const sourcePoint = bus.connections[0]!.sourcePoint
+        const componentCenter = {
+          x: (bus.componentBounds.minX + bus.componentBounds.maxX) / 2,
+          y: (bus.componentBounds.minY + bus.componentBounds.maxY) / 2,
+        }
+        const boundaryDirection = bus.exitEdge
+          ? getDirectionForExitEdge(bus.exitEdge)
+          : bus.direction
+        const inwardProjection =
+          boundaryDirection === "right"
+            ? componentCenter.x - sourcePoint.x
+            : boundaryDirection === "left"
+              ? sourcePoint.x - componentCenter.x
+              : boundaryDirection === "up"
+                ? componentCenter.y - sourcePoint.y
+                : sourcePoint.y - componentCenter.y
+        // Crossing the component can consume an embedded singleton's source
+        // dogbone even when the target layers differ. Keep outward boundary
+        // escapes provisional unless they share the wide bus's target layer.
         const reserveEmbeddedSourceEscape =
           usePadAlignedDenseRouting &&
           !useConfiguredDensePlaneRouting &&
-          Boolean(containingBus)
+          containingBus &&
+          (params.busLayerAssignments[containingBus.busId] ===
+            params.busLayerAssignments[bus.busId] ||
+            inwardProjection > 1e-9)
         return (
           !leadingWideSingletonBuses.includes(bus) &&
           !reserveEmbeddedSourceEscape
