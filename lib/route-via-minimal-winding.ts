@@ -66,6 +66,14 @@ export interface RouteViaMinimalWindingParams {
   softReservedVias?: readonly ViaMinimalWindingReservedVia[]
   /** Use a finer uniform grid for narrow channels between reserved vias. */
   gridStepDivisor?: 1 | 2
+  /** Exact grid spacing for staged routing through narrow via channels. */
+  gridStep?: number
+  /** Deterministic terminal order for a caller that has ordered escape ports. */
+  routeOrder?: readonly number[]
+  /** Side preference for a caller-supplied terminal order. */
+  laneBias?: -1 | 0 | 1
+  /** Actual copper before the first via when source escape has multiple bends. */
+  sourceEscapePaths?: ReadonlyMap<number, readonly Point2D[]>
   /** Bias bounded fixed-site searches toward the remote target band. */
   preferTargetDirectedLaneBias?: boolean
   /** Internal path-only mode used before a boundary-side via is appended. */
@@ -473,11 +481,12 @@ function getBlockingCopper(params: {
   }
 }
 
-function buildPlan(params: {
+export function buildViaMinimalWindingPlan(params: {
   bus: PreparedBus
   terminal: ViaMinimalWindingTerminal
   targetLayer: string
   targetLayerPoints: Point2D[]
+  sourceEscapePoints?: readonly Point2D[]
   layerNames: string[]
   traceWidth: number
   viaDiameter: number
@@ -500,12 +509,33 @@ function buildPlan(params: {
     x: connection.sourcePoint.x,
     y: connection.sourcePoint.y,
   }
-  const sourceSegment: RoutedSegment = {
-    start: sourcePoint,
-    end: terminal.viaPoint,
-    width: traceWidth,
-    layer: connection.sourceLayer,
+  const sourcePoints = params.sourceEscapePoints ?? [
+    sourcePoint,
+    terminal.viaPoint,
+  ]
+  if (
+    sourcePoints.length < 2 ||
+    distance(sourcePoints[0]!, sourcePoint) > EPSILON ||
+    distance(sourcePoints.at(-1)!, terminal.viaPoint) > EPSILON
+  ) {
+    throw new Error(
+      "FanoutSolver: source escape must connect the source pad to its first via",
+    )
   }
+  if (
+    sourcePoints.length < 2 ||
+    distance(sourcePoints[0]!, sourcePoint) > EPSILON ||
+    distance(sourcePoints.at(-1)!, terminal.viaPoint) > EPSILON
+  ) {
+    throw new Error(
+      "FanoutSolver: source escape must connect the source pad to its first via",
+    )
+  }
+  const sourceSegments = getSegments(
+    [...sourcePoints],
+    traceWidth,
+    connection.sourceLayer,
+  )
   const hasSourceDogbone = distance(sourcePoint, terminal.viaPoint) > EPSILON
   const changesLayer = connection.sourceLayer !== targetLayer
   const targetSegments = getSegments(targetLayerPoints, traceWidth, targetLayer)
@@ -535,12 +565,12 @@ function buildPlan(params: {
     },
     ...(hasSourceDogbone
       ? [
-          {
+          ...sourcePoints.slice(1).map((point) => ({
             route_type: "wire" as const,
-            ...terminal.viaPoint,
+            ...point,
             width: traceWidth,
             layer: connection.sourceLayer,
-          },
+          })),
         ]
       : []),
     ...(changesLayer
@@ -573,7 +603,7 @@ function buildPlan(params: {
     sourcePointIndex: connection.sourcePointIndex,
   })
   const segments = [
-    ...(hasSourceDogbone ? [sourceSegment] : []),
+    ...(hasSourceDogbone ? sourceSegments : []),
     ...targetSegments,
   ]
   const cornerBandSide = getCornerBandSide(bus.exitEdge, bus.preferredExit)
@@ -608,6 +638,9 @@ function buildPlan(params: {
       route,
     },
     segments,
+    ...(sourceSegments.length > 1
+      ? { sourceEscapeSegmentCount: sourceSegments.length }
+      : {}),
     via: changesLayer ? via : undefined,
     length: segments.reduce(
       (total, segment) => total + distance(segment.start, segment.end),
@@ -680,9 +713,11 @@ export function* routeViaMinimalWindingAlternativesSteps(
   const pitch = Math.min(bus.pitchX, bus.pitchY)
   const alignGridToPitch =
     alignGridToPads && gridStepDivisor === 2 && Number.isFinite(pitch)
-  const gridStep = alignGridToPitch
-    ? pitch / (2 * Math.ceil(pitch / (2 * baseGridStep)))
-    : baseGridStep
+  const gridStep =
+    params.gridStep ??
+    (alignGridToPitch
+      ? pitch / (2 * Math.ceil(pitch / (2 * baseGridStep)))
+      : baseGridStep)
   if (!Number.isFinite(gridStep) || gridStep <= 0) return []
   const { minX, maxX, minY, maxY } = bus.sharedBoundary
   const originX = bus.xCoordinates[0] ?? minX
@@ -1404,26 +1439,45 @@ export function* routeViaMinimalWindingAlternativesSteps(
     Math.max(...viaTracks) < Math.min(...targetTracks) - EPSILON
   const viasAreAfterTargets =
     Math.min(...viaTracks) > Math.max(...targetTracks) + EPSILON
-  const laneBiases = preferTargetDirectedLaneBias
-    ? viasAreBeforeTargets
-      ? ([0, 1, -1] as const)
-      : viasAreAfterTargets
-        ? ([0, -1, 1] as const)
-        : bus.direction === boundaryDirection &&
-            meanTargetTrack > meanViaTrack + EPSILON
-          ? ([1, 0, -1] as const)
+  const laneBiases = params.routeOrder
+    ? [params.laneBias ?? 0]
+    : preferTargetDirectedLaneBias
+      ? viasAreBeforeTargets
+        ? ([0, 1, -1] as const)
+        : viasAreAfterTargets
+          ? ([0, -1, 1] as const)
           : bus.direction === boundaryDirection &&
-              meanTargetTrack < meanViaTrack - EPSILON
-            ? ([-1, 0, 1] as const)
-            : ([0, 1, -1] as const)
-    : viasAreBeforeTargets
-      ? ([1, 0, -1] as const)
-      : viasAreAfterTargets
-        ? ([-1, 0, 1] as const)
-        : ([0, 1, -1] as const)
+              meanTargetTrack > meanViaTrack + EPSILON
+            ? ([1, 0, -1] as const)
+            : bus.direction === boundaryDirection &&
+                meanTargetTrack < meanViaTrack - EPSILON
+              ? ([-1, 0, 1] as const)
+              : ([0, 1, -1] as const)
+      : viasAreBeforeTargets
+        ? ([1, 0, -1] as const)
+        : viasAreAfterTargets
+          ? ([-1, 0, 1] as const)
+          : ([0, 1, -1] as const)
   const initialRouteOrderFactories: Array<
     () => readonly ViaMinimalWindingTerminal[]
   > = []
+  if (params.routeOrder) {
+    if (
+      params.routeOrder.length !== terminals.length ||
+      new Set(params.routeOrder).size !== terminals.length ||
+      params.routeOrder.some(
+        (index) =>
+          !Number.isInteger(index) || index < 0 || index >= terminals.length,
+      )
+    ) {
+      throw new Error(
+        "FanoutSolver: routeOrder must contain every terminal index exactly once",
+      )
+    }
+    initialRouteOrderFactories.push(() =>
+      params.routeOrder!.map((index) => terminals[index]!),
+    )
+  }
   if (alignGridToPads && preferTargetDirectedLaneBias && viasAreBeforeTargets) {
     initialRouteOrderFactories.push(() => targetOrderedTerminals)
   }
@@ -1652,11 +1706,14 @@ export function* routeViaMinimalWindingAlternativesSteps(
             `FanoutSolver: via-minimal winding route omitted "${terminal.connection.connection.name}"`,
           )
         }
-        return buildPlan({
+        return buildViaMinimalWindingPlan({
           bus,
           terminal,
           targetLayer,
           targetLayerPoints,
+          sourceEscapePoints: params.sourceEscapePaths?.get(
+            terminal.connection.connectionIndex,
+          ),
           layerNames,
           traceWidth,
           viaDiameter,

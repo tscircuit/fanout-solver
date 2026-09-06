@@ -39,6 +39,13 @@ import {
   routeBusAlternatives,
   routeBusAlternativesSteps,
 } from "./route-bus"
+import { routePeripheralSourceEscapesSteps } from "./route-peripheral-source-escapes"
+import { routeStagedPerimeterBusSteps } from "./route-staged-perimeter-bus"
+import { routeReservedSourceBusesSteps } from "./route-reserved-source-buses"
+import { repairPeripheralBusLengthsSteps } from "./repair-peripheral-bus-lengths"
+import { routeSplitPerimeterSourceEscapesSteps } from "./route-split-perimeter-source-escapes"
+import { routeSplitPerimeterBusSteps } from "./route-split-perimeter-bus"
+import { routeShallowSplitPerimeterBusSteps } from "./route-shallow-split-perimeter-bus"
 import { routeSingleLayerWithAdaptiveExitsSteps } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
 import { getRuntimeProcess } from "./runtime-process"
@@ -84,6 +91,8 @@ interface ResolvedFanoutConfig {
 
 interface EvaluatedAssignment extends AssignmentAttempt {
   blockingBusIds: string[]
+  /** The bounded peripheral strategy may finish after complete validation. */
+  stopAfterCompleteValidation?: true
 }
 
 interface GroupedBeamState {
@@ -94,6 +103,7 @@ interface GroupedBeamState {
 interface MixedTerminationState {
   plans: FanoutRoutePlan[]
   failedBusIds: string[]
+  stopAfterCompleteValidation?: true
 }
 
 type RoutingStrategy = "default" | "group-by-layer" | "deep-first"
@@ -513,6 +523,43 @@ function createInitialLayerAssignment(params: {
     ) {
       assignment[bus.busId] = sourceLayer
     } else if (viaLayers.length > 0) {
+      // A source strictly inside a wide field can be enclosed by its routes.
+      // Boundary sources still have an outward channel, so preserve the
+      // ordinary layer preference for those buses.
+      const sourceXs = bus.connections.map(
+        (connection) => connection.sourcePoint.x,
+      )
+      const sourceYs = bus.connections.map(
+        (connection) => connection.sourcePoint.y,
+      )
+      const embeddedSingletonCount = (layer: string) =>
+        buses.filter((other) => {
+          const point = other.connections[0]?.sourcePoint
+          return (
+            other.termination.type === "boundary" &&
+            point !== undefined &&
+            point.x > Math.min(...sourceXs) + 1e-9 &&
+            point.x < Math.max(...sourceXs) - 1e-9 &&
+            point.y > Math.min(...sourceYs) + 1e-9 &&
+            point.y < Math.max(...sourceYs) - 1e-9 &&
+            getCommonExplicitExitTargetLayer(other) === layer &&
+            isDenseSingletonEmbeddedInMultiLayerWideBus({
+              singletonBus: other,
+              singletonTargetLayer: layer,
+              wideBuses: [bus],
+            })
+          )
+        }).length
+      const isolatedLayers = viaLayers.toSorted(
+        (a, b) => embeddedSingletonCount(a) - embeddedSingletonCount(b),
+      )
+      if (
+        embeddedSingletonCount(isolatedLayers[0]!) <
+        embeddedSingletonCount(viaLayers[0]!)
+      ) {
+        assignment[bus.busId] = isolatedLayers[0]!
+        continue
+      }
       if (
         preferOrderedCoordinatedWindingLayers &&
         busUsesCoordinatedWinding(bus)
@@ -1543,6 +1590,126 @@ export class FanoutSolver extends BaseSolver {
    * dogbones. This is intentionally bounded independently of the number of
    * plane drops so dense power fields cannot explode the general beam search.
    */
+  private *routePeripheralMixedTerminationSteps(params: {
+    busLayerAssignments: Readonly<Record<string, string>>
+    busesInRoutingOrder: readonly PreparedBus[]
+  }): Generator<FanoutWorkYield, MixedTerminationState | null, unknown> {
+    if (this.config.allowBlindAndBuriedVias) return null
+    const bus = params.busesInRoutingOrder.find(
+      (candidate) =>
+        candidate.termination.type === "boundary" &&
+        (candidate.exitEdge === "right" || candidate.exitEdge === "left") &&
+        candidate.connections.length >= 16 &&
+        candidate.componentObstacles.length >= 200,
+    )
+    if (!bus) return null
+    const targetLayer = params.busLayerAssignments[bus.busId]
+    if (!targetLayer) return null
+    const targetLayerByBusId = new Map(
+      Object.entries(params.busLayerAssignments),
+    )
+    this.setInProgressPlans({
+      phase: "route-peripheral-source-escapes",
+      plans: [],
+      busId: bus.busId,
+    })
+    const sourceSteps = (
+      bus.exitEdge === "left"
+        ? routeSplitPerimeterSourceEscapesSteps
+        : routePeripheralSourceEscapesSteps
+    )({
+      ...this.config,
+      srj: this.routingSrj,
+      buses: this.preparedBuses,
+      bus,
+      targetLayer,
+      targetLayerByBusId,
+    })
+    let sourceResult = sourceSteps.next()
+    while (!sourceResult.done) {
+      yield
+      sourceResult = sourceSteps.next()
+    }
+    if (!sourceResult.value) return null
+    let source = sourceResult.value
+    const stageParams = {
+      ...this.config,
+      ...source,
+      srj: this.routingSrj,
+      bus,
+      targetLayer,
+    }
+    const stageSteps =
+      "lowerConnectionIndices" in source
+        ? routeSplitPerimeterBusSteps({ ...stageParams, ...source })
+        : routeStagedPerimeterBusSteps(stageParams)
+    let stageResult = stageSteps.next()
+    while (!stageResult.done) {
+      yield
+      stageResult = stageSteps.next()
+    }
+    let stagePlans = stageResult.value
+    if (!stagePlans && "lowerConnectionIndices" in source) {
+      const shallowSteps = routeShallowSplitPerimeterBusSteps({
+        ...stageParams,
+        ...source,
+        buses: this.preparedBuses,
+      })
+      let shallowResult = shallowSteps.next()
+      while (!shallowResult.done) {
+        yield
+        shallowResult = shallowSteps.next()
+      }
+      if (shallowResult.value) {
+        source = shallowResult.value
+        stagePlans = shallowResult.value.plans
+      }
+    }
+    if (!stagePlans) return null
+    this.setInProgressPlans({
+      phase: "route-peripheral-bus-continuations",
+      plans: stagePlans,
+      busId: bus.busId,
+    })
+    const remainingSteps = routeReservedSourceBusesSteps({
+      ...this.config,
+      srj: this.routingSrj,
+      buses: this.preparedBuses,
+      sourceEscapes: source.sourceEscapes,
+      sourceBoundary: source.sourceBoundary,
+      initialPlans: stagePlans,
+      targetLayerByBusId,
+    })
+    let remainingResult = remainingSteps.next()
+    while (!remainingResult.done) {
+      yield
+      remainingResult = remainingSteps.next()
+    }
+    if (!remainingResult.value) return null
+    const repairSteps = repairPeripheralBusLengthsSteps({
+      ...this.config,
+      srj: this.routingSrj,
+      inputSrj: this.inputSrj,
+      plans: remainingResult.value,
+      preparedBuses: this.preparedBuses,
+      sharedBoundary: this.getValidationBoundary(),
+    })
+    let repairResult = repairSteps.next()
+    while (!repairResult.done) {
+      yield
+      repairResult = repairSteps.next()
+    }
+    if (!repairResult.value) return null
+    const plans = repairResult.value
+    const output = buildOutputSimpleRouteJson({
+      inputSrj: this.inputSrj,
+      plans,
+      layerNames: this.config.layerNames,
+    })
+    if (!this.validateCompletePlans(plans, output).valid) return null
+    return { plans, failedBusIds: [], stopAfterCompleteValidation: true }
+  }
+
   private *routeDenseThroughAllMixedTerminationSteps(params: {
     busLayerAssignments: Readonly<Record<string, string>>
     busesInRoutingOrder: readonly PreparedBus[]
@@ -5142,6 +5309,23 @@ export class FanoutSolver extends BaseSolver {
 
     let mixedTerminationState: MixedTerminationState | null = null
     if (!useSingleLayerPushAndShove && routingStrategy === "default") {
+      const peripheralSolver = this.createWorkSolver(
+        "PeripheralMixedTerminationSolver",
+        this.routePeripheralMixedTerminationSteps({
+          busLayerAssignments,
+          busesInRoutingOrder,
+        }),
+      )
+      mixedTerminationState = (yield {
+        type: "subsolver",
+        solver: peripheralSolver,
+      }) as MixedTerminationState | null
+    }
+    if (
+      !mixedTerminationState &&
+      !useSingleLayerPushAndShove &&
+      routingStrategy === "default"
+    ) {
       const denseSolver = this.createWorkSolver(
         "DenseMixedTerminationSolver",
         this.routeDenseThroughAllMixedTerminationSteps({
@@ -5341,6 +5525,10 @@ export class FanoutSolver extends BaseSolver {
     return {
       summary,
       plans,
+      ...(mixedTerminationState?.stopAfterCompleteValidation &&
+      validation?.valid
+        ? { stopAfterCompleteValidation: true as const }
+        : {}),
       blockingBusIds: [...blockingBusCounts.entries()]
         .toSorted(([, firstCount], [, secondCount]) => secondCount - firstCount)
         .map(([busId]) => busId),
@@ -5361,7 +5549,8 @@ export class FanoutSolver extends BaseSolver {
     if (
       bestAttempt.summary.routedConnectionCount ===
         this.inputSrj.connections.length &&
-      this.getCoordinatedAdditionalViaCount(bestAttempt.plans) === 0
+      (bestAttempt.stopAfterCompleteValidation ||
+        this.getCoordinatedAdditionalViaCount(bestAttempt.plans) === 0)
     ) {
       return bestAttempt
     }
@@ -5378,7 +5567,8 @@ export class FanoutSolver extends BaseSolver {
       if (
         bestAttempt.summary.routedConnectionCount ===
           this.inputSrj.connections.length &&
-        this.getCoordinatedAdditionalViaCount(bestAttempt.plans) === 0
+        (bestAttempt.stopAfterCompleteValidation ||
+          this.getCoordinatedAdditionalViaCount(bestAttempt.plans) === 0)
       ) {
         return bestAttempt
       }
@@ -5932,10 +6122,11 @@ export class FanoutSolver extends BaseSolver {
       bestScore: this.bestAttempt.summary.score,
     }
     if (
-      this.groupedBeamEvaluated &&
-      attempt.summary.routedConnectionCount ===
-        this.inputSrj.connections.length &&
-      this.getCoordinatedAdditionalViaCount(this.bestAttempt.plans) === 0
+      (attempt.stopAfterCompleteValidation && this.hasCompleteBestAttempt()) ||
+      (this.groupedBeamEvaluated &&
+        attempt.summary.routedConnectionCount ===
+          this.inputSrj.connections.length &&
+        this.getCoordinatedAdditionalViaCount(this.bestAttempt.plans) === 0)
     ) {
       this.completeBestAttemptEndpoints()
       this.solved = true

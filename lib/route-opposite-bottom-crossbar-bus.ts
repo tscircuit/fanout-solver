@@ -1,0 +1,28 @@
+import { reflectFanoutX } from "./reflect-fanout-x"
+import { routeBottomCrossbarBusSteps } from "./route-bottom-crossbar-bus"
+import type { RouteBusParams } from "./route-bus"
+import type { PeripheralSourceEscape } from "./route-peripheral-source-escapes"
+import type { RouteViaMinimalWindingProgress } from "./route-via-minimal-winding"
+import type { Bounds, FanoutRoutePlan } from "./types"
+
+/** Use the annulus opposite the requested edge when its nearer source exits are blocked. */
+export function* routeOppositeBottomCrossbarBusSteps(
+  params: RouteBusParams & {
+    sourceEscapes: readonly PeripheralSourceEscape[]
+    sourceBoundary: Bounds
+  },
+): Generator<RouteViaMinimalWindingProgress, FanoutRoutePlan[] | null, void> {
+  if (params.bus.exitEdge !== "right") return null
+  const plans = yield* routeBottomCrossbarBusSteps(reflectFanoutX(params))
+  if (!plans) return null
+  const byIndex = new Map(
+    params.bus.connections.map((connection) => [
+      connection.connectionIndex,
+      connection,
+    ]),
+  )
+  return reflectFanoutX(plans).map((plan) => ({
+    ...plan,
+    sourceObstacle: byIndex.get(plan.connectionIndex)!.sourceObstacle,
+  }))
+}
