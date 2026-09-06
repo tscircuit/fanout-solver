@@ -1,3 +1,4 @@
+import { allocateBoundaryTargetTracks } from "./allocate-boundary-target-tracks"
 import type {
   Obstacle,
   SimpleRouteJson,
@@ -165,6 +166,7 @@ function getWindingTargetOrders(params: {
 }): {
   orders: PreparedConnection[][]
   legacyOrder: PreparedConnection[]
+  ordinaryOrderCount: number
 } {
   const { bus, boundaryDirection, layerNames, targetLayer } = params
   const getTargetLayer = (candidate: PreparedConnection): string =>
@@ -268,6 +270,41 @@ function getWindingTargetOrders(params: {
   // but do not let sub-nanometer noise between unrelated layer bands choose
   // the primary topology.
   candidateOrders.push(legacyOrderedConnections)
+  const ordinaryOrderCount = new Set(
+    candidateOrders.map((order) =>
+      order.map((candidate) => candidate.connectionIndex).join(","),
+    ),
+  ).size
+  // Preserve each original layer's lane order while exploring other legal
+  // interleavings. Keep this bounded for buses with many source layers.
+  if (
+    !getCornerSide(bus) &&
+    bus.connections.length <= 8 &&
+    orderedLayers.length > 1
+  ) {
+    const layerSequences = orderedLayers.map((layer) =>
+      connectionsByLayer.get(layer)!.toSorted(compareWithinLayer),
+    )
+    const offsets = layerSequences.map(() => 0)
+    const current: PreparedConnection[] = []
+    const append = (): void => {
+      if (candidateOrders.length >= 128) return
+      if (current.length === bus.connections.length) {
+        candidateOrders.push([...current])
+        return
+      }
+      for (let layer = 0; layer < layerSequences.length; layer++) {
+        const next = layerSequences[layer]![offsets[layer]!]
+        if (!next) continue
+        offsets[layer]++
+        current.push(next)
+        append()
+        current.pop()
+        offsets[layer]--
+      }
+    }
+    append()
+  }
   const seenOrders = new Set<string>()
   const orders = candidateOrders.filter((order) => {
     const key = order.map((candidate) => candidate.connectionIndex).join(",")
@@ -275,7 +312,7 @@ function getWindingTargetOrders(params: {
     seenOrders.add(key)
     return true
   })
-  return { orders, legacyOrder: legacyOrderedConnections }
+  return { orders, legacyOrder: legacyOrderedConnections, ordinaryOrderCount }
 }
 
 function getWindingTargetRank(params: {
@@ -318,6 +355,9 @@ function getDistributedBoundaryTargetTracks(params: {
   boundaryDirection: FanoutDirection
   traceWidth: number
   clearance: number
+  acceptedPlans?: readonly FanoutRoutePlan[]
+  allowLayerInterleaving?: boolean
+  targetLayer?: string
 }): number[] | undefined {
   const { bus, boundaryDirection, traceWidth, clearance } = params
   if (getCornerSide(bus) || !busUsesCoordinatedWindingChannel(bus))
@@ -352,6 +392,7 @@ function getDistributedBoundaryTargetTracks(params: {
     .toSorted((a, b) => a - b)
   const pitch = traceWidth + clearance
   if (
+    !params.allowLayerInterleaving &&
     tracks.every(
       (track, index) =>
         index === 0 || track - tracks[index - 1]! >= pitch - 1e-9,
@@ -384,7 +425,27 @@ function getDistributedBoundaryTargetTracks(params: {
     for (let index = block.start; index < block.start + block.count; index++)
       tracks[index] = mean + index * pitch
   }
-  return tracks
+  const occupiedTracks = (params.acceptedPlans ?? [])
+    .filter(
+      (plan) =>
+        plan.termination.type === "boundary" &&
+        plan.targetLayer === params.targetLayer &&
+        Math.abs(
+          getAxis(plan.exitPoint, boundaryDirection) -
+            getExitAxis(bus, boundaryDirection),
+        ) < 1e-9,
+    )
+    .map((plan) => getPerpendicularAxis(plan.exitPoint, boundaryDirection))
+    .toSorted((a, b) => a - b)
+  return [
+    ...allocateBoundaryTargetTracks({
+      requestedTracks: tracks,
+      occupiedTracks,
+      minimum,
+      maximum,
+      minimumPitch: pitch,
+    }),
+  ]
 }
 
 export function getBoundaryTargetTrack(params: {
@@ -396,6 +457,8 @@ export function getBoundaryTargetTrack(params: {
   layerNames?: readonly string[]
   targetLayer?: string
   windingOrderIndex?: number
+  acceptedPlans?: readonly FanoutRoutePlan[]
+  allowLayerInterleaving?: boolean
 }): number {
   const requestedTrack = getPerpendicularAxis(
     params.connection.exitTargetPoint ?? params.connection.targetPoint,
@@ -2708,23 +2771,31 @@ export function* routeBusAlternativesSteps(
       windingOrderIndex?: number
       preferTargetDirectedLaneBias?: boolean
       localDogboneRepair?: boolean
+      reserveTerminalExitPoints?: boolean
+      allowLayerInterleaving?: boolean
     }
     const maximumThroughAllRouteOrderAttempts = 24
-    const windingTargetOrderCount =
+    const usesDistributedWindingTargets = Boolean(
       cornerSide ||
-      getDistributedBoundaryTargetTracks({
-        bus,
-        boundaryDirection,
-        traceWidth,
-        clearance,
-      })
-        ? getWindingTargetOrders({
-            bus,
-            boundaryDirection,
-            layerNames,
-            targetLayer,
-          }).orders.length
-        : 1
+        getDistributedBoundaryTargetTracks({
+          acceptedPlans,
+          targetLayer,
+          bus,
+          boundaryDirection,
+          traceWidth,
+          clearance,
+        }),
+    )
+    const windingTargetOrders = getWindingTargetOrders({
+      bus,
+      boundaryDirection,
+      layerNames,
+      targetLayer,
+    })
+    const windingTargetOrderCount = windingTargetOrders.orders.length
+    const ordinaryWindingTargetOrderCount = usesDistributedWindingTargets
+      ? windingTargetOrders.ordinaryOrderCount
+      : 1
     const uniformDogboneTerminalPatterns: CoordinatedTerminalPattern[] =
       viaHandednesses.map((viaHandedness) => ({
         label: `uniform-${viaHandedness}`,
@@ -2904,7 +2975,7 @@ export function* routeBusAlternativesSteps(
       coordinatedViaPoints
         ? [
             ...Array.from(
-              { length: windingTargetOrderCount },
+              { length: ordinaryWindingTargetOrderCount },
               (_, windingOrderIndex) => ({
                 label: `component-matched-vias-winding-${windingOrderIndex}`,
                 useViaInPad: false,
@@ -2928,6 +2999,26 @@ export function* routeBusAlternativesSteps(
               windingOrderIndex: 0,
               preferTargetDirectedLaneBias: true,
             },
+            // Keep ordinary fixed-site attempts first. Forward retries reserve
+            // future exits so an earlier lane cannot close their final gap.
+            ...(!getCornerSide(bus) && windingTargetOrderCount > 1
+              ? Array.from(
+                  { length: windingTargetOrderCount },
+                  (_, windingOrderIndex) =>
+                    [true, false].map((preferTargetDirectedLaneBias) => ({
+                      label: `expanded-winding-${windingOrderIndex}-${preferTargetDirectedLaneBias}`,
+                      useViaInPad: false,
+                      getViaHandedness: () => 0 as const,
+                      getViaPoint: (connection: PreparedConnection) =>
+                        coordinatedViaPoints.get(connection.connectionIndex)!,
+                      maximumRouteOrderAttempts: 1,
+                      windingOrderIndex,
+                      preferTargetDirectedLaneBias,
+                      reserveTerminalExitPoints: !preferTargetDirectedLaneBias,
+                      allowLayerInterleaving: true,
+                    })),
+                ).flat()
+              : []),
           ]
         : []
     const planeTerminationsAlreadyOccupyTheFanout = acceptedPlans.some(
@@ -3014,6 +3105,8 @@ export function* routeBusAlternativesSteps(
               cornerBandTargetTrackOffset,
             })
           : getBoundaryTargetTrack({
+              allowLayerInterleaving: terminalPattern.allowLayerInterleaving,
+              acceptedPlans,
               bus,
               connection: preparedConnection,
               boundaryDirection,
@@ -3101,7 +3194,7 @@ export function* routeBusAlternativesSteps(
         )
         .join(
           "|",
-        )}:${terminalPattern.maximumRouteOrderAttempts ?? "all"}:${gridStepDivisor}:${alignGridToPads}:${Boolean(terminalPattern.localDogboneRepair)}`
+        )}:${terminalPattern.maximumRouteOrderAttempts ?? "all"}:${gridStepDivisor}:${alignGridToPads}:${Boolean(terminalPattern.localDogboneRepair)}:${Boolean(terminalPattern.preferTargetDirectedLaneBias)}:${Boolean(terminalPattern.reserveTerminalExitPoints)}`
       if (seenTerminalSignatures.has(terminalSignature)) continue
       seenTerminalSignatures.add(terminalSignature)
       const windingSteps = routeViaMinimalWindingAlternativesSteps(
@@ -3124,6 +3217,7 @@ export function* routeBusAlternativesSteps(
           includeReverseTargetRotation: terminalPattern.localDogboneRepair,
           reservedVias,
           softReservedVias,
+          reserveTerminalExitPoints: terminalPattern.reserveTerminalExitPoints,
           gridStepDivisor,
           preferTargetDirectedLaneBias:
             terminalPattern.preferTargetDirectedLaneBias,
@@ -3213,6 +3307,7 @@ export function* routeBusAlternativesSteps(
             cornerBandTargetTrackOffset,
           })
         : getBoundaryTargetTrack({
+            acceptedPlans,
             bus,
             connection: preparedConnection,
             boundaryDirection,
