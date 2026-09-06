@@ -517,8 +517,8 @@ function createInitialLayerAssignment(params: {
         busUsesCoordinatedWinding(bus)
       ) {
         // Preserve caller preferences when boundary corridors are free. A
-        // fixed-layer centered or turning bus can occupy the same boundary
-        // band, so prefer another legal layer for a wide route through it.
+        // centered or turning bus with a common target layer can occupy the
+        // same boundary band, so prefer another legal layer for a wide route.
         const cornerSide = getCornerBandSide(bus.exitEdge, bus.preferredExit)
         const getBoundaryCongestion = (layer: string): number => {
           if (!bus.exitEdge || bus.connections.length < 8) return 0
