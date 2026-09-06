@@ -29,12 +29,14 @@ test("PR benchmark comments count failures, flag incomplete runs, and bound untr
   expect(body).toContain("Solved 1/5")
   expect(body).toContain("Completed 4/5; partial 1; errors 1; timeouts 1")
   expect(body).toContain("Incomplete run")
-  expect(body).toContain("Dataset 31 — AM62L and RK3308 fanout benchmark")
+  expect(body).toContain(
+    "Dataset 31 — AM62L, RK3308, and K230 fanout benchmark",
+  )
   expect(body).toContain("Dataset revision: `bbbbbbb`")
-  expect(body).toContain("135 for AM62L; 162 for RK3308")
+  expect(body).toContain("135 for AM62L; 162 for RK3308; 171 for K230")
   const mixedFamilyReport = {
     ...report,
-    totalSamples: 24,
+    totalSamples: 36,
     rows: [
       {
         ...rows[0],
@@ -48,14 +50,23 @@ test("PR benchmark comments count failures, flag incomplete runs, and bound untr
         connections: 162,
         routed: 162,
       },
+      {
+        ...rows[0],
+        sample: "25-k230-top-left-offset",
+        connections: 171,
+        routed: 171,
+      },
     ],
   }
   const mixedFamilyBody = renderBenchmarkComment(mixedFamilyReport, options)
-  expect(mixedFamilyBody).toContain("Solved 2/24 selected samples")
-  expect(mixedFamilyBody).toContain("Completed 2/24")
+  expect(mixedFamilyBody).toContain("Solved 3/36 selected samples")
+  expect(mixedFamilyBody).toContain("Completed 3/36")
   expect(mixedFamilyBody).toContain("01-top-left-offset | solved | 135/135")
   expect(mixedFamilyBody).toContain(
     "13-rk3308-top-left-offset | solved | 162/162",
+  )
+  expect(mixedFamilyBody).toContain(
+    "25-k230-top-left-offset | solved | 171/171",
   )
   expect(body).not.toMatch(/SRJ19|SRJ29|dataset0[1-8]/)
   const malicious = {

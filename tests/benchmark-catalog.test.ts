@@ -6,18 +6,23 @@ import {
 import {
   DATASET31_DIRECTION_CASES,
   FANOUT_DIRECTION_CASES,
+  K230_FANOUT_DIRECTION_CASES,
   RK3308_FANOUT_DIRECTION_CASES,
 } from "../scripts/generate-repro/dataset31-source"
 
-test("benchmark includes both upstream dataset 31 families and rejects other datasets", () => {
-  expect(benchmarkSamples).toHaveLength(24)
+test("benchmark includes all three upstream dataset 31 families and rejects other datasets", () => {
+  expect(benchmarkSamples).toHaveLength(36)
   expect(FANOUT_DIRECTION_CASES).toHaveLength(12)
   expect(RK3308_FANOUT_DIRECTION_CASES).toHaveLength(12)
+  expect(K230_FANOUT_DIRECTION_CASES).toHaveLength(12)
   expect(
     DATASET31_DIRECTION_CASES.filter((sample) => sample.chip === "am62l"),
   ).toHaveLength(12)
   expect(
     DATASET31_DIRECTION_CASES.filter((sample) => sample.chip === "rk3308"),
+  ).toHaveLength(12)
+  expect(
+    DATASET31_DIRECTION_CASES.filter((sample) => sample.chip === "k230"),
   ).toHaveLength(12)
   expect(benchmarkSamples.map((sample) => sample.id)).toEqual(
     DATASET31_DIRECTION_CASES.map((sample) => sample.id),
@@ -25,9 +30,14 @@ test("benchmark includes both upstream dataset 31 families and rejects other dat
   expect(benchmarkSamples.slice(0, 12).map((sample) => sample.id)).toEqual(
     FANOUT_DIRECTION_CASES.map((sample) => sample.id),
   )
-  expect(benchmarkSamples.slice(12).map((sample) => sample.id)).toEqual(
+  expect(benchmarkSamples.slice(12, 24).map((sample) => sample.id)).toEqual(
     RK3308_FANOUT_DIRECTION_CASES.map((sample) => sample.id),
   )
+  expect(benchmarkSamples.slice(24).map((sample) => sample.id)).toEqual(
+    K230_FANOUT_DIRECTION_CASES.map((sample) => sample.id),
+  )
+  expect(benchmarkSamples[24]?.id).toBe("25-k230-top-left-offset")
+  expect(benchmarkSamples[35]?.id).toBe("36-k230-left-top-offset")
   expect(new Set(benchmarkSamples.map((sample) => sample.dataset))).toEqual(
     new Set(["dataset31"]),
   )
@@ -62,6 +72,12 @@ test("benchmark includes both upstream dataset 31 families and rejects other dat
   expect(
     selectBenchmarkSamples({ sample: "dataset31/24-rk3308-left-top-offset" }),
   ).toEqual([benchmarkSamples[23]])
+  expect(selectBenchmarkSamples({ sample: "25-k230-top-left-offset" })).toEqual(
+    [benchmarkSamples[24]],
+  )
+  expect(
+    selectBenchmarkSamples({ sample: "dataset31/36-k230-left-top-offset" }),
+  ).toEqual([benchmarkSamples[35]])
   expect(selectBenchmarkSamples({ limit: 2 })).toHaveLength(2)
   expect(() => selectBenchmarkSamples({ sample: "missing" })).toThrow(
     "No benchmark samples",
