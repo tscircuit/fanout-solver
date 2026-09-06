@@ -338,9 +338,33 @@ function replacementCopperIsSelfClear(params: {
       ) {
         continue
       }
+      const viaClearance = via.diameter / 2 + replacement.width / 2 + clearance
+      // An off-grid via can join this run through a short, connected stub.
+      // Preserve that existing connection while rejecting later approaches.
+      const connectsThroughShortStub = (direction: -1 | 1): boolean => {
+        let point = direction === -1 ? replacement.start : replacement.end
+        let pathDistance = 0
+        for (
+          let index = replacementIndex + direction;
+          index >= 0 && index < segments.length;
+          index += direction
+        ) {
+          const segment = segments[index]!
+          if (segment.layer !== replacement.layer) return false
+          const connectedEnd = direction === -1 ? segment.end : segment.start
+          if (!pointsMatch(point, connectedEnd)) return false
+          pathDistance += distance(segment.start, segment.end)
+          if (pathDistance > viaClearance + EPSILON) return false
+          point = direction === -1 ? segment.start : segment.end
+          if (pointsMatch(point, via.center)) return true
+        }
+        return false
+      }
       if (
         distancePointToSegment(via.center, replacement.start, replacement.end) <
-        via.diameter / 2 + replacement.width / 2 + clearance - EPSILON
+          viaClearance - EPSILON &&
+        !connectsThroughShortStub(-1) &&
+        !connectsThroughShortStub(1)
       ) {
         return false
       }

@@ -76,6 +76,8 @@ export interface RouteViaMinimalWindingParams {
   alignGridToPads?: boolean
   /** Defer the outermost reversed target while routing the inner terminals. */
   includeReverseTargetRotation?: boolean
+  /** Keep earlier lanes clear of every remaining terminal exit. */
+  reserveTerminalExitPoints?: boolean
 }
 
 export interface RouteViaMinimalWindingProgress {
@@ -646,6 +648,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
     adaptiveRouteOrder = false,
     alignGridToPads = false,
     includeReverseTargetRotation = false,
+    reserveTerminalExitPoints = false,
   } = params
   if (
     maximumRouteOrderAttempts !== undefined &&
@@ -905,6 +908,14 @@ export function* routeViaMinimalWindingAlternativesSteps(
       ) {
         return false
       }
+    }
+    for (const other of reserveTerminalExitPoints ? terminals : []) {
+      if (sharesNet(connectionName, other.connection.connection.name)) continue
+      if (
+        distancePointToSegment(other.exitPoint, segment.start, segment.end) <
+        traceWidth + clearance - EPSILON
+      )
+        return false
     }
     const segmentMinX = Math.min(segment.start.x, segment.end.x)
     const segmentMaxX = Math.max(segment.start.x, segment.end.x)

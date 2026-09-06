@@ -23,6 +23,7 @@ import {
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import {
   getComponentDogboneViaSiteCandidates,
+  getSingleDogboneViaSiteRepairs,
   matchComponentDogboneViaSites,
 } from "./match-component-dogbone-via-sites"
 import { connectionsShareElectricalNet } from "./net-identity"
@@ -467,6 +468,9 @@ function createInitialLayerAssignment(params: {
   escapeLayers: string[]
   escapeLayersByBusId: Readonly<Record<string, readonly string[]>>
   preferOrderedCoordinatedWindingLayers: boolean
+  traceWidth: number
+  viaDiameter: number
+  clearance: number
 }): Readonly<Record<string, string>> {
   const {
     buses,
@@ -513,10 +517,151 @@ function createInitialLayerAssignment(params: {
         preferOrderedCoordinatedWindingLayers &&
         busUsesCoordinatedWinding(bus)
       ) {
-        // Coordinated winding treats allowedLayers as an ordered preference.
-        // A global round-robin index can otherwise skip a bus's first choice
-        // just because a previous bus had a different set of legal layers.
-        assignment[bus.busId] = viaLayers[0]!
+        // Preserve caller preferences when boundary corridors are free. A
+        // centered or turning bus with a common target layer can occupy the
+        // same boundary band, so prefer another legal layer for a wide route.
+        const cornerSide = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+        const getBoundaryCongestion = (layer: string): number => {
+          if (!bus.exitEdge || bus.connections.length < 8) return 0
+          const horizontalEdge =
+            bus.exitEdge === "left" || bus.exitEdge === "right"
+          const axis = horizontalEdge ? "y" : "x"
+          const minimum = horizontalEdge
+            ? bus.sharedBoundary.minY
+            : bus.sharedBoundary.minX
+          const maximum = horizontalEdge
+            ? bus.sharedBoundary.maxY
+            : bus.sharedBoundary.maxX
+          if (!cornerSide) {
+            const tracks = bus.connections.map((connection) => {
+              const target =
+                connection.exitTargetPoint ?? connection.targetPoint
+              return Math.max(minimum, Math.min(maximum, target[axis]))
+            })
+            const bandMinimum = Math.min(...tracks)
+            const bandMaximum = Math.max(...tracks)
+            const forwardAxis = horizontalEdge ? "x" : "y"
+            const sign =
+              bus.exitEdge === "right" || bus.exitEdge === "top" ? 1 : -1
+            const sourceNearEnd = Math.min(
+              ...bus.connections.map(
+                (connection) => sign * connection.sourcePoint[forwardAxis],
+              ),
+            )
+            const sourceMinimum = Math.min(
+              ...bus.connections.map(
+                (connection) => connection.sourcePoint[axis],
+              ),
+            )
+            const sourceMaximum = Math.max(
+              ...bus.connections.map(
+                (connection) => connection.sourcePoint[axis],
+              ),
+            )
+            return buses.reduce((count, other) => {
+              const otherCorner = getCornerBandSide(
+                other.exitEdge,
+                other.preferredExit,
+              )
+              if (
+                other === bus ||
+                other.termination.type !== "boundary" ||
+                other.componentId !== bus.componentId ||
+                other.exitEdge !== bus.exitEdge ||
+                !otherCorner ||
+                getCommonExplicitExitTargetLayer(other) !== layer
+              )
+                return count
+              const center =
+                minimum +
+                (maximum - minimum) * (otherCorner === "minimum" ? 0.25 : 0.75)
+              const halfWidth =
+                ((Math.max(
+                  other.connections.length,
+                  other.cornerBandConnectionCount ?? 0,
+                ) -
+                  1) *
+                  Math.max(
+                    params.traceWidth + params.clearance,
+                    params.viaDiameter + params.clearance,
+                  )) /
+                2
+              const margin = params.traceWidth + params.clearance
+              const overlapsBoundaryBand =
+                bandMaximum + margin >= center - halfWidth &&
+                bandMinimum - margin <= center + halfWidth
+              // A turning bus behind this source field must also pass its lanes
+              // on the way to the edge, even when its final band is elsewhere.
+              const crossesSourceField =
+                Math.max(
+                  ...other.connections.map(
+                    (connection) => sign * connection.sourcePoint[forwardAxis],
+                  ),
+                ) <
+                  sourceNearEnd - 1e-9 &&
+                Math.min(
+                  ...other.connections.map(
+                    (connection) => connection.sourcePoint[axis],
+                  ),
+                ) <=
+                  sourceMaximum + margin &&
+                Math.max(
+                  ...other.connections.map(
+                    (connection) => connection.sourcePoint[axis],
+                  ),
+                ) >=
+                  sourceMinimum - margin
+              return (
+                count +
+                (overlapsBoundaryBand || crossesSourceField
+                  ? other.connections.length
+                  : 0)
+              )
+            }, 0)
+          }
+          const bandCenter =
+            minimum +
+            (maximum - minimum) * (cornerSide === "minimum" ? 0.25 : 0.75)
+          const pitch = Math.max(
+            params.traceWidth + params.clearance,
+            params.viaDiameter + params.clearance,
+          )
+          const bandHalfWidth =
+            ((Math.max(
+              bus.connections.length,
+              bus.cornerBandConnectionCount ?? 0,
+            ) -
+              1) *
+              pitch) /
+            2
+          return buses.reduce((count, other) => {
+            if (
+              other === bus ||
+              other.termination.type !== "boundary" ||
+              other.componentId !== bus.componentId ||
+              other.exitEdge !== bus.exitEdge ||
+              getCornerBandSide(other.exitEdge, other.preferredExit) ||
+              getCommonExplicitExitTargetLayer(other) !== layer
+            )
+              return count
+            return (
+              count +
+              other.connections.filter((connection) => {
+                const target =
+                  connection.exitTargetPoint ?? connection.targetPoint
+                const track = Math.max(minimum, Math.min(maximum, target[axis]))
+                return (
+                  Math.abs(track - bandCenter) <=
+                  bandHalfWidth + params.traceWidth + params.clearance
+                )
+              }).length
+            )
+          }, 0)
+        }
+        assignment[bus.busId] = viaLayers.toSorted(
+          (first, second) =>
+            getBoundaryCongestion(first) - getBoundaryCongestion(second),
+        )[0]!
         continue
       }
       const componentDirections = directionsByComponent.get(bus.componentId)!
@@ -1046,6 +1191,9 @@ export class FanoutSolver extends BaseSolver {
           buses: this.preparedBuses,
           escapeLayers: this.config.escapeLayers,
           escapeLayersByBusId: this.escapeLayersByBusId,
+          traceWidth: this.config.traceWidth,
+          viaDiameter: this.config.viaDiameter,
+          clearance: this.config.clearance,
           preferOrderedCoordinatedWindingLayers:
             this.config.densePlaneReservationBusIds.length > 0 ||
             this.config.denseUnrestrictedPlaneRoutingBusIds.length > 0 ||
@@ -1486,6 +1634,64 @@ export class FanoutSolver extends BaseSolver {
     const wideBoundaryBuses = unsortedBoundaryBuses.filter(
       (bus) => bus.connections.length >= 8,
     )
+    // A single-layer turning bus beside the end of a centered source field
+    // has fewer escape choices than a corner bus farther behind it. Reserve
+    // that turning channel before the farther bus fences its local via sites.
+    const adjacentCenteredFieldByTurningBus = new Map<
+      PreparedBus,
+      PreparedBus
+    >()
+    if (usePadAlignedDenseRouting && !configuredDensePlaneRouting) {
+      for (const bus of wideBoundaryBuses) {
+        if (
+          !getCornerBandSide(bus.exitEdge, bus.preferredExit) ||
+          new Set(bus.routableEscapeLayers ?? bus.allowedLayers ?? []).size !==
+            1
+        )
+          continue
+        const axis =
+          bus.direction === "up" || bus.direction === "down" ? "y" : "x"
+        const track = axis === "x" ? "y" : "x"
+        const sign =
+          bus.direction === "up" || bus.direction === "right" ? 1 : -1
+        const forwardEnd = Math.max(
+          ...bus.connections.map((c) => sign * c.sourcePoint[axis]),
+        )
+        const minTrack = Math.min(
+          ...bus.connections.map((c) => c.sourcePoint[track]),
+        )
+        const maxTrack = Math.max(
+          ...bus.connections.map((c) => c.sourcePoint[track]),
+        )
+        const pitch = axis === "x" ? bus.pitchX : bus.pitchY
+        const field = wideBoundaryBuses.find((candidate) => {
+          if (
+            candidate === bus ||
+            candidate.componentId !== bus.componentId ||
+            candidate.exitEdge !== bus.exitEdge ||
+            getCornerBandSide(candidate.exitEdge, candidate.preferredExit)
+          )
+            return false
+          const nearEnd = Math.min(
+            ...candidate.connections.map((c) => sign * c.sourcePoint[axis]),
+          )
+          const gap = nearEnd - forwardEnd
+          return (
+            gap >= -1e-9 &&
+            gap <= pitch + 1e-9 &&
+            Math.min(
+              ...candidate.connections.map((c) => c.sourcePoint[track]),
+            ) <=
+              maxTrack + 1e-9 &&
+            Math.max(
+              ...candidate.connections.map((c) => c.sourcePoint[track]),
+            ) >=
+              minTrack - 1e-9
+          )
+        })
+        if (field) adjacentCenteredFieldByTurningBus.set(bus, field)
+      }
+    }
     const hasThreeWideBoundaryBuses =
       useConfiguredDensePlaneRouting && wideBoundaryBuses.length === 3
     const getBoundaryTargetSpan = (bus: PreparedBus) => {
@@ -2189,13 +2395,44 @@ export class FanoutSolver extends BaseSolver {
             bus,
           ]),
       ]
+      for (const [bus] of adjacentCenteredFieldByTurningBus) {
+        const axis =
+          bus.direction === "up" || bus.direction === "down" ? "y" : "x"
+        const sign =
+          bus.direction === "up" || bus.direction === "right" ? 1 : -1
+        const backwardEnd = Math.min(
+          ...bus.connections.map(
+            (connection) => sign * connection.sourcePoint[axis],
+          ),
+        )
+        const index = denseBoundaryBusesInRoutingOrder.indexOf(bus)
+        const earlierCornerIndex = denseBoundaryBusesInRoutingOrder.findIndex(
+          (candidate) =>
+            candidate !== bus &&
+            candidate.connections.length >= 8 &&
+            candidate.componentId === bus.componentId &&
+            candidate.direction === bus.direction &&
+            Math.max(
+              ...candidate.connections.map(
+                (connection) => sign * connection.sourcePoint[axis],
+              ),
+            ) <=
+              backwardEnd + 1e-9 &&
+            candidate.exitEdge === bus.exitEdge &&
+            getCornerBandSide(candidate.exitEdge, candidate.preferredExit) ===
+              getCornerBandSide(bus.exitEdge, bus.preferredExit),
+        )
+        if (earlierCornerIndex >= 0 && earlierCornerIndex < index) {
+          denseBoundaryBusesInRoutingOrder.splice(index, 1)
+          denseBoundaryBusesInRoutingOrder.splice(earlierCornerIndex, 0, bus)
+        }
+      }
       const areAdjacentInvertedNarrowBuses = (
         first: PreparedBus,
         second: PreparedBus,
       ): boolean => {
         if (
           !usePadAlignedDenseRouting ||
-          useConfiguredDensePlaneRouting ||
           first.componentId !== second.componentId ||
           first.exitEdge !== second.exitEdge ||
           first.direction !== second.direction ||
@@ -2259,7 +2496,7 @@ export class FanoutSolver extends BaseSolver {
       // turning pair instead leaves its adjacent singleton room to escape
       // before searching for an outside-package via.
       const centeredPairPromotionGroups = new Set<string>()
-      for (const singleton of multiLayerLeadingSingletonBuses) {
+      for (const singleton of leadingWideSingletonBuses) {
         if (getCornerBandSide(singleton.exitEdge, singleton.preferredExit))
           continue
         for (const pair of boundaryBuses) {
@@ -2297,6 +2534,25 @@ export class FanoutSolver extends BaseSolver {
           if (singletonIndex > pairIndex) {
             denseBoundaryBusesInRoutingOrder.splice(singletonIndex, 1)
             denseBoundaryBusesInRoutingOrder.splice(pairIndex, 0, singleton)
+          }
+        }
+      }
+      for (const field of adjacentCenteredFieldByTurningBus.values()) {
+        for (const pair of boundaryBuses) {
+          if (
+            pair.connections.length !== 2 ||
+            getContainingWideSourceField(pair) !== field
+          )
+            continue
+          for (const singleton of singletonBoundaryBuses) {
+            if (!areAdjacentInvertedNarrowBuses(singleton, pair)) continue
+            const pairIndex = denseBoundaryBusesInRoutingOrder.indexOf(pair)
+            const singletonIndex =
+              denseBoundaryBusesInRoutingOrder.indexOf(singleton)
+            if (singletonIndex > pairIndex) {
+              denseBoundaryBusesInRoutingOrder.splice(singletonIndex, 1)
+              denseBoundaryBusesInRoutingOrder.splice(pairIndex, 0, singleton)
+            }
           }
         }
       }
@@ -2447,7 +2703,7 @@ export class FanoutSolver extends BaseSolver {
           useConfiguredDensePlaneRouting &&
           singleLayerBus !== bus &&
           !embeddedNarrowBusAlreadyRouted
-        let usedSoftPlaneRepair = false
+        let usedRepairedViaSites = false
         let busPlans = (yield* routeAlternatives(
           preferSingleLayerWinding
             ? { ...routeParams, bus: singleLayerBus }
@@ -2554,24 +2810,134 @@ export class FanoutSolver extends BaseSolver {
             }
           }
         }
-        // Once wide-bus copper constrains the field, retry a blocked wide bus
-        // with provisional plane sites as search costs. Future boundary sites
-        // remain fixed, and a complete joint rematch must validate the repair.
+        // A first turning bus can be fenced by one diagonal site even though
+        // every provisional dogbone is individually legal. Try moving one of
+        // its own sites while retaining all other through-via reservations.
+        // Keep this bounded repair ahead of the broader free-site search.
+        if (
+          !busPlans &&
+          useAdaptiveDensePlaneRouting &&
+          bus.connections.length >= 8 &&
+          getCornerBandSide(bus.exitEdge, bus.preferredExit) &&
+          new Set(bus.routableEscapeLayers ?? bus.allowedLayers ?? []).size ===
+            1 &&
+          !matchedPlans.some((plan) =>
+            wideBoundaryBuses.some(
+              (candidate) => candidate.busId === plan.busId,
+            ),
+          )
+        ) {
+          const reservedVias = getReservedVias(bus)
+          const siteRepairs = getSingleDogboneViaSiteRepairs(
+            bus,
+            {
+              viaDiameter: this.config.viaDiameter,
+              viaHoleDiameter: this.config.viaHoleDiameter,
+              traceWidth: this.config.traceWidth,
+              clearance: this.config.clearance,
+              additionalObstacles: this.routingSrj.obstacles,
+              blockingSegments: [
+                ...matchedPlans.flatMap((plan) =>
+                  plan.segments.map((segment) => ({
+                    connectionIndex: plan.connectionIndex,
+                    segment,
+                  })),
+                ),
+                ...reservedVias.flatMap((reserved) =>
+                  reserved.sourceEscapeSegment
+                    ? [
+                        {
+                          connectionIndex: -1,
+                          segment: reserved.sourceEscapeSegment,
+                        },
+                      ]
+                    : [],
+                ),
+              ],
+              blockingVias: [
+                ...matchedPlans.flatMap((plan) =>
+                  plan.via
+                    ? [{ connectionIndex: plan.connectionIndex, ...plan.via }]
+                    : [],
+                ),
+                ...reservedVias.map((reserved) => ({
+                  connectionIndex: -1,
+                  ...reserved.via,
+                })),
+              ],
+            },
+            fixedViaPointsByConnectionIndex,
+          )
+          for (const replacementPoints of siteRepairs) {
+            const replacementPlans = (yield* routeAlternatives(
+              {
+                ...routeParams,
+                fixedViaPointsByConnectionIndex: replacementPoints,
+                reservedVias,
+                fixedViaFallbackRouteOrderAttempts: 1,
+              },
+              1,
+            ))[0]
+            if (!replacementPlans) continue
+            busPlans = replacementPlans
+            fixedViaPointsByConnectionIndex = replacementPoints
+            usedRepairedViaSites = true
+            break
+          }
+        }
+        // Fixed dogbones can close a turning bus's own escape channel. Retry
+        // local sites while retaining every other connection's reservations.
+        if (
+          !busPlans &&
+          useAdaptiveDensePlaneRouting &&
+          bus.connections.length >= 8 &&
+          getCornerBandSide(bus.exitEdge, bus.preferredExit)
+        ) {
+          busPlans = (yield* routeAlternatives(
+            {
+              ...routeParams,
+              fixedViaPointsByConnectionIndex: undefined,
+              reservedVias: getReservedVias(bus),
+            },
+            1,
+          ))[0]
+          if (busPlans) {
+            usedRepairedViaSites = true
+            fixedViaPointsByConnectionIndex = new Map([
+              ...fixedViaPointsByConnectionIndex,
+              ...busPlans
+                .filter((plan) => plan.via)
+                .map(
+                  (plan) => [plan.connectionIndex, plan.via!.center] as const,
+                ),
+            ])
+          }
+          debugDense("local-sites", bus.busId, busPlans?.length ?? "failed")
+        }
+        // Retry a blocked wide bus with provisional plane sites as search
+        // costs. A turning bus beside a centered field may also need that
+        // neighboring field's uncommitted sites to move. Keep every committed
+        // route and narrow reservation hard, then require a complete rematch.
         if (
           !busPlans &&
           bus.connections.length >= 8 &&
-          boundaryBuses.some(
-            (candidate) =>
-              candidate.connections.length >= 8 &&
-              matchedPlans.some((plan) => plan.busId === candidate.busId),
-          )
+          (adjacentCenteredFieldByTurningBus.has(bus) ||
+            boundaryBuses.some(
+              (candidate) =>
+                candidate.connections.length >= 8 &&
+                matchedPlans.some((plan) => plan.busId === candidate.busId),
+            ))
         ) {
           const committedNames = new Set(
             matchedPlans.map((plan) => plan.connectionName),
           )
-          const futurePlaneNames = new Set(
+          const provisionalReservationNames = new Set(
             this.preparedBuses
-              .filter((candidate) => candidate.termination.type === "plane")
+              .filter(
+                (candidate) =>
+                  candidate.termination.type === "plane" ||
+                  candidate === adjacentCenteredFieldByTurningBus.get(bus),
+              )
               .flatMap((candidate) =>
                 candidate.connections.map(
                   (connection) => connection.connection.name,
@@ -2584,10 +2950,11 @@ export class FanoutSolver extends BaseSolver {
               ...routeParams,
               fixedViaPointsByConnectionIndex: undefined,
               reservedVias: routeParams.reservedVias.filter(
-                (reserved) => !futurePlaneNames.has(reserved.connectionName),
+                (reserved) =>
+                  !provisionalReservationNames.has(reserved.connectionName),
               ),
               softReservedVias: routeParams.reservedVias.filter((reserved) =>
-                futurePlaneNames.has(reserved.connectionName),
+                provisionalReservationNames.has(reserved.connectionName),
               ),
             },
             1,
@@ -2630,7 +2997,7 @@ export class FanoutSolver extends BaseSolver {
             if (rematchedPoints) {
               busPlans = freePlans
               fixedViaPointsByConnectionIndex = rematchedPoints
-              usedSoftPlaneRepair = true
+              usedRepairedViaSites = true
             }
           }
         }
@@ -2647,12 +3014,12 @@ export class FanoutSolver extends BaseSolver {
           // Only pay for additional A* variants when the first topology is so
           // skewed that compact meanders are unlikely to absorb the deficit.
           // This keeps already-near-matched buses on the single-attempt path.
-          // Keep the jointly rematched repair: routeParams still carries the
+          // Keep repaired via sites: routeParams still carries the
           // earlier provisional sites and cannot safely replace its geometry.
           if (
             needsRouteDiversity &&
             !matchLengthsAfterPlanes &&
-            !usedSoftPlaneRepair
+            !usedRepairedViaSites
           ) {
             busPlans = (yield* routeAlternatives(routeParams, 3)).toSorted(
               (first, second) => {

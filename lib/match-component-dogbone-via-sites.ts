@@ -782,3 +782,30 @@ export function getComponentDogboneViaSiteCandidates(
     ),
   )
 }
+
+/** Try one adjacent site change without releasing any other fixed via. */
+export function* getSingleDogboneViaSiteRepairs(
+  bus: PreparedBus,
+  rules: DogboneViaSiteGeometryRules,
+  fixedViaPointsByConnectionIndex: ReadonlyMap<number, Point2D>,
+): Generator<ReadonlyMap<number, Point2D>, void, unknown> {
+  const sites = getComponentDogboneViaSiteCandidates([bus], rules)
+  let remainingAttempts = 24
+  for (const connection of bus.connections.toReversed()) {
+    const original = fixedViaPointsByConnectionIndex.get(
+      connection.connectionIndex,
+    )
+    if (!original) continue
+    for (const candidate of sites) {
+      if (
+        candidate.connectionIndex !== connection.connectionIndex ||
+        distance(candidate.point, original) <= EPSILON
+      )
+        continue
+      if (remainingAttempts-- <= 0) return
+      const replacement = new Map(fixedViaPointsByConnectionIndex)
+      replacement.set(connection.connectionIndex, candidate.point)
+      yield replacement
+    }
+  }
+}
