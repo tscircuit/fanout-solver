@@ -3359,16 +3359,16 @@ export function* routeBusAlternativesSteps(
     const preferPackageEdgeVias =
       bus.connections.length === 2 && Boolean(getCornerSide(bus))
     const viaCandidates = [
-      ...displacedViaCandidates.map((points) => ({
-        points,
-        boundarySide: false,
-      })),
       ...(preferPackageEdgeVias ? packageEdgeViaCandidates : []).map(
         (points) => ({
           points,
           boundarySide: false,
         }),
       ),
+      ...displacedViaCandidates.map((points) => ({
+        points,
+        boundarySide: false,
+      })),
       ...boundaryViaCandidates.map((points) => ({
         points,
         boundarySide: true,

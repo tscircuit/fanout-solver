@@ -2258,6 +2258,7 @@ export class FanoutSolver extends BaseSolver {
       // Preserve a centered pair's channel before its leading singleton. A
       // turning pair instead leaves its adjacent singleton room to escape
       // before searching for an outside-package via.
+      let centeredPairWasPromoted = false
       for (const singleton of multiLayerLeadingSingletonBuses) {
         if (getCornerBandSide(singleton.exitEdge, singleton.preferredExit))
           continue
@@ -2273,10 +2274,11 @@ export class FanoutSolver extends BaseSolver {
           if (pairIndex > singletonIndex) {
             denseBoundaryBusesInRoutingOrder.splice(pairIndex, 1)
             denseBoundaryBusesInRoutingOrder.splice(singletonIndex, 0, pair)
+            centeredPairWasPromoted = true
           }
         }
       }
-      for (const pair of boundaryBuses) {
+      for (const pair of centeredPairWasPromoted ? boundaryBuses : []) {
         if (
           pair.connections.length !== 2 ||
           !getCornerBandSide(pair.exitEdge, pair.preferredExit)
