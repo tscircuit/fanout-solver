@@ -2810,38 +2810,10 @@ export class FanoutSolver extends BaseSolver {
             }
           }
         }
-        // Fixed dogbones can close a turning bus's own escape channel. Retry
-        // local sites while retaining every other connection's reservations.
-        if (
-          !busPlans &&
-          useAdaptiveDensePlaneRouting &&
-          bus.connections.length >= 8 &&
-          getCornerBandSide(bus.exitEdge, bus.preferredExit)
-        ) {
-          busPlans = (yield* routeAlternatives(
-            {
-              ...routeParams,
-              fixedViaPointsByConnectionIndex: undefined,
-              reservedVias: getReservedVias(bus),
-            },
-            1,
-          ))[0]
-          if (busPlans) {
-            usedRepairedViaSites = true
-            fixedViaPointsByConnectionIndex = new Map([
-              ...fixedViaPointsByConnectionIndex,
-              ...busPlans
-                .filter((plan) => plan.via)
-                .map(
-                  (plan) => [plan.connectionIndex, plan.via!.center] as const,
-                ),
-            ])
-          }
-          debugDense("local-sites", bus.busId, busPlans?.length ?? "failed")
-        }
         // A first turning bus can be fenced by one diagonal site even though
         // every provisional dogbone is individually legal. Try moving one of
         // its own sites while retaining all other through-via reservations.
+        // Keep this bounded repair ahead of the broader free-site search.
         if (
           !busPlans &&
           useAdaptiveDensePlaneRouting &&
@@ -2912,6 +2884,35 @@ export class FanoutSolver extends BaseSolver {
             usedRepairedViaSites = true
             break
           }
+        }
+        // Fixed dogbones can close a turning bus's own escape channel. Retry
+        // local sites while retaining every other connection's reservations.
+        if (
+          !busPlans &&
+          useAdaptiveDensePlaneRouting &&
+          bus.connections.length >= 8 &&
+          getCornerBandSide(bus.exitEdge, bus.preferredExit)
+        ) {
+          busPlans = (yield* routeAlternatives(
+            {
+              ...routeParams,
+              fixedViaPointsByConnectionIndex: undefined,
+              reservedVias: getReservedVias(bus),
+            },
+            1,
+          ))[0]
+          if (busPlans) {
+            usedRepairedViaSites = true
+            fixedViaPointsByConnectionIndex = new Map([
+              ...fixedViaPointsByConnectionIndex,
+              ...busPlans
+                .filter((plan) => plan.via)
+                .map(
+                  (plan) => [plan.connectionIndex, plan.via!.center] as const,
+                ),
+            ])
+          }
+          debugDense("local-sites", bus.busId, busPlans?.length ?? "failed")
         }
         // Retry a blocked wide bus with provisional plane sites as search
         // costs. A turning bus beside a centered field may also need that
