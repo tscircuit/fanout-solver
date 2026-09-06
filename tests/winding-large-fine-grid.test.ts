@@ -108,6 +108,35 @@ test("routes a fine winding grid across a 28.65 mm shared boundary", async () =>
       allowBlindAndBuriedVias: false,
     }),
   ).toMatchObject({ valid: true, issues: [] })
+  const weightedPlans = routeViaMinimalWinding({
+    ...parameters,
+    heuristicWeight: 2,
+  })!
+  expect(weightedPlans).toHaveLength(1)
+  expect(
+    fanoutPlansAreClear({
+      ...parameters,
+      plans: weightedPlans,
+      sharedBoundary,
+    }),
+  ).toBe(true)
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: srj,
+      routedSrj: buildOutputSimpleRouteJson({
+        inputSrj: srj,
+        plans: weightedPlans,
+        layerNames: parameters.layerNames,
+      }),
+      clearance: traceWidth,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, issues: [] })
+  for (const heuristicWeight of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    expect(() =>
+      routeViaMinimalWinding({ ...parameters, heuristicWeight }),
+    ).toThrow("heuristicWeight must be a positive finite number")
+  }
   await expect(
     getSvgFromGraphicsObject(
       visualizeSimpleRouteJson({

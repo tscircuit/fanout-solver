@@ -68,6 +68,8 @@ export interface RouteViaMinimalWindingParams {
   gridStepDivisor?: 1 | 2
   /** Exact grid spacing for staged routing through narrow via channels. */
   gridStep?: number
+  /** Search priority weight; values above one return the first valid goal. */
+  heuristicWeight?: number
   /** Deterministic terminal order for a caller that has ordered escape ports. */
   routeOrder?: readonly number[]
   /** Side preference for a caller-supplied terminal order. */
@@ -757,6 +759,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
     reservedVias = [],
     softReservedVias = [],
     gridStepDivisor = 1,
+    heuristicWeight = 1,
     preferTargetDirectedLaneBias = false,
     allowSourceLayerRouting = false,
     adaptiveRouteOrder = false,
@@ -774,6 +777,11 @@ export function* routeViaMinimalWindingAlternativesSteps(
     )
   }
 
+  if (!Number.isFinite(heuristicWeight) || heuristicWeight <= 0) {
+    throw new Error(
+      `FanoutSolver: heuristicWeight must be a positive finite number, received ${heuristicWeight}`,
+    )
+  }
   if (gridStepDivisor !== 1 && gridStepDivisor !== 2) {
     throw new Error(
       `FanoutSolver: gridStepDivisor must be 1 or 2, received ${gridStepDivisor}`,
@@ -1307,6 +1315,11 @@ export function* routeViaMinimalWindingAlternativesSteps(
     // change while routing this terminal, so check each edge only once. Keep
     // this cache local: later terminals and route-order attempts add blockers.
     const edgeClearance = new Uint8Array(nodeCount * 8)
+    // Weighted search prioritizes the first legal route, so do not reopen
+    // settled directed states while pursuing a shorter path to the same node.
+    // The default admissible search retains its existing relaxation behavior.
+    const closedStates =
+      heuristicWeight > 1 ? new Uint8Array(stateCount) : undefined
     const distances = new Float64Array(stateCount).fill(
       Number.POSITIVE_INFINITY,
     )
@@ -1342,7 +1355,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
       heap.push({
         node: start.nodeIndex,
         direction: 8,
-        score: start.length + remaining,
+        score: start.length + heuristicWeight * remaining,
       })
     }
     const directions = [
@@ -1381,12 +1394,16 @@ export function* routeViaMinimalWindingAlternativesSteps(
       const current = heap.pop()!
       if (current.score >= bestGoalCost - EPSILON) break
       const state = current.node * 9 + current.direction
+      if (closedStates?.[state]) continue
       const currentDistance = distances[state]!
       if (
         current.score >
-        currentDistance + remainingDistances[current.node]! + EPSILON
+        currentDistance +
+          heuristicWeight * remainingDistances[current.node]! +
+          EPSILON
       )
         continue
+      if (closedStates) closedStates[state] = 1
       expandedStateCount++
       expandedStatesSinceYield++
       if (includeVisualization && expandedStatesSinceYield % 50 === 0) {
@@ -1442,6 +1459,12 @@ export function* routeViaMinimalWindingAlternativesSteps(
           }
         }
       }
+      // A weighted heuristic is not an admissible distance bound. Its purpose
+      // is to find a legal path quickly, so accept this fully checked goal
+      // without claiming that later frontier priorities prove it shortest.
+      if (heuristicWeight > 1 && bestGoalPoints) {
+        return { points: bestGoalPoints, expandedStateCount }
+      }
       const node = nodes[current.node]!
       for (const directionIndex of nextDirectionsByIncoming[
         current.direction
@@ -1466,6 +1489,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
           lanePenalty +
           (softViaCosts?.[nextNode] ?? 0)
         const nextState = nextNode * 9 + directionIndex
+        if (closedStates?.[nextState]) continue
         if (nextDistance >= distances[nextState]! - EPSILON) continue
         const edgeIndex = current.node * 8 + directionIndex
         if (edgeClearance[edgeIndex] === 0) {
@@ -1491,7 +1515,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
         heap.push({
           node: nextNode,
           direction: directionIndex,
-          score: nextDistance + remaining,
+          score: nextDistance + heuristicWeight * remaining,
         })
       }
       if (expandedStatesSinceYield >= EXPANDED_STATES_PER_STEP) {

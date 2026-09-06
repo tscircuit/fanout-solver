@@ -85,6 +85,10 @@ export interface RouteBusParams {
   planeCandidateSkipCount?: number
   /** Dense corner-band phase that preserves existing lane centers when leading lanes are prepended. */
   cornerBandTargetTrackOffset?: number
+  /** Fixed first corner slot, independent of the order in which buses route. */
+  cornerExitLaneOffset?: number
+  /** Optional search weighting for winding; does not change route validation. */
+  windingHeuristicWeight?: number
 }
 
 export interface RouteBusAlternativesProgress {
@@ -372,7 +376,6 @@ function getDistributedBoundaryTargetTracks(params: {
         getPointLayer(connection.targetPoint),
     ),
   )
-  if (layers.size < 2) return undefined
   const minimum = isHorizontal(boundaryDirection)
     ? bus.sharedBoundary.minY
     : bus.sharedBoundary.minX
@@ -395,7 +398,7 @@ function getDistributedBoundaryTargetTracks(params: {
     .toSorted((a, b) => a - b)
   const pitch = traceWidth + clearance
   if (
-    !params.allowLayerInterleaving &&
+    (layers.size < 2 || !params.allowLayerInterleaving) &&
     tracks.every(
       (track, index) =>
         index === 0 || track - tracks[index - 1]! >= pitch - 1e-9,
@@ -2624,10 +2627,19 @@ export function* routeBusAlternativesSteps(
     fixedViaFallbackRouteOrderAttempts = 24,
     allowFixedViaReservedExitFallback = false,
     cornerBandTargetTrackOffset,
+    cornerExitLaneOffset,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
     throw new Error(
       `FanoutSolver: maxAlternatives must be a positive integer, received ${maxAlternatives}`,
+    )
+  }
+  if (
+    cornerExitLaneOffset !== undefined &&
+    (!Number.isSafeInteger(cornerExitLaneOffset) || cornerExitLaneOffset < 0)
+  ) {
+    throw new Error(
+      `FanoutSolver: cornerExitLaneOffset must be a non-negative safe integer, received ${cornerExitLaneOffset}`,
     )
   }
   if (
@@ -2727,6 +2739,9 @@ export function* routeBusAlternativesSteps(
   const alternatives: FanoutRoutePlan[][] = []
   const seenAlternativeKeys = new Set<string>()
   const cornerLaneOffsets = getCornerLaneOffsets(bus, acceptedPlans)
+  if (cornerExitLaneOffset !== undefined) {
+    cornerLaneOffsets.exit = cornerExitLaneOffset
+  }
 
   const addAlternative = (plans: FanoutRoutePlan[]): void => {
     const key = plans
@@ -2738,6 +2753,89 @@ export function* routeBusAlternativesSteps(
     if (seenAlternativeKeys.has(key)) return
     seenAlternativeKeys.add(key)
     alternatives.push(plans)
+  }
+
+  // A fixed source escape is also useful for an ordinary singleton whose
+  // boundary endpoint came directly from the SRJ, rather than layered guidance.
+  // Keep that endpoint and the original metadata; no winding order is needed.
+  if (
+    !busUsesCoordinatedWindingChannel(bus) &&
+    bus.exitEdge &&
+    bus.connections.length === 1 &&
+    layerNames.includes(targetLayer) &&
+    (bus.allowedLayers === undefined ||
+      bus.allowedLayers.includes(targetLayer)) &&
+    (bus.routableEscapeLayers === undefined ||
+      bus.routableEscapeLayers.includes(targetLayer)) &&
+    bus.connections[0]!.sourceLayer !== targetLayer &&
+    fixedViaPointsByConnectionIndex &&
+    params.sourceEscapePaths?.has(bus.connections[0]!.connectionIndex)
+  ) {
+    const connection = bus.connections[0]!
+    const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
+    const singletonSteps = routeViaMinimalWindingAlternativesSteps(
+      {
+        srj,
+        bus,
+        targetLayer,
+        terminals: [
+          {
+            connection,
+            viaPoint: fixedViaPointsByConnectionIndex.get(
+              connection.connectionIndex,
+            )!,
+            exitPoint: makePoint(
+              getExitAxis(bus, boundaryDirection),
+              getBoundaryTargetTrack({ bus, connection, boundaryDirection }),
+              boundaryDirection,
+            ),
+          },
+        ],
+        acceptedPlans,
+        layerNames,
+        traceWidth,
+        viaDiameter,
+        viaHoleDiameter,
+        clearance,
+        allowBlindAndBuriedVias,
+        allowSameNetMerges,
+        maximumRouteOrderAttempts: 3,
+        reservedVias,
+        softReservedVias,
+        gridStepDivisor: 2,
+        gridStep: params.windingGridStep,
+        alignGridToPads: alignWindingGridToPads,
+        sourceEscapePaths: params.sourceEscapePaths,
+        heuristicWeight: params.windingHeuristicWeight,
+      },
+      maxAlternatives,
+      includeVisualization,
+    )
+    let singletonResult = singletonSteps.next()
+    while (!singletonResult.done) {
+      yield {
+        phase: "via-minimal-winding",
+        busId: bus.busId,
+        targetLayer,
+        winding: singletonResult.value,
+      }
+      singletonResult = singletonSteps.next()
+    }
+    for (const singletonPlans of singletonResult.value) {
+      if (
+        !fanoutPlansAreClear({
+          plans: [...acceptedPlans, ...singletonPlans],
+          srj,
+          sharedBoundary: bus.sharedBoundary,
+          clearance,
+          allowBlindAndBuriedVias,
+          allowSameNetMerges,
+        })
+      )
+        continue
+      addAlternative(singletonPlans)
+      if (alternatives.length >= maxAlternatives) return alternatives
+    }
   }
 
   if (busUsesCoordinatedWindingChannel(bus) && bus.exitEdge) {
@@ -3101,7 +3199,11 @@ export function* routeBusAlternativesSteps(
         }
       }
     }
-    if (alignWindingGridToPads && cornerSide) {
+    if (
+      alignWindingGridToPads &&
+      cornerSide &&
+      cornerExitLaneOffset === undefined
+    ) {
       const layerLocalExitOffset = getCornerLaneOffsets(
         bus,
         acceptedPlans.filter((plan) => plan.targetLayer === targetLayer),
@@ -3231,6 +3333,7 @@ export function* routeBusAlternativesSteps(
       seenTerminalSignatures.add(terminalSignature)
       const windingSteps = routeViaMinimalWindingAlternativesSteps(
         {
+          heuristicWeight: params.windingHeuristicWeight,
           srj,
           bus,
           targetLayer,
@@ -3556,6 +3659,7 @@ export function* routeBusAlternativesSteps(
         continue
       const sourceLayerSteps = routeViaMinimalWindingAlternativesSteps(
         {
+          heuristicWeight: params.windingHeuristicWeight,
           srj: sourceLayerSrj,
           bus,
           targetLayer: sourceLayer,
@@ -3605,6 +3709,7 @@ export function* routeBusAlternativesSteps(
       if (!boundarySide) {
         const targetSteps = routeViaMinimalWindingAlternativesSteps(
           {
+            heuristicWeight: params.windingHeuristicWeight,
             srj,
             bus,
             targetLayer,
