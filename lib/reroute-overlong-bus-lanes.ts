@@ -36,6 +36,33 @@ const skew = (plans: readonly FanoutRoutePlan[]) =>
   Math.max(...plans.map((plan) => plan.length)) -
   Math.min(...plans.map((plan) => plan.length))
 
+function preserveRouteIdentity(
+  original: FanoutRoutePlan,
+  candidate: FanoutRoutePlan,
+): FanoutRoutePlan | null {
+  const originalViaIndex = original.trace.route.findIndex(
+    (point) => point.route_type === "via",
+  )
+  const candidateViaIndex = candidate.trace.route.findIndex(
+    (point) => point.route_type === "via",
+  )
+  if (originalViaIndex < 0 || candidateViaIndex < 0) return null
+  const route = [
+    ...original.trace.route.slice(0, originalViaIndex + 1),
+    ...candidate.trace.route.slice(candidateViaIndex + 1),
+  ]
+  route[route.length - 1] = original.trace.route.at(-1)!
+  return {
+    ...original,
+    trace: { ...original.trace, route },
+    segments: [
+      ...original.segments.slice(0, original.sourceEscapeSegmentCount ?? 1),
+      ...candidate.segments.slice(candidate.sourceEscapeSegmentCount ?? 1),
+    ],
+    length: candidate.length,
+  }
+}
+
 /**
  * Revisit overlong lanes after their neighbors free shorter same-layer paths.
  * Every first/additional via, source prefix, exit and other bus stays reserved.
@@ -117,6 +144,88 @@ export function* rerouteOverlongBusLanesSteps(
   const gridStep = (traceWidth + clearance) / 2
   let attempts = 0,
     changed = false
+  const canReroute = (plan: FanoutRoutePlan, bus: PreparedBus): boolean => {
+    const via = plan.via
+    return Boolean(
+      via &&
+        !(plan.additionalVias?.length ?? 0) &&
+        !plan.planeEndpointTrace &&
+        !plan.planeEndpointVia &&
+        sourcePaths.has(plan.connectionIndex) &&
+        via.fromLayer === plan.sourceLayer &&
+        via.toLayer === plan.targetLayer &&
+        via.diameter === viaDiameter &&
+        via.holeDiameter === viaHoleDiameter &&
+        via.spanLayers.length === layerNames.length &&
+        layerNames.every((layer) => via.spanLayers.includes(layer)) &&
+        (bus.routableEscapeLayers ?? bus.allowedLayers ?? layerNames).includes(
+          plan.targetLayer,
+        ) &&
+        plan.segments
+          .slice(plan.sourceEscapeSegmentCount ?? 1)
+          .every((segment) => segment.layer === plan.targetLayer),
+    )
+  }
+  function* rerouteLane(
+    original: FanoutRoutePlan,
+    workingPlans: readonly FanoutRoutePlan[],
+    bus: PreparedBus,
+    gridOrigin: Point2D,
+    pass: number,
+  ): Generator<OverlongBusLaneProgress, FanoutRoutePlan | null, unknown> {
+    if (attempts >= maximumConnectionAttempts || !canReroute(original, bus))
+      return null
+    attempts++
+    const steps = routeViaMinimalWindingAlternativesSteps(
+      {
+        srj: inputSrj,
+        bus,
+        targetLayer: original.targetLayer,
+        terminals: [
+          {
+            connection: bus.connections.find(
+              (connection) =>
+                connection.connectionIndex === original.connectionIndex,
+            )!,
+            viaPoint: original.via!.center,
+            exitPoint: original.exitPoint,
+          },
+        ],
+        acceptedPlans: workingPlans.filter(
+          (plan) => plan.connectionIndex !== original.connectionIndex,
+        ),
+        layerNames,
+        traceWidth,
+        clearance,
+        viaDiameter,
+        viaHoleDiameter,
+        allowBlindAndBuriedVias: false,
+        sourceEscapePaths: sourcePaths,
+        gridStepDivisor: 2,
+        gridStep,
+        gridOrigin,
+        alignGridToPads: true,
+        heuristicWeight: 1,
+        maximumRouteOrderAttempts: 1,
+        maximumSearchStates,
+        preferTargetDirectedLaneBias: true,
+      },
+      1,
+      false,
+    )
+    let next = steps.next()
+    while (!next.done) {
+      yield {
+        ...next.value,
+        busId: bus.busId,
+        pass,
+        connectionAttempt: attempts,
+      }
+      next = steps.next()
+    }
+    const candidate = next.value[0]?.[0]
+    return candidate ? preserveRouteIdentity(original, candidate) : null
+  }
   for (const bus of selected) {
     let busPlans = plans.filter((plan) => plan.busId === bus.busId)
     const originalSkew = skew(busPlans)
@@ -133,36 +242,9 @@ export function* rerouteOverlongBusLanesSteps(
         )
       for (const original of overlong) {
         if (attempts >= maximumConnectionAttempts) break
-        const targetLayer = original.targetLayer,
-          via = original.via,
-          sourceCount = original.sourceEscapeSegmentCount ?? 1
-        // A same-layer rewrite cannot replace existing transitions or a plane
-        // endpoint branch. Their complete copper remains a hard reservation.
-        if (
-          !via ||
-          (original.additionalVias?.length ?? 0) > 0 ||
-          original.planeEndpointTrace ||
-          original.planeEndpointVia ||
-          !sourcePaths.has(original.connectionIndex) ||
-          via.fromLayer !== original.sourceLayer ||
-          via.toLayer !== targetLayer ||
-          via.diameter !== viaDiameter ||
-          via.holeDiameter !== viaHoleDiameter ||
-          via.spanLayers.length !== layerNames.length ||
-          !layerNames.every((layer) => via.spanLayers.includes(layer)) ||
-          !(
-            bus.routableEscapeLayers ??
-            bus.allowedLayers ??
-            layerNames
-          ).includes(targetLayer) ||
-          original.segments
-            .slice(sourceCount)
-            .some((segment) => segment.layer !== targetLayer)
-        )
-          continue
-        const connection = bus.connections.find(
-          (candidate) => candidate.connectionIndex === original.connectionIndex,
-        )!
+        const targetLayer = original.targetLayer
+        // Existing layer transitions, physical vias and source prefixes remain fixed.
+        if (!canReroute(original, bus)) continue
         let gridOrigin = phaseByLayer.get(targetLayer)
         if (!gridOrigin) {
           gridOrigin = getViaChannelGridPhase({
@@ -194,52 +276,13 @@ export function* rerouteOverlongBusLanesSteps(
           })
           phaseByLayer.set(targetLayer, gridOrigin)
         }
-        attempts++
-        const steps = routeViaMinimalWindingAlternativesSteps(
-          {
-            srj: inputSrj,
-            bus,
-            targetLayer,
-            terminals: [
-              {
-                connection,
-                viaPoint: via.center,
-                exitPoint: original.exitPoint,
-              },
-            ],
-            acceptedPlans: plans.filter(
-              (plan) => plan.connectionIndex !== original.connectionIndex,
-            ),
-            layerNames,
-            traceWidth,
-            clearance,
-            viaDiameter,
-            viaHoleDiameter,
-            allowBlindAndBuriedVias: false,
-            sourceEscapePaths: sourcePaths,
-            gridStepDivisor: 2,
-            gridStep,
-            gridOrigin,
-            alignGridToPads: true,
-            heuristicWeight: 1,
-            maximumRouteOrderAttempts: 1,
-            maximumSearchStates,
-            preferTargetDirectedLaneBias: true,
-          },
-          1,
-          false,
+        const candidate = yield* rerouteLane(
+          original,
+          plans,
+          bus,
+          gridOrigin,
+          pass,
         )
-        let next = steps.next()
-        while (!next.done) {
-          yield {
-            ...next.value,
-            busId: bus.busId,
-            pass,
-            connectionAttempt: attempts,
-          }
-          next = steps.next()
-        }
-        const candidate = next.value[0]?.[0]
         if (!candidate || candidate.length >= original.length - EPSILON)
           continue
         const currentBusPlans = plans.filter((plan) => plan.busId === bus.busId)
@@ -249,35 +292,35 @@ export function* rerouteOverlongBusLanesSteps(
         // A shorter lane can become the new minimum and still improve the
         // complete bus. Permit tied maxima to shorten without increasing skew;
         // the whole bus must improve strictly before any changes are retained.
-        if (skew(candidateBusPlans) > skew(currentBusPlans) + EPSILON) continue
-        const originalViaIndex = original.trace.route.findIndex(
-          (point) => point.route_type === "via",
-        )
-        const candidateViaIndex = candidate.trace.route.findIndex(
-          (point) => point.route_type === "via",
-        )
-        if (originalViaIndex < 0 || candidateViaIndex < 0) return null
-        const route = [
-          ...original.trace.route.slice(0, originalViaIndex + 1),
-          ...candidate.trace.route.slice(candidateViaIndex + 1),
-        ]
-        route[route.length - 1] = original.trace.route.at(-1)!
-        const replacement: FanoutRoutePlan = {
-          ...original,
-          trace: { ...original.trace, route },
-          segments: [
-            ...original.segments.slice(0, sourceCount),
-            ...candidate.segments.slice(
-              candidate.sourceEscapeSegmentCount ?? 1,
-            ),
-          ],
-          length: candidate.length,
+        if (skew(candidateBusPlans) > skew(currentBusPlans) + EPSILON) {
+          // Removing a shared detour can temporarily flip the pair's length
+          // order. Keep that first rewrite private while shortening its mate;
+          // retain neither change unless the entire pair meets its limit.
+          if (currentBusPlans.length !== 2) continue
+          const mate = currentBusPlans.find((plan) => plan !== original)!
+          if (mate.targetLayer !== targetLayer) continue
+          const provisional = plans.map((plan) =>
+            plan === original ? candidate : plan,
+          )
+          const mateCandidate = yield* rerouteLane(
+            mate,
+            provisional,
+            bus,
+            gridOrigin,
+            pass,
+          )
+          if (
+            !mateCandidate ||
+            mateCandidate.length >= mate.length - EPSILON ||
+            skew([candidate, mateCandidate]) > bus.maxLengthSkew! + EPSILON
+          )
+            continue
+          plans = provisional.map((plan) =>
+            plan === mate ? mateCandidate : plan,
+          )
+        } else {
+          plans = plans.map((plan) => (plan === original ? candidate : plan))
         }
-        plans = plans.map((plan) =>
-          plan.connectionIndex === original.connectionIndex
-            ? replacement
-            : plan,
-        )
         passChanged = true
       }
       busPlans = plans.filter((plan) => plan.busId === bus.busId)
