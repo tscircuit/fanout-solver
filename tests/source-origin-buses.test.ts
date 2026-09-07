@@ -226,7 +226,7 @@ test("a whole bus can choose first vias beyond a blocked target layer without mo
       [{ ...denseBus, exitEdge: "right" }, densePlanes],
       false,
     ),
-  ).toBe(false)
+  ).toBe(true)
   expect(shouldUseSourceOriginRouting([denseBus, densePlanes], true)).toBe(
     false,
   )

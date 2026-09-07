@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
+import { createAm3352FanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-am3352-fanout-sample"
 import { createAm62lFanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-am62l-fanout-sample"
 import { createImx6ullFanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-imx6ull-fanout-sample"
 import { createK230FanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-k230-fanout-sample"
@@ -34,7 +35,9 @@ export async function generateDataset31Inputs(
             ? createK230FanoutSample
             : direction.chip === "imx6ull"
               ? createImx6ullFanoutSample
-              : createT113s3FanoutSample
+              : direction.chip === "t113s3"
+                ? createT113s3FanoutSample
+                : createAm3352FanoutSample
     const sample = await createSample(direction.exitPosition)
     if (sample.id !== direction.id)
       throw new Error(`Upstream sample id mismatch: ${sample.id}`)

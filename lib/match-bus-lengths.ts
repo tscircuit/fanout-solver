@@ -15,6 +15,7 @@ import {
   fanoutPlansAreMutuallyClear,
 } from "./route-bus"
 import { routeViaMinimalWinding } from "./route-via-minimal-winding"
+import { rematchUnroutedSourceDogbones } from "./rematch-unrouted-source-dogbones"
 import type {
   Bounds,
   FanoutRoutePlan,
@@ -816,6 +817,12 @@ export interface MatchBusPlanLengthsParams {
   /** Allow one unconstrained boundary lane to move around a tuning meander. */
   allowUnconstrainedLaneRerouting?: boolean
   /**
+   * Unfinished direct signal dogbones that may move to clear a tuning window.
+   * Complete buses and plane drops are immutable. Callers must rebuild these
+   * source reservations from returned plans only after all matching succeeds.
+   */
+  unroutedSourceBuses?: readonly PreparedBus[]
+  /**
    * Rejects a geometrically clear candidate when it would make a caller-owned
    * downstream assignment (such as pending plane dogbones) infeasible.
    */
@@ -881,6 +888,12 @@ function matchBusPlanLengthsWithBudget(
     return validatePlans(plans)
   }
   let matchedPlans = [...params.plans]
+  let sourceRematchAttempts = 0
+  const unroutedSourceIndices = new Set(
+    params.unroutedSourceBuses?.flatMap((bus) =>
+      bus.connections.map((connection) => connection.connectionIndex),
+    ),
+  )
   const constrainedBuses = preparedBuses.filter(
     (bus) => bus.maxLengthSkew !== undefined && bus.connections.length > 1,
   )
@@ -1175,6 +1188,61 @@ function matchBusPlanLengthsWithBudget(
               acceptedPlans = repairedPlans
               break candidateSearch
             }
+          }
+        }
+      }
+      if (!acceptedPlans && params.unroutedSourceBuses?.length) {
+        // A future via barrel can occupy every otherwise clear tuning window.
+        // Rematch only unfinished sources, keeping this proposed meander and
+        // all completed copper hard. No source change escapes a failed match.
+        sourceSearch: for (const targetAddedLength of targetAddedLengths) {
+          for (const candidate of createTunedPlanCandidates({
+            plan: shortest,
+            bus,
+            targetAddedLength,
+            clearance,
+            sharedBoundary: bus.sharedBoundary,
+            allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+            allowSourcePrefixMatching: params.allowSourcePrefixMatching,
+            workBudget,
+          })) {
+            if (sourceRematchAttempts >= 4) break sourceSearch
+            if (!plansAreClear([candidate])) continue
+            const blockers = matchedPlans.filter(
+              (plan) =>
+                plan !== shortest &&
+                !fanoutPlansAreMutuallyClear({
+                  plans: [candidate, plan],
+                  srj: inputSrj,
+                  clearance,
+                  allowSameNetMerges,
+                }),
+            )
+            if (
+              blockers.length !== 1 ||
+              !unroutedSourceIndices.has(blockers[0]!.connectionIndex)
+            )
+              continue
+            sourceRematchAttempts++
+            const repaired = rematchUnroutedSourceDogbones({
+              inputSrj,
+              plans: matchedPlans.map((plan) =>
+                plan === shortest ? candidate : plan,
+              ),
+              unroutedSourceBuses: params.unroutedSourceBuses,
+              clearance,
+            })
+            if (
+              !repaired ||
+              getBusSkew(repaired.filter((plan) => plan.busId === bus.busId)) >
+                skew + EPSILON ||
+              !plansAreClear(repaired) ||
+              (candidatePlansAreFeasible &&
+                !candidatePlansAreFeasible(repaired))
+            )
+              continue
+            acceptedPlans = repaired
+            break sourceSearch
           }
         }
       }
