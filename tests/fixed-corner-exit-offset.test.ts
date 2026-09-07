@@ -190,4 +190,5 @@ test("fixed corner slots preserve bus order when the upper bus routes first", as
   await expect(getSvgFromGraphicsObject(graphics)).toMatchSvgSnapshot(
     import.meta.path,
   )
-})
+  // Cold SVG rendering can exceed Bun's five-second default on macOS CI.
+}, 15_000)
