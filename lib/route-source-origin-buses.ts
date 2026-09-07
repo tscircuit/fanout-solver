@@ -1,3 +1,5 @@
+import { getRetainedBoundaryTail } from "./reroute-bus-with-retained-boundary-tails"
+import { normalizeFanoutPlanTargetPath } from "./normalize-fanout-plan-corners"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { matchComponentDogboneViaSites } from "./match-component-dogbone-via-sites"
 import {
@@ -103,6 +105,12 @@ export function prepareSourceOriginReservations(
   }
 }
 
+export interface SourceOriginBusRoutingParams
+  extends RouteReservedViaBusesParams {
+  /** Reconnect shorter source routes to successively narrower retained exit tails. */
+  cleanupRetainedBoundaryTails?: boolean
+}
+
 interface SourceOriginResult extends SourceOriginReservations {
   /** Every connection of the selected original buses, still awaiting length matching. */
   plans: FanoutRoutePlan[]
@@ -114,7 +122,7 @@ interface SourceOriginResult extends SourceOriginReservations {
  * preserves the original endpoint and cannot increase its complete bus's skew.
  */
 export function* routeSourceOriginBusesSteps(
-  params: RouteReservedViaBusesParams,
+  params: SourceOriginBusRoutingParams,
 ): Generator<ReservedViaBusesProgress, SourceOriginResult | null, unknown> {
   const initialSteps = routeReservedViaBusesSteps({
     ...params,
@@ -160,7 +168,7 @@ export function* routeSourceOriginBusesSteps(
     if (!plan.via)
       throw new Error("Source-origin routing lost a required first via")
     sites.set(plan.connectionIndex, plan.via.center)
-    const segments = plan.segments.slice(0, plan.sourceEscapeSegmentCount)
+    const segments = plan.segments.slice(0, plan.sourceEscapeSegmentCount ?? 1)
     paths.set(plan.connectionIndex, [
       plan.sourcePoint,
       ...segments.map((segment) => segment.end),
@@ -190,23 +198,35 @@ export function* routeSourceOriginBusesSteps(
       )!
       if (!isOverlong(original)) continue
       const { bus, connection } = owners.get(original.connectionIndex)!
+      const tail = params.cleanupRetainedBoundaryTails
+        ? getRetainedBoundaryTail(
+            original,
+            bus,
+            (pass === 0 ? 12 : 6) * (params.traceWidth + params.clearance),
+          )
+        : null
+      if (params.cleanupRetainedBoundaryTails && !tail) continue
       const steps = routeReservedViaBusesSteps({
         ...params,
         buses: [{ ...bus, connections: [connection] }],
         transitLayers: [],
         routeFromSourcePads: true,
         sourceLayerTravelCost: 1,
+        includeDiagonalNeighbors:
+          params.cleanupRetainedBoundaryTails ||
+          params.includeDiagonalNeighbors,
         fixedViaPointsByConnectionIndex: sites,
         sourceEscapePaths: paths,
         acceptedPlans: [
           ...params.acceptedPlans,
           ...plans.filter((plan) => plan !== original),
+          ...(tail ? [tail] : []),
         ],
         terminals: [
           {
             connection,
             viaPoint: sites.get(connection.connectionIndex)!,
-            exitPoint: original.exitPoint,
+            exitPoint: tail?.sourcePoint ?? original.exitPoint,
           },
         ],
         maximumRipEvents: 1,
@@ -219,7 +239,43 @@ export function* routeSourceOriginBusesSteps(
         yield { ...next.value, connectionCount: plans.length }
         next = steps.next()
       }
-      const replacement = next.value?.[0]
+      let replacement = next.value?.[0]
+      if (replacement && tail) {
+        const joined = {
+          ...replacement,
+          exitPoint: original.exitPoint,
+          segments: [...replacement.segments, ...tail.segments],
+          length: replacement.length + tail.length,
+          trace: {
+            ...replacement.trace,
+            route: [...replacement.trace.route, ...tail.trace.route.slice(1)],
+          },
+        }
+        replacement =
+          normalizeFanoutPlanTargetPath(
+            { ...params, inputSrj: params.srj },
+            joined,
+            [
+              ...params.acceptedPlans,
+              ...plans.filter((plan) => plan !== original),
+              ...makeSourcePlans(
+                {
+                  ...params,
+                  buses: params.allBuses.filter(
+                    (candidate) =>
+                      !params.buses.some(
+                        (selected) => selected.busId === candidate.busId,
+                      ),
+                  ),
+                },
+                sites,
+                paths,
+              ),
+            ],
+            bus,
+            true,
+          ) ?? undefined
+      }
       if (!replacement || replacement.length >= original.length - 1e-7) continue
       const busPlans = plans.filter((plan) => plan.busId === original.busId)
       const before = busPlans.map((plan) => plan.length)
@@ -229,6 +285,44 @@ export function* routeSourceOriginBusesSteps(
       if (
         Math.max(...after) - Math.min(...after) >
         Math.max(...before) - Math.min(...before) + 1e-7
+      )
+        continue
+      if (
+        tail &&
+        !validateRoutedCopperDrc({
+          inputSrj: params.srj,
+          routedSrj: {
+            ...params.srj,
+            traces: [
+              ...(params.srj.traces ?? []),
+              ...params.acceptedPlans.flatMap((plan) => [
+                plan.trace,
+                ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
+              ]),
+              ...plans.map(
+                (plan) => (plan === original ? replacement : plan).trace,
+              ),
+              ...makeSourcePlans(
+                {
+                  ...params,
+                  buses: params.allBuses.filter(
+                    (candidate) =>
+                      !params.buses.some(
+                        (selected) => selected.busId === candidate.busId,
+                      ) &&
+                      !params.acceptedPlans.some(
+                        (accepted) => accepted.busId === candidate.busId,
+                      ),
+                  ),
+                },
+                sites,
+                paths,
+              ).map((plan) => plan.trace),
+            ],
+          },
+          clearance: params.clearance,
+          allowBlindAndBuriedVias: false,
+        }).valid
       )
         continue
       plans = plans.map((plan) => (plan === original ? replacement : plan))

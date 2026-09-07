@@ -3,6 +3,7 @@ export interface LayerRoutingAttempt {
   shuffleSeed: number
   transitLayers: string[]
   routeFromSourcePads?: boolean
+  sourceOriginPhysicalGridPhase?: boolean
 }
 
 /** Bounded retry order; successful attempts never schedule extra work. */
@@ -20,6 +21,7 @@ export class LayerRoutingAttempts {
       preferSourceOrigin?: boolean
       sourceOriginRipCost?: number
       sourceTransitRipCost?: number
+      retrySourceOriginPhysicalGridPhase?: boolean
     },
   ) {
     this.pending = [
@@ -63,6 +65,11 @@ export class LayerRoutingAttempts {
       if (!this.attempted.has(JSON.stringify(candidate)))
         this.pending.unshift(candidate)
     }
+    if (attempt.sourceOriginPhysicalGridPhase) {
+      const { sourceOriginPhysicalGridPhase, ...ordinary } = attempt
+      enqueue({ ...ordinary, ripCost: 256, shuffleSeed: 1 })
+      return
+    }
     if (
       this.options.preferSourceTransit &&
       attempt.ripCost === (this.options.sourceTransitRipCost ?? 8) &&
@@ -76,8 +83,19 @@ export class LayerRoutingAttempts {
     } else if (this.options.wideSingleLayer) {
       // Preserve the existing length-cost retry. Change route order only when
       // the previous search did not find the complete group topology.
-      if (reason === "lengths" && attempt.ripCost === 64)
-        enqueue({ ...attempt, ripCost: 256, shuffleSeed: 1 })
+      if (reason === "lengths" && attempt.ripCost === 64) {
+        const physical = {
+          ...attempt,
+          shuffleSeed: 1,
+          sourceOriginPhysicalGridPhase: true,
+        }
+        if (
+          this.options.retrySourceOriginPhysicalGridPhase &&
+          !this.attempted.has(JSON.stringify(physical))
+        )
+          enqueue(physical)
+        else enqueue({ ...attempt, ripCost: 256, shuffleSeed: 1 })
+      }
       if (reason === "routing" && attempt.shuffleSeed === 1)
         enqueue({ ...attempt, ripCost: 64, shuffleSeed: 2 })
     } else if (

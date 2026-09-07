@@ -248,8 +248,11 @@ export function* routeLayerReservedBusesSteps(
       maximumBusSize > 2 &&
       transitLayers.length > 0
     const previousAccepted = accepted
+    const useSourceOrigin =
+      params.sourceOriginRouting && layer === ordered[0]![0] && shortenFirst
     const attempts = new LayerRoutingAttempts({
       wideSingleLayer: shortenFirst,
+      retrySourceOriginPhysicalGridPhase: useSourceOrigin,
       firstRipCost: maximumBusSize <= 2 ? 256 : 64,
       transitLayers,
       allTransitLayers,
@@ -282,14 +285,32 @@ export function* routeLayerReservedBusesSteps(
             ),
           )),
     })
-    const useSourceOrigin =
-      params.sourceOriginRouting && layer === ordered[0]![0] && shortenFirst
     let groupCompleted = false
     for (let attempt = attempts.next(); attempt; attempt = attempts.next()) {
       // Every search and tuning attempt starts from the same committed set.
       // A complete topology does not reserve copper until its bus lengths pass.
       accepted = previousAccepted
       for (const bus of group) completed.delete(bus.busId)
+      // The physical-source phase is a provisional alternative. Its selected
+      // vias may move before tuning, but a failed attempt must leave the
+      // ordinary retry with exactly the reservations it received.
+      const previousSources = attempt.sourceOriginPhysicalGridPhase
+        ? {
+            sites: new Map(fixedViaPointsByConnectionIndex),
+            paths: new Map(sourceEscapePaths),
+            plans: [...sourcePlans],
+          }
+        : undefined
+      const restorePhysicalSources = () => {
+        if (!previousSources) return
+        fixedViaPointsByConnectionIndex.clear()
+        for (const [index, point] of previousSources.sites)
+          fixedViaPointsByConnectionIndex.set(index, point)
+        sourceEscapePaths.clear()
+        for (const [index, path] of previousSources.paths)
+          sourceEscapePaths.set(index, path)
+        sourcePlans.splice(0, sourcePlans.length, ...previousSources.plans)
+      }
       const hasTransitRetry =
         attempt.routeFromSourcePads ||
         attempt.transitLayers.length < allTransitLayers.length
@@ -330,6 +351,7 @@ export function* routeLayerReservedBusesSteps(
         maximumLocalRepairAttempts: hasTransitRetry ? 0 : 3,
         maximumIterations: 100_000_000,
         shuffleSeed: attempt.shuffleSeed,
+        sourceOriginPhysicalGridPhase: attempt.sourceOriginPhysicalGridPhase,
       }
       const steps = (function* () {
         if (attempt.routeFromSourcePads)
@@ -343,7 +365,10 @@ export function* routeLayerReservedBusesSteps(
           })
         if (!useSourceOrigin)
           return yield* routeReservedViaBusesSteps(routeParams)
-        const result = yield* routeSourceOriginBusesSteps(routeParams)
+        const result = yield* routeSourceOriginBusesSteps({
+          ...routeParams,
+          cleanupRetainedBoundaryTails: attempt.sourceOriginPhysicalGridPhase,
+        })
         if (!result) return null
         fixedViaPointsByConnectionIndex.clear()
         for (const [index, point] of result.fixedViaPointsByConnectionIndex)
@@ -367,7 +392,9 @@ export function* routeLayerReservedBusesSteps(
       }
       const routedPlans = next.value
       if (!routedPlans) {
-        if (useSourceOrigin) return null
+        restorePhysicalSources()
+        if (useSourceOrigin && !attempt.sourceOriginPhysicalGridPhase)
+          return null
         attempts.failed(attempt, "routing")
         continue
       }
@@ -510,6 +537,7 @@ export function* routeLayerReservedBusesSteps(
         completePlans = matched.plans
       } else {
         if (hasTransitRetry) {
+          restorePhysicalSources()
           attempts.failed(attempt, "lengths")
           continue
         }
@@ -553,6 +581,7 @@ export function* routeLayerReservedBusesSteps(
             tails = tailSteps.next()
           }
           if (!tails.value) {
+            restorePhysicalSources()
             attempts.failed(attempt, "lengths")
             continue
           }

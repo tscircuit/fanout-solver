@@ -64,6 +64,8 @@ export interface RouteReservedViaBusesParams {
   routeFromSourcePads?: boolean
   /** Search-only cost for TOP travel before that first via; defaults to one. */
   sourceLayerTravelCost?: number
+  /** Score source-origin grid channels using only vias that remain reserved. */
+  sourceOriginPhysicalGridPhase?: boolean
 }
 
 export interface ReservedViaBusesProgress {
@@ -591,13 +593,18 @@ export function* routeReservedViaBusesSteps(
   }
   if (params.tightViaChannels) {
     const phase = getViaChannelGridPhase({
-      vias: [...params.fixedViaPointsByConnectionIndex].map(
-        ([connectionIndex, center]) => ({
+      vias: [...params.fixedViaPointsByConnectionIndex]
+        .filter(
+          ([index]) =>
+            !sourceOrigin ||
+            !params.sourceOriginPhysicalGridPhase ||
+            !expected.has(index),
+        )
+        .map(([connectionIndex, center]) => ({
           connectionIndex,
           center,
           diameter: viaDiameter,
-        }),
-      ),
+        })),
       activeConnectionIndices: expected,
       traceWidth,
       clearance,

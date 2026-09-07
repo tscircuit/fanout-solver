@@ -116,4 +116,28 @@ test("layer retries preserve the first successful choice and distinguish topolog
   expect(fallback).toEqual({ ripCost: 64, shuffleSeed: 1, transitLayers: [] })
   transitFirst.failed(fallback, "lengths")
   expect(transitFirst.next()).toBeUndefined()
+  for (const failure of ["routing", "lengths"] as const) {
+    const physical = new LayerRoutingAttempts({
+      ...options,
+      wideSingleLayer: true,
+      allTransitLayers: [],
+      retrySourceOriginPhysicalGridPhase: true,
+    })
+    const original = physical.next()!
+    expect(original).toEqual({ ripCost: 64, shuffleSeed: 1, transitLayers: [] })
+    physical.failed(original, "lengths")
+    const alternative = physical.next()!
+    expect(alternative).toEqual({
+      ...original,
+      sourceOriginPhysicalGridPhase: true,
+    })
+    physical.failed(alternative, failure)
+    const ordinary = physical.next()!
+    expect(ordinary).toEqual({ ...original, ripCost: 256 })
+    physical.failed(ordinary, "routing")
+    const final = physical.next()!
+    expect(final).toEqual({ ...original, shuffleSeed: 2 })
+    physical.failed(final, "lengths")
+    expect(physical.next()).toBeUndefined()
+  }
 })
