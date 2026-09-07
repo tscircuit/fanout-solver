@@ -31,6 +31,11 @@ export interface RetainedBoundaryTailRepairProgress
   phase: "lane" | "bus" | "layer"
 }
 
+interface ShortenedSingleton {
+  busId: string
+  plan: FanoutRoutePlan
+}
+
 const EPSILON = 1e-7
 const getSkew = (plans: readonly FanoutRoutePlan[]) =>
   Math.max(...plans.map((p) => p.length)) -
@@ -185,6 +190,7 @@ function getSourceReservations(params: RetainedBoundaryTailRepairParams) {
  */
 function* rerouteIndividualBusesSteps(
   params: RetainedBoundaryTailRepairParams,
+  shortened: ShortenedSingleton[],
 ): Generator<RetainedBoundaryTailRepairProgress, FanoutRoutePlan[] | null> {
   const {
     inputSrj,
@@ -287,6 +293,13 @@ function* rerouteIndividualBusesSteps(
     const lane = next.value?.[0] ? retainSource(longest, next.value[0]) : null
     if (
       lane &&
+      lane.length < longest.length - EPSILON &&
+      getSkew(own.map((p) => (p === longest ? lane : p))) <
+        getSkew(own) - EPSILON
+    )
+      shortened.push({ busId: bus.busId, plan: lane })
+    if (
+      lane &&
       getSkew(own.map((p) => (p === longest ? lane : p))) <=
         bus.maxLengthSkew! + EPSILON
     ) {
@@ -382,10 +395,11 @@ function* rerouteIndividualBusesSteps(
 }
 
 /** Try neighboring buses together only after individual cleanup is exhausted. */
-export function* rerouteBusWithRetainedBoundaryTailsSteps(
+function* rerouteExistingBoundaryTailsSteps(
   params: RetainedBoundaryTailRepairParams,
+  shortened: ShortenedSingleton[],
 ): Generator<RetainedBoundaryTailRepairProgress, FanoutRoutePlan[] | null> {
-  const individual = yield* rerouteIndividualBusesSteps(params)
+  const individual = yield* rerouteIndividualBusesSteps(params, shortened)
   if (individual) return individual
   const reservations = getSourceReservations(params)
   if (!reservations) return null
@@ -608,6 +622,99 @@ export function* rerouteBusWithRetainedBoundaryTailsSteps(
       ],
     },
     clearance,
+    allowBlindAndBuriedVias: false,
+  })
+  return validation.valid ? plans : null
+}
+
+/** Reuse shorter singleton routes only after the existing repair paths fail. */
+export function* rerouteBusWithRetainedBoundaryTailsSteps(
+  params: RetainedBoundaryTailRepairParams,
+): Generator<RetainedBoundaryTailRepairProgress, FanoutRoutePlan[] | null> {
+  const shortened: ShortenedSingleton[] = []
+  const existing = yield* rerouteExistingBoundaryTailsSteps(params, shortened)
+  if (existing) return existing
+  if (!shortened.length) return null
+  let plans = [...params.plans]
+  let accepted = false
+  for (const { busId, plan } of shortened) {
+    const bus = params.preparedBuses.find((b) => b.busId === busId)!
+    const original = plans.find(
+      (p) => p.connectionIndex === plan.connectionIndex,
+    )!
+    const normalized = normalizeFanoutPlanTargetPath(
+      params,
+      plan,
+      plans.filter((p) => p !== original),
+      bus,
+      true,
+    )
+    if (!normalized) continue
+    const candidate = plans.map((p) => (p === original ? normalized : p))
+    // Shortening can create enough tuning room even when the raw lane still
+    // exceeds its bus limit. Commit only a complete, matched physical bus.
+    const matched = matchBusPlanLengths({
+      ...params,
+      plans: candidate,
+      preparedBuses: [bus],
+      sharedBoundary: bus.sharedBoundary,
+      allowBlindAndBuriedVias: false,
+      allowSameNetMerges: false,
+      allowMatchingInsideDenseBounds: true,
+      allowPairLaneSpreading: true,
+      allowUnconstrainedLaneRerouting: true,
+      maximumWorkUnits: 1_000,
+    })
+    if (!matched.plans) continue
+    const restored = plans.map((previous) => {
+      if (previous.busId !== busId) return previous
+      const tuned = matched.plans!.find(
+        (p) => p.connectionIndex === previous.connectionIndex,
+      )!
+      return retainSource(previous, tuned)
+    })
+    if (restored.some((p) => !p)) continue
+    const complete = restored as FanoutRoutePlan[]
+    if (
+      getSkew(complete.filter((p) => p.busId === busId)) >
+        bus.maxLengthSkew! + EPSILON ||
+      !fanoutPlansAreClear({
+        plans: complete,
+        srj: params.inputSrj,
+        sharedBoundary: bus.sharedBoundary,
+        clearance: params.clearance,
+        allowBlindAndBuriedVias: false,
+        allowSameNetMerges: false,
+      })
+    )
+      continue
+    plans = complete
+    accepted = true
+  }
+  if (!accepted) return null
+  if (
+    params.preparedBuses.some(
+      (bus) =>
+        (!params.busIds || params.busIds.includes(bus.busId)) &&
+        bus.maxLengthSkew !== undefined &&
+        getSkew(plans.filter((p) => p.busId === bus.busId)) >
+          bus.maxLengthSkew + EPSILON,
+    )
+  )
+    return null
+  const validation = validateRoutedCopperDrc({
+    inputSrj: params.inputSrj,
+    routedSrj: {
+      ...params.inputSrj,
+      traces: [
+        ...(params.inputSrj.traces ?? []),
+        ...plans.flatMap((p) => [
+          p.trace,
+          ...(p.planeEndpointTrace ? [p.planeEndpointTrace] : []),
+        ]),
+      ],
+    },
+    clearance: params.clearance,
     allowBlindAndBuriedVias: false,
   })
   return validation.valid ? plans : null
