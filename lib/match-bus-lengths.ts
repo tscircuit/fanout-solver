@@ -319,7 +319,7 @@ function createReplacementSelfIntersectionChecker(
   }
 }
 
-function replacementCopperIsSelfClear(params: {
+export function replacementCopperIsSelfClear(params: {
   plan: FanoutRoutePlan
   segments: readonly RoutedSegment[]
   replacementStartIndex: number
@@ -372,6 +372,20 @@ function replacementCopperIsSelfClear(params: {
     replacementIndex++
   ) {
     const replacement = segments[replacementIndex]!
+    const original = plan.segments[replacementStartIndex]!
+    // Leading/trailing pieces retained on the original straight segment do not
+    // introduce copper. Their proximity to an unchanged chamfered continuation
+    // must not reject a distant meander. Every genuinely new piece still checks
+    // every retained and new segment below, including these retained leads.
+    if (
+      replacement.layer === original.layer &&
+      replacement.width === original.width &&
+      distancePointToSegment(replacement.start, original.start, original.end) <=
+        EPSILON &&
+      distancePointToSegment(replacement.end, original.start, original.end) <=
+        EPSILON
+    )
+      continue
     for (const [otherIndex, other] of segments.entries()) {
       const requiredCenterlineClearance =
         replacement.width / 2 + other.width / 2 + clearance
