@@ -10,6 +10,7 @@ import {
   getRoutedTraceCopper,
 } from "./get-routed-trace-copper"
 import { normalizeLayeredPath } from "./normalize-layered-path"
+import { replacementCopperIsSelfClear } from "./match-bus-lengths"
 import { repairBoundaryRouteTails } from "./repair-boundary-route-tails"
 import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
 import type { FanoutRoutePlan, PreparedBus, RoutedSegment } from "./types"
@@ -158,6 +159,16 @@ export function normalizeFanoutPlanTargetPath(
     ...plan.segments.slice(0, sourceCount),
     ...extracted.slice(sourceCount),
   ]
+  if (
+    !replacementCopperIsSelfClear({
+      plan,
+      segments,
+      replacementStartIndex: sourceCount,
+      replacementSegmentCount: segments.length - sourceCount,
+      clearance,
+    })
+  )
+    return null
   return {
     ...plan,
     trace,
