@@ -326,18 +326,49 @@ export function repairBoundaryRouteTails(
         }
       }
     if (!selected.size) continue
-    // A valid adjacent link can still close the connector corridor at a
-    // minimum-pitch terminal. Repair that tightly spaced endpoint cluster too.
+    // A valid adjacent link can still close an exit's approach corridor,
+    // even when its own endpoint is farther away. Include that retained tail
+    // in the repair instead of repeatedly searching against the same fence.
     let grew = true
     while (grew) {
       grew = false
       for (const plan of group)
         if (
           !selected.has(plan) &&
-          [...selected].some(
-            (other) =>
-              distance(plan.exitPoint, other.exitPoint) <= 2 * pitch + EPSILON,
-          )
+          [...selected].some((other) => {
+            if (
+              distance(plan.exitPoint, other.exitPoint) <=
+              2 * pitch + EPSILON
+            )
+              return true
+            const approach = {
+              x:
+                other.exitPoint.x +
+                (edge === "left"
+                  ? 2 * pitch
+                  : edge === "right"
+                    ? -2 * pitch
+                    : 0),
+              y:
+                other.exitPoint.y +
+                (edge === "bottom"
+                  ? 2 * pitch
+                  : edge === "top"
+                    ? -2 * pitch
+                    : 0),
+            }
+            return plan.segments.some(
+              (segment) =>
+                segment.layer === layer &&
+                distanceSegmentToSegment(
+                  segment.start,
+                  segment.end,
+                  other.exitPoint,
+                  approach,
+                ) <
+                  (segment.width + traceWidth) / 2 + clearance - EPSILON,
+            )
+          })
         ) {
           selected.add(plan)
           grew = true
