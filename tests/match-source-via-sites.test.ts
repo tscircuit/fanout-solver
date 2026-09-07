@@ -204,9 +204,18 @@ test("propagates fixed via conflicts across a complete source field", async () =
       fixedViaPointsByConnectionIndex: result!,
     })!,
   ]).toEqual([...result!])
-  expect(() =>
-    matchSourceViaSites(fixture.buses, { ...rules, maximumSearchStates: 0 }),
-  ).toThrow()
+  for (const maximumSearchStates of [
+    0,
+    -1,
+    0.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])
+    expect(() =>
+      matchSourceViaSites(fixture.buses, { ...rules, maximumSearchStates }),
+    ).toThrow("positive safe-integer search budget")
   const svg = getSvgFromGraphicsObject(
     visualizeSimpleRouteJson({
       ...srj,

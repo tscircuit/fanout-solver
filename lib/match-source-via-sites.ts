@@ -45,6 +45,11 @@ export function matchSourceViaSites(
   rules: DogboneViaSiteGeometryRules,
   onFailure?: (failure: SourceViaSiteFailure) => void,
 ): Map<number, Point2D> | null {
+  const maximumSearchStates = rules.maximumSearchStates ?? 100_000
+  if (!Number.isSafeInteger(maximumSearchStates) || maximumSearchStates < 1)
+    throw new Error(
+      "Source via matching requires a positive safe-integer search budget",
+    )
   const candidates = getComponentDogboneViaSiteCandidates(buses, rules)
   const connections = new Map<number, PreparedConnection>()
   for (const bus of buses)
@@ -220,7 +225,6 @@ export function matchSourceViaSites(
         }
     groups.push(group)
   }
-  const maximumSearchStates = rules.maximumSearchStates ?? 100_000
   let searchedStates = 0
   const search = (
     domains: Uint32Array,
