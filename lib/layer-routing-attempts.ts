@@ -18,12 +18,14 @@ export class LayerRoutingAttempts {
       allTransitLayers: string[]
       preferSourceTransit?: boolean
       preferSourceOrigin?: boolean
+      sourceOriginRipCost?: number
+      sourceTransitRipCost?: number
     },
   ) {
     this.pending = [
       options.preferSourceTransit
         ? {
-            ripCost: 8,
+            ripCost: options.sourceTransitRipCost ?? 8,
             shuffleSeed: 1,
             transitLayers: options.allTransitLayers,
           }
@@ -35,7 +37,7 @@ export class LayerRoutingAttempts {
     ]
     if (options.preferSourceOrigin)
       this.pending.unshift({
-        ripCost: 256,
+        ripCost: options.sourceOriginRipCost ?? 256,
         shuffleSeed: 1,
         transitLayers: [],
         routeFromSourcePads: true,
@@ -61,7 +63,11 @@ export class LayerRoutingAttempts {
       if (!this.attempted.has(JSON.stringify(candidate)))
         this.pending.unshift(candidate)
     }
-    if (this.options.preferSourceTransit && attempt.ripCost === 8) {
+    if (
+      this.options.preferSourceTransit &&
+      attempt.ripCost === (this.options.sourceTransitRipCost ?? 8) &&
+      attempt.transitLayers.length === this.options.allTransitLayers.length
+    ) {
       enqueue({
         ripCost: this.options.firstRipCost,
         shuffleSeed: 1,
@@ -77,11 +83,21 @@ export class LayerRoutingAttempts {
     } else if (
       attempt.transitLayers.length < this.options.allTransitLayers.length
     ) {
-      enqueue({
+      const retry = {
         ripCost: reason === "lengths" ? 8 : this.options.firstRipCost,
         shuffleSeed: 1,
         transitLayers: this.options.allTransitLayers,
-      })
+      }
+      // A preferred source-transit search may have already tried this exact
+      // choice. Preserve the ordinary final topology-cost retry after the
+      // fixed-source fallback instead of ending on that duplicate.
+      if (
+        reason === "routing" &&
+        retry.ripCost !== 256 &&
+        this.attempted.has(JSON.stringify(retry))
+      )
+        enqueue({ ...retry, ripCost: 256 })
+      else enqueue(retry)
     } else if (reason === "routing" && attempt.ripCost !== 256) {
       enqueue({ ...attempt, ripCost: 256 })
     }

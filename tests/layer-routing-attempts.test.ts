@@ -55,6 +55,52 @@ test("layer retries preserve the first successful choice and distinguish topolog
   const first = topology.next()!
   topology.failed(first, "routing")
   expect(topology.next()).toEqual({ ...first, shuffleSeed: 2 })
+  const coherentTransit = new LayerRoutingAttempts({
+    ...options,
+    preferSourceTransit: true,
+    sourceTransitRipCost: 64,
+  })
+  const coherentFirst = coherentTransit.next()!
+  expect(coherentFirst).toEqual({
+    ripCost: 64,
+    shuffleSeed: 1,
+    transitLayers: ["top"],
+  })
+  coherentTransit.failed(coherentFirst, "lengths")
+  const coherentFallback = coherentTransit.next()!
+  expect(coherentFallback).toEqual({
+    ripCost: 64,
+    shuffleSeed: 1,
+    transitLayers: [],
+  })
+  coherentTransit.failed(coherentFallback, "routing")
+  const finalCost = coherentTransit.next()!
+  expect(finalCost).toEqual({
+    ripCost: 256,
+    shuffleSeed: 1,
+    transitLayers: ["top"],
+  })
+  coherentTransit.failed(finalCost, "routing")
+  expect(coherentTransit.next()).toBeUndefined()
+  const coherentOrigin = new LayerRoutingAttempts({
+    ...options,
+    preferSourceOrigin: true,
+    sourceOriginRipCost: 64,
+  })
+  const joint = coherentOrigin.next()!
+  expect(joint).toEqual({
+    ripCost: 64,
+    shuffleSeed: 1,
+    transitLayers: [],
+    routeFromSourcePads: true,
+  })
+  coherentOrigin.failed(joint, "lengths")
+  expect(coherentOrigin.next()).toEqual({
+    ripCost: 64,
+    shuffleSeed: 1,
+    transitLayers: [],
+  })
+  expect(coherentOrigin.next()).toBeUndefined()
   const transitFirst = new LayerRoutingAttempts({
     ...options,
     preferSourceTransit: true,
