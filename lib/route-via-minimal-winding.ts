@@ -61,6 +61,8 @@ export interface RouteViaMinimalWindingParams {
   allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
   maximumRouteOrderAttempts?: number
+  /** Per-terminal directed-state budget; the default search budget is unchanged. */
+  maximumSearchStates?: number
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
   /** Cost hints for provisional sites that the caller must rematch before commit. */
   softReservedVias?: readonly ViaMinimalWindingReservedVia[]
@@ -758,6 +760,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
     allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
     maximumRouteOrderAttempts,
+    maximumSearchStates = MAX_EXPANDED_STATE_COUNT,
     reservedVias = [],
     softReservedVias = [],
     gridStepDivisor = 1,
@@ -779,6 +782,11 @@ export function* routeViaMinimalWindingAlternativesSteps(
     )
   }
 
+  if (!Number.isSafeInteger(maximumSearchStates) || maximumSearchStates < 1) {
+    throw new Error(
+      `FanoutSolver: maximumSearchStates must be a positive safe integer, received ${maximumSearchStates}`,
+    )
+  }
   if (!Number.isFinite(heuristicWeight) || heuristicWeight <= 0) {
     throw new Error(
       `FanoutSolver: heuristicWeight must be a positive finite number, received ${heuristicWeight}`,
@@ -1396,7 +1404,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
     let expandedStatesSinceYield = 0
     let searchBatch = 0
     let expandedBatchPoints: Point2D[] = []
-    while (heap.size > 0 && expandedStateCount < MAX_EXPANDED_STATE_COUNT) {
+    while (heap.size > 0 && expandedStateCount < maximumSearchStates) {
       const current = heap.pop()!
       if (current.score >= bestGoalCost - EPSILON) break
       const state = current.node * 9 + current.direction

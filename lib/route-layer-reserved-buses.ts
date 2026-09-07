@@ -5,6 +5,7 @@ import { routeLayerReservedSourceEscapesSteps } from "./route-layer-reserved-sou
 import { routeReservedViaBusesSteps } from "./route-reserved-via-buses"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
+import { rerouteOverlongBusLanesSteps } from "./reroute-overlong-bus-lanes"
 import { repairBusLengthsWithTransitSteps } from "./repair-bus-lengths-with-transit"
 import type { FanoutRoutePlan, Point2D, PreparedBus } from "./types"
 
@@ -253,6 +254,23 @@ export function* routeLayerReservedBusesSteps(
         selectedBusIds: new Set(group.map((bus) => bus.busId)),
         allowBlindAndBuriedVias: false,
       }) ?? completePlans
+    const shorteningSteps = rerouteOverlongBusLanesSteps({
+      ...params,
+      inputSrj: srj,
+      plans: completePlans,
+      preparedBuses: buses,
+      selectedBusIds: new Set(group.map((bus) => bus.busId)),
+    })
+    let shortening = shorteningSteps.next()
+    while (!shortening.done) {
+      yield {
+        phase: "repair-lengths",
+        layer,
+        routedConnectionCount: accepted.length,
+      }
+      shortening = shorteningSteps.next()
+    }
+    completePlans = shortening.value ?? completePlans
     const matched = matchBusPlanLengths({
       ...params,
       inputSrj: srj,
