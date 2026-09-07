@@ -49,6 +49,10 @@ and treats each bus-layer decision atomically.
 - Keeps a bounded beam of route alternatives for multi-connection buses, so
   grouped power/signal lanes can backtrack across layer and track choices
   before committing a prefix.
+- For dense fields with competing constrained layers, reserves every signal and
+  plane source escape before routing complete bus groups. Boundary repairs keep
+  exact exits and existing vias fixed; a blocked group can use its source layer
+  for transit when that layer is explicitly permitted for every bus in the group.
 - Keys route-prefix caches by both bus and layer, preserving plan uniqueness
   when grouped-layer search changes bus order.
 - Prefers depth-cycled layer assignments: matching north/south (or east/west)
@@ -74,9 +78,11 @@ and treats each bus-layer decision atomically.
 - Chamfers orthogonal routing corners into 45° segments before validating and
   emitting the fanout.
 - Honors a boundary bus `maxLengthSkew` as a hard local-fanout constraint. It
-  adds straight/45° meanders only after the dense component escape, keeps the
-  original endpoints and vias, and atomically rejects an assignment when the
-  requested skew cannot fit inside that bus's shared boundary.
+  adds straight/45° meanders while retaining source escapes and boundary
+  endpoints, and atomically rejects an assignment when the requested skew cannot
+  fit inside that bus's shared boundary. Coordinated dense routing can tune
+  inside the pad field after reserving and checking all other copper. Bounded
+  paired shortening commits only a complete pair under its original skew limit.
 - Verifies oriented-pad, via, trace, and already-routed fanout clearance on
   every complete candidate, independent of the routing strategy that produced
   it.
