@@ -579,8 +579,12 @@ export function* routeReservedViaBusesSteps(
   const setup = router._setup.bind(router),
     move = router.computeMoveCostAndRips.bind(router)
   let previousCell = -1
+  let layersByRouterZ: string[] = []
+  let allowedLayersByConnection: boolean[][] = []
   const viaCells = new Map<number, boolean>()
-  const edgeBlockers = new Map<number, Blocker[]>()
+  // Each immutable edge is clear, blocked, or permitted only to one owner.
+  // Dynamic congestion and rip decisions still run in the native router.
+  const edgeClearance = new Map<number, boolean | string>()
   const pointAt = (cell: number): Point2D => ({
     x: router.cellCenterX[cell]!,
     y: router.cellCenterY[cell]!,
@@ -623,6 +627,15 @@ export function* routeReservedViaBusesSteps(
   router._setup = () => {
     setup()
     if (router.failed) return
+    layersByRouterZ = Array.from(
+      { length: routingLayers.length },
+      (_, z) => layerNames[router.layerToZ.get(z)!]!,
+    )
+    allowedLayersByConnection = router.connIdToName.map((name) => {
+      const owner = owners.get(name)
+      const permitted = owner ? (owner.allowedLayers ?? layerNames) : []
+      return layersByRouterZ.map((layer) => permitted.includes(layer))
+    })
     router.MAX_ITERATIONS = maximumIterations
     if (params.maximumRipEvents !== undefined)
       router.MAX_RIPS = params.maximumRipEvents
@@ -676,6 +689,38 @@ export function* routeReservedViaBusesSteps(
       indices.push(flat)
     })
   }
+  const blockerIsClear = (
+    a: Point2D,
+    b: Point2D,
+    layer: string,
+    blocker: Blocker,
+  ): boolean => {
+    if (blocker.kind === "obstacle")
+      return (
+        !blocker.obstacle.layers.includes(layer) ||
+        distanceSegmentToObstacle(
+          { start: a, end: b, width: traceWidth, layer },
+          blocker.obstacle,
+        ) >=
+          traceWidth / 2 + clearance - 1e-9
+      )
+    if (blocker.kind === "via")
+      return (
+        !blocker.layers.includes(layer) ||
+        distancePointToSegment(blocker.center, a, b) >=
+          (traceWidth + blocker.diameter) / 2 + clearance - 1e-9
+      )
+    return (
+      blocker.segment.layer !== layer ||
+      distanceSegmentToSegment(
+        a,
+        b,
+        blocker.segment.start,
+        blocker.segment.end,
+      ) >=
+        (traceWidth + blocker.segment.width) / 2 + clearance - 1e-9
+    )
+  }
   const segmentIsClear = (
     a: Point2D,
     b: Point2D,
@@ -683,53 +728,42 @@ export function* routeReservedViaBusesSteps(
     name: string,
     blockers = index.nearby(a, b),
   ): boolean =>
-    blockers.every((blocker) => {
-      if (blocker.kind === "obstacle")
-        return (
-          !blocker.obstacle.layers.includes(layer) ||
-          distanceSegmentToObstacle(
-            { start: a, end: b, width: traceWidth, layer },
-            blocker.obstacle,
-          ) >=
-            traceWidth / 2 + clearance - 1e-9
-        )
-      if (blocker.connectionName === name) return true
-      if (blocker.kind === "via")
-        return (
-          !blocker.layers.includes(layer) ||
-          distancePointToSegment(blocker.center, a, b) >=
-            (traceWidth + blocker.diameter) / 2 + clearance - 1e-9
-        )
-      return (
-        blocker.segment.layer !== layer ||
-        distanceSegmentToSegment(
-          a,
-          b,
-          blocker.segment.start,
-          blocker.segment.end,
-        ) >=
-          (traceWidth + blocker.segment.width) / 2 + clearance - 1e-9
-      )
-    })
-  router.computeMoveCostAndRips = (...args) => {
-    const [connectionId, z, nextCell, isVia] = args,
-      name = router.connIdToName[connectionId]!,
-      layer = layerNames[router.layerToZ.get(z)!]!,
-      owner = owners.get(name)!,
+    blockers.every(
+      (blocker) =>
+        (blocker.kind !== "obstacle" && blocker.connectionName === name) ||
+        blockerIsClear(a, b, layer, blocker),
+    )
+  const classifyStaticEdge = (
+    a: Point2D,
+    b: Point2D,
+    layer: string,
+  ): boolean | string => {
+    let soleOwner: string | undefined
+    for (const blocker of index.nearby(a, b)) {
+      if (blockerIsClear(a, b, layer, blocker)) continue
+      if (blocker.kind === "obstacle") return false
+      if (soleOwner !== undefined && soleOwner !== blocker.connectionName)
+        return false
+      soleOwner = blocker.connectionName
+    }
+    return soleOwner ?? true
+  }
+  router.computeMoveCostAndRips = (
+    connectionId,
+    z,
+    nextCell,
+    isVia,
+    rippedHead,
+    ripCount,
+    baseCost,
+  ) => {
+    const name = router.connIdToName[connectionId]!,
+      layer = layersByRouterZ[z]!,
       segment = router.activeConnSeg
     if (
-      !(owner.allowedLayers ?? layerNames).includes(layer) ||
+      !allowedLayersByConnection[connectionId]![z] ||
       (isVia && !extraViaIsClear(nextCell))
     ) {
-      router._moveCost = -1
-      return
-    }
-    const a =
-        previousCell === segment.startCellId
-          ? segment.startPoint
-          : pointAt(previousCell),
-      b = nextCell === segment.endCellId ? segment.endPoint : pointAt(nextCell)
-    if (!withinBounds(a) || !withinBounds(b)) {
       router._moveCost = -1
       return
     }
@@ -737,27 +771,30 @@ export function* routeReservedViaBusesSteps(
       (z * router.planeSize + previousCell) * router.planeSize + nextCell
     const usesTerminal =
       previousCell === segment.startCellId || nextCell === segment.endCellId
-    let blockers = usesTerminal ? undefined : edgeBlockers.get(edgeKey)
-    if (!blockers) {
-      // Keep unrelated copper layers out of the hot move-check loop. The
-      // complete index remains available for through-via clearance checks.
-      blockers = index
-        .nearby(a, b)
-        .filter((blocker) =>
-          blocker.kind === "obstacle"
-            ? blocker.obstacle.layers.includes(layer)
-            : blocker.kind === "segment"
-              ? blocker.segment.layer === layer
-              : blocker.layers.includes(layer),
-        )
-      if (!usesTerminal) edgeBlockers.set(edgeKey, blockers)
+    let classification = usesTerminal ? undefined : edgeClearance.get(edgeKey)
+    if (classification === undefined) {
+      const a =
+        previousCell === segment.startCellId
+          ? segment.startPoint
+          : pointAt(previousCell)
+      const b =
+        nextCell === segment.endCellId ? segment.endPoint : pointAt(nextCell)
+      if (!withinBounds(a) || !withinBounds(b)) {
+        router._moveCost = -1
+        return
+      }
+      // Terminal connectors have per-connection coordinates and bypass this
+      // cache. All other grid endpoints and hard copper stay fixed in search.
+      classification = usesTerminal
+        ? segmentIsClear(a, b, layer, name)
+        : classifyStaticEdge(a, b, layer)
+      if (!usesTerminal) edgeClearance.set(edgeKey, classification)
     }
-    const clear = segmentIsClear(a, b, layer, name, blockers)
-    if (!clear) {
+    if (classification !== true && classification !== name) {
       router._moveCost = -1
       return
     }
-    move(...args)
+    move(connectionId, z, nextCell, isVia, rippedHead, ripCount, baseCost)
   }
   while (!router.solved && !router.failed) {
     for (

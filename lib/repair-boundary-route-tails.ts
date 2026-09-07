@@ -117,6 +117,64 @@ function withLastLayerPath(
   }
 }
 
+/** Remove small cut/search spurs without touching earlier retained copper. */
+function removeReversingTailCorners(
+  original: readonly Point2D[],
+  firstTailPoint: number,
+): Point2D[] {
+  const points = [...original]
+  const octilinear = (a: Point2D, b: Point2D) => {
+    const dx = Math.abs(b.x - a.x),
+      dy = Math.abs(b.y - a.y)
+    return dx < EPSILON || dy < EPSILON || Math.abs(dx - dy) < EPSILON
+  }
+  for (let i = Math.max(1, firstTailPoint); i < points.length - 1; i++) {
+    const a = points[i - 1]!,
+      b = points[i]!,
+      c = points[i + 1]!,
+      incoming = distance(a, b),
+      outgoing = distance(b, c)
+    if (
+      incoming < EPSILON ||
+      outgoing < EPSILON ||
+      ((b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y)) /
+        (incoming * outgoing) >=
+        -EPSILON
+    )
+      continue
+    // A temporary cut carries no incoming heading into the path search.
+    // Its first steps can double back. Prefer deleting that corner, or trim
+    // it to an axis-aligned shortcut ending on one of the original segments.
+    if (octilinear(a, c)) {
+      points.splice(i, 1)
+      i--
+      continue
+    }
+    const shortcuts: Point2D[] = []
+    for (const axis of ["x", "y"] as const) {
+      const outgoingT = (a[axis] - b[axis]) / (c[axis] - b[axis])
+      if (outgoingT > EPSILON && outgoingT < 1 - EPSILON)
+        shortcuts.push({
+          x: b.x + (c.x - b.x) * outgoingT,
+          y: b.y + (c.y - b.y) * outgoingT,
+        })
+      const incomingT = (c[axis] - a[axis]) / (b[axis] - a[axis])
+      if (incomingT > EPSILON && incomingT < 1 - EPSILON)
+        shortcuts.push({
+          x: a.x + (b.x - a.x) * incomingT,
+          y: a.y + (b.y - a.y) * incomingT,
+        })
+    }
+    const shortcut = shortcuts.find(
+      (point) => octilinear(a, point) && octilinear(point, c),
+    )
+    if (shortcut) points[i] = shortcut
+    // Every shortcut remains provisional until the caller checks the entire
+    // repaired cluster against all retained copper, pads, and physical vias.
+  }
+  return points
+}
+
 function inferGridOrigin(
   plans: readonly FanoutRoutePlan[],
   step: number,
@@ -366,10 +424,11 @@ export function repairBoundaryRouteTails(
           throw new Error(
             "FanoutSolver: boundary-tail repair added a physical via",
           )
-        return withLastLayerPath(c.plan, c.first, [
-          ...c.prefix,
-          ...tail.segments.map((s) => s.end),
-        ])
+        const points = removeReversingTailCorners(
+          [...c.prefix, ...tail.segments.map((s) => s.end)],
+          c.prefix.length - 1,
+        )
+        return withLastLayerPath(c.plan, c.first, points)
       })
       if (
         !fanoutPlansAreClear({
