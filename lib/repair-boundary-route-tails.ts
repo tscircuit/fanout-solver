@@ -453,7 +453,9 @@ export function repairBoundaryRouteTails(
         }
     }
     const active = group.filter((plan) => selected.has(plan))
-    if (active.length > 24) return null
+    // Closely spaced wide buses form one connected exit cluster. Keep the
+    // search bounded while admitting a complete 32-lane bus atomically.
+    if (active.length > 32) return null
     const origins = getRepairGridOrigins(
       active,
       edge,
