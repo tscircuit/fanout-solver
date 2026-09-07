@@ -4,6 +4,8 @@ export interface LayerRoutingAttempt {
   transitLayers: string[]
   routeFromSourcePads?: boolean
   sourceOriginPhysicalGridPhase?: boolean
+  sourceLayerTravelCost?: number
+  reserveFutureApproaches?: false
 }
 
 /** Bounded retry order; successful attempts never schedule extra work. */
@@ -24,6 +26,7 @@ export class LayerRoutingAttempts {
       sourceOriginRipCost?: number
       sourceTransitRipCost?: number
       retrySourceOriginPhysicalGridPhase?: boolean
+      retrySourceOriginFreshReservations?: boolean
       preferAlternateOrder?: boolean
     },
   ) {
@@ -82,6 +85,14 @@ export class LayerRoutingAttempts {
         this.pending.push({ ...this.originalOrder!, ripCost: 256 })
       return
     }
+    if (attempt.reserveFutureApproaches === false) {
+      const { reserveFutureApproaches, sourceLayerTravelCost, ...ordinary } =
+        attempt
+      // The original topology was complete but untunable. If the fresh-source
+      // alternative fails, resume that original length-retry sequence.
+      this.failed(ordinary, "lengths")
+      return
+    }
     if (attempt.sourceOriginPhysicalGridPhase) {
       const { sourceOriginPhysicalGridPhase, ...ordinary } = attempt
       enqueue({ ...ordinary, ripCost: 256, shuffleSeed: 1 })
@@ -101,12 +112,25 @@ export class LayerRoutingAttempts {
       // Preserve the existing length-cost retry. Change route order only when
       // the previous search did not find the complete group topology.
       if (reason === "lengths" && attempt.ripCost === 64) {
+        // Release future approach hints and penalize long top-layer runs.
+        // The ordinary successful first topology never pays for this search.
+        const fresh: LayerRoutingAttempt = {
+          ...attempt,
+          shuffleSeed: 1,
+          sourceLayerTravelCost: 3,
+          reserveFutureApproaches: false,
+        }
         const physical = {
           ...attempt,
           shuffleSeed: 1,
           sourceOriginPhysicalGridPhase: true,
         }
         if (
+          this.options.retrySourceOriginFreshReservations &&
+          !this.attempted.has(JSON.stringify(fresh))
+        )
+          enqueue(fresh)
+        else if (
           this.options.retrySourceOriginPhysicalGridPhase &&
           !this.attempted.has(JSON.stringify(physical))
         )

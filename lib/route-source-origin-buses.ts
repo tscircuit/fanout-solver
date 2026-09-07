@@ -128,7 +128,7 @@ export function* routeSourceOriginBusesSteps(
     ...params,
     transitLayers: [],
     routeFromSourcePads: true,
-    sourceLayerTravelCost: 2,
+    sourceLayerTravelCost: params.sourceLayerTravelCost ?? 2,
     maximumRipEvents: 1_200,
     maximumIterations: 50_000_000,
     maximumLocalRepairAttempts: 0,

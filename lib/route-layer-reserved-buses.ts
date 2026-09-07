@@ -277,6 +277,8 @@ function* routeLayerReservedAttemptSteps(
     const attempts = new LayerRoutingAttempts({
       wideSingleLayer: shortenFirst,
       retrySourceOriginPhysicalGridPhase: useSourceOrigin,
+      retrySourceOriginFreshReservations:
+        useSourceOrigin && attemptState.reserveFutureApproaches,
       preferAlternateOrder:
         !params.sourceOriginRouting &&
         shortenFirst &&
@@ -324,38 +326,52 @@ function* routeLayerReservedAttemptSteps(
     })
     let groupCompleted = false
     let groupHadLengthFailure = false
+    const originalSources = {
+      sites: new Map(fixedViaPointsByConnectionIndex),
+      paths: new Map(sourceEscapePaths),
+      plans: [...sourcePlans],
+    }
+    const restoreSources = (sources: typeof originalSources) => {
+      fixedViaPointsByConnectionIndex.clear()
+      for (const [index, point] of sources.sites)
+        fixedViaPointsByConnectionIndex.set(index, point)
+      sourceEscapePaths.clear()
+      for (const [index, path] of sources.paths)
+        sourceEscapePaths.set(index, path)
+      sourcePlans.splice(0, sourcePlans.length, ...sources.plans)
+    }
     for (let attempt = attempts.next(); attempt; attempt = attempts.next()) {
       // Every search and tuning attempt starts from the same committed set.
       // A complete topology does not reserve copper until its bus lengths pass.
       accepted = previousAccepted
       for (const bus of group) completed.delete(bus.busId)
-      // The physical-source phase is a provisional alternative. Its selected
-      // vias may move before tuning, but a failed attempt must leave the
+      // Alternative first vias may move before tuning, but a failed attempt
+      // must leave the
       // ordinary retry with exactly the reservations it received.
-      const previousSources = attempt.sourceOriginPhysicalGridPhase
-        ? {
-            sites: new Map(fixedViaPointsByConnectionIndex),
-            paths: new Map(sourceEscapePaths),
-            plans: [...sourcePlans],
-          }
-        : undefined
-      const restorePhysicalSources = () => {
+      const previousSources =
+        attempt.sourceOriginPhysicalGridPhase ||
+        attempt.reserveFutureApproaches === false
+          ? {
+              sites: new Map(fixedViaPointsByConnectionIndex),
+              paths: new Map(sourceEscapePaths),
+              plans: [...sourcePlans],
+            }
+          : undefined
+      const restoreProvisionalSources = () => {
         if (!previousSources) return
-        fixedViaPointsByConnectionIndex.clear()
-        for (const [index, point] of previousSources.sites)
-          fixedViaPointsByConnectionIndex.set(index, point)
-        sourceEscapePaths.clear()
-        for (const [index, path] of previousSources.paths)
-          sourceEscapePaths.set(index, path)
-        sourcePlans.splice(0, sourcePlans.length, ...previousSources.plans)
+        restoreSources(previousSources)
       }
+      if (attempt.reserveFutureApproaches === false)
+        restoreSources(originalSources)
       const hasTransitRetry =
         attempt.routeFromSourcePads ||
         attempt.transitLayers.length < allTransitLayers.length
       const routeParams = {
         ...params,
         srj:
-          useSourceOrigin && attemptState.reserveFutureApproaches
+          useSourceOrigin &&
+          (attempt.reserveFutureApproaches ??
+            attemptState.reserveFutureApproaches)
             ? {
                 ...srj,
                 traces: [
@@ -391,6 +407,7 @@ function* routeLayerReservedAttemptSteps(
         maximumIterations: 100_000_000,
         shuffleSeed: attempt.shuffleSeed,
         sourceOriginPhysicalGridPhase: attempt.sourceOriginPhysicalGridPhase,
+        sourceLayerTravelCost: attempt.sourceLayerTravelCost,
       }
       const steps = (function* () {
         if (attempt.routeFromSourcePads)
@@ -431,8 +448,12 @@ function* routeLayerReservedAttemptSteps(
       }
       const routedPlans = next.value
       if (!routedPlans) {
-        restorePhysicalSources()
-        if (useSourceOrigin && !attempt.sourceOriginPhysicalGridPhase) {
+        restoreProvisionalSources()
+        if (
+          useSourceOrigin &&
+          !attempt.sourceOriginPhysicalGridPhase &&
+          attempt.reserveFutureApproaches !== false
+        ) {
           attemptState.failedWideMatching = groupHadLengthFailure
           return null
         }
@@ -681,7 +702,7 @@ function* routeLayerReservedAttemptSteps(
       } else {
         groupHadLengthFailure = true
         if (hasTransitRetry) {
-          restorePhysicalSources()
+          restoreProvisionalSources()
           attempts.failed(attempt, "lengths")
           continue
         }
@@ -725,7 +746,7 @@ function* routeLayerReservedAttemptSteps(
             tails = tailSteps.next()
           }
           if (!tails.value) {
-            restorePhysicalSources()
+            restoreProvisionalSources()
             attempts.failed(attempt, "lengths")
             continue
           }

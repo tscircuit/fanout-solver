@@ -166,6 +166,39 @@ test("layer retries preserve the first successful choice and distinguish topolog
       expect(queue.next()).toBeUndefined()
     }
   }
+  for (const failure of ["routing", "lengths"] as const) {
+    const fresh = new LayerRoutingAttempts({
+      ...options,
+      wideSingleLayer: true,
+      allTransitLayers: [],
+      retrySourceOriginFreshReservations: true,
+      retrySourceOriginPhysicalGridPhase: true,
+    })
+    const original = fresh.next()!
+    expect(original).toEqual({ ripCost: 64, shuffleSeed: 1, transitLayers: [] })
+    expect(fresh.next()).toBeUndefined()
+    fresh.failed(original, "lengths")
+    const alternative = fresh.next()!
+    expect(alternative).toEqual({
+      ...original,
+      sourceLayerTravelCost: 3,
+      reserveFutureApproaches: false,
+    })
+    fresh.failed(alternative, failure)
+    const physical = fresh.next()!
+    expect(physical).toEqual({
+      ...original,
+      sourceOriginPhysicalGridPhase: true,
+    })
+    fresh.failed(physical, failure)
+    const cost = fresh.next()!
+    expect(cost).toEqual({ ...original, ripCost: 256 })
+    fresh.failed(cost, "routing")
+    const order = fresh.next()!
+    expect(order).toEqual({ ...original, shuffleSeed: 2 })
+    fresh.failed(order, "lengths")
+    expect(fresh.next()).toBeUndefined()
+  }
   const firstPreferredSuccess = new LayerRoutingAttempts({
     ...options,
     wideSingleLayer: true,
