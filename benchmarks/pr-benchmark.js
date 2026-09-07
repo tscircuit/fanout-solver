@@ -60,7 +60,7 @@ export async function preparePrBenchmark({ github, context, core }) {
     const comment = await github.rest.issues.createComment({
       ...context.repo,
       issue_number: Number(rawNumber),
-      body: `## Dataset 31 — AM62L, RK3308, and K230 fanout benchmark\n\nQueued for \`${ref.slice(0, 7)}\` on Blacksmith. All 36 dataset-fanout31-am62l samples (12 AM62L, 12 RK3308, and 12 K230) will run, with a per-sample deadline.\n\n[View run](${runUrl})`,
+      body: `## Dataset 31 — AM62L, RK3308, K230, and i.MX6ULL fanout benchmark\n\nQueued for \`${ref.slice(0, 7)}\` on Blacksmith. All 48 dataset-fanout31-am62l samples (12 AM62L, 12 RK3308, 12 K230, and 12 i.MX6ULL) will run, with a per-sample deadline.\n\n[View run](${runUrl})`,
     })
     commentId = String(comment.data.id)
   }
@@ -86,7 +86,7 @@ const finite = (value) =>
 /** Render data only; never execute scripts or post raw Markdown supplied by the PR. */
 export function renderBenchmarkComment(report, { ref, runUrl, result }) {
   const header = [
-    "## Dataset 31 — AM62L, RK3308, and K230 fanout benchmark",
+    "## Dataset 31 — AM62L, RK3308, K230, and i.MX6ULL fanout benchmark",
     "",
     `Commit: \`${ref.slice(0, 7)}\`. Blacksmith job: **${result}**.`,
     "",
@@ -146,7 +146,7 @@ export function renderBenchmarkComment(report, { ref, runUrl, result }) {
       "",
     )
   header.push(
-    "Only dataset-fanout31-am62l is benchmarked: 12 AM62L, 12 RK3308, and 12 K230 cases. A case is solved only when all its SoC connections have validated fanout with the original constraints (135 for AM62L; 162 for RK3308; 171 for K230). RAM fanout and inter-chip routing are separate phases.",
+    "Only dataset-fanout31-am62l is benchmarked: 12 AM62L, 12 RK3308, 12 K230, and 12 i.MX6ULL cases. A case is solved only when all its SoC connections have validated fanout with the original constraints (135 for AM62L; 162 for RK3308; 171 for K230; 102 for i.MX6ULL). RAM fanout and inter-chip routing are separate phases.",
   )
   if (
     report.datasetSource &&

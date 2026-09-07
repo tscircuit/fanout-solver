@@ -6,10 +6,14 @@ import {
   distance,
   distancePointToSegment,
   distanceSegmentToSegment,
+  distanceSegmentToObstacle,
   segmentsAreClear,
 } from "./geometry"
 import { getCopperLayerNames } from "./layer-names"
-import { fanoutPlansAreClear, fanoutPlansAreMutuallyClear } from "./route-bus"
+import {
+  createFanoutPlanClearanceValidator,
+  fanoutPlansAreMutuallyClear,
+} from "./route-bus"
 import { routeViaMinimalWinding } from "./route-via-minimal-winding"
 import type {
   Bounds,
@@ -128,6 +132,7 @@ function rebuildTraceRoute(
 function createPlanWithSegments(
   plan: FanoutRoutePlan,
   segments: RoutedSegment[],
+  updateSourceEscapeCount = false,
 ): FanoutRoutePlan | null {
   const route = rebuildTraceRoute(plan, segments)
   if (!route) return null
@@ -135,8 +140,16 @@ function createPlanWithSegments(
     (total, segment) => total + distance(segment.start, segment.end),
     0,
   )
+  const sourceEscapeSegmentCount = segments.findIndex(
+    (s) => s.layer !== plan.sourceLayer,
+  )
   return {
     ...plan,
+    ...(updateSourceEscapeCount &&
+    plan.sourceEscapeSegmentCount !== undefined &&
+    sourceEscapeSegmentCount >= 0
+      ? { sourceEscapeSegmentCount }
+      : {}),
     trace: { ...plan.trace, route },
     segments,
     length,
@@ -234,40 +247,89 @@ function getDenseCopperBounds(bus: PreparedBus): Bounds {
   )
 }
 
-function hasNonAdjacentSelfIntersection(
-  segments: readonly RoutedSegment[],
+function segmentsIntersect(
+  first: RoutedSegment,
+  second: RoutedSegment,
 ): boolean {
-  for (let firstIndex = 0; firstIndex < segments.length; firstIndex++) {
-    const first = segments[firstIndex]!
-    for (
-      let secondIndex = firstIndex + 2;
-      secondIndex < segments.length;
-      secondIndex++
-    ) {
-      const second = segments[secondIndex]!
-      if (first.layer !== second.layer) continue
-      if (
-        secondIndex === firstIndex + 2 &&
-        pointsMatch(first.end, second.start)
-      ) {
-        continue
-      }
-      if (
-        distanceSegmentToSegment(
-          first.start,
-          first.end,
-          second.start,
-          second.end,
-        ) <= EPSILON
-      ) {
-        return true
-      }
-    }
-  }
-  return false
+  if (first.layer !== second.layer) return false
+  if (
+    Math.min(first.start.x, first.end.x) >
+      Math.max(second.start.x, second.end.x) + EPSILON ||
+    Math.min(second.start.x, second.end.x) >
+      Math.max(first.start.x, first.end.x) + EPSILON ||
+    Math.min(first.start.y, first.end.y) >
+      Math.max(second.start.y, second.end.y) + EPSILON ||
+    Math.min(second.start.y, second.end.y) >
+      Math.max(first.start.y, first.end.y) + EPSILON
+  )
+    return false
+  return (
+    distanceSegmentToSegment(
+      first.start,
+      first.end,
+      second.start,
+      second.end,
+    ) <= EPSILON
+  )
 }
 
-function replacementCopperIsSelfClear(params: {
+/** Cache unchanged geometry while replacing exactly one original segment. */
+function createReplacementSelfIntersectionChecker(
+  original: readonly RoutedSegment[],
+): (
+  segments: readonly RoutedSegment[],
+  replacementStartIndex: number,
+  replacementSegmentCount: number,
+) => boolean {
+  let originalIntersections: [number, number][] | undefined
+  return (segments, replacementStartIndex, replacementSegmentCount) => {
+    // Generators can reject every placement before reaching this check.
+    // Avoid scanning their retained path until a candidate actually needs it.
+    if (!originalIntersections) {
+      originalIntersections = []
+      for (let first = 0; first < original.length; first++)
+        for (let second = first + 2; second < original.length; second++)
+          if (segmentsIntersect(original[first]!, original[second]!))
+            originalIntersections.push([first, second])
+    }
+    const replacementEndIndex =
+      replacementStartIndex + replacementSegmentCount - 1
+    const hasAdjacencyExemption = (first: number, second: number) =>
+      second === first + 2 &&
+      pointsMatch(segments[first]!.end, segments[second]!.start)
+    for (const [first, second] of originalIntersections) {
+      if (first === replacementStartIndex || second === replacementStartIndex)
+        continue
+      const shiftedFirst =
+          first > replacementStartIndex
+            ? first + replacementSegmentCount - 1
+            : first,
+        shiftedSecond =
+          second > replacementStartIndex
+            ? second + replacementSegmentCount - 1
+            : second
+      // Reapply the original index-based exemption after the replacement has
+      // shifted the untouched segments. No pre-existing crossing is ignored.
+      if (!hasAdjacencyExemption(shiftedFirst, shiftedSecond)) return true
+    }
+    for (
+      let replacement = replacementStartIndex;
+      replacement <= replacementEndIndex;
+      replacement++
+    )
+      for (let other = 0; other < segments.length; other++) {
+        if (Math.abs(replacement - other) < 2) continue
+        if (other >= replacementStartIndex && other < replacement) continue
+        const first = Math.min(replacement, other),
+          second = Math.max(replacement, other)
+        if (hasAdjacencyExemption(first, second)) continue
+        if (segmentsIntersect(segments[first]!, segments[second]!)) return true
+      }
+    return false
+  }
+}
+
+export function replacementCopperIsSelfClear(params: {
   plan: FanoutRoutePlan
   segments: readonly RoutedSegment[]
   replacementStartIndex: number
@@ -284,34 +346,35 @@ function replacementCopperIsSelfClear(params: {
   const replacementEndIndex =
     replacementStartIndex + replacementSegmentCount - 1
   const vias = getPlanVias(plan)
+  // A candidate preserves a connected path except at layer changes. Prefix
+  // lengths make each local-adjacency exemption constant time even when a
+  // negotiated route contains hundreds of short chamfered segments.
+  const pathGroups = new Int32Array(segments.length)
+  const pathLengths = new Float64Array(segments.length + 1)
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index]!,
+      previous = segments[index - 1]
+    pathGroups[index] =
+      index === 0
+        ? 0
+        : pathGroups[index - 1]! +
+          Number(
+            previous!.layer !== segment.layer ||
+              !pointsMatch(previous!.end, segment.start),
+          )
+    pathLengths[index + 1] =
+      pathLengths[index]! + distance(segment.start, segment.end)
+  }
   const getConnectedPathDistance = (
     firstIndex: number,
     secondIndex: number,
   ): number => {
     if (firstIndex === secondIndex) return 0
+    if (pathGroups[firstIndex] !== pathGroups[secondIndex])
+      return Number.POSITIVE_INFINITY
     const startIndex = Math.min(firstIndex, secondIndex)
     const endIndex = Math.max(firstIndex, secondIndex)
-    const startSegment = segments[startIndex]!
-    const endSegment = segments[endIndex]!
-    if (startSegment.layer !== endSegment.layer) {
-      return Number.POSITIVE_INFINITY
-    }
-    let currentPoint = startSegment.end
-    let pathDistance = 0
-    for (let index = startIndex + 1; index < endIndex; index++) {
-      const segment = segments[index]!
-      if (
-        segment.layer !== startSegment.layer ||
-        !pointsMatch(currentPoint, segment.start)
-      ) {
-        return Number.POSITIVE_INFINITY
-      }
-      pathDistance += distance(segment.start, segment.end)
-      currentPoint = segment.end
-    }
-    return pointsMatch(currentPoint, segments[endIndex]!.start)
-      ? pathDistance
-      : Number.POSITIVE_INFINITY
+    return Math.max(0, pathLengths[endIndex]! - pathLengths[startIndex + 1]!)
   }
   for (
     let replacementIndex = replacementStartIndex;
@@ -319,6 +382,20 @@ function replacementCopperIsSelfClear(params: {
     replacementIndex++
   ) {
     const replacement = segments[replacementIndex]!
+    const original = plan.segments[replacementStartIndex]!
+    // Leading/trailing pieces retained on the original straight segment do not
+    // introduce copper. Their proximity to an unchanged chamfered continuation
+    // must not reject a distant meander. Every genuinely new piece still checks
+    // every retained and new segment below, including these retained leads.
+    if (
+      replacement.layer === original.layer &&
+      replacement.width === original.width &&
+      distancePointToSegment(replacement.start, original.start, original.end) <=
+        EPSILON &&
+      distancePointToSegment(replacement.end, original.start, original.end) <=
+        EPSILON
+    )
+      continue
     for (const [otherIndex, other] of segments.entries()) {
       const requiredCenterlineClearance =
         replacement.width / 2 + other.width / 2 + clearance
@@ -468,15 +545,28 @@ function createMeanderPoints(params: {
   )
 }
 
-function createTunedPlanCandidates(params: {
+interface MatchingWorkBudget {
+  remaining: number
+  activeBus?: PreparedBus
+}
+
+class MatchingWorkBudgetExhausted extends Error {}
+
+function consumeMatchingWork(budget: MatchingWorkBudget | undefined): void {
+  if (budget && budget.remaining-- <= 0) throw new MatchingWorkBudgetExhausted()
+}
+
+function* createTunedPlanCandidates(params: {
   plan: FanoutRoutePlan
   bus: PreparedBus
   targetAddedLength: number
   clearance: number
   sharedBoundary: Bounds
   allowInsideDenseBounds?: boolean
+  allowSourcePrefixMatching?: boolean
   denseBoundarySplitApplied?: boolean
-}): FanoutRoutePlan[] {
+  workBudget?: MatchingWorkBudget
+}): Generator<FanoutRoutePlan> {
   const {
     plan,
     bus,
@@ -484,16 +574,27 @@ function createTunedPlanCandidates(params: {
     clearance,
     sharedBoundary,
     allowInsideDenseBounds = false,
+    allowSourcePrefixMatching = false,
     denseBoundarySplitApplied = false,
   } = params
-  const candidates: FanoutRoutePlan[] = []
   const denseCopperBounds = getDenseCopperBounds(bus)
+  const replacementHasSelfIntersection =
+    createReplacementSelfIntersectionChecker(plan.segments)
   const denseMargin = plan.segments[0]?.width
     ? plan.segments[0].width / 2 + clearance
     : clearance
   const eligibleSegments = plan.segments
     .map((segment, segmentIndex) => ({ segment, segmentIndex }))
-    .filter(({ segment }) => segment.layer === plan.targetLayer)
+    .filter(
+      ({ segment, segmentIndex }) =>
+        segment.layer === plan.targetLayer ||
+        (allowSourcePrefixMatching &&
+          plan.via &&
+          plan.sourceLayer !== plan.targetLayer &&
+          segmentIndex > 0 &&
+          segmentIndex < (plan.sourceEscapeSegmentCount ?? 1) &&
+          segment.layer === plan.sourceLayer),
+    )
     .toSorted(
       (first, second) =>
         distance(second.segment.start, second.segment.end) -
@@ -510,6 +611,7 @@ function createTunedPlanCandidates(params: {
     for (let toothCount = 1; toothCount <= maximumToothCount; toothCount++) {
       for (const placementFraction of [0.5, 0, 1, 0.25, 0.75]) {
         for (const normalSign of [1, -1] as const) {
+          consumeMatchingWork(params.workBudget)
           const points = createMeanderPoints({
             segment,
             toothCount,
@@ -550,7 +652,24 @@ function createTunedPlanCandidates(params: {
             ...replacementSegments,
             ...plan.segments.slice(segmentIndex + 1),
           ]
-          if (hasNonAdjacentSelfIntersection(segments)) continue
+          if (
+            segment.layer === plan.sourceLayer &&
+            segment.layer !== plan.targetLayer &&
+            replacementSegments.some(
+              (s) =>
+                distanceSegmentToObstacle(s, plan.sourceObstacle) <
+                s.width / 2 + clearance - EPSILON,
+            )
+          )
+            continue
+          if (
+            replacementHasSelfIntersection(
+              segments,
+              segmentIndex,
+              replacementSegments.length,
+            )
+          )
+            continue
           if (
             !replacementCopperIsSelfClear({
               plan,
@@ -562,28 +681,37 @@ function createTunedPlanCandidates(params: {
           ) {
             continue
           }
-          const candidate = createPlanWithSegments(plan, segments)
-          if (candidate) candidates.push(candidate)
+          const candidate = createPlanWithSegments(
+            plan,
+            segments,
+            allowSourcePrefixMatching,
+          )
+          if (candidate) yield candidate
         }
       }
     }
   }
-  if (denseBoundarySplitApplied) return candidates
-  const splitSegments = plan.segments.flatMap((segment) =>
-    splitSegmentAtDenseBounds({
-      segment,
-      bounds: denseCopperBounds,
-      margin: denseMargin,
-    }),
+  if (denseBoundarySplitApplied) return
+  const splitSegments = plan.segments.flatMap((segment, index) =>
+    allowSourcePrefixMatching && index === 0
+      ? [segment]
+      : splitSegmentAtDenseBounds({
+          segment,
+          bounds: denseCopperBounds,
+          margin: denseMargin,
+        }),
   )
-  const splitPlan = createPlanWithSegments(plan, splitSegments)
-  if (!splitPlan) return candidates
-  const splitCandidates = createTunedPlanCandidates({
+  const splitPlan = createPlanWithSegments(
+    plan,
+    splitSegments,
+    allowSourcePrefixMatching,
+  )
+  if (!splitPlan) return
+  yield* createTunedPlanCandidates({
     ...params,
     plan: splitPlan,
     denseBoundarySplitApplied: true,
   })
-  return [...candidates, ...splitCandidates]
 }
 
 function getBusSkew(plans: readonly FanoutRoutePlan[]): number {
@@ -594,7 +722,10 @@ function getBusSkew(plans: readonly FanoutRoutePlan[]): number {
 function* createSpreadLaneCandidates(
   plan: FanoutRoutePlan,
   clearance: number,
+  workBudget?: MatchingWorkBudget,
 ): Generator<FanoutRoutePlan> {
+  const replacementHasSelfIntersection =
+    createReplacementSelfIntersectionChecker(plan.segments)
   for (const { segment, index } of plan.segments
     .map((segment, index) => ({ segment, index }))
     .filter(({ segment }) => segment.layer === plan.targetLayer)
@@ -617,6 +748,7 @@ function* createSpreadLaneCandidates(
       const offset = pitch * multiple
       if (length < 2 * offset + pitch) continue
       for (const sign of [1, -1]) {
+        consumeMatchingWork(workBudget)
         const normal = { x: -tangent.y * sign, y: tangent.x * sign }
         const points = [
           segment.start,
@@ -634,7 +766,8 @@ function* createSpreadLaneCandidates(
           ...replacement,
           ...plan.segments.slice(index + 1),
         ]
-        if (hasNonAdjacentSelfIntersection(segments)) continue
+        if (replacementHasSelfIntersection(segments, index, replacement.length))
+          continue
         if (
           !replacementCopperIsSelfClear({
             plan,
@@ -657,7 +790,7 @@ function* createSpreadLaneCandidates(
  * is atomic: a constrained bus either satisfies its declared skew with the
  * complete fanout copper still clear, or the complete assignment is rejected.
  */
-export function matchBusPlanLengths(params: {
+export interface MatchBusPlanLengthsParams {
   plans: readonly FanoutRoutePlan[]
   preparedBuses: readonly PreparedBus[]
   inputSrj: SimpleRouteJson
@@ -671,6 +804,13 @@ export function matchBusPlanLengths(params: {
    * revalidated and whose remaining dogbone capacity is checked atomically.
    */
   allowMatchingInsideDenseBounds?: boolean
+  /**
+   * Tune existing source-layer copper after the first pad-escape segment and
+   * before its fixed first via. Source counts are rebuilt; callers retaining
+   * separate source-path maps must rebuild those maps from returned plans.
+   * New meanders must also clear the source pad and all retained self copper.
+   */
+  allowSourcePrefixMatching?: boolean
   /** Allow a differential pair's longer lane to move aside before tuning its mate. */
   allowPairLaneSpreading?: boolean
   /** Allow one unconstrained boundary lane to move around a tuning meander. */
@@ -680,9 +820,45 @@ export function matchBusPlanLengths(params: {
    * downstream assignment (such as pending plane dogbones) infeasible.
    */
   candidatePlansAreFeasible?: (plans: readonly FanoutRoutePlan[]) => boolean
-}):
+  /**
+   * Optional deterministic cap shared by the complete matching call and its
+   * recursive repairs. Counts attempted meanders (including rejected ones),
+   * multi-span states, lane-spreading attempts, and clearance validations.
+   * Exhaustion returns the failed bus without committing partial tuning.
+   */
+  maximumWorkUnits?: number
+}
+
+type MatchBusPlanLengthsResult =
   | { plans: FanoutRoutePlan[]; failedBus?: never }
-  | { plans: null; failedBus: PreparedBus } {
+  | { plans: null; failedBus: PreparedBus }
+
+export function matchBusPlanLengths(
+  params: MatchBusPlanLengthsParams,
+): MatchBusPlanLengthsResult {
+  if (
+    params.maximumWorkUnits !== undefined &&
+    (!Number.isSafeInteger(params.maximumWorkUnits) ||
+      params.maximumWorkUnits < 0)
+  )
+    throw new Error("maximumWorkUnits must be a non-negative safe integer")
+  const workBudget =
+    params.maximumWorkUnits === undefined
+      ? undefined
+      : ({ remaining: params.maximumWorkUnits } as MatchingWorkBudget)
+  try {
+    return matchBusPlanLengthsWithBudget(params, workBudget)
+  } catch (error) {
+    if (error instanceof MatchingWorkBudgetExhausted && workBudget?.activeBus)
+      return { plans: null, failedBus: workBudget.activeBus }
+    throw error
+  }
+}
+
+function matchBusPlanLengthsWithBudget(
+  params: MatchBusPlanLengthsParams,
+  workBudget?: MatchingWorkBudget,
+): MatchBusPlanLengthsResult {
   const {
     preparedBuses,
     inputSrj,
@@ -693,6 +869,17 @@ export function matchBusPlanLengths(params: {
     allowMatchingInsideDenseBounds = false,
     candidatePlansAreFeasible,
   } = params
+  const validatePlans = createFanoutPlanClearanceValidator({
+    srj: inputSrj,
+    sharedBoundary,
+    clearance,
+    allowBlindAndBuriedVias,
+    allowSameNetMerges,
+  })
+  const plansAreClear = (plans: readonly FanoutRoutePlan[]): boolean => {
+    consumeMatchingWork(workBudget)
+    return validatePlans(plans)
+  }
   let matchedPlans = [...params.plans]
   const constrainedBuses = preparedBuses.filter(
     (bus) => bus.maxLengthSkew !== undefined && bus.connections.length > 1,
@@ -700,6 +887,7 @@ export function matchBusPlanLengths(params: {
   if (constrainedBuses.length === 0) return { plans: matchedPlans }
 
   for (const bus of constrainedBuses) {
+    if (workBudget) workBudget.activeBus = bus
     if (bus.termination.type !== "boundary") {
       return { plans: null, failedBus: bus }
     }
@@ -750,16 +938,7 @@ export function matchBusPlanLengths(params: {
           (plan) => plan.busId === bus.busId,
         )
         if (getBusSkew(nextBusPlans) > skew + EPSILON) return null
-        if (
-          !fanoutPlansAreClear({
-            plans: nextPlans,
-            srj: inputSrj,
-            sharedBoundary,
-            clearance,
-            allowBlindAndBuriedVias,
-            allowSameNetMerges,
-          })
-        ) {
+        if (!plansAreClear(nextPlans)) {
           return null
         }
         if (
@@ -796,6 +975,7 @@ export function matchBusPlanLengths(params: {
           currentPlan: FanoutRoutePlan,
           stagesRemaining: number,
         ): FanoutRoutePlan[] | null => {
+          consumeMatchingWork(workBudget)
           const addedLength = currentPlan.length - shortest.length
           const remainingAddition = targetAddedLength - addedLength
           if (remainingAddition <= EPSILON) {
@@ -803,16 +983,18 @@ export function matchBusPlanLengths(params: {
           }
           if (stagesRemaining <= 0) return null
           const stageAddedLength = remainingAddition / stagesRemaining
-          const candidates = sampleCandidates(
-            createTunedPlanCandidates({
+          const candidates = sampleCandidates([
+            ...createTunedPlanCandidates({
               plan: currentPlan,
               bus,
               targetAddedLength: stageAddedLength,
               clearance,
               sharedBoundary: bus.sharedBoundary,
               allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+              allowSourcePrefixMatching: params.allowSourcePrefixMatching,
+              workBudget,
             }),
-          )
+          ])
           for (const candidate of candidates) {
             searchedStateCount++
             if (searchedStateCount > maximumSearchStates) return null
@@ -837,6 +1019,8 @@ export function matchBusPlanLengths(params: {
           clearance,
           sharedBoundary: bus.sharedBoundary,
           allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+          allowSourcePrefixMatching: params.allowSourcePrefixMatching,
+          workBudget,
         })
         for (const candidate of candidates) {
           acceptedPlans = acceptCandidate(candidate)
@@ -861,32 +1045,29 @@ export function matchBusPlanLengths(params: {
         // four geometrically clear placements may start another matching pass.
         const longer = busPlans.find((plan) => plan !== shortest)!
         let attempts = 0
-        for (const candidate of createSpreadLaneCandidates(longer, clearance)) {
+        for (const candidate of createSpreadLaneCandidates(
+          longer,
+          clearance,
+          workBudget,
+        )) {
           const nextPlans = matchedPlans.map((plan) =>
             plan === longer ? candidate : plan,
           )
-          if (
-            !fanoutPlansAreClear({
-              plans: nextPlans,
-              srj: inputSrj,
-              sharedBoundary,
-              clearance,
-              allowBlindAndBuriedVias,
-              allowSameNetMerges,
-            })
-          )
-            continue
+          if (!plansAreClear(nextPlans)) continue
           if (
             candidatePlansAreFeasible &&
             !candidatePlansAreFeasible(nextPlans)
           )
             continue
-          const result = matchBusPlanLengths({
-            ...params,
-            plans: nextPlans,
-            preparedBuses: [bus],
-            allowPairLaneSpreading: false,
-          })
+          const result = matchBusPlanLengthsWithBudget(
+            {
+              ...params,
+              plans: nextPlans,
+              preparedBuses: [bus],
+              allowPairLaneSpreading: false,
+            },
+            workBudget,
+          )
           if (result.plans) {
             acceptedPlans = result.plans
             break
@@ -908,19 +1089,11 @@ export function matchBusPlanLengths(params: {
             clearance,
             sharedBoundary: bus.sharedBoundary,
             allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+            allowSourcePrefixMatching: params.allowSourcePrefixMatching,
+            workBudget,
           })
           for (const candidate of candidates) {
-            if (
-              !fanoutPlansAreClear({
-                plans: [candidate],
-                srj: inputSrj,
-                sharedBoundary,
-                clearance,
-                allowBlindAndBuriedVias,
-                allowSameNetMerges,
-              })
-            )
-              continue
+            if (!plansAreClear([candidate])) continue
             const blockers = matchedPlans.filter(
               (plan) =>
                 plan !== shortest &&
@@ -994,14 +1167,7 @@ export function matchBusPlanLengths(params: {
                   repairedPlans.filter((plan) => plan.busId === bus.busId),
                 ) >
                   maxLengthSkew + EPSILON ||
-                !fanoutPlansAreClear({
-                  plans: repairedPlans,
-                  srj: inputSrj,
-                  sharedBoundary,
-                  clearance,
-                  allowBlindAndBuriedVias,
-                  allowSameNetMerges,
-                }) ||
+                !plansAreClear(repairedPlans) ||
                 (candidatePlansAreFeasible &&
                   !candidatePlansAreFeasible(repairedPlans))
               )
