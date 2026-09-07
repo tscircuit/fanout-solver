@@ -122,8 +122,8 @@ export function* rerouteOverlongBusLanesSteps(
     const originalSkew = skew(busPlans)
     if (originalSkew <= bus.maxLengthSkew! + EPSILON) continue
     const beforeBus = [...plans]
-    const minimum = Math.min(...busPlans.map((plan) => plan.length))
     for (let pass = 0; pass < maximumPasses; pass++) {
+      const minimum = Math.min(...busPlans.map((plan) => plan.length))
       let passChanged = false
       const overlong = busPlans
         .filter((plan) => plan.length > minimum + bus.maxLengthSkew! + EPSILON)
@@ -240,12 +240,16 @@ export function* rerouteOverlongBusLanesSteps(
           next = steps.next()
         }
         const candidate = next.value[0]?.[0]
-        if (
-          !candidate ||
-          candidate.length >= original.length - EPSILON ||
-          candidate.length < minimum - EPSILON
-        )
+        if (!candidate || candidate.length >= original.length - EPSILON)
           continue
+        const currentBusPlans = plans.filter((plan) => plan.busId === bus.busId)
+        const candidateBusPlans = currentBusPlans.map((plan) =>
+          plan.connectionIndex === original.connectionIndex ? candidate : plan,
+        )
+        // A shorter lane can become the new minimum and still improve the
+        // complete bus. Permit tied maxima to shorten without increasing skew;
+        // the whole bus must improve strictly before any changes are retained.
+        if (skew(candidateBusPlans) > skew(currentBusPlans) + EPSILON) continue
         const originalViaIndex = original.trace.route.findIndex(
           (point) => point.route_type === "via",
         )
