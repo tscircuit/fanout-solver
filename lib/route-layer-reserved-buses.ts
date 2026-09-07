@@ -233,6 +233,10 @@ export function* routeLayerReservedBusesSteps(
         tightViaChannels: true,
         ripCost: maximumBusSize <= 2 ? 256 : 64,
         maximumRipEvents: 400,
+        // A permitted transit retry can resolve this congestion directly.
+        // Reserve local rip-up repairs for the last available layer choice.
+        maximumLocalRepairAttempts:
+          transitLayers === transitChoices.at(-1) ? 3 : 0,
         maximumIterations: 100_000_000,
         shuffleSeed: 1,
       })
@@ -288,10 +292,11 @@ export function* routeLayerReservedBusesSteps(
         allowPairLaneSpreading: true,
         allowUnconstrainedLaneRerouting: true,
       })
-    let matched = matchCompletePlans()
-    if (!matched.plans) {
-      // Preserve a topology that already tunes successfully. Shortening can
-      // move neighboring copper, so use it only after direct tuning fails.
+    function* shortenCompletePlans(): Generator<
+      LayerReservedRoutingProgress,
+      void,
+      unknown
+    > {
       const shorteningSteps = rerouteOverlongBusLanesSteps({
         ...params,
         inputSrj: srj,
@@ -309,6 +314,18 @@ export function* routeLayerReservedBusesSteps(
         shortening = shorteningSteps.next()
       }
       completePlans = shortening.value ?? completePlans
+    }
+    // A wide bus restricted to one layer cannot use transit to shorten a
+    // detour. Remove avoidable winding before spending time on meanders.
+    const shortenFirst =
+      maximumBusSize > 2 &&
+      group.every((bus) => bus.allowedLayers?.length === 1)
+    if (shortenFirst) yield* shortenCompletePlans()
+    let matched = matchCompletePlans()
+    if (!matched.plans && !shortenFirst) {
+      // Preserve directly tunable pairs and flexible buses; moving their
+      // copper can occupy corridors needed by another layer group.
+      yield* shortenCompletePlans()
       matched = matchCompletePlans()
     }
     if (matched.plans) {
