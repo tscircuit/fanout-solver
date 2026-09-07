@@ -1,5 +1,7 @@
 interface ViaOccupantRouter {
   _viaOccs: number[]
+  usedCellsFlat?: Int32Array
+  sharedCellsFlat?: (number[] | undefined)[]
   fillViaOccupants(cellId: number, activeConnection: number): void
   pushFlatOccupants(
     flatIndex: number,
@@ -29,8 +31,16 @@ export function cacheViaOccupantNeighborhoods(router: ViaOccupantRouter): void {
     if (cached) {
       const occupants = router._viaOccs
       occupants.length = 0
-      for (let i = 0; i < cached.length; i++)
-        push(cached[i]!, activeConnection, occupants)
+      const primary = router.usedCellsFlat
+      const shared = router.sharedCellsFlat
+      for (let i = 0; i < cached.length; i++) {
+        const flat = cached[i]!
+        // Read both live stores: a cell can retain shared halo owners after
+        // its primary route is ripped up. Only truly empty cells skip the
+        // native ownership and duplicate checks.
+        if (primary && shared && primary[flat] === -1 && !shared[flat]) continue
+        push(flat, activeConnection, occupants)
+      }
       return
     }
     const visited: number[] = []
