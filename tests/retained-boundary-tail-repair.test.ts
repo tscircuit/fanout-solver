@@ -10,7 +10,7 @@ import { validateFanoutSolution } from "lib/validate-fanout-solution"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
 
-test("retained boundary tails repair an intact bus without moving source or supplied copper", async () => {
+test("retained boundary tails jointly repair neighboring buses without moving source or supplied copper", async () => {
   const bounds = { minX: -3, maxX: 3, minY: -3, maxY: 3 }
   const rules = {
     traceWidth: 0.08128,
@@ -21,8 +21,10 @@ test("retained boundary tails repair an intact bus without moving source or supp
   const layerNames = ["top", "inner1", "inner2", "bottom"]
   const sources = [
     { x: -2, y: -0.5 },
-    { x: -2, y: 2.5 },
+    { x: -2, y: 2.4 },
     { x: -2, y: 1 },
+    { x: -2, y: 1.95 },
+    { x: -2, y: 2.85 },
   ]
   const inputSrj: SimpleRouteJson = {
     bounds,
@@ -37,7 +39,7 @@ test("retained boundary tails repair an intact bus without moving source or supp
           pointId: `P${index}`,
           pcb_port_id: `P${index}`,
         },
-        ...(index < 2 ? [{ x: 3, y: point.y, layer: "bottom" }] : []),
+        ...(index !== 2 ? [{ x: 3, y: point.y, layer: "bottom" }] : []),
       ],
     })),
     traces: [
@@ -48,22 +50,22 @@ test("retained boundary tails repair an intact bus without moving source or supp
         route: [
           {
             route_type: "wire",
-            x: 0.5,
-            y: 2.8,
+            x: -0.5,
+            y: -2.85,
             layer: "top",
             width: rules.traceWidth,
           },
           {
             route_type: "wire",
-            x: 0.8,
-            y: 2.8,
+            x: -0.2,
+            y: -2.85,
             layer: "top",
             width: rules.traceWidth,
           },
           {
             route_type: "via",
-            x: 0.8,
-            y: 2.8,
+            x: -0.2,
+            y: -2.85,
             from_layer: "top",
             to_layer: "bottom",
             via_diameter: rules.viaDiameter,
@@ -71,15 +73,15 @@ test("retained boundary tails repair an intact bus without moving source or supp
           },
           {
             route_type: "wire",
-            x: 0.8,
-            y: 2.8,
+            x: -0.2,
+            y: -2.85,
             layer: "bottom",
             width: rules.traceWidth,
           },
           {
             route_type: "wire",
-            x: 1.1,
-            y: 2.8,
+            x: 0.1,
+            y: -2.85,
             layer: "bottom",
             width: rules.traceWidth,
           },
@@ -133,7 +135,16 @@ test("retained boundary tails repair an intact bus without moving source or supp
         direction: "right",
         preferredExit: "right",
         allowedLayers: ["bottom", "inner1"],
-        maxLengthSkew: 4.8,
+        maxLengthSkew: 1.5,
+      },
+      {
+        busId: "neighbor",
+        sourceComponentId: "U1",
+        connectionNames: ["N3", "N4"],
+        direction: "right",
+        preferredExit: "right",
+        allowedLayers: ["bottom", "inner1"],
+        maxLengthSkew: 1.5,
       },
       {
         busId: "plane",
@@ -213,10 +224,30 @@ test("retained boundary tails repair an intact bus without moving source or supp
     next = steps.next()
   }
   expect(phases.has("bus")).toBe(true)
+  expect(phases.has("layer")).toBe(true)
   const repaired = next.value!
   expect(repaired).not.toBeNull()
-  expect(repaired).toHaveLength(3)
+  expect(repaired).toHaveLength(5)
   expect(JSON.stringify({ inputSrj, preparedBuses, plans })).toBe(original)
+  for (const previous of plans) {
+    const current = repaired.find(
+      (plan) => plan.connectionIndex === previous.connectionIndex,
+    )!
+    expect(current.sourcePoint).toBe(previous.sourcePoint)
+    expect(current.via).toBe(previous.via)
+    expect(current.exitPoint).toBe(previous.exitPoint)
+    for (
+      let index = 0;
+      index < (previous.sourceEscapeSegmentCount ?? 1);
+      index++
+    )
+      expect(current.segments[index]).toBe(previous.segments[index])
+    const lastSourcePoint = previous.trace.route.findIndex(
+      (point) => point.route_type === "via",
+    )
+    for (let index = 0; index <= lastSourcePoint; index++)
+      expect(current.trace.route[index]).toBe(previous.trace.route[index])
+  }
   const changed = repaired.find((plan) => plan.connectionName === "N0")!
   const old = plans.find((plan) => plan.connectionName === "N0")!
   expect(changed.length).toBeLessThan(old.length)
@@ -268,7 +299,7 @@ test("retained boundary tails repair an intact bus without moving source or supp
       clearance: rules.clearance,
       allowBlindAndBuriedVias: false,
     }),
-  ).toMatchObject({ valid: true, brokenOutConnectionCount: 3, issues: [] })
+  ).toMatchObject({ valid: true, brokenOutConnectionCount: 5, issues: [] })
   expect(
     validateRoutedCopperDrc({
       inputSrj,
@@ -279,7 +310,7 @@ test("retained boundary tails repair an intact bus without moving source or supp
       clearance: rules.clearance,
       allowBlindAndBuriedVias: false,
     }),
-  ).toMatchObject({ valid: true, checkedTraceCount: 4, issues: [] })
+  ).toMatchObject({ valid: true, checkedTraceCount: 6, issues: [] })
   for (const plan of repaired)
     for (let index = 0; index < plan.segments.length; index++) {
       const segment = plan.segments[index]!,

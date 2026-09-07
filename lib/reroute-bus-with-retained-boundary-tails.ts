@@ -9,6 +9,8 @@ import {
   getAllRoutedTraceCopper,
   getRoutedTraceCopper,
 } from "./get-routed-trace-copper"
+import { matchBusPlanLengths } from "./match-bus-lengths"
+import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
 import { normalizeLayeredPath } from "./normalize-layered-path"
 import { fanoutPlansAreClear } from "./route-bus"
 import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
@@ -36,7 +38,7 @@ export interface RetainedBoundaryTailRepairParams {
 export interface RetainedBoundaryTailRepairProgress
   extends ReservedViaBusesProgress {
   busId: string
-  phase: "lane" | "bus"
+  phase: "lane" | "bus" | "layer"
 }
 
 const EPSILON = 1e-7
@@ -272,29 +274,9 @@ function normalizeJoinedPlan(
   }
 }
 
-/**
- * Repair an intact bus whose nested routing or clipped terminal cells prevent
- * shorter individual paths. Its valid boundary tails remain reserved while
- * the bus is rerouted to interior cuts. Every source, other bus and supplied
- * trace stays fixed; only complete buses satisfying the original skew return.
- */
-export function* rerouteBusWithRetainedBoundaryTailsSteps(
-  params: RetainedBoundaryTailRepairParams,
-): Generator<RetainedBoundaryTailRepairProgress, FanoutRoutePlan[] | null> {
-  const {
-    inputSrj,
-    preparedBuses,
-    layerNames,
-    traceWidth,
-    clearance,
-    viaDiameter,
-    viaHoleDiameter,
-  } = params
-  const maximumIterations = params.maximumIterationsPerAttempt ?? 10_000_000
-  if (!Number.isSafeInteger(maximumIterations) || maximumIterations < 1)
-    throw new Error(
-      "maximumIterationsPerAttempt must be a positive safe integer",
-    )
+function getSourceReservations(params: RetainedBoundaryTailRepairParams) {
+  const { inputSrj, preparedBuses, layerNames, viaDiameter, viaHoleDiameter } =
+    params
   const byIndex = new Map(params.plans.map((p) => [p.connectionIndex, p]))
   const connections = preparedBuses.flatMap((b) => b.connections)
   if (
@@ -337,6 +319,35 @@ export function* rerouteBusWithRetainedBoundaryTailsSteps(
       ...source.map((s) => s.end),
     ])
   }
+  return { fixed, sourcePaths }
+}
+
+/**
+ * Repair an intact bus whose nested routing or clipped terminal cells prevent
+ * shorter individual paths. Its valid boundary tails remain reserved while
+ * the bus is rerouted to interior cuts. Every source, other bus and supplied
+ * trace stays fixed; only complete buses satisfying the original skew return.
+ */
+function* rerouteIndividualBusesSteps(
+  params: RetainedBoundaryTailRepairParams,
+): Generator<RetainedBoundaryTailRepairProgress, FanoutRoutePlan[] | null> {
+  const {
+    inputSrj,
+    preparedBuses,
+    layerNames,
+    traceWidth,
+    clearance,
+    viaDiameter,
+    viaHoleDiameter,
+  } = params
+  const maximumIterations = params.maximumIterationsPerAttempt ?? 10_000_000
+  if (!Number.isSafeInteger(maximumIterations) || maximumIterations < 1)
+    throw new Error(
+      "maximumIterationsPerAttempt must be a positive safe integer",
+    )
+  const sources = getSourceReservations(params)
+  if (!sources) return null
+  const { fixed, sourcePaths } = sources
   let plans = [...params.plans]
   const selected = preparedBuses.filter(
     (b) =>
@@ -370,7 +381,7 @@ export function* rerouteBusWithRetainedBoundaryTailsSteps(
     const transitLayers = permitted.filter((l) => l !== targetLayer)
     if (!transitLayers.length) return null
     const route = (
-      selected: typeof connections,
+      selected: PreparedBus["connections"],
       exits: ReadonlyMap<number, Point2D>,
       acceptedPlans: readonly FanoutRoutePlan[],
     ) => {
@@ -496,6 +507,237 @@ export function* rerouteBusWithRetainedBoundaryTailsSteps(
       return null
     plans = combined
   }
+  const validation = validateRoutedCopperDrc({
+    inputSrj,
+    routedSrj: {
+      ...inputSrj,
+      traces: [
+        ...(inputSrj.traces ?? []),
+        ...plans.flatMap((p) => [
+          p.trace,
+          ...(p.planeEndpointTrace ? [p.planeEndpointTrace] : []),
+        ]),
+      ],
+    },
+    clearance,
+    allowBlindAndBuriedVias: false,
+  })
+  return validation.valid ? plans : null
+}
+
+/** Try neighboring buses together only after individual cleanup is exhausted. */
+export function* rerouteBusWithRetainedBoundaryTailsSteps(
+  params: RetainedBoundaryTailRepairParams,
+): Generator<RetainedBoundaryTailRepairProgress, FanoutRoutePlan[] | null> {
+  const individual = yield* rerouteIndividualBusesSteps(params)
+  if (individual) return individual
+  const reservations = getSourceReservations(params)
+  if (!reservations) return null
+  const { fixed, sourcePaths } = reservations
+  const { inputSrj, preparedBuses, layerNames, traceWidth, clearance } = params
+  const selected = preparedBuses.filter(
+    (bus) =>
+      bus.termination.type === "boundary" &&
+      bus.connections.length > 1 &&
+      bus.maxLengthSkew !== undefined &&
+      (!params.busIds || params.busIds.includes(bus.busId)),
+  )
+  const groups = new Map<string, PreparedBus[]>()
+  for (const bus of selected) {
+    const own = params.plans.filter((p) => p.busId === bus.busId)
+    if (own.length !== bus.connections.length || !bus.exitEdge) return null
+    const layer = own[0]!.targetLayer
+    if (
+      own.some(
+        (p) =>
+          p.targetLayer !== layer ||
+          p.planeEndpointTrace ||
+          p.planeEndpointSegments ||
+          p.planeEndpointVia,
+      )
+    )
+      return null
+    const key = `${layer}:${bus.exitEdge}`
+    groups.set(key, [...(groups.get(key) ?? []), bus])
+  }
+  let plans = [...params.plans]
+  for (const buses of groups.values()) {
+    const ids = new Set(buses.map((bus) => bus.busId))
+    const own = plans.filter((p) => ids.has(p.busId))
+    if (
+      buses.every(
+        (bus) =>
+          getSkew(own.filter((p) => p.busId === bus.busId)) <=
+          bus.maxLengthSkew! + EPSILON,
+      )
+    )
+      continue
+    if (buses.length < 2) return null
+    const targetLayer = own[0]!.targetLayer
+    const permitted = layerNames.filter((layer) =>
+      buses.every(
+        (bus) =>
+          (
+            bus.routableEscapeLayers ??
+            bus.allowedLayers ??
+            layerNames
+          ).includes(layer) &&
+          (bus.allowedLayers ?? layerNames).includes(layer),
+      ),
+    )
+    if (!permitted.includes(targetLayer)) return null
+    const transitLayers = permitted.filter((layer) => layer !== targetLayer)
+    if (!transitLayers.length) return null
+    const bounds = buses[0]!.sharedBoundary
+    const tailWidth = Math.min(
+      12 * (traceWidth + clearance),
+      (buses[0]!.exitEdge === "left" || buses[0]!.exitEdge === "right"
+        ? bounds.maxX - bounds.minX
+        : bounds.maxY - bounds.minY) / 3,
+    )
+    const tails = own.map((plan) =>
+      getRetainedTail(
+        plan,
+        buses.find((bus) => bus.busId === plan.busId)!,
+        tailWidth,
+      ),
+    )
+    if (tails.some((tail) => !tail)) return null
+    const retained = tails as FanoutRoutePlan[]
+    const others = plans.filter((plan) => !ids.has(plan.busId))
+    const steps = routeReservedViaBusesSteps({
+      ...params,
+      srj: inputSrj,
+      allBuses: preparedBuses,
+      buses,
+      targetLayer,
+      transitLayers,
+      terminals: buses.flatMap((bus) =>
+        bus.connections.map((connection) => ({
+          connection,
+          viaPoint: fixed.get(connection.connectionIndex)!,
+          exitPoint: retained.find(
+            (tail) => tail.connectionIndex === connection.connectionIndex,
+          )!.sourcePoint,
+        })),
+      ),
+      fixedViaPointsByConnectionIndex: fixed,
+      sourceEscapePaths: sourcePaths,
+      acceptedPlans: [...others, ...retained],
+      tightViaChannels: true,
+      includeDiagonalNeighbors: true,
+      heuristicWeight: 1,
+      // A lower rip penalty lets neighboring lanes negotiate instead of
+      // accepting a long detour merely to preserve an earlier provisional path.
+      ripCost: 8,
+      shuffleSeed: 1,
+      maximumIterations: params.maximumIterationsPerAttempt ?? 10_000_000,
+      maximumRipEvents: 200,
+      maximumLocalRepairAttempts: 0,
+    })
+    let next = steps.next()
+    while (!next.done) {
+      yield { ...next.value, busId: buses[0]!.busId, phase: "layer" }
+      next = steps.next()
+    }
+    if (!next.value || next.value.length !== own.length) return null
+    const routed = next.value
+    let combined = plans.map((original) => {
+      const replacement = routed.find(
+        (p) => p.connectionIndex === original.connectionIndex,
+      )
+      if (!replacement) return original
+      const plan = retainSource(original, replacement)
+      if (!plan)
+        throw new Error("Joint retained-tail routing lost its source via")
+      const tail = retained.find(
+        (p) => p.connectionIndex === original.connectionIndex,
+      )!
+      const route = [...plan.trace.route, ...tail.trace.route.slice(1)]
+      route[route.length - 1] = original.trace.route.at(-1)!
+      return {
+        ...plan,
+        trace: { ...original.trace, route },
+        segments: [...plan.segments, ...tail.segments],
+        length: plan.length + tail.length,
+      }
+    })
+    for (const original of own) {
+      const candidate = combined.find(
+        (p) => p.connectionIndex === original.connectionIndex,
+      )!
+      const normalized = normalizeJoinedPlan(
+        params,
+        candidate,
+        combined.filter((p) => p !== candidate),
+        buses.find((bus) => bus.busId === original.busId)!,
+      )
+      if (!normalized) return null
+      combined = combined.map((p) => (p === candidate ? normalized : p))
+    }
+    if (
+      !fanoutPlansAreClear({
+        plans: combined,
+        srj: inputSrj,
+        sharedBoundary: bounds,
+        clearance,
+        allowBlindAndBuriedVias: false,
+        allowSameNetMerges: false,
+      })
+    )
+      return null
+    combined =
+      shortcutFanoutPlans({
+        ...params,
+        plans: combined,
+        preparedBuses: buses,
+        selectedBusIds: ids,
+        allowBlindAndBuriedVias: false,
+      }) ?? combined
+    const matched = matchBusPlanLengths({
+      ...params,
+      plans: combined,
+      preparedBuses: buses,
+      sharedBoundary: bounds,
+      allowBlindAndBuriedVias: false,
+      allowSameNetMerges: false,
+      allowMatchingInsideDenseBounds: true,
+      allowPairLaneSpreading: true,
+      allowUnconstrainedLaneRerouting: true,
+      maximumWorkUnits: 1_000,
+    })
+    if (!matched.plans) return null
+    // Tuning may reconstruct segment metadata. Restore the exact original
+    // source objects and leave every unrelated complete plan untouched.
+    const tuned = matched.plans
+    combined = plans.map((original) => {
+      if (!ids.has(original.busId)) return original
+      const plan = tuned.find(
+        (p) => p.connectionIndex === original.connectionIndex,
+      )!
+      const restored = retainSource(original, plan)
+      if (!restored)
+        throw new Error("Joint retained-tail tuning lost its source via")
+      return restored
+    })
+    if (
+      buses.some(
+        (bus) =>
+          getSkew(combined.filter((p) => p.busId === bus.busId)) >
+          bus.maxLengthSkew! + EPSILON,
+      )
+    )
+      return null
+    plans = combined
+  }
+  if (
+    selected.some(
+      (bus) =>
+        getSkew(plans.filter((p) => p.busId === bus.busId)) >
+        bus.maxLengthSkew! + EPSILON,
+    )
+  )
+    return null
   const validation = validateRoutedCopperDrc({
     inputSrj,
     routedSrj: {
