@@ -183,6 +183,9 @@ export function* routeLayerReservedBusesSteps(
     const maximumBusSize = Math.max(
       ...group.map((bus) => bus.connections.length),
     )
+    const shortenFirst =
+      maximumBusSize > 2 &&
+      group.every((bus) => bus.allowedLayers?.length === 1)
     const transitLayers = layerNames.filter(
       (candidate) =>
         candidate !== layer &&
@@ -210,148 +213,161 @@ export function* routeLayerReservedBusesSteps(
     const transitChoices = [transitLayers]
     if (allTransitLayers.length > transitLayers.length)
       transitChoices.push(allTransitLayers)
-    let routedPlans: FanoutRoutePlan[] | null = null
-    for (const transitLayers of transitChoices) {
-      const steps = routeReservedViaBusesSteps({
-        ...params,
-        allBuses: buses,
-        buses: group,
-        targetLayer: layer,
-        transitLayers,
-        fixedViaPointsByConnectionIndex,
-        sourceEscapePaths,
-        acceptedPlans: accepted,
-        terminals: group.flatMap((bus) =>
-          bus.connections.map((connection) => ({
-            connection,
-            viaPoint: fixedViaPointsByConnectionIndex.get(
-              connection.connectionIndex,
-            )!,
-            exitPoint: targets.exits.get(connection.connectionIndex)!,
-          })),
-        ),
-        tightViaChannels: true,
-        ripCost: maximumBusSize <= 2 ? 256 : 64,
-        maximumRipEvents: 400,
-        // A permitted transit retry can resolve this congestion directly.
-        // Reserve local rip-up repairs for the last available layer choice.
-        maximumLocalRepairAttempts:
-          transitLayers === transitChoices.at(-1) ? 3 : 0,
-        maximumIterations: 100_000_000,
-        shuffleSeed: 1,
-      })
-      let next = steps.next()
-      while (!next.done) {
-        yield {
-          phase: "route-layer",
-          layer,
-          routedConnectionCount:
-            accepted.length + next.value.routedConnectionCount,
-          iterations: next.value.iterations,
+    const previousAccepted = accepted
+    const routingCosts = shortenFirst
+      ? [64, 256]
+      : [maximumBusSize <= 2 ? 256 : 64]
+    let groupCompleted = false
+    for (const ripCost of routingCosts) {
+      // A different congestion cost can remove a length trap in a complete
+      // single-layer topology. Retry from the same committed reservations.
+      accepted = previousAccepted
+      for (const bus of group) completed.delete(bus.busId)
+      let routedPlans: FanoutRoutePlan[] | null = null
+      for (const transitLayers of transitChoices) {
+        const steps = routeReservedViaBusesSteps({
+          ...params,
+          allBuses: buses,
+          buses: group,
+          targetLayer: layer,
+          transitLayers,
+          fixedViaPointsByConnectionIndex,
+          sourceEscapePaths,
+          acceptedPlans: accepted,
+          terminals: group.flatMap((bus) =>
+            bus.connections.map((connection) => ({
+              connection,
+              viaPoint: fixedViaPointsByConnectionIndex.get(
+                connection.connectionIndex,
+              )!,
+              exitPoint: targets.exits.get(connection.connectionIndex)!,
+            })),
+          ),
+          tightViaChannels: true,
+          ripCost,
+          maximumRipEvents: 400,
+          // A permitted transit retry can resolve this congestion directly.
+          // Reserve local rip-up repairs for the last available layer choice.
+          maximumLocalRepairAttempts:
+            transitLayers === transitChoices.at(-1) ? 3 : 0,
+          maximumIterations: 100_000_000,
+          shuffleSeed: 1,
+        })
+        let next = steps.next()
+        while (!next.done) {
+          yield {
+            phase: "route-layer",
+            layer,
+            routedConnectionCount:
+              accepted.length + next.value.routedConnectionCount,
+            iterations: next.value.iterations,
+          }
+          next = steps.next()
         }
-        next = steps.next()
-      }
-      if (next.value) {
-        routedPlans = next.value
-        break
-      }
-    }
-    if (!routedPlans) return null
-    accepted.push(...routedPlans)
-    for (const bus of group) completed.add(bus.busId)
-    yield {
-      phase: "match-layer",
-      layer,
-      routedConnectionCount: accepted.length,
-    }
-    const routed = new Set(accepted.map((plan) => plan.connectionIndex))
-    let completePlans = [
-      ...accepted,
-      ...sourcePlans.filter((plan) => !routed.has(plan.connectionIndex)),
-    ]
-    const completedBuses = buses.filter((bus) => completed.has(bus.busId))
-    completePlans =
-      shortcutFanoutPlans({
-        ...params,
-        inputSrj: srj,
-        plans: completePlans,
-        preparedBuses: completedBuses,
-        selectedBusIds: new Set(group.map((bus) => bus.busId)),
-        allowBlindAndBuriedVias: false,
-      }) ?? completePlans
-    const matchCompletePlans = () =>
-      matchBusPlanLengths({
-        ...params,
-        inputSrj: srj,
-        sharedBoundary: buses[0]!.sharedBoundary,
-        plans: completePlans,
-        preparedBuses: completedBuses,
-        allowBlindAndBuriedVias: false,
-        allowSameNetMerges: false,
-        allowMatchingInsideDenseBounds: true,
-        allowPairLaneSpreading: true,
-        allowUnconstrainedLaneRerouting: true,
-      })
-    function* shortenCompletePlans(): Generator<
-      LayerReservedRoutingProgress,
-      void,
-      unknown
-    > {
-      const shorteningSteps = rerouteOverlongBusLanesSteps({
-        ...params,
-        inputSrj: srj,
-        plans: completePlans,
-        preparedBuses: buses,
-        selectedBusIds: new Set(group.map((bus) => bus.busId)),
-      })
-      let shortening = shorteningSteps.next()
-      while (!shortening.done) {
-        yield {
-          phase: "repair-lengths",
-          layer,
-          routedConnectionCount: accepted.length,
+        if (next.value) {
+          routedPlans = next.value
+          break
         }
-        shortening = shorteningSteps.next()
       }
-      completePlans = shortening.value ?? completePlans
-    }
-    // A wide bus restricted to one layer cannot use transit to shorten a
-    // detour. Remove avoidable winding before spending time on meanders.
-    const shortenFirst =
-      maximumBusSize > 2 &&
-      group.every((bus) => bus.allowedLayers?.length === 1)
-    if (shortenFirst) yield* shortenCompletePlans()
-    let matched = matchCompletePlans()
-    if (!matched.plans && !shortenFirst) {
-      // Preserve directly tunable pairs and flexible buses; moving their
-      // copper can occupy corridors needed by another layer group.
-      yield* shortenCompletePlans()
-      matched = matchCompletePlans()
-    }
-    if (matched.plans) {
-      completePlans = matched.plans
-    } else {
-      const repairSteps = repairBusLengthsWithTransitSteps({
-        ...params,
-        inputSrj: srj,
-        plans: completePlans,
-        preparedBuses: buses,
-        busIds: group.map((bus) => bus.busId),
-      })
-      let repair = repairSteps.next()
-      while (!repair.done) {
-        yield {
-          phase: "repair-lengths",
-          layer,
-          routedConnectionCount: accepted.length,
-          iterations: repair.value.iterations,
+      if (!routedPlans) return null
+      accepted = [...accepted, ...routedPlans]
+      for (const bus of group) completed.add(bus.busId)
+      yield {
+        phase: "match-layer",
+        layer,
+        routedConnectionCount: accepted.length,
+      }
+      const routed = new Set(accepted.map((plan) => plan.connectionIndex))
+      let completePlans = [
+        ...accepted,
+        ...sourcePlans.filter((plan) => !routed.has(plan.connectionIndex)),
+      ]
+      const completedBuses = buses.filter((bus) => completed.has(bus.busId))
+      completePlans =
+        shortcutFanoutPlans({
+          ...params,
+          inputSrj: srj,
+          plans: completePlans,
+          preparedBuses: completedBuses,
+          selectedBusIds: new Set(group.map((bus) => bus.busId)),
+          allowBlindAndBuriedVias: false,
+        }) ?? completePlans
+      const matchCompletePlans = () =>
+        matchBusPlanLengths({
+          ...params,
+          inputSrj: srj,
+          sharedBoundary: buses[0]!.sharedBoundary,
+          plans: completePlans,
+          preparedBuses: completedBuses,
+          allowBlindAndBuriedVias: false,
+          allowSameNetMerges: false,
+          allowMatchingInsideDenseBounds: true,
+          allowPairLaneSpreading: true,
+          allowUnconstrainedLaneRerouting: true,
+        })
+      function* shortenCompletePlans(): Generator<
+        LayerReservedRoutingProgress,
+        void,
+        unknown
+      > {
+        const shorteningSteps = rerouteOverlongBusLanesSteps({
+          ...params,
+          inputSrj: srj,
+          plans: completePlans,
+          preparedBuses: buses,
+          selectedBusIds: new Set(group.map((bus) => bus.busId)),
+        })
+        let shortening = shorteningSteps.next()
+        while (!shortening.done) {
+          yield {
+            phase: "repair-lengths",
+            layer,
+            routedConnectionCount: accepted.length,
+          }
+          shortening = shorteningSteps.next()
         }
-        repair = repairSteps.next()
+        completePlans = shortening.value ?? completePlans
       }
-      if (!repair.value) return null
-      completePlans = repair.value
+      // A wide bus restricted to one layer cannot use transit to shorten a
+      // detour. Remove avoidable winding before spending time on meanders.
+      if (shortenFirst) yield* shortenCompletePlans()
+      let matched = matchCompletePlans()
+      if (!matched.plans && !shortenFirst) {
+        // Preserve directly tunable pairs and flexible buses; moving their
+        // copper can occupy corridors needed by another layer group.
+        yield* shortenCompletePlans()
+        matched = matchCompletePlans()
+      }
+      if (matched.plans) {
+        completePlans = matched.plans
+      } else {
+        const repairSteps = repairBusLengthsWithTransitSteps({
+          ...params,
+          inputSrj: srj,
+          plans: completePlans,
+          preparedBuses: buses,
+          busIds: group.map((bus) => bus.busId),
+        })
+        let repair = repairSteps.next()
+        while (!repair.done) {
+          yield {
+            phase: "repair-lengths",
+            layer,
+            routedConnectionCount: accepted.length,
+            iterations: repair.value.iterations,
+          }
+          repair = repairSteps.next()
+        }
+        if (!repair.value) continue
+        completePlans = repair.value
+      }
+      accepted = completePlans.filter((plan) =>
+        routed.has(plan.connectionIndex),
+      )
+      groupCompleted = true
+      break
     }
-    accepted = completePlans.filter((plan) => routed.has(plan.connectionIndex))
+    if (!groupCompleted) return null
   }
   return [
     ...accepted,
