@@ -10,8 +10,9 @@ import {
   dataset31Source,
 } from "../scripts/generate-repro/dataset31-source"
 
-// Render all 36 upstream circuits sequentially; this is capture/transport coverage,
-// separate from the benchmark's per-sample routing deadline.
+// Render all 48 upstream circuits sequentially; this is capture/transport coverage,
+// separate from the benchmark's per-sample routing deadline. The 400s capture
+// allowance scales the previous 300s budget for 36 circuits to all 48 circuits.
 test("dataset 31 capture preserves every upstream connection, obstacle, and bus constraint", async () => {
   const directory = await mkdtemp(join(tmpdir(), "fanout-dataset31-capture-"))
   try {
@@ -19,18 +20,19 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
       benchmarkSamples.map((sample) => sample.id),
       directory,
     )
-    expect(samples).toHaveLength(36)
+    expect(samples).toHaveLength(48)
     expect(samples.map((sample) => sample.id)).toEqual(
       DATASET31_DIRECTION_CASES.map((sample) => sample.id),
     )
     const definitionsById = new Map(
       DATASET31_DIRECTION_CASES.map((sample) => [sample.id, sample]),
     )
-    const chips = { am62l: 0, rk3308: 0, k230: 0 }
+    const chips = { am62l: 0, rk3308: 0, k230: 0, imx6ull: 0 }
     const edges = {
       am62l: new Set<string>(),
       rk3308: new Set<string>(),
       k230: new Set<string>(),
+      imx6ull: new Set<string>(),
     }
     const expectedByChip = {
       am62l: {
@@ -60,6 +62,15 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
         byte1Bus: "LP4_A_BYTE1",
         byte1Skew: 8,
       },
+      imx6ull: {
+        connections: 102,
+        obstacles: 385,
+        pairs: 3,
+        buses: 62,
+        planes: 53,
+        byte1Bus: "DDR_BYTE1",
+        byte1Skew: 8,
+      },
     }
     const uniqueInputs = new Set<string>()
     for (const sample of samples) {
@@ -86,6 +97,33 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
           (bus) => bus.busId === expected.byte1Bus,
         )?.maxLengthSkew,
       ).toBe(expected.byte1Skew)
+      if (definition.chip === "imx6ull") {
+        expect(sample.solverOptions?.escapeLayers).toEqual([
+          "top",
+          "inner4",
+          "inner5",
+          "inner6",
+          "bottom",
+        ])
+        for (const [layer, count] of [
+          ["inner1", 47],
+          ["inner2", 6],
+        ] as const)
+          expect(
+            sample.solverOptions?.buses?.filter(
+              (bus) =>
+                bus.termination?.type === "plane" &&
+                bus.termination.layer === layer,
+            ),
+          ).toHaveLength(count)
+        const padCounts = new Map<string | undefined, number>()
+        for (const obstacle of sample.simpleRouteJson.obstacles)
+          padCounts.set(
+            obstacle.componentId,
+            (padCounts.get(obstacle.componentId) ?? 0) + 1,
+          )
+        expect([...padCounts.values()].sort((a, b) => a - b)).toEqual([96, 289])
+      }
       // No callbacks or non-JSON constraints may be lost in worker transport.
       expect(JSON.parse(JSON.stringify(sample))).toEqual(sample)
       const captured = await Bun.file(
@@ -105,8 +143,8 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
       expect(captured.directionCase.exitEdge).toBe(definition.exitEdge)
       edges[definition.chip].add(captured.directionCase.exitEdge)
     }
-    expect(uniqueInputs.size).toBe(36)
-    expect(chips).toEqual({ am62l: 12, rk3308: 12, k230: 12 })
+    expect(uniqueInputs.size).toBe(48)
+    expect(chips).toEqual({ am62l: 12, rk3308: 12, k230: 12, imx6ull: 12 })
     for (const chipEdges of Object.values(edges))
       expect(chipEdges).toEqual(new Set(["top", "right", "bottom", "left"]))
     // Prove the existing RAM-left repro is unchanged by the new capture path.
@@ -117,4 +155,4 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
-}, 300_000)
+}, 400_000)

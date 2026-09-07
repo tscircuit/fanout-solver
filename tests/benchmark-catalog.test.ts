@@ -6,15 +6,17 @@ import {
 import {
   DATASET31_DIRECTION_CASES,
   FANOUT_DIRECTION_CASES,
+  IMX6ULL_FANOUT_DIRECTION_CASES,
   K230_FANOUT_DIRECTION_CASES,
   RK3308_FANOUT_DIRECTION_CASES,
 } from "../scripts/generate-repro/dataset31-source"
 
-test("benchmark includes all three upstream dataset 31 families and rejects other datasets", () => {
-  expect(benchmarkSamples).toHaveLength(36)
+test("benchmark includes all four upstream dataset 31 families and rejects other datasets", () => {
+  expect(benchmarkSamples).toHaveLength(48)
   expect(FANOUT_DIRECTION_CASES).toHaveLength(12)
   expect(RK3308_FANOUT_DIRECTION_CASES).toHaveLength(12)
   expect(K230_FANOUT_DIRECTION_CASES).toHaveLength(12)
+  expect(IMX6ULL_FANOUT_DIRECTION_CASES).toHaveLength(12)
   expect(
     DATASET31_DIRECTION_CASES.filter((sample) => sample.chip === "am62l"),
   ).toHaveLength(12)
@@ -23,6 +25,9 @@ test("benchmark includes all three upstream dataset 31 families and rejects othe
   ).toHaveLength(12)
   expect(
     DATASET31_DIRECTION_CASES.filter((sample) => sample.chip === "k230"),
+  ).toHaveLength(12)
+  expect(
+    DATASET31_DIRECTION_CASES.filter((sample) => sample.chip === "imx6ull"),
   ).toHaveLength(12)
   expect(benchmarkSamples.map((sample) => sample.id)).toEqual(
     DATASET31_DIRECTION_CASES.map((sample) => sample.id),
@@ -33,11 +38,16 @@ test("benchmark includes all three upstream dataset 31 families and rejects othe
   expect(benchmarkSamples.slice(12, 24).map((sample) => sample.id)).toEqual(
     RK3308_FANOUT_DIRECTION_CASES.map((sample) => sample.id),
   )
-  expect(benchmarkSamples.slice(24).map((sample) => sample.id)).toEqual(
+  expect(benchmarkSamples.slice(24, 36).map((sample) => sample.id)).toEqual(
     K230_FANOUT_DIRECTION_CASES.map((sample) => sample.id),
+  )
+  expect(benchmarkSamples.slice(36).map((sample) => sample.id)).toEqual(
+    IMX6ULL_FANOUT_DIRECTION_CASES.map((sample) => sample.id),
   )
   expect(benchmarkSamples[24]?.id).toBe("25-k230-top-left-offset")
   expect(benchmarkSamples[35]?.id).toBe("36-k230-left-top-offset")
+  expect(benchmarkSamples[36]?.id).toBe("37-imx6ull-top-left-offset")
+  expect(benchmarkSamples[47]?.id).toBe("48-imx6ull-left-top-offset")
   expect(new Set(benchmarkSamples.map((sample) => sample.dataset))).toEqual(
     new Set(["dataset31"]),
   )
@@ -78,6 +88,12 @@ test("benchmark includes all three upstream dataset 31 families and rejects othe
   expect(
     selectBenchmarkSamples({ sample: "dataset31/36-k230-left-top-offset" }),
   ).toEqual([benchmarkSamples[35]])
+  expect(
+    selectBenchmarkSamples({ sample: "37-imx6ull-top-left-offset" }),
+  ).toEqual([benchmarkSamples[36]])
+  expect(
+    selectBenchmarkSamples({ sample: "dataset31/48-imx6ull-left-top-offset" }),
+  ).toEqual([benchmarkSamples[47]])
   expect(selectBenchmarkSamples({ limit: 2 })).toHaveLength(2)
   expect(() => selectBenchmarkSamples({ sample: "missing" })).toThrow(
     "No benchmark samples",
