@@ -3,6 +3,7 @@ import {
   type PackedBoundaryBusInterval,
 } from "./pack-boundary-bus-intervals"
 import type { LayerReservedBusesParams } from "./route-layer-reserved-buses"
+import { mergeLayeredBoundaryTargets } from "./merge-layered-boundary-targets"
 import type { Point2D, PreparedBus } from "./types"
 
 const boundaryPoint = (bus: PreparedBus, track: number): Point2D => {
@@ -162,5 +163,8 @@ export function getMultiEdgeBusTargets(params: LayerReservedBusesParams) {
           packed.tracksByConnectionIndex.get(connection.connectionIndex)!,
         ),
       )
-  return { targetLayerByBusId, exits }
+  return {
+    targetLayerByBusId,
+    exits: mergeLayeredBoundaryTargets({ buses, exits }),
+  }
 }
