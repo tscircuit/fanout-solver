@@ -37,6 +37,7 @@ export interface RouteReservedViaBusesParams {
   allBuses: readonly PreparedBus[]
   buses: readonly PreparedBus[]
   targetLayer: string
+  /** Optional bus-permitted transit layers. Source-origin paths never return to TOP. */
   transitLayers?: readonly string[]
   terminals: readonly ViaMinimalWindingTerminal[]
   fixedViaPointsByConnectionIndex: ReadonlyMap<number, Point2D>
@@ -301,6 +302,7 @@ function convertRoutes(
       ...params,
       bus,
       terminal,
+      targetLayer: params.layerNames[points[0]!.z]!,
       targetLayerPoints: [terminal.viaPoint, terminal.exitPoint],
       sourceEscapePoints: sourcePoints,
       allowBlindAndBuriedVias: false,
@@ -361,6 +363,7 @@ function convertRoutes(
     }
     plans.push({
       ...base,
+      targetLayer: params.targetLayer,
       trace: { ...base.trace, route: traceRoute },
       segments,
       additionalVias,
@@ -417,12 +420,8 @@ export function* routeReservedViaBusesSteps(
   const sourceTravelCost = params.sourceLayerTravelCost ?? 1
   if (!Number.isFinite(sourceTravelCost) || sourceTravelCost < 1)
     throw new Error("sourceLayerTravelCost must be finite and at least one")
-  if (sourceOrigin && params.transitLayers?.length)
-    throw new Error(
-      "Source-origin routing permits only one source-to-target transition",
-    )
   const routingLayers = sourceOrigin
-    ? [...new Set([targetLayer, "top"])]
+    ? [...new Set([targetLayer, "top", ...(params.transitLayers ?? [])])]
     : [...new Set([targetLayer, ...(params.transitLayers ?? [])])]
   const targetZ = layerNames.indexOf(targetLayer)
   if (
@@ -897,7 +896,7 @@ export function* routeReservedViaBusesSteps(
     if (
       !allowedLayersByConnection[connectionId]![z] ||
       (isVia &&
-        ((sourceOrigin && layer !== targetLayer) || !extraViaIsClear(nextCell)))
+        ((sourceOrigin && layer === "top") || !extraViaIsClear(nextCell)))
     ) {
       router._moveCost = -1
       return
@@ -1053,9 +1052,8 @@ export function* routeReservedViaBusesSteps(
         route.route
           .slice(0, transition)
           .some((p) => layerNames[p.z] !== "top") ||
-        route.route
-          .slice(transition)
-          .some((p) => layerNames[p.z] !== targetLayer) ||
+        route.route.slice(transition).some((p) => layerNames[p.z] === "top") ||
+        layerNames[route.route.at(-1)!.z] !== targetLayer ||
         distance(route.route[transition - 1]!, route.route[transition]!) > 1e-7
       )
         return null
@@ -1164,9 +1162,8 @@ export function* routeReservedViaBusesSteps(
         normalized
           .slice(0, transition)
           .some((p) => layerNames[p.z] !== "top") ||
-        normalized
-          .slice(transition)
-          .some((p) => layerNames[p.z] !== targetLayer)
+        normalized.slice(transition).some((p) => layerNames[p.z] === "top") ||
+        layerNames[normalized.at(-1)!.z] !== targetLayer
       )
         return null
       const via = normalized[transition]!
