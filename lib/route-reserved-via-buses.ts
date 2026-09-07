@@ -1097,16 +1097,25 @@ export function* routeReservedViaBusesSteps(
       const normalized = normalizeLayeredPath({
         points: compactPoints(route.route),
         chamfer: traceWidth / 4,
-        segmentIsClear: (a, b) =>
-          withinBounds(a) &&
-          withinBounds(b) &&
-          segmentIsClear(
+        segmentIsClear: (a, b) => {
+          for (const point of [a, b]) {
+            if (!withinBounds(point)) return false
+            const onBoundary =
+              Math.abs(point.x - bounds.minX) < 1e-7 ||
+              Math.abs(point.x - bounds.maxX) < 1e-7 ||
+              Math.abs(point.y - bounds.minY) < 1e-7 ||
+              Math.abs(point.y - bounds.maxY) < 1e-7
+            if (onBoundary && distance(point, terminal.exitPoint) > 1e-7)
+              return false
+          }
+          return segmentIsClear(
             a,
             b,
             layerNames[a.z]!,
             route.connectionName,
             normalizationIndex.nearby(a, b),
-          ),
+          )
+        },
       })
       if (!normalized) return null
       const transition = normalized.findIndex(

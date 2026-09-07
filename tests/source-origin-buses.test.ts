@@ -6,7 +6,11 @@ import {
   getLayerReservedBusTargets,
   routeLayerReservedBusesSteps,
 } from "lib/route-layer-reserved-buses"
-import { prepareSourceOriginReservations } from "lib/route-source-origin-buses"
+import {
+  prepareSourceOriginReservations,
+  routeSourceOriginBusesSteps,
+  shouldUseSourceOriginRouting,
+} from "lib/route-source-origin-buses"
 import { routeReservedViaBusesSteps } from "lib/route-reserved-via-buses"
 import { buildOutputSimpleRouteJson } from "lib/build-output"
 import type { FanoutBusSpec } from "lib/types"
@@ -99,8 +103,10 @@ test("a whole bus can choose first vias beyond a blocked target layer without mo
     srj,
     prepared,
     sites: [...initial.fixedViaPointsByConnectionIndex],
+    paths: [...initial.sourceEscapePaths],
+    sourcePlans: initial.sourcePlans,
   })
-  const fixedSteps = routeReservedViaBusesSteps({
+  const routeParams = {
     ...params,
     allBuses: prepared,
     buses: [bus],
@@ -118,10 +124,94 @@ test("a whole bus can choose first vias beyond a blocked target layer without mo
     maximumRipEvents: 1,
     maximumLocalRepairAttempts: 0,
     tightViaChannels: true,
-  })
+  }
+  const fixedSteps = routeReservedViaBusesSteps(routeParams)
   let fixed = fixedSteps.next()
   while (!fixed.done) fixed = fixedSteps.next()
   expect(fixed.value).toBeNull()
+  const originSteps = routeSourceOriginBusesSteps(routeParams)
+  let origin = originSteps.next()
+  while (!origin.done) origin = originSteps.next()
+  const transaction = origin.value!
+  expect(transaction).not.toBeNull()
+  expect(transaction.fixedViaPointsByConnectionIndex).not.toBe(
+    initial.fixedViaPointsByConnectionIndex,
+  )
+  expect(transaction.sourceEscapePaths).not.toBe(initial.sourceEscapePaths)
+  expect(transaction.sourcePlans).toHaveLength(srj.connections.length)
+  for (const sourcePlan of transaction.sourcePlans) {
+    const index = sourcePlan.connectionIndex
+    expect(sourcePlan.via!.center).toEqual(
+      transaction.fixedViaPointsByConnectionIndex.get(index)!,
+    )
+    const path = transaction.sourceEscapePaths.get(index)!
+    expect(path[0]).toEqual(sourcePlan.sourcePoint)
+    expect(path.at(-1)).toEqual(sourcePlan.via!.center)
+    expect(path).toEqual([
+      sourcePlan.sourcePoint,
+      ...sourcePlan.segments
+        .slice(0, sourcePlan.sourceEscapeSegmentCount)
+        .map((segment) => segment.end),
+    ])
+    if (sourcePlan.termination.type === "plane") {
+      expect(path).toEqual(initial.sourceEscapePaths.get(index)!)
+      expect(sourcePlan).toEqual(
+        initial.sourcePlans.find((plan) => plan.connectionIndex === index)!,
+      )
+    } else {
+      const routedPlan = transaction.plans.find(
+        (plan) => plan.connectionIndex === index,
+      )!
+      expect(sourcePlan.via!.center).toEqual(routedPlan.via!.center)
+    }
+  }
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: srj,
+      routedSrj: {
+        ...srj,
+        traces: transaction.sourcePlans.map((plan) => plan.trace),
+      },
+      clearance: rules.clearance,
+      allowBlindAndBuriedVias: false,
+    }).issues,
+  ).toEqual([])
+
+  // Eligibility depends on source-field geometry, not bus or component names.
+  const denseBus = {
+    ...bus,
+    exitEdge: "top" as const,
+    connections: bus.connections.flatMap((connection, row) =>
+      Array.from({ length: 4 }, (_, column) => ({
+        ...connection,
+        connectionIndex: row * 4 + column,
+        sourcePoint: {
+          ...connection.sourcePoint,
+          x: connection.sourcePoint.x - column * 0.04,
+          y: connection.sourcePoint.y,
+        },
+      })),
+    ),
+  }
+  const densePlanes = {
+    ...prepared.find((candidate) => candidate.termination.type === "plane")!,
+    connections: denseBus.connections.map((connection) => ({
+      ...connection,
+      connectionIndex: connection.connectionIndex + 16,
+    })),
+  }
+  expect(shouldUseSourceOriginRouting([denseBus, densePlanes], false)).toBe(
+    true,
+  )
+  expect(
+    shouldUseSourceOriginRouting(
+      [{ ...denseBus, exitEdge: "right" }, densePlanes],
+      false,
+    ),
+  ).toBe(false)
+  expect(shouldUseSourceOriginRouting([denseBus, densePlanes], true)).toBe(
+    false,
+  )
   const steps = routeLayerReservedBusesSteps({
     ...params,
     sourceOriginRouting: true,
@@ -138,6 +228,24 @@ test("a whole bus can choose first vias beyond a blocked target layer without mo
       Math.min(...address.map((p) => p.length)),
   ).toBeLessThanOrEqual(15 + 1e-7)
   for (const plan of plans) {
+    for (const [index, segment] of plan.segments.entries()) {
+      const dx = segment.end.x - segment.start.x,
+        dy = segment.end.y - segment.start.y
+      expect(
+        Math.abs(dx) < 1e-7 ||
+          Math.abs(dy) < 1e-7 ||
+          Math.abs(Math.abs(dx) - Math.abs(dy)) < 1e-7,
+      ).toBe(true)
+      const previous = plan.segments[index - 1]
+      if (!previous || previous.layer !== segment.layer) continue
+      const previousDx = previous.end.x - previous.start.x,
+        previousDy = previous.end.y - previous.start.y,
+        lengths = Math.hypot(dx, dy) * Math.hypot(previousDx, previousDy)
+      if (lengths > 1e-12)
+        expect(
+          (dx * previousDx + dy * previousDy) / lengths,
+        ).toBeGreaterThanOrEqual(Math.SQRT1_2 - 1e-7)
+    }
     expect(plan.via!.spanLayers).toEqual(layerNames)
     if (plan.termination.type === "plane")
       expect(plan.via!.center).toEqual(
@@ -150,6 +258,20 @@ test("a whole bus can choose first vias beyond a blocked target layer without mo
       expect(plan.additionalVias ?? []).toHaveLength(0)
       expect(plan.targetLayer).toBe("inner2")
       expect(plan.exitPoint).toEqual(target.exits.get(plan.connectionIndex)!)
+      for (const segment of plan.segments)
+        for (const point of [segment.start, segment.end])
+          if (
+            Math.abs(point.x - bounds.minX) < 1e-7 ||
+            Math.abs(point.x - bounds.maxX) < 1e-7 ||
+            Math.abs(point.y - bounds.minY) < 1e-7 ||
+            Math.abs(point.y - bounds.maxY) < 1e-7
+          )
+            expect(
+              Math.hypot(
+                point.x - plan.exitPoint.x,
+                point.y - plan.exitPoint.y,
+              ),
+            ).toBeLessThan(1e-7)
       const vias = plan.trace.route.filter(
         (point) => point.route_type === "via",
       )
@@ -167,6 +289,8 @@ test("a whole bus can choose first vias beyond a blocked target layer without mo
       srj,
       prepared,
       sites: [...initial.fixedViaPointsByConnectionIndex],
+      paths: [...initial.sourceEscapePaths],
+      sourcePlans: initial.sourcePlans,
     }),
   ).toBe(before)
   const output = buildOutputSimpleRouteJson({

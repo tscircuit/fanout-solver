@@ -299,6 +299,17 @@ export function repairBoundaryRouteTails(
     // Include both members of every conflict, even when one individual path
     // could already be normalized: its final approach may fence its neighbor.
     const selected = new Set<FanoutRoutePlan>()
+    for (const plan of group)
+      if (
+        lastLayerPath(plan)
+          .points.slice(0, -1)
+          .some(
+            (point) =>
+              Math.abs(inward(point, edge, boundary)) <= EPSILON &&
+              distance(point, plan.exitPoint) > EPSILON,
+          )
+      )
+        selected.add(plan)
     for (let i = 0; i < group.length; i++)
       for (let j = i + 1; j < group.length; j++) {
         if (
