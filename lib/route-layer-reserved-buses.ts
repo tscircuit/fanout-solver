@@ -463,6 +463,11 @@ function* routeLayerReservedAttemptSteps(
         }) ?? completePlans
       let allowSourcePrefixMatching =
         attempt.routeFromSourcePads && preferMappedSourceOrigin
+      let sourceReservationsChanged = attempt.routeFromSourcePads ?? false
+      const repairConstrainedSourcePairs =
+        params.sourceOriginRouting === true &&
+        maximumBusSize <= 2 &&
+        previousAccepted.length > 0
       const matchCompletePlans = (maximumWorkUnits?: number) =>
         matchBusPlanLengths({
           ...params,
@@ -505,7 +510,7 @@ function* routeLayerReservedAttemptSteps(
       // detour. Remove avoidable winding before spending time on meanders.
       if (shortenFirst) yield* shortenCompletePlans()
       let matched = matchCompletePlans(shortenFirst ? undefined : 1_000)
-      if (!matched.plans && !shortenFirst) {
+      if (!matched.plans && !shortenFirst && !repairConstrainedSourcePairs) {
         // Preserve directly tunable pairs and flexible buses; moving their
         // copper can occupy corridors needed by another layer group.
         yield* shortenCompletePlans()
@@ -522,33 +527,55 @@ function* routeLayerReservedAttemptSteps(
       }
       if (
         !matched.plans &&
-        matched.failedBus &&
-        attempt.routeFromSourcePads &&
-        (opposedPairs || preferMappedSourceOrigin)
+        (repairConstrainedSourcePairs ||
+          (matched.failedBus &&
+            attempt.routeFromSourcePads &&
+            (opposedPairs || preferMappedSourceOrigin)))
       ) {
         // Repair a whole pair, or at most two actual overlong lanes. All
         // replacements stay provisional until the complete layer group fits
         // its original length limits; ordinary source reservations survive a
         // failed transaction unchanged.
-        const repairSteps = rerouteSourceOriginLengthsSteps({
-          ...params,
-          inputSrj: srj,
-          plans: completePlans,
-          preparedBuses: buses,
-          bus: matched.failedBus,
-        })
-        let repair = repairSteps.next()
-        while (!repair.done) {
-          yield {
-            phase: "repair-lengths",
-            layer,
-            routedConnectionCount: accepted.length,
-            iterations: repair.value.iterations,
+        const originalPlans = completePlans
+        const originalPrefixMatching = allowSourcePrefixMatching
+        const originalReservationsChanged = sourceReservationsChanged
+        const repairedPairs = new Set<string>()
+        const maximumRepairs = repairConstrainedSourcePairs
+          ? group.filter((bus) => bus.connections.length === 2).length
+          : 1
+        for (let repairIndex = 0; repairIndex < maximumRepairs; repairIndex++) {
+          if (!matched.failedBus || matched.plans) break
+          const failedBus = matched.failedBus
+          if (repairConstrainedSourcePairs) {
+            if (
+              failedBus.connections.length !== 2 ||
+              !group.some((bus) => bus.busId === failedBus.busId) ||
+              repairedPairs.has(failedBus.busId)
+            )
+              break
+            repairedPairs.add(failedBus.busId)
           }
-          repair = repairSteps.next()
-        }
-        if (repair.value) {
+          const repairSteps = rerouteSourceOriginLengthsSteps({
+            ...params,
+            inputSrj: srj,
+            plans: completePlans,
+            preparedBuses: buses,
+            bus: failedBus,
+          })
+          let repair = repairSteps.next()
+          while (!repair.done) {
+            yield {
+              phase: "repair-lengths",
+              layer,
+              routedConnectionCount: accepted.length,
+              iterations: repair.value.iterations,
+            }
+            repair = repairSteps.next()
+          }
+          if (!repair.value) break
           completePlans = repair.value
+          sourceReservationsChanged = true
+          if (repairConstrainedSourcePairs) allowSourcePrefixMatching = true
           const tuneRepairedPlans = function* (): Generator<
             LayerReservedRoutingProgress,
             ReturnType<typeof matchBusPlanLengths>,
@@ -564,7 +591,7 @@ function* routeLayerReservedAttemptSteps(
                 allowBlindAndBuriedVias: false,
               }) ?? completePlans
             let result = matchCompletePlans(1_000)
-            if (!result.plans) {
+            if (!result.plans && !repairConstrainedSourcePairs) {
               yield* shortenCompletePlans()
               result = matchCompletePlans(1_000)
             }
@@ -577,6 +604,76 @@ function* routeLayerReservedAttemptSteps(
             allowSourcePrefixMatching = true
             matched = yield* tuneRepairedPlans()
           }
+        }
+        if (repairConstrainedSourcePairs && !matched.plans) {
+          // The bounded alternative is transactional. Preserve the original
+          // candidate and its complete matching search if new sources fail.
+          completePlans = originalPlans
+          allowSourcePrefixMatching = originalPrefixMatching
+          sourceReservationsChanged = originalReservationsChanged
+          yield* shortenCompletePlans()
+          matched = matchCompletePlans()
+        }
+      }
+      if (
+        !matched.plans &&
+        params.sourceOriginRouting &&
+        !shortenFirst &&
+        maximumBusSize > 2 &&
+        layer === ordered.at(-1)![0]
+      ) {
+        // A completed final group may wind between several provisional vias.
+        // Try one joint first-via placement before the existing tail repairs;
+        // every other source and all previously committed copper stay fixed.
+        const originalPlans = completePlans
+        const originalMatched = matched
+        const originalPrefixMatching = allowSourcePrefixMatching
+        const originalReservationsChanged = sourceReservationsChanged
+        const replacementSteps = routeReservedViaBusesSteps({
+          ...routeParams,
+          routeFromSourcePads: true,
+          transitLayers: [],
+          sourceLayerTravelCost: 2,
+          ripCost: 64,
+          shuffleSeed: 1,
+          maximumIterations: 30_000_000,
+          maximumRipEvents: 400,
+          maximumLocalRepairAttempts: 0,
+        })
+        let replacement = replacementSteps.next()
+        while (!replacement.done) {
+          yield {
+            phase: "repair-lengths",
+            layer,
+            routedConnectionCount: accepted.length,
+            iterations: replacement.value.iterations,
+          }
+          replacement = replacementSteps.next()
+        }
+        if (replacement.value) {
+          completePlans = [
+            ...previousAccepted,
+            ...replacement.value,
+            ...sourcePlans.filter((plan) => !routed.has(plan.connectionIndex)),
+          ]
+          completePlans =
+            shortcutFanoutPlans({
+              ...params,
+              inputSrj: srj,
+              plans: completePlans,
+              preparedBuses: completedBuses,
+              selectedBusIds: new Set(group.map((bus) => bus.busId)),
+              allowBlindAndBuriedVias: false,
+            }) ?? completePlans
+          allowSourcePrefixMatching = true
+          matched = matchCompletePlans(1_000)
+          sourceReservationsChanged = true
+        }
+        if (!matched.plans) {
+          completePlans = originalPlans
+          matched = originalMatched
+          allowSourcePrefixMatching = originalPrefixMatching
+          sourceReservationsChanged = originalReservationsChanged
         }
       }
       if (matched.plans) {
@@ -638,7 +735,7 @@ function* routeLayerReservedAttemptSteps(
       accepted = completePlans.filter((plan) =>
         routed.has(plan.connectionIndex),
       )
-      if (attempt.routeFromSourcePads) {
+      if (sourceReservationsChanged) {
         // Commit the new first-via reservations only after the intact group
         // passes length matching. Failed attempts leave the ordinary fallback
         // with the exact original source map and all previously routed copper.
