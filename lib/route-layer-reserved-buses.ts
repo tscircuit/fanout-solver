@@ -1,3 +1,7 @@
+import {
+  prepareSourceOriginReservations,
+  routeSourceOriginBusesSteps,
+} from "./route-source-origin-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { sourceTransitHasMajorityCrossings } from "./source-transit-crossing-pressure"
 import { LayerRoutingAttempts } from "./layer-routing-attempts"
@@ -20,6 +24,8 @@ export interface LayerReservedBusesParams {
   clearance: number
   viaDiameter: number
   viaHoleDiameter: number
+  /** Choose first vias jointly for the widest constrained source group. */
+  sourceOriginRouting?: boolean
 }
 
 export interface LayerReservedRoutingProgress {
@@ -152,7 +158,11 @@ export function* routeLayerReservedBusesSteps(
   const { buses, srj, layerNames } = params
   const targets = getLayerReservedBusTargets(params)
   if (!targets) return null
-  const sourceSteps = routeLayerReservedSourceEscapesSteps(params)
+  const sourceSteps = params.sourceOriginRouting
+    ? (function* () {
+        return prepareSourceOriginReservations(params)
+      })()
+    : routeLayerReservedSourceEscapesSteps(params)
   let source = sourceSteps.next()
   while (!source.done) {
     yield { phase: "sources", routedConnectionCount: 0 }
@@ -236,6 +246,8 @@ export function* routeLayerReservedBusesSteps(
           ),
         ),
     })
+    const useSourceOrigin =
+      params.sourceOriginRouting && layer === ordered[0]![0] && shortenFirst
     let groupCompleted = false
     for (let attempt = attempts.next(); attempt; attempt = attempts.next()) {
       // Every search and tuning attempt starts from the same committed set.
@@ -244,7 +256,7 @@ export function* routeLayerReservedBusesSteps(
       for (const bus of group) completed.delete(bus.busId)
       const hasTransitRetry =
         attempt.transitLayers.length < allTransitLayers.length
-      const steps = routeReservedViaBusesSteps({
+      const routeParams = {
         ...params,
         allBuses: buses,
         buses: group,
@@ -268,7 +280,21 @@ export function* routeLayerReservedBusesSteps(
         maximumLocalRepairAttempts: hasTransitRetry ? 0 : 3,
         maximumIterations: 100_000_000,
         shuffleSeed: attempt.shuffleSeed,
-      })
+      }
+      const steps = (function* () {
+        if (!useSourceOrigin)
+          return yield* routeReservedViaBusesSteps(routeParams)
+        const result = yield* routeSourceOriginBusesSteps(routeParams)
+        if (!result) return null
+        fixedViaPointsByConnectionIndex.clear()
+        for (const [index, point] of result.fixedViaPointsByConnectionIndex)
+          fixedViaPointsByConnectionIndex.set(index, point)
+        sourceEscapePaths.clear()
+        for (const [index, path] of result.sourceEscapePaths)
+          sourceEscapePaths.set(index, path)
+        sourcePlans.splice(0, sourcePlans.length, ...result.sourcePlans)
+        return result.plans
+      })()
       let next = steps.next()
       while (!next.done) {
         yield {
@@ -282,6 +308,7 @@ export function* routeLayerReservedBusesSteps(
       }
       const routedPlans = next.value
       if (!routedPlans) {
+        if (useSourceOrigin) return null
         attempts.failed(attempt, "routing")
         continue
       }
