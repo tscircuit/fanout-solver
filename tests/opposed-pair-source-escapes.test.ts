@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
-import { hasOpposedPairSourceEscapes } from "lib/opposed-pair-source-escapes"
+import {
+  getOpposedPairSourceGroups,
+  hasOpposedPairSourceEscapes,
+} from "lib/opposed-pair-source-escapes"
 import { prepareFanoutBuses } from "lib/prepare-buses"
 import { buildViaMinimalWindingPlan } from "lib/route-via-minimal-winding"
 import { buildOutputSimpleRouteJson } from "lib/build-output"
@@ -91,6 +94,29 @@ test("multiple tight pairs split between advancing local vias and opposite-edge 
     sites: [...fixedViaPointsByConnectionIndex],
   })
   expect(hasOpposedPairSourceEscapes(params)).toBe(true)
+  const initialGroups = getOpposedPairSourceGroups({
+    ...params,
+    groups: [buses],
+  })
+  expect(initialGroups).toEqual([buses])
+  expect(initialGroups[0]).toBe(buses)
+  // One opposed pair in each different target-layer group does not produce
+  // the repeated shared-corridor condition used for the initial search order.
+  expect(
+    getOpposedPairSourceGroups({
+      ...params,
+      groups: buses.map((bus) => [bus]),
+    }),
+  ).toEqual([])
+  expect(
+    getOpposedPairSourceGroups({
+      ...params,
+      groups: [
+        buses.map((bus) => ({ ...bus, allowedLayers: ["inner1", "inner2"] })),
+      ],
+    }),
+  ).toEqual([])
+
   expect(hasOpposedPairSourceEscapes({ ...params, buses: [buses[0]!] })).toBe(
     false,
   )

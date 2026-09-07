@@ -140,4 +140,42 @@ test("layer retries preserve the first successful choice and distinguish topolog
     physical.failed(final, "lengths")
     expect(physical.next()).toBeUndefined()
   }
+  for (const firstFailure of ["routing", "lengths"] as const) {
+    for (const originalFailure of ["routing", "lengths"] as const) {
+      const queue = new LayerRoutingAttempts({
+        ...options,
+        wideSingleLayer: true,
+        allTransitLayers: [],
+        preferAlternateOrder: true,
+      })
+      const preferred = queue.next()!
+      expect(preferred).toEqual({
+        ripCost: 64,
+        shuffleSeed: 2,
+        transitLayers: [],
+      })
+      queue.failed(preferred, firstFailure)
+      const original = queue.next()!
+      expect(original).toEqual({ ...preferred, shuffleSeed: 1 })
+      queue.failed(original, originalFailure)
+      if (firstFailure === "lengths" || originalFailure === "lengths") {
+        const cost = queue.next()!
+        expect(cost).toEqual({ ...original, ripCost: 256 })
+        queue.failed(cost, "routing")
+      }
+      expect(queue.next()).toBeUndefined()
+    }
+  }
+  const firstPreferredSuccess = new LayerRoutingAttempts({
+    ...options,
+    wideSingleLayer: true,
+    allTransitLayers: [],
+    preferAlternateOrder: true,
+  })
+  expect(firstPreferredSuccess.next()).toEqual({
+    ripCost: 64,
+    shuffleSeed: 2,
+    transitLayers: [],
+  })
+  expect(firstPreferredSuccess.next()).toBeUndefined()
 })

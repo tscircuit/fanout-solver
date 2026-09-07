@@ -10,6 +10,8 @@ export interface LayerRoutingAttempt {
 export class LayerRoutingAttempts {
   private readonly pending: LayerRoutingAttempt[]
   private readonly attempted = new Set<string>()
+  private readonly preferredOrder?: LayerRoutingAttempt
+  private readonly originalOrder?: LayerRoutingAttempt
 
   constructor(
     private readonly options: {
@@ -22,6 +24,7 @@ export class LayerRoutingAttempts {
       sourceOriginRipCost?: number
       sourceTransitRipCost?: number
       retrySourceOriginPhysicalGridPhase?: boolean
+      preferAlternateOrder?: boolean
     },
   ) {
     this.pending = [
@@ -37,6 +40,11 @@ export class LayerRoutingAttempts {
             transitLayers: options.transitLayers,
           },
     ]
+    if (options.preferAlternateOrder && options.wideSingleLayer) {
+      this.originalOrder = this.pending[0]!
+      this.preferredOrder = { ...this.originalOrder, shuffleSeed: 2 }
+      this.pending[0] = this.preferredOrder
+    }
     if (options.preferSourceOrigin)
       this.pending.unshift({
         ripCost: options.sourceOriginRipCost ?? 256,
@@ -64,6 +72,15 @@ export class LayerRoutingAttempts {
     const enqueue = (candidate: LayerRoutingAttempt) => {
       if (!this.attempted.has(JSON.stringify(candidate)))
         this.pending.unshift(candidate)
+    }
+    if (attempt === this.preferredOrder) {
+      // A geometry-selected ordering may succeed before the usual attempt.
+      // On failure, retain that original attempt regardless of failure kind;
+      // a complete but untunable topology also keeps the original cost retry.
+      enqueue(this.originalOrder!)
+      if (reason === "lengths")
+        this.pending.push({ ...this.originalOrder!, ripCost: 256 })
+      return
     }
     if (attempt.sourceOriginPhysicalGridPhase) {
       const { sourceOriginPhysicalGridPhase, ...ordinary } = attempt

@@ -2,7 +2,10 @@ import {
   retryLayerReservedRoutingSteps,
   type LayerReservedAttemptState,
 } from "./retry-layer-reserved-routing"
-import { hasOpposedPairSourceEscapes } from "./opposed-pair-source-escapes"
+import {
+  getOpposedPairSourceGroups,
+  hasOpposedPairSourceEscapes,
+} from "./opposed-pair-source-escapes"
 import { rerouteSourceOriginLengthsSteps } from "./reroute-source-origin-lengths"
 import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
 import { hasCompressedExitConvergence } from "./compressed-exit-convergence"
@@ -212,6 +215,13 @@ function* routeLayerReservedAttemptSteps(
       Math.max(...b.map((bus) => bus.connections.length)) -
         Math.max(...a.map((bus) => bus.connections.length)),
   )
+  // Opposed source escapes occupy corridors before any target layer is routed.
+  // Use that initial geometry to order the first constrained wide-group search.
+  const opposedSourceGroups = getOpposedPairSourceGroups({
+    groups: ordered.map(([, group]) => group),
+    fixedViaPointsByConnectionIndex,
+    clearance: params.clearance,
+  })
   let committedOpposedPairSources = false
   for (const [layer, group] of ordered) {
     const maximumBusSize = Math.max(
@@ -267,6 +277,19 @@ function* routeLayerReservedAttemptSteps(
     const attempts = new LayerRoutingAttempts({
       wideSingleLayer: shortenFirst,
       retrySourceOriginPhysicalGridPhase: useSourceOrigin,
+      preferAlternateOrder:
+        !params.sourceOriginRouting &&
+        shortenFirst &&
+        layer === ordered[0]![0] &&
+        opposedSourceGroups.some((opposed) =>
+          group.every((bus) =>
+            opposed.every(
+              (pair) =>
+                pair.componentId === bus.componentId &&
+                pair.exitEdge === bus.exitEdge,
+            ),
+          ),
+        ),
       firstRipCost: maximumBusSize <= 2 ? 256 : 64,
       transitLayers,
       allTransitLayers,

@@ -70,3 +70,14 @@ export function hasOpposedPairSourceEscapes(params: {
   }
   return opposedPairs >= 2
 }
+
+/** Preserve layer-group boundaries when inspecting the initial source map. */
+export function getOpposedPairSourceGroups(params: {
+  groups: readonly (readonly PreparedBus[])[]
+  fixedViaPointsByConnectionIndex: ReadonlyMap<number, Point2D>
+  clearance: number
+}): readonly (readonly PreparedBus[])[] {
+  return params.groups.filter((buses) =>
+    hasOpposedPairSourceEscapes({ ...params, buses }),
+  )
+}
