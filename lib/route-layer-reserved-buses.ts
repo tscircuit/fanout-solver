@@ -323,6 +323,7 @@ function* routeLayerReservedAttemptSteps(
           )),
     })
     let groupCompleted = false
+    let groupHadLengthFailure = false
     for (let attempt = attempts.next(); attempt; attempt = attempts.next()) {
       // Every search and tuning attempt starts from the same committed set.
       // A complete topology does not reserve copper until its bus lengths pass.
@@ -431,8 +432,10 @@ function* routeLayerReservedAttemptSteps(
       const routedPlans = next.value
       if (!routedPlans) {
         restorePhysicalSources()
-        if (useSourceOrigin && !attempt.sourceOriginPhysicalGridPhase)
+        if (useSourceOrigin && !attempt.sourceOriginPhysicalGridPhase) {
+          attemptState.failedWideMatching = groupHadLengthFailure
           return null
+        }
         attempts.failed(attempt, "routing")
         continue
       }
@@ -579,6 +582,7 @@ function* routeLayerReservedAttemptSteps(
       if (matched.plans) {
         completePlans = matched.plans
       } else {
+        groupHadLengthFailure = true
         if (hasTransitRetry) {
           restorePhysicalSources()
           attempts.failed(attempt, "lengths")
@@ -695,6 +699,10 @@ function* routeLayerReservedAttemptSteps(
       // complete pair that cannot fit its original length tolerance.
       attemptState.failedNarrowGroup =
         maximumBusSize <= 2 && previousAccepted.length > 0
+      attemptState.failedWideMatching =
+        params.sourceOriginRouting === true &&
+        layer === ordered[0]![0] &&
+        groupHadLengthFailure
       return null
     }
   }

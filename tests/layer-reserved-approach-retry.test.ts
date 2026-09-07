@@ -6,12 +6,13 @@ import {
 import type { LayerReservedRoutingProgress } from "lib/route-layer-reserved-buses"
 import type { FanoutRoutePlan } from "lib/types"
 
-test("only failed downstream narrow groups retry the entire pipeline with fresh reservations", () => {
+test("failed wide length matching and downstream narrow groups retry the entire pipeline with fresh reservations", () => {
   const complete: FanoutRoutePlan[] = []
   for (const mode of [
     "success",
     "narrow-lengths",
     "narrow-routing",
+    "wide-lengths",
     "routing",
     "fixed",
     "twice",
@@ -35,7 +36,8 @@ test("only failed downstream narrow groups retry the entire pipeline with fresh 
         } as LayerReservedRoutingProgress
         if (mode === "success" || (states.length === 2 && mode !== "twice"))
           return complete
-        state.failedNarrowGroup = mode !== "routing"
+        state.failedNarrowGroup = mode !== "routing" && mode !== "wide-lengths"
+        state.failedWideMatching = mode === "wide-lengths"
         return null
       },
     )
@@ -46,7 +48,10 @@ test("only failed downstream narrow groups retry the entire pipeline with fresh 
       next = generator.next()
     }
     const retries =
-      mode === "narrow-lengths" || mode === "narrow-routing" || mode === "twice"
+      mode === "narrow-lengths" ||
+      mode === "narrow-routing" ||
+      mode === "wide-lengths" ||
+      mode === "twice"
     expect(states).toHaveLength(retries ? 2 : 1)
     expect(yields).toBe(states.length)
     expect(states[0]!.reserveFutureApproaches).toBe(true)
@@ -59,7 +64,8 @@ test("only failed downstream narrow groups retry the entire pipeline with fresh 
     expect(next.value).toBe(
       mode === "success" ||
         mode === "narrow-lengths" ||
-        mode === "narrow-routing"
+        mode === "narrow-routing" ||
+        mode === "wide-lengths"
         ? complete
         : null,
     )
