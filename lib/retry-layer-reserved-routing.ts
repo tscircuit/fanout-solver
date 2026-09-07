@@ -3,13 +3,13 @@ import type { FanoutRoutePlan } from "./types"
 
 export interface LayerReservedAttemptState {
   reserveFutureApproaches: boolean
-  failedNarrowMatching: boolean
+  failedNarrowGroup: boolean
 }
 
 /**
  * Future approach traces guide first-via placement, but can select a topology
- * that later pairs cannot length-match. Retry from fresh source reservations
- * once, only after that specific downstream failure. Successful routes and
+ * that later pairs cannot route or length-match. Retry from fresh source
+ * reservations once, only after that specific downstream failure. Successful routes and
  * failures during source placement or wide-bus routing keep their first path.
  */
 export function* retryLayerReservedRoutingSteps(
@@ -24,13 +24,13 @@ export function* retryLayerReservedRoutingSteps(
 ): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
   const protectedState: LayerReservedAttemptState = {
     reserveFutureApproaches: true,
-    failedNarrowMatching: false,
+    failedNarrowGroup: false,
   }
   const result = yield* attempt(protectedState)
-  if (result || !sourceOriginRouting || !protectedState.failedNarrowMatching)
+  if (result || !sourceOriginRouting || !protectedState.failedNarrowGroup)
     return result
   return yield* attempt({
     reserveFutureApproaches: false,
-    failedNarrowMatching: false,
+    failedNarrowGroup: false,
   })
 }

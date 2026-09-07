@@ -6,11 +6,12 @@ import {
 import type { LayerReservedRoutingProgress } from "lib/route-layer-reserved-buses"
 import type { FanoutRoutePlan } from "lib/types"
 
-test("only failed downstream pair matching retries the entire pipeline with fresh reservations", () => {
+test("only failed downstream narrow groups retry the entire pipeline with fresh reservations", () => {
   const complete: FanoutRoutePlan[] = []
   for (const mode of [
     "success",
-    "narrow",
+    "narrow-lengths",
+    "narrow-routing",
     "routing",
     "fixed",
     "twice",
@@ -34,7 +35,7 @@ test("only failed downstream pair matching retries the entire pipeline with fres
         } as LayerReservedRoutingProgress
         if (mode === "success" || (states.length === 2 && mode !== "twice"))
           return complete
-        state.failedNarrowMatching = mode !== "routing"
+        state.failedNarrowGroup = mode !== "routing"
         return null
       },
     )
@@ -44,7 +45,8 @@ test("only failed downstream pair matching retries the entire pipeline with fres
       yields++
       next = generator.next()
     }
-    const retries = mode === "narrow" || mode === "twice"
+    const retries =
+      mode === "narrow-lengths" || mode === "narrow-routing" || mode === "twice"
     expect(states).toHaveLength(retries ? 2 : 1)
     expect(yields).toBe(states.length)
     expect(states[0]!.reserveFutureApproaches).toBe(true)
@@ -55,7 +57,11 @@ test("only failed downstream pair matching retries the entire pipeline with fres
     }
     expect(initial.get(1)).toEqual({ x: 1, y: 2 })
     expect(next.value).toBe(
-      mode === "success" || mode === "narrow" ? complete : null,
+      mode === "success" ||
+        mode === "narrow-lengths" ||
+        mode === "narrow-routing"
+        ? complete
+        : null,
     )
   }
 })

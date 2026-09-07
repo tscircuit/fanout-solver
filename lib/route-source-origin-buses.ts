@@ -343,7 +343,7 @@ export function* routeSourceOriginBusesSteps(
   }
 }
 
-/** Dense fields turning toward a perpendicular edge need joint first-via ordering. */
+/** Dense fields with a wide, fixed-layer bus need joint first-via ordering. */
 export function shouldUseSourceOriginRouting(
   buses: readonly PreparedBus[],
   allowBlindAndBuriedVias: boolean,
@@ -381,23 +381,7 @@ export function shouldUseSourceOriginRouting(
     .filter((bus) => bus.termination.type === "plane")
     .reduce((sum, bus) => sum + bus.connections.length, 0)
   if (planeCount < signalCount) return false
-  const points = wide.flatMap((bus) =>
-    bus.connections.map((c) => c.sourcePoint),
-  )
-  const center = points.reduce(
-    (sum, p) => ({
-      x: sum.x + p.x / points.length,
-      y: sum.y + p.y / points.length,
-    }),
-    { x: 0, y: 0 },
-  )
-  const bounds = first.componentBounds
-  const edges = [
-    { horizontal: true, distance: Math.abs(center.x - bounds.minX) },
-    { horizontal: true, distance: Math.abs(bounds.maxX - center.x) },
-    { horizontal: false, distance: Math.abs(center.y - bounds.minY) },
-    { horizontal: false, distance: Math.abs(bounds.maxY - center.y) },
-  ].sort((a, b) => a.distance - b.distance)
-  if (Math.abs(edges[0]!.distance - edges[1]!.distance) <= 1e-9) return false
-  return edges[0]!.horizontal !== (edge === "left" || edge === "right")
+  // Dense plane reservations can fence a wide bus on its nearest edge too.
+  // Joint first-via placement preserves the same whole-bus layer constraints.
+  return true
 }
