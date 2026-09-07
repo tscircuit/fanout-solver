@@ -535,6 +535,17 @@ function createMeanderPoints(params: {
   )
 }
 
+interface MatchingWorkBudget {
+  remaining: number
+  activeBus?: PreparedBus
+}
+
+class MatchingWorkBudgetExhausted extends Error {}
+
+function consumeMatchingWork(budget: MatchingWorkBudget | undefined): void {
+  if (budget && budget.remaining-- <= 0) throw new MatchingWorkBudgetExhausted()
+}
+
 function* createTunedPlanCandidates(params: {
   plan: FanoutRoutePlan
   bus: PreparedBus
@@ -543,6 +554,7 @@ function* createTunedPlanCandidates(params: {
   sharedBoundary: Bounds
   allowInsideDenseBounds?: boolean
   denseBoundarySplitApplied?: boolean
+  workBudget?: MatchingWorkBudget
 }): Generator<FanoutRoutePlan> {
   const {
     plan,
@@ -578,6 +590,7 @@ function* createTunedPlanCandidates(params: {
     for (let toothCount = 1; toothCount <= maximumToothCount; toothCount++) {
       for (const placementFraction of [0.5, 0, 1, 0.25, 0.75]) {
         for (const normalSign of [1, -1] as const) {
+          consumeMatchingWork(params.workBudget)
           const points = createMeanderPoints({
             segment,
             toothCount,
@@ -668,6 +681,7 @@ function getBusSkew(plans: readonly FanoutRoutePlan[]): number {
 function* createSpreadLaneCandidates(
   plan: FanoutRoutePlan,
   clearance: number,
+  workBudget?: MatchingWorkBudget,
 ): Generator<FanoutRoutePlan> {
   const replacementHasSelfIntersection =
     createReplacementSelfIntersectionChecker(plan.segments)
@@ -693,6 +707,7 @@ function* createSpreadLaneCandidates(
       const offset = pitch * multiple
       if (length < 2 * offset + pitch) continue
       for (const sign of [1, -1]) {
+        consumeMatchingWork(workBudget)
         const normal = { x: -tangent.y * sign, y: tangent.x * sign }
         const points = [
           segment.start,
@@ -734,7 +749,7 @@ function* createSpreadLaneCandidates(
  * is atomic: a constrained bus either satisfies its declared skew with the
  * complete fanout copper still clear, or the complete assignment is rejected.
  */
-export function matchBusPlanLengths(params: {
+export interface MatchBusPlanLengthsParams {
   plans: readonly FanoutRoutePlan[]
   preparedBuses: readonly PreparedBus[]
   inputSrj: SimpleRouteJson
@@ -757,9 +772,45 @@ export function matchBusPlanLengths(params: {
    * downstream assignment (such as pending plane dogbones) infeasible.
    */
   candidatePlansAreFeasible?: (plans: readonly FanoutRoutePlan[]) => boolean
-}):
+  /**
+   * Optional deterministic cap shared by the complete matching call and its
+   * recursive repairs. Counts attempted meanders (including rejected ones),
+   * multi-span states, lane-spreading attempts, and clearance validations.
+   * Exhaustion returns the failed bus without committing partial tuning.
+   */
+  maximumWorkUnits?: number
+}
+
+type MatchBusPlanLengthsResult =
   | { plans: FanoutRoutePlan[]; failedBus?: never }
-  | { plans: null; failedBus: PreparedBus } {
+  | { plans: null; failedBus: PreparedBus }
+
+export function matchBusPlanLengths(
+  params: MatchBusPlanLengthsParams,
+): MatchBusPlanLengthsResult {
+  if (
+    params.maximumWorkUnits !== undefined &&
+    (!Number.isSafeInteger(params.maximumWorkUnits) ||
+      params.maximumWorkUnits < 0)
+  )
+    throw new Error("maximumWorkUnits must be a non-negative safe integer")
+  const workBudget =
+    params.maximumWorkUnits === undefined
+      ? undefined
+      : ({ remaining: params.maximumWorkUnits } as MatchingWorkBudget)
+  try {
+    return matchBusPlanLengthsWithBudget(params, workBudget)
+  } catch (error) {
+    if (error instanceof MatchingWorkBudgetExhausted && workBudget?.activeBus)
+      return { plans: null, failedBus: workBudget.activeBus }
+    throw error
+  }
+}
+
+function matchBusPlanLengthsWithBudget(
+  params: MatchBusPlanLengthsParams,
+  workBudget?: MatchingWorkBudget,
+): MatchBusPlanLengthsResult {
   const {
     preparedBuses,
     inputSrj,
@@ -770,13 +821,17 @@ export function matchBusPlanLengths(params: {
     allowMatchingInsideDenseBounds = false,
     candidatePlansAreFeasible,
   } = params
-  const plansAreClear = createFanoutPlanClearanceValidator({
+  const validatePlans = createFanoutPlanClearanceValidator({
     srj: inputSrj,
     sharedBoundary,
     clearance,
     allowBlindAndBuriedVias,
     allowSameNetMerges,
   })
+  const plansAreClear = (plans: readonly FanoutRoutePlan[]): boolean => {
+    consumeMatchingWork(workBudget)
+    return validatePlans(plans)
+  }
   let matchedPlans = [...params.plans]
   const constrainedBuses = preparedBuses.filter(
     (bus) => bus.maxLengthSkew !== undefined && bus.connections.length > 1,
@@ -784,6 +839,7 @@ export function matchBusPlanLengths(params: {
   if (constrainedBuses.length === 0) return { plans: matchedPlans }
 
   for (const bus of constrainedBuses) {
+    if (workBudget) workBudget.activeBus = bus
     if (bus.termination.type !== "boundary") {
       return { plans: null, failedBus: bus }
     }
@@ -871,6 +927,7 @@ export function matchBusPlanLengths(params: {
           currentPlan: FanoutRoutePlan,
           stagesRemaining: number,
         ): FanoutRoutePlan[] | null => {
+          consumeMatchingWork(workBudget)
           const addedLength = currentPlan.length - shortest.length
           const remainingAddition = targetAddedLength - addedLength
           if (remainingAddition <= EPSILON) {
@@ -886,6 +943,7 @@ export function matchBusPlanLengths(params: {
               clearance,
               sharedBoundary: bus.sharedBoundary,
               allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+              workBudget,
             }),
           ])
           for (const candidate of candidates) {
@@ -912,6 +970,7 @@ export function matchBusPlanLengths(params: {
           clearance,
           sharedBoundary: bus.sharedBoundary,
           allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+          workBudget,
         })
         for (const candidate of candidates) {
           acceptedPlans = acceptCandidate(candidate)
@@ -936,7 +995,11 @@ export function matchBusPlanLengths(params: {
         // four geometrically clear placements may start another matching pass.
         const longer = busPlans.find((plan) => plan !== shortest)!
         let attempts = 0
-        for (const candidate of createSpreadLaneCandidates(longer, clearance)) {
+        for (const candidate of createSpreadLaneCandidates(
+          longer,
+          clearance,
+          workBudget,
+        )) {
           const nextPlans = matchedPlans.map((plan) =>
             plan === longer ? candidate : plan,
           )
@@ -946,12 +1009,15 @@ export function matchBusPlanLengths(params: {
             !candidatePlansAreFeasible(nextPlans)
           )
             continue
-          const result = matchBusPlanLengths({
-            ...params,
-            plans: nextPlans,
-            preparedBuses: [bus],
-            allowPairLaneSpreading: false,
-          })
+          const result = matchBusPlanLengthsWithBudget(
+            {
+              ...params,
+              plans: nextPlans,
+              preparedBuses: [bus],
+              allowPairLaneSpreading: false,
+            },
+            workBudget,
+          )
           if (result.plans) {
             acceptedPlans = result.plans
             break
@@ -973,6 +1039,7 @@ export function matchBusPlanLengths(params: {
             clearance,
             sharedBoundary: bus.sharedBoundary,
             allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+            workBudget,
           })
           for (const candidate of candidates) {
             if (!plansAreClear([candidate])) continue
