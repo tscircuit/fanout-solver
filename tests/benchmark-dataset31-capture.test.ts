@@ -10,9 +10,9 @@ import {
   dataset31Source,
 } from "../scripts/generate-repro/dataset31-source"
 
-// Render all 60 upstream circuits sequentially; this is capture/transport coverage,
-// separate from the benchmark's per-sample routing deadline. The 500s capture
-// allowance scales the previous 400s budget for 48 circuits to all 60 circuits.
+// Render all 72 upstream circuits sequentially; this is capture/transport coverage,
+// separate from the benchmark's per-sample routing deadline. The 600s capture
+// allowance scales the previous 500s budget for 60 circuits to all 72 circuits.
 test("dataset 31 capture preserves every upstream connection, obstacle, and bus constraint", async () => {
   const directory = await mkdtemp(join(tmpdir(), "fanout-dataset31-capture-"))
   try {
@@ -20,20 +20,28 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
       benchmarkSamples.map((sample) => sample.id),
       directory,
     )
-    expect(samples).toHaveLength(60)
+    expect(samples).toHaveLength(72)
     expect(samples.map((sample) => sample.id)).toEqual(
       DATASET31_DIRECTION_CASES.map((sample) => sample.id),
     )
     const definitionsById = new Map(
       DATASET31_DIRECTION_CASES.map((sample) => [sample.id, sample]),
     )
-    const chips = { am62l: 0, rk3308: 0, k230: 0, imx6ull: 0, t113s3: 0 }
+    const chips = {
+      am62l: 0,
+      rk3308: 0,
+      k230: 0,
+      imx6ull: 0,
+      t113s3: 0,
+      am3352: 0,
+    }
     const edges = {
       am62l: new Set<string>(),
       rk3308: new Set<string>(),
       k230: new Set<string>(),
       imx6ull: new Set<string>(),
       t113s3: new Set<string>(),
+      am3352: new Set<string>(),
     }
     const expectedByChip = {
       am62l: {
@@ -81,6 +89,15 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
         constrainedBus: "USB0",
         constrainedSkew: 0.25,
       },
+      am3352: {
+        connections: 322,
+        obstacles: 529,
+        pairs: 5,
+        buses: 165,
+        planes: 117,
+        constrainedBus: "DDR_CA",
+        constrainedSkew: 0.5,
+      },
     }
     const uniqueInputs = new Set<string>()
     for (const sample of samples) {
@@ -92,7 +109,9 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
         expected.connections,
       )
       expect(sample.simpleRouteJson.obstacles).toHaveLength(expected.obstacles)
-      expect(sample.simpleRouteJson.layerCount).toBe(8)
+      expect(sample.simpleRouteJson.layerCount).toBe(
+        definition.chip === "am3352" ? 10 : 8,
+      )
       expect(sample.simpleRouteJson.differentialPairs).toHaveLength(
         expected.pairs,
       )
@@ -274,6 +293,141 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
           { pins: ["pin87", "pin88"], tolerance: 0.25 },
         ])
       }
+      if (definition.chip === "am3352") {
+        const { simpleRouteJson: srj, solverOptions: options } = sample
+        expect(options?.escapeLayers).toEqual([
+          "top",
+          "inner7",
+          "inner8",
+          "bottom",
+        ])
+        expect(options?.allowBlindAndBuriedVias).toBe(false)
+        for (const [key, coordinate] of Object.entries({
+          minX: -12,
+          maxX: 12,
+          minY: -12,
+          maxY: 12,
+        }))
+          expect(
+            options!.sharedBoundary![key as "minX" | "maxX" | "minY" | "maxY"],
+          ).toBeCloseTo(coordinate, 8)
+        const planeBuses = options!.buses!.filter(
+          (bus) => bus.termination?.type === "plane",
+        )
+        const signalBuses = options!.buses!.filter(
+          (bus) => bus.termination?.type !== "plane",
+        )
+        expect(signalBuses).toHaveLength(48)
+        expect(signalBuses.flatMap((bus) => bus.connectionNames!)).toHaveLength(
+          205,
+        )
+        for (const [layer, count] of [
+          ["inner1", 44],
+          ["inner2", 21],
+          ["inner3", 17],
+          ["inner4", 7],
+          ["inner5", 20],
+          ["inner6", 8],
+        ] as const)
+          expect(
+            planeBuses.filter(
+              (bus) =>
+                bus.termination?.type === "plane" &&
+                bus.termination.layer === layer,
+            ),
+          ).toHaveLength(count)
+        const padGroups = Map.groupBy(srj.obstacles, (pad) => pad.componentId)
+        expect(padGroups.size).toBe(5)
+        const sourcePads = [...padGroups.values()].find(
+          (pads) => pads.length === 324,
+        )!
+        expect(sourcePads).toHaveLength(324)
+        const pinByPort = new Map(
+          sourcePads.map((pad) => {
+            const metadata = (
+              pad as typeof pad & {
+                circuitJsonMetadata?: {
+                  pcb_port_id?: string
+                  source_port_name?: string
+                }
+              }
+            ).circuitJsonMetadata
+            return [metadata?.pcb_port_id, metadata?.source_port_name]
+          }),
+        )
+        const sourcePin = (name: string) =>
+          pinByPort.get(
+            srj.connections.find((connection) => connection.name === name)!
+              .pointsToConnect[0]!.pcb_port_id,
+          )
+        // A3/RESERVED and M5/VPP are NC for this operating fixture, but keep their pads.
+        expect(
+          new Set(
+            srj.connections.map((connection) => sourcePin(connection.name)),
+          ),
+        ).toEqual(
+          new Set(
+            Array.from({ length: 324 }, (_, i) => `pin${i + 1}`).filter(
+              (pin) => pin !== "pin3" && pin !== "pin203",
+            ),
+          ),
+        )
+        expect([...pinByPort.values()]).toContain("pin3")
+        expect([...pinByPort.values()]).toContain("pin203")
+        expect(
+          new Set(options!.buses!.flatMap((bus) => bus.connectionNames!)),
+        ).toEqual(new Set(srj.connections.map((connection) => connection.name)))
+        const connectionsByEdge = new Map<string, number>()
+        for (const bus of signalBuses) {
+          expect(bus.allowedLayers).toEqual([
+            "top",
+            "inner7",
+            "inner8",
+            "bottom",
+          ])
+          expect(bus.exitPosition).toBe(
+            captured.signalBusExitPositions[bus.busId!],
+          )
+          const edge = bus.exitPosition!.split("side_")[0]!
+          connectionsByEdge.set(
+            edge,
+            (connectionsByEdge.get(edge) ?? 0) + bus.connectionNames!.length,
+          )
+          expect(Object.keys(bus.connectionExitTargets ?? {})).toHaveLength(
+            bus.connectionNames!.length,
+          )
+        }
+        expect(new Set(connectionsByEdge.keys())).toEqual(
+          new Set(["top", "right", "bottom", "left"]),
+        )
+        expect([...connectionsByEdge.values()].sort((a, b) => a - b)).toEqual([
+          38, 52, 53, 62,
+        ])
+        for (const [busId, count, skew] of [
+          ["DDR_CA", 26, 0.5],
+          ["DDR_CLK", 2, 0.1],
+          ["DDR_BYTE0", 11, 0.25],
+          ["DDR_BYTE1", 11, 0.25],
+          ["USB0", 2, 0.1],
+          ["USB1", 2, 0.1],
+        ] as const) {
+          const bus = signalBuses.find((bus) => bus.busId === busId)!
+          expect(bus.connectionNames).toHaveLength(count)
+          expect(bus.maxLengthSkew).toBe(skew)
+        }
+        expect(
+          srj.differentialPairs!.map((pair) => ({
+            pins: pair.connectionNames.map(sourcePin),
+            tolerance: pair.lengthTolerance,
+          })),
+        ).toEqual([
+          { pins: ["pin56", "pin55"], tolerance: 0.1 },
+          { pins: ["pin235", "pin236"], tolerance: 0.1 },
+          { pins: ["pin181", "pin182"], tolerance: 0.1 },
+          { pins: ["pin233", "pin234"], tolerance: 0.1 },
+          { pins: ["pin269", "pin270"], tolerance: 0.1 },
+        ])
+      }
       uniqueInputs.add(
         JSON.stringify([sample.simpleRouteJson, sample.solverOptions]),
       )
@@ -282,13 +436,14 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
       expect(captured.directionCase.exitEdge).toBe(definition.exitEdge)
       edges[definition.chip].add(captured.directionCase.exitEdge)
     }
-    expect(uniqueInputs.size).toBe(60)
+    expect(uniqueInputs.size).toBe(72)
     expect(chips).toEqual({
       am62l: 12,
       rk3308: 12,
       k230: 12,
       imx6ull: 12,
       t113s3: 12,
+      am3352: 12,
     })
     for (const chipEdges of Object.values(edges))
       expect(chipEdges).toEqual(new Set(["top", "right", "bottom", "left"]))
@@ -300,4 +455,4 @@ test("dataset 31 capture preserves every upstream connection, obstacle, and bus 
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
-}, 500_000)
+}, 600_000)

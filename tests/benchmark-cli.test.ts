@@ -62,11 +62,11 @@ test("benchmark shell entrypoint writes complete ordered JSON and Markdown repor
     expect(report.configuration.sampleTimeoutSeconds).toBe(1)
     const markdown = await readFile(join(directory, "benchmark.md"), "utf8")
     expect(markdown).toContain(
-      "Dataset 31 — AM62L, RK3308, K230, i.MX6ULL, and T113-S3 fanout benchmark",
+      "Dataset 31 — AM62L, RK3308, K230, i.MX6ULL, T113-S3, and AM3352 fanout benchmark",
     )
     expect(markdown).toContain("Completed 2/2")
     expect(markdown).toContain(
-      "135 for AM62L; 162 for RK3308; 171 for K230; 102 for i.MX6ULL; 128 for T113-S3",
+      "135 for AM62L; 162 for RK3308; 171 for K230; 102 for i.MX6ULL; 128 for T113-S3; 322 for AM3352",
     )
     expect(markdown).not.toMatch(/SRJ19|SRJ29|dataset0[1-8]/)
     for (const [sampleId, connections] of [
@@ -74,6 +74,7 @@ test("benchmark shell entrypoint writes complete ordered JSON and Markdown repor
       ["25-k230-top-left-offset", 171],
       ["37-imx6ull-top-left-offset", 102],
       ["49-t113s3-top-left-offset", 128],
+      ["61-am3352-top-left-offset", 322],
     ] as const) {
       const single = Bun.spawn(
         [

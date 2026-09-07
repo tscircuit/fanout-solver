@@ -1,3 +1,4 @@
+import { AM3352_FANOUT_DIRECTION_CASES } from "@tscircuit/dataset-fanout31-am62l/lib/am3352-fanout-directions"
 import { FANOUT_DIRECTION_CASES } from "@tscircuit/dataset-fanout31-am62l/lib/fanout-directions"
 import { IMX6ULL_FANOUT_DIRECTION_CASES } from "@tscircuit/dataset-fanout31-am62l/lib/imx6ull-fanout-directions"
 import { K230_FANOUT_DIRECTION_CASES } from "@tscircuit/dataset-fanout31-am62l/lib/k230-fanout-directions"
@@ -23,6 +24,7 @@ export {
   K230_FANOUT_DIRECTION_CASES,
   IMX6ULL_FANOUT_DIRECTION_CASES,
   T113S3_FANOUT_DIRECTION_CASES,
+  AM3352_FANOUT_DIRECTION_CASES,
 }
 
 // Keep --list/--help lightweight: circuit factories are loaded by the generator.
@@ -46,5 +48,9 @@ export const DATASET31_DIRECTION_CASES = [
   ...T113S3_FANOUT_DIRECTION_CASES.map((sample) => ({
     ...sample,
     chip: "t113s3" as const,
+  })),
+  ...AM3352_FANOUT_DIRECTION_CASES.map((sample) => ({
+    ...sample,
+    chip: "am3352" as const,
   })),
 ]
