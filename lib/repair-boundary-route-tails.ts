@@ -193,6 +193,43 @@ function inferGridOrigin(
   return { x: phase("x"), y: phase("y") }
 }
 
+/** Minimum-pitch exits can require a perpendicular grid phase of their own. */
+function getRepairGridOrigins(
+  plans: readonly FanoutRoutePlan[],
+  edge: FanoutEdge,
+  origin: Point2D,
+  step: number,
+  pitch: number,
+): Point2D[] {
+  const axis = edge === "left" || edge === "right" ? "y" : "x",
+    coordinates = plans
+      .map((plan) => plan.exitPoint[axis])
+      .sort((a, b) => a - b),
+    candidates: { coordinate: number; count: number }[] = []
+  const samePhase = (a: number, b: number) =>
+    Math.abs(a - b - Math.round((a - b) / step) * step) <= EPSILON
+  for (let i = 1; i < coordinates.length; i++) {
+    if (coordinates[i]! - coordinates[i - 1]! > pitch + EPSILON) continue
+    for (const coordinate of [coordinates[i - 1]!, coordinates[i]!]) {
+      if (samePhase(coordinate, origin[axis])) continue
+      const existing = candidates.find((entry) =>
+        samePhase(entry.coordinate, coordinate),
+      )
+      if (existing) existing.count++
+      else candidates.push({ coordinate, count: 1 })
+    }
+  }
+  // Keep the native lattice first. Only the transverse phase changes, so
+  // every retained cut, endpoint, physical via, and strip bound stays fixed.
+  return [
+    origin,
+    ...candidates
+      .sort((a, b) => b.count - a.count || a.coordinate - b.coordinate)
+      .slice(0, 3)
+      .map(({ coordinate }) => ({ ...origin, [axis]: coordinate })),
+  ]
+}
+
 /**
  * Replace conflicting final-layer boundary links without moving any real via,
  * source, or endpoint. The original buses remain complete and retain their
@@ -297,177 +334,199 @@ export function repairBoundaryRouteTails(
     }
     const active = group.filter((plan) => selected.has(plan))
     if (active.length > 24) return null
-    const origin = params.gridOrigin ?? inferGridOrigin(active, step)
+    const origins = getRepairGridOrigins(
+      active,
+      edge,
+      params.gridOrigin ?? inferGridOrigin(active, step),
+      step,
+      pitch,
+    )
     let repaired: FanoutRoutePlan[] | null = null
-    for (const multiplier of [8, 16, 24]) {
-      const width = Math.min(multiplier * pitch, maximumWidth)
-      const axis = edge === "left" || edge === "right" ? "x" : "y"
-      const sign = edge === "left" || edge === "bottom" ? 1 : -1
-      const border =
-        edge === "left"
-          ? boundary.minX
-          : edge === "right"
-            ? boundary.maxX
-            : edge === "top"
-              ? boundary.maxY
-              : boundary.minY
-      const requested = border + sign * width
-      const cutAxis =
-        origin[axis] +
-        (sign > 0
-          ? Math.ceil((requested - origin[axis]) / step)
-          : Math.floor((requested - origin[axis]) / step)) *
-          step
-      const depth = (cutAxis - border) * sign
-      const cuts = active.map((plan) => {
-        const { first, points } = lastLayerPath(plan)
-        const index = points.findLastIndex(
-          (p) => inward(p, edge, boundary) >= depth - EPSILON,
-        )
-        if (index < 0) {
-          const finalVia = plan.additionalVias?.at(-1) ?? plan.via
-          // A transit can return to the exit layer inside the repair strip.
-          // Retain its real barrel and all earlier copper, then search from
-          // that existing via as a same-layer cut without creating another via.
-          if (
-            !finalVia ||
-            finalVia.toLayer !== plan.targetLayer ||
-            !points[0] ||
-            distance(finalVia.center, points[0]) > EPSILON ||
-            first < (plan.sourceEscapeSegmentCount ?? 1)
+    for (const origin of origins) {
+      for (const multiplier of [8, 16, 24]) {
+        const width = Math.min(multiplier * pitch, maximumWidth)
+        const axis = edge === "left" || edge === "right" ? "x" : "y"
+        const sign = edge === "left" || edge === "bottom" ? 1 : -1
+        const border =
+          edge === "left"
+            ? boundary.minX
+            : edge === "right"
+              ? boundary.maxX
+              : edge === "top"
+                ? boundary.maxY
+                : boundary.minY
+        const requested = border + sign * width
+        const cutAxis =
+          origin[axis] +
+          (sign > 0
+            ? Math.ceil((requested - origin[axis]) / step)
+            : Math.floor((requested - origin[axis]) / step)) *
+            step
+        const depth = (cutAxis - border) * sign
+        const cuts = active.map((plan) => {
+          const { first, points } = lastLayerPath(plan)
+          const index = points.findLastIndex(
+            (p) => inward(p, edge, boundary) >= depth - EPSILON,
           )
+          if (index < 0) {
+            const finalVia = plan.additionalVias?.at(-1) ?? plan.via
+            // A transit can return to the exit layer inside the repair strip.
+            // Retain its real barrel and all earlier copper, then search from
+            // that existing via as a same-layer cut without creating another via.
+            if (
+              !finalVia ||
+              finalVia.toLayer !== plan.targetLayer ||
+              !points[0] ||
+              distance(finalVia.center, points[0]) > EPSILON ||
+              first < (plan.sourceEscapeSegmentCount ?? 1)
+            )
+              return null
+            return { plan, first, prefix: [points[0]], point: points[0] }
+          }
+          if (index >= points.length - 1) return null
+          const a = points[index]!,
+            b = points[index + 1]!,
+            t = (cutAxis - a[axis]) / (b[axis] - a[axis])
+          if (!Number.isFinite(t) || t < -EPSILON || t > 1 + EPSILON)
             return null
-          return { plan, first, prefix: [points[0]], point: points[0] }
-        }
-        if (index >= points.length - 1) return null
-        const a = points[index]!,
-          b = points[index + 1]!,
-          t = (cutAxis - a[axis]) / (b[axis] - a[axis])
-        if (!Number.isFinite(t) || t < -EPSILON || t > 1 + EPSILON) return null
-        const point = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
-        const prefix = [
-          ...points.slice(0, index + 1),
-          ...(distance(a, point) > EPSILON ? [point] : []),
-        ]
-        if (first + prefix.length - 1 < (plan.sourceEscapeSegmentCount ?? 1))
-          return null
-        return { plan, first, prefix, point }
-      })
-      if (cuts.some((c) => !c)) continue
-      const completeCuts = cuts.filter((c) => c !== null)
-      const stable = [
-        ...plans.filter((p) => !selected.has(p)),
-        ...reservedPlans,
-      ]
-      const prefixes = completeCuts.map((c) => ({
-        ...withLastLayerPath(c.plan, c.first, c.prefix),
-        exitPoint: c.point,
-      }))
-      const blockers = [...stable, ...prefixes]
-      const terminals = completeCuts.map((c) => ({
-        connection: {
-          ...owners.get(c.plan.connectionIndex)!.connection,
-          sourcePoint: { ...c.point, layer },
-          sourceLayer: layer,
-        },
-        viaPoint: c.point,
-        exitPoint: c.plan.exitPoint,
-      }))
-      const strip = { ...boundary }
-      if (edge === "left")
-        strip.maxX = Math.min(boundary.maxX, cutAxis + 3 * pitch)
-      if (edge === "right")
-        strip.minX = Math.max(boundary.minX, cutAxis - 3 * pitch)
-      if (edge === "bottom")
-        strip.maxY = Math.min(boundary.maxY, cutAxis + 3 * pitch)
-      if (edge === "top")
-        strip.minY = Math.max(boundary.minY, cutAxis - 3 * pitch)
-      const perpendicular = axis === "x" ? "y" : "x",
-        coordinates = terminals.flatMap((t) => [
-          t.viaPoint[perpendicular],
-          t.exitPoint[perpendicular],
-        ])
-      if (perpendicular === "x") {
-        strip.minX = Math.max(strip.minX, Math.min(...coordinates) - 3 * pitch)
-        strip.maxX = Math.min(strip.maxX, Math.max(...coordinates) + 3 * pitch)
-      } else {
-        strip.minY = Math.max(strip.minY, Math.min(...coordinates) - 3 * pitch)
-        strip.maxY = Math.min(strip.maxY, Math.max(...coordinates) + 3 * pitch)
-      }
-      const bus = {
-        ...owners.get(active[0]!.connectionIndex)!.bus,
-        connections: terminals.map((t) => t.connection),
-        sharedBoundary: strip,
-      }
-      const steps = routeViaMinimalWindingAlternativesSteps(
-        {
-          ...params,
-          srj: inputSrj,
-          bus,
-          terminals,
-          targetLayer: layer,
-          // These temporary terminals start at retained same-layer cuts.
-          sourceEscapePaths: undefined,
-          acceptedPlans: blockers,
-          reservedVias: blockers.flatMap((p) =>
-            [p.via, ...(p.additionalVias ?? []), p.planeEndpointVia]
-              .filter((v) => !!v)
-              .map((via) => ({ connectionName: p.connectionName, via })),
-          ),
-          gridStep: step,
-          gridOrigin: origin,
-          gridStepDivisor: 2,
-          alignGridToPads: true,
-          heuristicWeight: 2,
-          maximumRouteOrderAttempts: 72,
-          reserveTerminalExitPoints: true,
-          adaptiveRouteOrder: true,
-          allowSourceLayerRouting: true,
-          forbidEarlyExitBoundaryContact: true,
-        },
-        1,
-        false,
-      )
-      let next = steps.next()
-      while (!next.done) next = steps.next()
-      const result = next.value[0]
-      if (!result) continue
-      const candidates = completeCuts.map((c) => {
-        const tail = result.find(
-          (p) => p.connectionIndex === c.plan.connectionIndex,
-        )!
-        if (!tail || tail.via || tail.additionalVias?.length)
-          throw new Error(
-            "FanoutSolver: boundary-tail repair added a physical via",
-          )
-        const points = removeReversingTailCorners(
-          [...c.prefix, ...tail.segments.map((s) => s.end)],
-          c.prefix.length - 1,
-        )
-        return withLastLayerPath(c.plan, c.first, points)
-      })
-      if (
-        !fanoutPlansAreClear({
-          plans: candidates,
-          srj: {
-            ...inputSrj,
-            traces: [
-              ...(inputSrj.traces ?? []),
-              ...stable.flatMap((p) => [
-                p.trace,
-                ...(p.planeEndpointTrace ? [p.planeEndpointTrace] : []),
-              ]),
-            ],
-          },
-          sharedBoundary: boundary,
-          clearance,
-          allowBlindAndBuriedVias: params.allowBlindAndBuriedVias,
-          allowSameNetMerges: params.allowSameNetMerges,
+          const point = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+          const prefix = [
+            ...points.slice(0, index + 1),
+            ...(distance(a, point) > EPSILON ? [point] : []),
+          ]
+          if (first + prefix.length - 1 < (plan.sourceEscapeSegmentCount ?? 1))
+            return null
+          return { plan, first, prefix, point }
         })
-      )
-        continue
-      repaired = candidates
-      break
+        if (cuts.some((c) => !c)) continue
+        const completeCuts = cuts.filter((c) => c !== null)
+        const stable = [
+          ...plans.filter((p) => !selected.has(p)),
+          ...reservedPlans,
+        ]
+        const prefixes = completeCuts.map((c) => ({
+          ...withLastLayerPath(c.plan, c.first, c.prefix),
+          exitPoint: c.point,
+        }))
+        const blockers = [...stable, ...prefixes]
+        const terminals = completeCuts.map((c) => ({
+          connection: {
+            ...owners.get(c.plan.connectionIndex)!.connection,
+            sourcePoint: { ...c.point, layer },
+            sourceLayer: layer,
+          },
+          viaPoint: c.point,
+          exitPoint: c.plan.exitPoint,
+        }))
+        const strip = { ...boundary }
+        if (edge === "left")
+          strip.maxX = Math.min(boundary.maxX, cutAxis + 3 * pitch)
+        if (edge === "right")
+          strip.minX = Math.max(boundary.minX, cutAxis - 3 * pitch)
+        if (edge === "bottom")
+          strip.maxY = Math.min(boundary.maxY, cutAxis + 3 * pitch)
+        if (edge === "top")
+          strip.minY = Math.max(boundary.minY, cutAxis - 3 * pitch)
+        const perpendicular = axis === "x" ? "y" : "x",
+          coordinates = terminals.flatMap((t) => [
+            t.viaPoint[perpendicular],
+            t.exitPoint[perpendicular],
+          ])
+        if (perpendicular === "x") {
+          strip.minX = Math.max(
+            strip.minX,
+            Math.min(...coordinates) - 3 * pitch,
+          )
+          strip.maxX = Math.min(
+            strip.maxX,
+            Math.max(...coordinates) + 3 * pitch,
+          )
+        } else {
+          strip.minY = Math.max(
+            strip.minY,
+            Math.min(...coordinates) - 3 * pitch,
+          )
+          strip.maxY = Math.min(
+            strip.maxY,
+            Math.max(...coordinates) + 3 * pitch,
+          )
+        }
+        const bus = {
+          ...owners.get(active[0]!.connectionIndex)!.bus,
+          connections: terminals.map((t) => t.connection),
+          sharedBoundary: strip,
+        }
+        const steps = routeViaMinimalWindingAlternativesSteps(
+          {
+            ...params,
+            srj: inputSrj,
+            bus,
+            terminals,
+            targetLayer: layer,
+            // These temporary terminals start at retained same-layer cuts.
+            sourceEscapePaths: undefined,
+            acceptedPlans: blockers,
+            reservedVias: blockers.flatMap((p) =>
+              [p.via, ...(p.additionalVias ?? []), p.planeEndpointVia]
+                .filter((v) => !!v)
+                .map((via) => ({ connectionName: p.connectionName, via })),
+            ),
+            gridStep: step,
+            gridOrigin: origin,
+            gridStepDivisor: 2,
+            alignGridToPads: true,
+            heuristicWeight: 2,
+            maximumRouteOrderAttempts: 72,
+            reserveTerminalExitPoints: true,
+            adaptiveRouteOrder: true,
+            allowSourceLayerRouting: true,
+            forbidEarlyExitBoundaryContact: true,
+          },
+          1,
+          false,
+        )
+        let next = steps.next()
+        while (!next.done) next = steps.next()
+        const result = next.value[0]
+        if (!result) continue
+        const candidates = completeCuts.map((c) => {
+          const tail = result.find(
+            (p) => p.connectionIndex === c.plan.connectionIndex,
+          )!
+          if (!tail || tail.via || tail.additionalVias?.length)
+            throw new Error(
+              "FanoutSolver: boundary-tail repair added a physical via",
+            )
+          const points = removeReversingTailCorners(
+            [...c.prefix, ...tail.segments.map((s) => s.end)],
+            c.prefix.length - 1,
+          )
+          return withLastLayerPath(c.plan, c.first, points)
+        })
+        if (
+          !fanoutPlansAreClear({
+            plans: candidates,
+            srj: {
+              ...inputSrj,
+              traces: [
+                ...(inputSrj.traces ?? []),
+                ...stable.flatMap((p) => [
+                  p.trace,
+                  ...(p.planeEndpointTrace ? [p.planeEndpointTrace] : []),
+                ]),
+              ],
+            },
+            sharedBoundary: boundary,
+            clearance,
+            allowBlindAndBuriedVias: params.allowBlindAndBuriedVias,
+            allowSameNetMerges: params.allowSameNetMerges,
+          })
+        )
+          continue
+        repaired = candidates
+        break
+      }
+      if (repaired) break
     }
     if (!repaired) return null
     for (const plan of repaired)
