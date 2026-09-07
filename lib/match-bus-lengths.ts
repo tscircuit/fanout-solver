@@ -493,14 +493,13 @@ function createTunedPlanCandidates(params: {
   const denseMargin = plan.segments[0]?.width
     ? plan.segments[0].width / 2 + clearance
     : clearance
-  const sourcePrefixEnd =
-    allowDeclaredCrossoverLayers && plan.via
-      ? plan.segments.findIndex(
-          (segment) =>
-            segment.layer === plan.via!.fromLayer &&
-            pointsMatch(segment.end, plan.via!.center),
-        ) + 1
-      : 0
+  const sourcePrefixEnd = plan.via
+    ? plan.segments.findIndex(
+        (segment) =>
+          segment.layer === plan.via!.fromLayer &&
+          pointsMatch(segment.end, plan.via!.center),
+      ) + 1
+    : 0
   const declaredLayers = (
     bus.routableEscapeLayers ??
     bus.allowedLayers ??
