@@ -32,7 +32,7 @@ test("smaller 45-degree chamfers tune a long tail inside a narrow copper corrido
   expect(long).toBe(plans[1])
   expect(short.length - plans[0]!.length).toBeGreaterThanOrEqual(2.4)
   expect(Math.abs(long.length - short.length)).toBeLessThanOrEqual(
-    bus.maxLengthSkew + 1e-6,
+    bus.maxLengthSkew! + 1e-6,
   )
   expect(short.sourceObstacle).toBe(prepared[0]!.sourceObstacle)
   expect(short.sourcePoint).toBe(prepared[0]!.sourcePoint)
