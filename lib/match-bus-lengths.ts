@@ -237,48 +237,86 @@ function getDenseCopperBounds(bus: PreparedBus): Bounds {
   )
 }
 
-function hasNonAdjacentSelfIntersection(
-  segments: readonly RoutedSegment[],
+function segmentsIntersect(
+  first: RoutedSegment,
+  second: RoutedSegment,
 ): boolean {
-  for (let firstIndex = 0; firstIndex < segments.length; firstIndex++) {
-    const first = segments[firstIndex]!
-    for (
-      let secondIndex = firstIndex + 2;
-      secondIndex < segments.length;
-      secondIndex++
-    ) {
-      const second = segments[secondIndex]!
-      if (first.layer !== second.layer) continue
-      if (
-        secondIndex === firstIndex + 2 &&
-        pointsMatch(first.end, second.start)
-      ) {
-        continue
-      }
-      if (
-        Math.min(first.start.x, first.end.x) >
-          Math.max(second.start.x, second.end.x) + EPSILON ||
-        Math.min(second.start.x, second.end.x) >
-          Math.max(first.start.x, first.end.x) + EPSILON ||
-        Math.min(first.start.y, first.end.y) >
-          Math.max(second.start.y, second.end.y) + EPSILON ||
-        Math.min(second.start.y, second.end.y) >
-          Math.max(first.start.y, first.end.y) + EPSILON
-      )
-        continue
-      if (
-        distanceSegmentToSegment(
-          first.start,
-          first.end,
-          second.start,
-          second.end,
-        ) <= EPSILON
-      ) {
-        return true
-      }
+  if (first.layer !== second.layer) return false
+  if (
+    Math.min(first.start.x, first.end.x) >
+      Math.max(second.start.x, second.end.x) + EPSILON ||
+    Math.min(second.start.x, second.end.x) >
+      Math.max(first.start.x, first.end.x) + EPSILON ||
+    Math.min(first.start.y, first.end.y) >
+      Math.max(second.start.y, second.end.y) + EPSILON ||
+    Math.min(second.start.y, second.end.y) >
+      Math.max(first.start.y, first.end.y) + EPSILON
+  )
+    return false
+  return (
+    distanceSegmentToSegment(
+      first.start,
+      first.end,
+      second.start,
+      second.end,
+    ) <= EPSILON
+  )
+}
+
+/** Cache unchanged geometry while replacing exactly one original segment. */
+function createReplacementSelfIntersectionChecker(
+  original: readonly RoutedSegment[],
+): (
+  segments: readonly RoutedSegment[],
+  replacementStartIndex: number,
+  replacementSegmentCount: number,
+) => boolean {
+  let originalIntersections: [number, number][] | undefined
+  return (segments, replacementStartIndex, replacementSegmentCount) => {
+    // Generators can reject every placement before reaching this check.
+    // Avoid scanning their retained path until a candidate actually needs it.
+    if (!originalIntersections) {
+      originalIntersections = []
+      for (let first = 0; first < original.length; first++)
+        for (let second = first + 2; second < original.length; second++)
+          if (segmentsIntersect(original[first]!, original[second]!))
+            originalIntersections.push([first, second])
     }
+    const replacementEndIndex =
+      replacementStartIndex + replacementSegmentCount - 1
+    const hasAdjacencyExemption = (first: number, second: number) =>
+      second === first + 2 &&
+      pointsMatch(segments[first]!.end, segments[second]!.start)
+    for (const [first, second] of originalIntersections) {
+      if (first === replacementStartIndex || second === replacementStartIndex)
+        continue
+      const shiftedFirst =
+          first > replacementStartIndex
+            ? first + replacementSegmentCount - 1
+            : first,
+        shiftedSecond =
+          second > replacementStartIndex
+            ? second + replacementSegmentCount - 1
+            : second
+      // Reapply the original index-based exemption after the replacement has
+      // shifted the untouched segments. No pre-existing crossing is ignored.
+      if (!hasAdjacencyExemption(shiftedFirst, shiftedSecond)) return true
+    }
+    for (
+      let replacement = replacementStartIndex;
+      replacement <= replacementEndIndex;
+      replacement++
+    )
+      for (let other = 0; other < segments.length; other++) {
+        if (Math.abs(replacement - other) < 2) continue
+        if (other >= replacementStartIndex && other < replacement) continue
+        const first = Math.min(replacement, other),
+          second = Math.max(replacement, other)
+        if (hasAdjacencyExemption(first, second)) continue
+        if (segmentsIntersect(segments[first]!, segments[second]!)) return true
+      }
+    return false
   }
-  return false
 }
 
 function replacementCopperIsSelfClear(params: {
@@ -502,6 +540,8 @@ function* createTunedPlanCandidates(params: {
     denseBoundarySplitApplied = false,
   } = params
   const denseCopperBounds = getDenseCopperBounds(bus)
+  const replacementHasSelfIntersection =
+    createReplacementSelfIntersectionChecker(plan.segments)
   const denseMargin = plan.segments[0]?.width
     ? plan.segments[0].width / 2 + clearance
     : clearance
@@ -564,7 +604,14 @@ function* createTunedPlanCandidates(params: {
             ...replacementSegments,
             ...plan.segments.slice(segmentIndex + 1),
           ]
-          if (hasNonAdjacentSelfIntersection(segments)) continue
+          if (
+            replacementHasSelfIntersection(
+              segments,
+              segmentIndex,
+              replacementSegments.length,
+            )
+          )
+            continue
           if (
             !replacementCopperIsSelfClear({
               plan,
@@ -608,6 +655,8 @@ function* createSpreadLaneCandidates(
   plan: FanoutRoutePlan,
   clearance: number,
 ): Generator<FanoutRoutePlan> {
+  const replacementHasSelfIntersection =
+    createReplacementSelfIntersectionChecker(plan.segments)
   for (const { segment, index } of plan.segments
     .map((segment, index) => ({ segment, index }))
     .filter(({ segment }) => segment.layer === plan.targetLayer)
@@ -647,7 +696,8 @@ function* createSpreadLaneCandidates(
           ...replacement,
           ...plan.segments.slice(index + 1),
         ]
-        if (hasNonAdjacentSelfIntersection(segments)) continue
+        if (replacementHasSelfIntersection(segments, index, replacement.length))
+          continue
         if (
           !replacementCopperIsSelfClear({
             plan,
