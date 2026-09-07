@@ -207,6 +207,8 @@ function getRepairGridOrigins(
     candidates: { coordinate: number; count: number }[] = []
   const samePhase = (a: number, b: number) =>
     Math.abs(a - b - Math.round((a - b) / step) * step) <= EPSILON
+  if (coordinates.length === 1 && !samePhase(coordinates[0]!, origin[axis]))
+    candidates.push({ coordinate: coordinates[0]!, count: 1 })
   for (let i = 1; i < coordinates.length; i++) {
     for (const coordinate of [coordinates[i - 1]!, coordinates[i]!]) {
       if (samePhase(coordinate, origin[axis])) continue
@@ -226,6 +228,70 @@ function getRepairGridOrigins(
       .slice(0, 3)
       .map(({ coordinate }) => ({ ...origin, [axis]: coordinate })),
   ]
+}
+
+/** Keep independent exit corridors free to use different exact grid phases. */
+function splitBoundaryClusters(
+  group: readonly FanoutRoutePlan[],
+  tails: readonly RoutedSegment[][],
+  edge: FanoutEdge,
+  traceWidth: number,
+  clearance: number,
+): FanoutRoutePlan[][] {
+  const pitch = traceWidth + clearance
+  const parents = group.map((_, index) => index)
+  const root = (index: number): number => {
+    while (parents[index] !== index) index = parents[index]!
+    return index
+  }
+  const blocksApproach = (
+    segments: readonly RoutedSegment[],
+    exit: Point2D,
+  ) => {
+    const inwardPoint = {
+      x:
+        exit.x +
+        (edge === "left" ? 2 * pitch : edge === "right" ? -2 * pitch : 0),
+      y:
+        exit.y +
+        (edge === "bottom" ? 2 * pitch : edge === "top" ? -2 * pitch : 0),
+    }
+    return segments.some(
+      (segment) =>
+        distanceSegmentToSegment(
+          segment.start,
+          segment.end,
+          exit,
+          inwardPoint,
+        ) <
+        (segment.width + traceWidth) / 2 + clearance - EPSILON,
+    )
+  }
+  for (let i = 0; i < group.length; i++)
+    for (let j = i + 1; j < group.length; j++) {
+      if (root(i) === root(j)) continue
+      const connected =
+        distance(group[i]!.exitPoint, group[j]!.exitPoint) <=
+          2 * pitch + EPSILON ||
+        blocksApproach(tails[i]!, group[j]!.exitPoint) ||
+        blocksApproach(tails[j]!, group[i]!.exitPoint) ||
+        tails[i]!.some((a) =>
+          tails[j]!.some(
+            (b) =>
+              distanceSegmentToSegment(a.start, a.end, b.start, b.end) <
+              (a.width + b.width) / 2 + clearance - EPSILON,
+          ),
+        )
+      if (connected) parents[root(j)] = root(i)
+    }
+  const clusters = new Map<number, FanoutRoutePlan[]>()
+  group.forEach((plan, index) => {
+    const key = root(index),
+      cluster = clusters.get(key) ?? []
+    cluster.push(plan)
+    clusters.set(key, cluster)
+  })
+  return [...clusters.values()]
 }
 
 /**
@@ -279,7 +345,9 @@ export function repairBoundaryRouteTails(
     group.push(plan)
     groups.set(key, group)
   }
-  for (const group of groups.values()) {
+  const pendingGroups = [...groups.values()]
+  for (let groupIndex = 0; groupIndex < pendingGroups.length; groupIndex++) {
+    const group = pendingGroups[groupIndex]!
     const edge = group[0]!.exitEdge!,
       layer = group[0]!.targetLayer,
       boundary = owners.get(group[0]!.connectionIndex)!.bus.sharedBoundary
@@ -294,6 +362,18 @@ export function repairBoundaryRouteTails(
         .filter((s) => s.layer === layer)
         .flatMap((s) => borderSegment(s, edge, boundary, maximumWidth) ?? []),
     )
+    const clusters = splitBoundaryClusters(
+      group,
+      tails,
+      edge,
+      traceWidth,
+      clearance,
+    )
+    if (clusters.length > 1) {
+      pendingGroups.splice(groupIndex, 1, ...clusters)
+      groupIndex--
+      continue
+    }
     // Include both members of every conflict, even when one individual path
     // could already be normalized: its final approach may fence its neighbor.
     const selected = new Set<FanoutRoutePlan>()
