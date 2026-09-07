@@ -3,16 +3,16 @@
   "dataset": "dataset31",
   "datasetSource": {
     "repository": "https://github.com/tscircuit/dataset-fanout31-am62l",
-    "commit": "8b89395624e3ce2d61e26f9fa8f907273047a2e2"
+    "commit": "637a6566a011be520b4fd170ad3f6da696ad4ff9"
   },
-  "generatedAt": "2026-09-07T19:18:38.812Z",
-  "commit": "7f0f74771c72efa42b5cdacb4eda93c99927e785",
+  "generatedAt": "2026-09-07T20:31:13.620Z",
+  "commit": "16ee0c6fcc28c0c7d174d8b674056ecc5ac54e66",
   "configuration": {
     "concurrency": 4,
     "sampleTimeoutSeconds": 120
   },
-  "wallClockMilliseconds": 1291717,
-  "totalSamples": 60,
+  "wallClockMilliseconds": 1450740,
+  "totalSamples": 72,
   "rows": [
     {
       "dataset": "dataset31",
@@ -24,7 +24,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 37628
+      "milliseconds": 38139
     },
     {
       "dataset": "dataset31",
@@ -36,7 +36,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 16626
+      "milliseconds": 15334
     },
     {
       "dataset": "dataset31",
@@ -48,7 +48,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 24744
+      "milliseconds": 23551
     },
     {
       "dataset": "dataset31",
@@ -60,7 +60,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 3625
+      "milliseconds": 3349
     },
     {
       "dataset": "dataset31",
@@ -72,7 +72,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 2422
+      "milliseconds": 2341
     },
     {
       "dataset": "dataset31",
@@ -84,7 +84,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 3313
+      "milliseconds": 3129
     },
     {
       "dataset": "dataset31",
@@ -96,7 +96,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 31119
+      "milliseconds": 32226
     },
     {
       "dataset": "dataset31",
@@ -108,7 +108,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 15480
+      "milliseconds": 16220
     },
     {
       "dataset": "dataset31",
@@ -120,7 +120,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 44208
+      "milliseconds": 39999
     },
     {
       "dataset": "dataset31",
@@ -132,7 +132,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 30737
+      "milliseconds": 28359
     },
     {
       "dataset": "dataset31",
@@ -144,7 +144,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 8957
+      "milliseconds": 8815
     },
     {
       "dataset": "dataset31",
@@ -156,7 +156,7 @@
       "validatedBreakouts": 135,
       "attempts": 1,
       "vias": 135,
-      "milliseconds": 27727
+      "milliseconds": 22877
     },
     {
       "dataset": "dataset31",
@@ -168,7 +168,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120016,
+      "milliseconds": 120015,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -181,7 +181,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120016,
+      "milliseconds": 120013,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -194,7 +194,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120031,
+      "milliseconds": 120030,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -207,7 +207,7 @@
       "validatedBreakouts": 162,
       "attempts": 1,
       "vias": 194,
-      "milliseconds": 13006
+      "milliseconds": 39048
     },
     {
       "dataset": "dataset31",
@@ -218,8 +218,8 @@
       "routed": 162,
       "validatedBreakouts": 162,
       "attempts": 1,
-      "vias": 194,
-      "milliseconds": 3896
+      "vias": 190,
+      "milliseconds": 20734
     },
     {
       "dataset": "dataset31",
@@ -231,7 +231,7 @@
       "validatedBreakouts": 162,
       "attempts": 1,
       "vias": 194,
-      "milliseconds": 35391
+      "milliseconds": 66414
     },
     {
       "dataset": "dataset31",
@@ -243,7 +243,7 @@
       "validatedBreakouts": 162,
       "attempts": 1,
       "vias": 176,
-      "milliseconds": 86941
+      "milliseconds": 62472
     },
     {
       "dataset": "dataset31",
@@ -255,7 +255,7 @@
       "validatedBreakouts": 162,
       "attempts": 1,
       "vias": 174,
-      "milliseconds": 97554
+      "milliseconds": 51843
     },
     {
       "dataset": "dataset31",
@@ -267,7 +267,7 @@
       "validatedBreakouts": 162,
       "attempts": 1,
       "vias": 172,
-      "milliseconds": 117521
+      "milliseconds": 118305
     },
     {
       "dataset": "dataset31",
@@ -279,7 +279,7 @@
       "validatedBreakouts": 162,
       "attempts": 1,
       "vias": 194,
-      "milliseconds": 32785
+      "milliseconds": 58409
     },
     {
       "dataset": "dataset31",
@@ -290,8 +290,8 @@
       "routed": 162,
       "validatedBreakouts": 162,
       "attempts": 1,
-      "vias": 194,
-      "milliseconds": 15516
+      "vias": 174,
+      "milliseconds": 31221
     },
     {
       "dataset": "dataset31",
@@ -302,8 +302,8 @@
       "routed": 162,
       "validatedBreakouts": 162,
       "attempts": 1,
-      "vias": 194,
-      "milliseconds": 7802
+      "vias": 170,
+      "milliseconds": 38235
     },
     {
       "dataset": "dataset31",
@@ -315,7 +315,7 @@
       "validatedBreakouts": 171,
       "attempts": 1,
       "vias": 199,
-      "milliseconds": 110305
+      "milliseconds": 96491
     },
     {
       "dataset": "dataset31",
@@ -327,7 +327,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120033,
+      "milliseconds": 120023,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -340,7 +340,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120019,
+      "milliseconds": 120020,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -353,7 +353,7 @@
       "validatedBreakouts": 171,
       "attempts": 1,
       "vias": 181,
-      "milliseconds": 104543
+      "milliseconds": 86890
     },
     {
       "dataset": "dataset31",
@@ -365,7 +365,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120028,
+      "milliseconds": 120027,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -378,7 +378,7 @@
       "validatedBreakouts": 171,
       "attempts": 1,
       "vias": 195,
-      "milliseconds": 74076
+      "milliseconds": 67202
     },
     {
       "dataset": "dataset31",
@@ -390,33 +390,31 @@
       "validatedBreakouts": 171,
       "attempts": 1,
       "vias": 171,
-      "milliseconds": 87547
+      "milliseconds": 85497
     },
     {
       "dataset": "dataset31",
       "sample": "32-k230-bottom-center",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 171,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120033,
-      "error": "Exceeded 120s process deadline"
+      "routed": 171,
+      "validatedBreakouts": 171,
+      "attempts": 1,
+      "vias": 193,
+      "milliseconds": 95590
     },
     {
       "dataset": "dataset31",
       "sample": "33-k230-bottom-left-offset",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 171,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120026,
-      "error": "Exceeded 120s process deadline"
+      "routed": 171,
+      "validatedBreakouts": 171,
+      "attempts": 1,
+      "vias": 249,
+      "milliseconds": 106986
     },
     {
       "dataset": "dataset31",
@@ -428,7 +426,7 @@
       "validatedBreakouts": 171,
       "attempts": 1,
       "vias": 183,
-      "milliseconds": 60717
+      "milliseconds": 47845
     },
     {
       "dataset": "dataset31",
@@ -440,7 +438,7 @@
       "validatedBreakouts": 171,
       "attempts": 1,
       "vias": 203,
-      "milliseconds": 68738
+      "milliseconds": 60008
     },
     {
       "dataset": "dataset31",
@@ -452,7 +450,7 @@
       "validatedBreakouts": 171,
       "attempts": 1,
       "vias": 207,
-      "milliseconds": 102175
+      "milliseconds": 71027
     },
     {
       "dataset": "dataset31",
@@ -464,85 +462,79 @@
       "validatedBreakouts": 102,
       "attempts": 1,
       "vias": 108,
-      "milliseconds": 45315
+      "milliseconds": 29866
     },
     {
       "dataset": "dataset31",
       "sample": "38-imx6ull-top-center",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 102,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120031,
-      "error": "Exceeded 120s process deadline"
+      "routed": 102,
+      "validatedBreakouts": 102,
+      "attempts": 1,
+      "vias": 108,
+      "milliseconds": 34042
     },
     {
       "dataset": "dataset31",
       "sample": "39-imx6ull-top-right-offset",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 102,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120028,
-      "error": "Exceeded 120s process deadline"
+      "routed": 102,
+      "validatedBreakouts": 102,
+      "attempts": 1,
+      "vias": 108,
+      "milliseconds": 91310
     },
     {
       "dataset": "dataset31",
       "sample": "40-imx6ull-right-top-offset",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 102,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120013,
-      "error": "Exceeded 120s process deadline"
+      "routed": 102,
+      "validatedBreakouts": 102,
+      "attempts": 1,
+      "vias": 116,
+      "milliseconds": 42974
     },
     {
       "dataset": "dataset31",
       "sample": "41-imx6ull-right-center",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 102,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120012,
-      "error": "Exceeded 120s process deadline"
+      "routed": 102,
+      "validatedBreakouts": 102,
+      "attempts": 1,
+      "vias": 122,
+      "milliseconds": 17810
     },
     {
       "dataset": "dataset31",
       "sample": "42-imx6ull-right-bottom-offset",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 102,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120012,
-      "error": "Exceeded 120s process deadline"
+      "routed": 102,
+      "validatedBreakouts": 102,
+      "attempts": 1,
+      "vias": 102,
+      "milliseconds": 32817
     },
     {
       "dataset": "dataset31",
       "sample": "43-imx6ull-bottom-right-offset",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 102,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120034,
-      "error": "Exceeded 120s process deadline"
+      "routed": 102,
+      "validatedBreakouts": 102,
+      "attempts": 1,
+      "vias": 114,
+      "milliseconds": 36237
     },
     {
       "dataset": "dataset31",
@@ -567,47 +559,44 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120038,
+      "milliseconds": 120026,
       "error": "Exceeded 120s process deadline"
     },
     {
       "dataset": "dataset31",
       "sample": "46-imx6ull-left-bottom-offset",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 102,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120019,
-      "error": "Exceeded 120s process deadline"
+      "routed": 102,
+      "validatedBreakouts": 102,
+      "attempts": 1,
+      "vias": 114,
+      "milliseconds": 58195
     },
     {
       "dataset": "dataset31",
       "sample": "47-imx6ull-left-center",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 102,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120016,
-      "error": "Exceeded 120s process deadline"
+      "routed": 102,
+      "validatedBreakouts": 102,
+      "attempts": 1,
+      "vias": 118,
+      "milliseconds": 36698
     },
     {
       "dataset": "dataset31",
       "sample": "48-imx6ull-left-top-offset",
-      "status": "timeout",
+      "status": "solved",
       "scope": "fanout",
       "connections": 102,
-      "routed": 0,
-      "validatedBreakouts": null,
-      "attempts": 0,
-      "vias": null,
-      "milliseconds": 120017,
-      "error": "Exceeded 120s process deadline"
+      "routed": 102,
+      "validatedBreakouts": 102,
+      "attempts": 1,
+      "vias": 122,
+      "milliseconds": 59480
     },
     {
       "dataset": "dataset31",
@@ -619,7 +608,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120015,
+      "milliseconds": 120011,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -632,7 +621,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120014,
+      "milliseconds": 120010,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -658,7 +647,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120011,
+      "milliseconds": 120012,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -684,7 +673,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120014,
+      "milliseconds": 120011,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -697,7 +686,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120013,
+      "milliseconds": 120012,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -710,7 +699,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120014,
+      "milliseconds": 120009,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -723,7 +712,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120011,
+      "milliseconds": 120010,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -736,7 +725,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120013,
+      "milliseconds": 120012,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -749,7 +738,7 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
-      "milliseconds": 120012,
+      "milliseconds": 120011,
       "error": "Exceeded 120s process deadline"
     },
     {
@@ -762,7 +751,163 @@
       "validatedBreakouts": null,
       "attempts": 0,
       "vias": null,
+      "milliseconds": 120010,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "61-am3352-top-left-offset",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120010,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "62-am3352-top-center",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
       "milliseconds": 120014,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "63-am3352-top-right-offset",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120013,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "64-am3352-right-top-offset",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120011,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "65-am3352-right-center",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120011,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "66-am3352-right-bottom-offset",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120011,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "67-am3352-bottom-right-offset",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120013,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "68-am3352-bottom-center",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120012,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "69-am3352-bottom-left-offset",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120012,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "70-am3352-left-bottom-offset",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120012,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "71-am3352-left-center",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120016,
+      "error": "Exceeded 120s process deadline"
+    },
+    {
+      "dataset": "dataset31",
+      "sample": "72-am3352-left-top-offset",
+      "status": "timeout",
+      "scope": "fanout",
+      "connections": 322,
+      "routed": 0,
+      "validatedBreakouts": null,
+      "attempts": 0,
+      "vias": null,
+      "milliseconds": 120012,
       "error": "Exceeded 120s process deadline"
     }
   ]
