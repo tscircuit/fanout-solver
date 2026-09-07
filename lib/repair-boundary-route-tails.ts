@@ -324,7 +324,22 @@ export function repairBoundaryRouteTails(
         const index = points.findLastIndex(
           (p) => inward(p, edge, boundary) >= depth - EPSILON,
         )
-        if (index < 0 || index >= points.length - 1) return null
+        if (index < 0) {
+          const finalVia = plan.additionalVias?.at(-1) ?? plan.via
+          // A transit can return to the exit layer inside the repair strip.
+          // Retain its real barrel and all earlier copper, then search from
+          // that existing via as a same-layer cut without creating another via.
+          if (
+            !finalVia ||
+            finalVia.toLayer !== plan.targetLayer ||
+            !points[0] ||
+            distance(finalVia.center, points[0]) > EPSILON ||
+            first < (plan.sourceEscapeSegmentCount ?? 1)
+          )
+            return null
+          return { plan, first, prefix: [points[0]], point: points[0] }
+        }
+        if (index >= points.length - 1) return null
         const a = points[index]!,
           b = points[index + 1]!,
           t = (cutAxis - a[axis]) / (b[axis] - a[axis])
@@ -408,6 +423,7 @@ export function repairBoundaryRouteTails(
           reserveTerminalExitPoints: true,
           adaptiveRouteOrder: true,
           allowSourceLayerRouting: true,
+          forbidEarlyExitBoundaryContact: true,
         },
         1,
         false,
