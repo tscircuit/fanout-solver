@@ -28,7 +28,7 @@ export interface RetainedBoundaryTailRepairParams {
 export interface RetainedBoundaryTailRepairProgress
   extends ReservedViaBusesProgress {
   busId: string
-  phase: "lane" | "bus" | "layer"
+  phase: "lane" | "bus" | "layer" | "overlong-pair"
 }
 
 interface ShortenedSingleton {
@@ -628,7 +628,7 @@ function* rerouteExistingBoundaryTailsSteps(
 }
 
 /** Reuse shorter singleton routes only after the existing repair paths fail. */
-export function* rerouteBusWithRetainedBoundaryTailsSteps(
+function* rerouteExistingAndShortenedBoundaryTailsSteps(
   params: RetainedBoundaryTailRepairParams,
 ): Generator<RetainedBoundaryTailRepairProgress, FanoutRoutePlan[] | null> {
   const shortened: ShortenedSingleton[] = []
@@ -718,4 +718,183 @@ export function* rerouteBusWithRetainedBoundaryTailsSteps(
     allowBlindAndBuriedVias: false,
   })
   return validation.valid ? plans : null
+}
+
+export { getRetainedTail as getRetainedBoundaryTail }
+
+/**
+ * Two long lanes can fence each other out of a shorter transit corridor.
+ * Reconsider only those lanes together, keeping all other copper and every
+ * original first via fixed. Return only after the intact bus matches.
+ */
+export function* rerouteTwoOverlongLanesSteps(
+  params: RetainedBoundaryTailRepairParams,
+): Generator<RetainedBoundaryTailRepairProgress, FanoutRoutePlan[] | null> {
+  const sources = getSourceReservations(params)
+  if (!sources) return null
+  const { inputSrj, preparedBuses, layerNames } = params
+  const requestedIterations = params.maximumIterationsPerAttempt ?? 5_000_000
+  if (!Number.isSafeInteger(requestedIterations) || requestedIterations < 1)
+    throw new Error(
+      "maximumIterationsPerAttempt must be a positive safe integer",
+    )
+  const maximumIterations = Math.min(requestedIterations, 5_000_000)
+  const selectedBuses = preparedBuses.filter(
+    (bus) =>
+      bus.termination.type === "boundary" &&
+      bus.connections.length > 2 &&
+      bus.maxLengthSkew !== undefined &&
+      (!params.busIds || params.busIds.includes(bus.busId)),
+  )
+  let plans = [...params.plans]
+  let repairedAny = false
+  for (const bus of selectedBuses) {
+    const own = plans.filter((plan) => plan.busId === bus.busId)
+    if (own.length !== bus.connections.length) return null
+    if (getSkew(own) <= bus.maxLengthSkew! + EPSILON) continue
+    const minimum = Math.min(...own.map((plan) => plan.length))
+    const overlong = own
+      .filter((plan) => plan.length > minimum + bus.maxLengthSkew! + EPSILON)
+      .toSorted(
+        (a, b) => b.length - a.length || a.connectionIndex - b.connectionIndex,
+      )
+      .slice(0, 2)
+    if (overlong.length !== 2) return null
+    const targetLayer = own[0]!.targetLayer
+    if (
+      !bus.exitEdge ||
+      own.some(
+        (p) =>
+          p.targetLayer !== targetLayer ||
+          p.planeEndpointTrace ||
+          p.planeEndpointSegments ||
+          p.planeEndpointVia,
+      )
+    )
+      return null
+    const permitted = (
+      bus.routableEscapeLayers ??
+      bus.allowedLayers ??
+      layerNames
+    ).filter((layer) => (bus.allowedLayers ?? layerNames).includes(layer))
+    const transitLayers = permitted.filter((layer) => layer !== targetLayer)
+    if (!permitted.includes(targetLayer) || !transitLayers.length) return null
+    const indices = new Set(overlong.map((plan) => plan.connectionIndex))
+    const connections = bus.connections.filter((c) =>
+      indices.has(c.connectionIndex),
+    )
+    const steps = routeReservedViaBusesSteps({
+      ...params,
+      srj: inputSrj,
+      allBuses: preparedBuses,
+      buses: [{ ...bus, connections }],
+      targetLayer,
+      transitLayers,
+      terminals: connections.map((connection) => ({
+        connection,
+        viaPoint: sources.fixed.get(connection.connectionIndex)!,
+        exitPoint: own.find(
+          (p) => p.connectionIndex === connection.connectionIndex,
+        )!.exitPoint,
+      })),
+      fixedViaPointsByConnectionIndex: sources.fixed,
+      sourceEscapePaths: sources.sourcePaths,
+      acceptedPlans: plans.filter((plan) => !indices.has(plan.connectionIndex)),
+      tightViaChannels: true,
+      includeDiagonalNeighbors: true,
+      ripCost: 64,
+      shuffleSeed: 1,
+      maximumIterations,
+      maximumRipEvents: 80,
+      maximumLocalRepairAttempts: 0,
+    })
+    let next = steps.next()
+    while (!next.done) {
+      yield { ...next.value, busId: bus.busId, phase: "overlong-pair" }
+      next = steps.next()
+    }
+    if (!next.value || next.value.length !== 2) return null
+    const routed = new Map(
+      next.value.map((plan) => [plan.connectionIndex, plan]),
+    )
+    const candidate = plans.map((original) => {
+      const replacement = routed.get(original.connectionIndex)
+      return replacement ? retainSource(original, replacement) : original
+    })
+    if (candidate.some((plan) => !plan)) return null
+    const matched = matchBusPlanLengths({
+      ...params,
+      plans: candidate as FanoutRoutePlan[],
+      preparedBuses: [bus],
+      sharedBoundary: bus.sharedBoundary,
+      allowBlindAndBuriedVias: false,
+      allowSameNetMerges: false,
+      allowMatchingInsideDenseBounds: true,
+      allowPairLaneSpreading: true,
+      allowUnconstrainedLaneRerouting: true,
+      maximumWorkUnits: 1_000,
+    })
+    if (!matched.plans) return null
+    const tuned = new Map(
+      matched.plans.map((plan) => [plan.connectionIndex, plan]),
+    )
+    const restored = plans.map((original) =>
+      original.busId === bus.busId
+        ? retainSource(original, tuned.get(original.connectionIndex)!)
+        : original,
+    )
+    if (restored.some((plan) => !plan)) return null
+    const complete = restored as FanoutRoutePlan[]
+    if (
+      getSkew(complete.filter((plan) => plan.busId === bus.busId)) >
+        bus.maxLengthSkew! + EPSILON ||
+      !fanoutPlansAreClear({
+        plans: complete,
+        srj: inputSrj,
+        sharedBoundary: bus.sharedBoundary,
+        clearance: params.clearance,
+        allowBlindAndBuriedVias: false,
+        allowSameNetMerges: false,
+      })
+    )
+      return null
+    plans = complete
+    repairedAny = true
+  }
+  if (
+    !repairedAny ||
+    preparedBuses.some(
+      (bus) =>
+        (!params.busIds || params.busIds.includes(bus.busId)) &&
+        bus.maxLengthSkew !== undefined &&
+        getSkew(plans.filter((plan) => plan.busId === bus.busId)) >
+          bus.maxLengthSkew + EPSILON,
+    )
+  )
+    return null
+  const validation = validateRoutedCopperDrc({
+    inputSrj,
+    routedSrj: {
+      ...inputSrj,
+      traces: [
+        ...(inputSrj.traces ?? []),
+        ...plans.flatMap((plan) => [
+          plan.trace,
+          ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
+        ]),
+      ],
+    },
+    clearance: params.clearance,
+    allowBlindAndBuriedVias: false,
+  })
+  return validation.valid ? plans : null
+}
+
+/** Preserve every successful existing repair before trying two blocked lanes. */
+export function* rerouteBusWithRetainedBoundaryTailsSteps(
+  params: RetainedBoundaryTailRepairParams,
+): Generator<RetainedBoundaryTailRepairProgress, FanoutRoutePlan[] | null> {
+  const existing = yield* rerouteExistingAndShortenedBoundaryTailsSteps(params)
+  if (existing) return existing
+  return yield* rerouteTwoOverlongLanesSteps(params)
 }
