@@ -1,4 +1,8 @@
 import { expect, test } from "bun:test"
+import {
+  solveWithCiRoutingDiagnostics,
+  writeCiActualSvg,
+} from "./helpers/ci-routing-diagnostics"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import fixture from "./fixtures/dataset31-imx6ull-left-center.json"
 import { FanoutSolver } from "../lib/fanout-solver"
@@ -11,7 +15,7 @@ test("retries shared source reservations when downstream pairs cannot route", as
   }
   const before = JSON.stringify(input)
   const solver = new FanoutSolver(input.simpleRouteJson, input.solverOptions)
-  solver.solve()
+  solveWithCiRoutingDiagnostics(solver, import.meta.path)
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
@@ -62,8 +66,8 @@ test("retries shared source reservations when downstream pairs cannot route", as
     }
   }
   expect(JSON.stringify(input)).toBe(before)
-  await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
-    import.meta.path,
-  )
+  const actualSvg = getSvgFromGraphicsObject(solver.visualize())
+  writeCiActualSvg(import.meta.path, actualSvg)
+  await expect(actualSvg).toMatchSvgSnapshot(import.meta.path)
   // The benchmark independently preserves its 120-second routing deadline.
 }, 240_000)

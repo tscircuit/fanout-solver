@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { solveWithCiRoutingDiagnostics } from "./helpers/ci-routing-diagnostics"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import fixture from "./fixtures/dataset31-imx6ull-left-bottom-offset.json"
 import { FanoutSolver } from "../lib/fanout-solver"
@@ -11,7 +12,7 @@ test("retries shared source reservations when a wide bus cannot length-match", a
   }
   const before = JSON.stringify(input)
   const solver = new FanoutSolver(input.simpleRouteJson, input.solverOptions)
-  solver.solve()
+  solveWithCiRoutingDiagnostics(solver, import.meta.path)
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()

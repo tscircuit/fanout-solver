@@ -41,3 +41,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 *.diff.png
+*.actual.svg
+.ci-routing-diagnostics/

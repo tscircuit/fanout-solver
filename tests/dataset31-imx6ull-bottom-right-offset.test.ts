@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { solveWithCiRoutingDiagnostics } from "./helpers/ci-routing-diagnostics"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import fixture from "./fixtures/dataset31-imx6ull-bottom-right-offset.json"
 import { FanoutSolver } from "../lib/fanout-solver"
@@ -12,7 +13,7 @@ test("rematches unfinished source dogbones to free a constrained bus tuning wind
   }
   const before = JSON.stringify(input)
   const solver = new FanoutSolver(input.simpleRouteJson, input.solverOptions)
-  solver.solve()
+  solveWithCiRoutingDiagnostics(solver, import.meta.path)
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
