@@ -60,6 +60,8 @@ export interface RouteReservedViaBusesParams {
   maximumRipEvents?: number
   /** Bound local reroutes after a validated candidate is one connection short. */
   maximumLocalRepairAttempts?: number
+  /** Opt-in completion of one missing source-origin lane around retained copper. */
+  maximumSourceOriginRepairAttempts?: number
   /** Additional conservative spacing beyond the physical edge clearance. */
   traceMarginExtra?: number
   /** Jointly choose each selected TOP source's first through via. */
@@ -397,12 +399,21 @@ export function* routeReservedViaBusesSteps(
   if (!Number.isSafeInteger(maximumIterations) || maximumIterations < 1)
     throw new Error("maximumIterations must be a positive safe integer")
   const maximumLocalRepairAttempts = params.maximumLocalRepairAttempts ?? 3
+  const maximumSourceOriginRepairAttempts =
+    params.maximumSourceOriginRepairAttempts ?? 0
   if (
     !Number.isSafeInteger(maximumLocalRepairAttempts) ||
     maximumLocalRepairAttempts < 0
   )
     throw new Error(
       "maximumLocalRepairAttempts must be a non-negative safe integer",
+    )
+  if (
+    !Number.isSafeInteger(maximumSourceOriginRepairAttempts) ||
+    maximumSourceOriginRepairAttempts < 0
+  )
+    throw new Error(
+      "maximumSourceOriginRepairAttempts must be a non-negative safe integer",
     )
   const ripCost = params.ripCost ?? 8
   if (!Number.isFinite(ripCost) || ripCost <= 0)
@@ -941,6 +952,9 @@ export function* routeReservedViaBusesSteps(
   // Retain a few distinct one-short candidates, but never expose partial buses.
   const partialCandidates: HdRoute[][] = []
   const partialSignatures = new Set<string>()
+  const maximumPartialCandidates = sourceOrigin
+    ? maximumSourceOriginRepairAttempts
+    : maximumLocalRepairAttempts
   while (!router.solved && !router.failed) {
     for (
       let batch = 0;
@@ -950,8 +964,8 @@ export function* routeReservedViaBusesSteps(
       router.step()
     const routedConnectionCount = router.getSolvedRouteCount()
     if (
-      maximumLocalRepairAttempts > 0 &&
-      connections.length >= 3 &&
+      maximumPartialCandidates > 0 &&
+      connections.length >= (sourceOrigin ? 2 : 3) &&
       routedConnectionCount === connections.length - 1
     ) {
       const output = router.getOutput()
@@ -962,10 +976,13 @@ export function* routeReservedViaBusesSteps(
         })
         .sort()
         .join(";")
-      if (!partialSignatures.has(signature)) {
+      if (
+        !partialSignatures.has(signature) &&
+        (!sourceOrigin || partialCandidates.length < maximumPartialCandidates)
+      ) {
         partialSignatures.add(signature)
         partialCandidates.push(output)
-        if (partialCandidates.length > maximumLocalRepairAttempts)
+        if (partialCandidates.length > maximumPartialCandidates)
           partialCandidates.shift()
       }
     }
@@ -1000,11 +1017,17 @@ export function* routeReservedViaBusesSteps(
           })
         }),
     )
-  const fullPlansAreValid = (plans: readonly FanoutRoutePlan[]): boolean => {
+  const fullPlansAreValid = (
+    plans: readonly FanoutRoutePlan[],
+    deferredSources: ReadonlySet<number> = new Set(),
+  ): boolean => {
     const prefixes = makePrefixes(
-      new Set(
-        [...plans, ...params.acceptedPlans].map((plan) => plan.connectionIndex),
-      ),
+      new Set([
+        ...[...plans, ...params.acceptedPlans].map(
+          (plan) => plan.connectionIndex,
+        ),
+        ...deferredSources,
+      ]),
     )
     return (
       fanoutPlansAreClear({
@@ -1036,6 +1059,7 @@ export function* routeReservedViaBusesSteps(
   }
   const finalizeSourceOriginRoutes = (
     inputRoutes: HdRoute[],
+    deferredSources: ReadonlySet<number> = new Set(),
   ): FanoutRoutePlan[] | null => {
     const rawPaths = new Map(paths)
     const rawTerminals: ViaMinimalWindingTerminal[] = []
@@ -1187,7 +1211,7 @@ export function* routeReservedViaBusesSteps(
       normalizedTargets,
       paths,
     )
-    return plans && fullPlansAreValid(plans) ? plans : null
+    return plans && fullPlansAreValid(plans, deferredSources) ? plans : null
   }
   const finalizeRoutes = (inputRoutes: HdRoute[]): FanoutRoutePlan[] | null => {
     let routes = inputRoutes
@@ -1304,6 +1328,41 @@ export function* routeReservedViaBusesSteps(
     return sourceOrigin
       ? finalizeSourceOriginRoutes(routes)
       : finalizeRoutes(routes)
+  }
+  if (sourceOrigin && maximumSourceOriginRepairAttempts > 0) {
+    for (const rawCandidate of partialCandidates) {
+      const completedNames = new Set(
+        rawCandidate.map((route) => route.connectionName),
+      )
+      const missing = params.terminals.filter(
+        (terminal) => !completedNames.has(terminal.connection.connection.name),
+      )
+      if (missing.length !== 1) continue
+      const missingIndex = missing[0]!.connection.connectionIndex
+      // The missing lane's provisional first via is free, but every original
+      // pad and every other source remains hard. Never expose this partial bus.
+      const previousPaths = new Map(paths)
+      const partial = finalizeSourceOriginRoutes(
+        rawCandidate,
+        new Set([missingIndex]),
+      )
+      paths.clear()
+      for (const [connectionIndex, points] of previousPaths)
+        paths.set(connectionIndex, points)
+      if (!partial) continue
+      const repair = completeSourceOriginBusSteps(params, partial)
+      let result = repair.next()
+      while (!result.done) {
+        yield {
+          iterations: router.iterations + result.value.iterations,
+          routedConnectionCount: result.value.routedConnectionCount,
+          connectionCount: connections.length,
+        }
+        result = repair.next()
+      }
+      if (result.value && fullPlansAreValid(result.value)) return result.value
+    }
+    return null
   }
   if (
     sourceOrigin ||
@@ -1475,4 +1534,116 @@ export function* routeReservedViaBusesSteps(
     }
   }
   return null
+}
+
+/** Complete a provisional source-origin group, keeping its routed lanes hard.
+ * The sole missing source may choose its first via and permitted transit layers.
+ * Returns the entire group after original copper validation, never a partial bus.
+ */
+export function* completeSourceOriginBusSteps(
+  params: RouteReservedViaBusesParams,
+  partial: readonly FanoutRoutePlan[],
+): Generator<ReservedViaBusesProgress, FanoutRoutePlan[] | null, unknown> {
+  const { buses, targetLayer, layerNames } = params
+  if (!params.routeFromSourcePads) return null
+  const expected = new Map(
+    params.terminals.map((terminal) => [
+      terminal.connection.connectionIndex,
+      terminal,
+    ]),
+  )
+  const completed = new Set(partial.map((plan) => plan.connectionIndex))
+  if (
+    expected.size < 2 ||
+    completed.size !== partial.length ||
+    partial.length !== expected.size - 1 ||
+    partial.some(
+      (plan) =>
+        expected.get(plan.connectionIndex)?.connection.connection.name !==
+          plan.connectionName ||
+        plan.targetLayer !== targetLayer ||
+        plan.sourceLayer !==
+          expected.get(plan.connectionIndex)!.connection.sourceLayer ||
+        distance(
+          plan.sourcePoint,
+          expected.get(plan.connectionIndex)!.connection.sourcePoint,
+        ) > 1e-7 ||
+        !plan.via ||
+        distance(
+          plan.exitPoint,
+          expected.get(plan.connectionIndex)!.exitPoint,
+        ) > 1e-7,
+    )
+  )
+    return null
+  const missing = params.terminals.filter(
+    (terminal) => !completed.has(terminal.connection.connectionIndex),
+  )
+  const missingIndex = missing[0]!.connection.connectionIndex
+  const sites = new Map(params.fixedViaPointsByConnectionIndex)
+  const sourcePaths = new Map(params.sourceEscapePaths)
+  for (const plan of partial) {
+    sites.set(plan.connectionIndex, plan.via!.center)
+    sourcePaths.set(plan.connectionIndex, [
+      plan.sourcePoint,
+      ...plan.segments
+        .slice(0, plan.sourceEscapeSegmentCount ?? 1)
+        .map((segment) => segment.end),
+    ])
+  }
+  const localBuses = buses
+    .map((bus) => ({
+      ...bus,
+      connections: bus.connections.filter(
+        (connection) => connection.connectionIndex === missingIndex,
+      ),
+    }))
+    .filter((bus) => bus.connections.length > 0)
+  const transitLayers = layerNames.filter(
+    (layer) =>
+      layer !== targetLayer &&
+      localBuses.every(
+        (bus) =>
+          (
+            bus.routableEscapeLayers ??
+            bus.allowedLayers ??
+            layerNames
+          ).includes(layer) &&
+          bus.connections.every((c) => c.sourceLayer !== layer),
+      ),
+  )
+  const repair = routeReservedViaBusesSteps({
+    ...params,
+    buses: localBuses,
+    terminals: missing,
+    transitLayers,
+    fixedViaPointsByConnectionIndex: sites,
+    sourceEscapePaths: sourcePaths,
+    acceptedPlans: [...params.acceptedPlans, ...partial],
+    includeDiagonalNeighbors: true,
+    ripCost: 256,
+    maximumIterations: Math.min(
+      params.maximumIterations ?? 5_000_000,
+      5_000_000,
+    ),
+    maximumRipEvents: Math.min(params.maximumRipEvents ?? 400, 400),
+    maximumLocalRepairAttempts: 0,
+    maximumSourceOriginRepairAttempts: 0,
+  })
+  let result = repair.next()
+  while (!result.done) {
+    yield {
+      ...result.value,
+      routedConnectionCount:
+        partial.length + result.value.routedConnectionCount,
+      connectionCount: expected.size,
+    }
+    result = repair.next()
+  }
+  if (!result.value) return null
+  const merged = [...partial, ...result.value]
+  return merged.length === expected.size &&
+    new Set(merged.map((plan) => plan.connectionIndex)).size === expected.size
+    ? merged
+    : null
 }
