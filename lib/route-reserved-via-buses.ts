@@ -412,11 +412,14 @@ export function* routeReservedViaBusesSteps(
     buses.some(
       (bus) =>
         bus.termination.type !== "boundary" ||
-        !(bus.allowedLayers ?? layerNames).includes(targetLayer),
+        !(bus.allowedLayers ?? layerNames).includes(targetLayer) ||
+        !(bus.routableEscapeLayers ?? bus.allowedLayers ?? layerNames).includes(
+          targetLayer,
+        ),
     ) ||
     allBuses.some((bus) =>
-      bus.connections.some((connection) =>
-        routingLayers.includes(connection.sourceLayer),
+      bus.connections.some(
+        (connection) => targetLayer === connection.sourceLayer,
       ),
     )
   )
@@ -652,7 +655,15 @@ export function* routeReservedViaBusesSteps(
     )
     allowedLayersByConnection = router.connIdToName.map((name) => {
       const owner = owners.get(name)
-      const permitted = owner ? (owner.allowedLayers ?? layerNames) : []
+      const permitted = owner
+        ? (
+            owner.routableEscapeLayers ??
+            owner.allowedLayers ??
+            layerNames
+          ).filter((layer) =>
+            (owner.allowedLayers ?? layerNames).includes(layer),
+          )
+        : []
       return layersByRouterZ.map((layer) => permitted.includes(layer))
     })
     router.MAX_ITERATIONS = maximumIterations
