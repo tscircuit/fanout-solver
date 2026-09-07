@@ -701,7 +701,7 @@ function* routeLayerReservedAttemptSteps(
         maximumBusSize <= 2 && previousAccepted.length > 0
       attemptState.failedWideMatching =
         params.sourceOriginRouting === true &&
-        layer === ordered[0]![0] &&
+        maximumBusSize > 2 &&
         groupHadLengthFailure
       return null
     }
