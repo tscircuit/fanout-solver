@@ -344,19 +344,59 @@ test("matches a declared crossover while preserving source prefixes, vias, and e
   ).toBeNull()
   const prefixPlans = [f.wall, f.direct, f.sourceOnlyPrefix]
   const prefixBefore = JSON.stringify(prefixPlans)
+  const sourcePrefixBus: PreparedBus = {
+    ...f.bus,
+    allowedLayers: ["top", "bottom"],
+    routableEscapeLayers: ["top", "bottom"],
+  }
+  const prefixMatched = matchBusPlanLengths({
+    ...matching,
+    plans: prefixPlans,
+    preparedBuses: [sourcePrefixBus],
+  }).plans
+  expect(prefixMatched).not.toBeNull()
+  if (!prefixMatched) throw Error("Expected short-tail narrow-chamfer matching")
+  const prefixRoute = prefixMatched.find(
+    (plan) => plan.connectionIndex === f.sourceOnlyPrefix.connectionIndex,
+  )!
   expect(
-    matchBusPlanLengths({
-      ...matching,
-      plans: prefixPlans,
-      preparedBuses: [
-        {
-          ...f.bus,
-          allowedLayers: ["top", "bottom"],
-          routableEscapeLayers: ["top", "bottom"],
-        },
-      ],
-    }).plans,
-  ).toBeNull()
+    prefixRoute.segments.slice(0, f.sourceOnlyPrefix.sourceEscapeSegmentCount),
+  ).toEqual(
+    f.sourceOnlyPrefix.segments.slice(
+      0,
+      f.sourceOnlyPrefix.sourceEscapeSegmentCount,
+    ),
+  )
+  expect(prefixRoute.via).toEqual(f.sourceOnlyPrefix.via)
+  expect(
+    prefixRoute.segments
+      .slice(f.sourceOnlyPrefix.sourceEscapeSegmentCount)
+      .every((segment) => segment.layer === "bottom"),
+  ).toBe(true)
+  const prefixOutput = buildOutputSimpleRouteJson({
+    inputSrj: f.srj,
+    plans: prefixMatched,
+    layerNames: f.layerNames,
+  })
+  expect(
+    validateFanoutSolution({
+      inputSrj: f.srj,
+      outputSrj: prefixOutput,
+      plans: prefixMatched,
+      preparedBuses: [sourcePrefixBus, f.wallBus],
+      sharedBoundary: f.boundary,
+      clearance: f.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, issues: [] })
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: f.srj,
+      routedSrj: prefixOutput,
+      clearance: f.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, issues: [] })
   expect(JSON.stringify(prefixPlans)).toBe(prefixBefore)
   const ordinary = matchBusPlanLengths({
     ...matching,

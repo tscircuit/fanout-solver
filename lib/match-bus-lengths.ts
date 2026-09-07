@@ -396,6 +396,7 @@ function createMeanderPoints(params: {
   pitch: number
   placementFraction: number
   normalSign: -1 | 1
+  chamferFraction: 0.5 | 0.25
 }): Point2D[] | null {
   const {
     segment,
@@ -404,6 +405,7 @@ function createMeanderPoints(params: {
     pitch,
     placementFraction,
     normalSign,
+    chamferFraction,
   } = params
   const dx = segment.end.x - segment.start.x
   const dy = segment.end.y - segment.start.y
@@ -418,7 +420,7 @@ function createMeanderPoints(params: {
     y: tangent.x * normalSign,
   }
   const chamfer = Math.min(
-    pitch / 2,
+    pitch * chamferFraction,
     targetAddedLength / (8 * toothCount * (Math.SQRT2 - 1)),
   )
   const plateau = pitch
@@ -477,6 +479,7 @@ function createTunedPlanCandidates(params: {
   allowInsideDenseBounds?: boolean
   denseBoundarySplitApplied?: boolean
   allowDeclaredCrossoverLayers?: boolean
+  chamferFraction: 0.5 | 0.25
 }): FanoutRoutePlan[] {
   const {
     plan,
@@ -487,6 +490,7 @@ function createTunedPlanCandidates(params: {
     allowInsideDenseBounds = false,
     denseBoundarySplitApplied = false,
     allowDeclaredCrossoverLayers = false,
+    chamferFraction,
   } = params
   const candidates: FanoutRoutePlan[] = []
   const denseCopperBounds = getDenseCopperBounds(bus)
@@ -526,8 +530,11 @@ function createTunedPlanCandidates(params: {
     const pitch = segment.width + clearance
     const segmentLength = distance(segment.start, segment.end)
     const maximumToothCount = Math.min(
-      12,
-      Math.max(0, Math.floor((segmentLength / pitch + 0.5) / 4)),
+      chamferFraction === 0.5 ? 12 : 24,
+      Math.max(
+        0,
+        Math.floor((segmentLength / pitch + 0.5) / (2 + 4 * chamferFraction)),
+      ),
     )
     for (let toothCount = 1; toothCount <= maximumToothCount; toothCount++) {
       for (const placementFraction of [0.5, 0, 1, 0.25, 0.75]) {
@@ -539,6 +546,7 @@ function createTunedPlanCandidates(params: {
             pitch,
             placementFraction,
             normalSign,
+            chamferFraction,
           })
           if (!points) continue
           if (
@@ -683,6 +691,7 @@ function* createSpreadLaneCandidates(
  */
 function matchBusPlanLengthsOnEligibleLayers(params: {
   allowDeclaredCrossoverLayers: boolean
+  chamferFraction: 0.5 | 0.25
   plans: readonly FanoutRoutePlan[]
   preparedBuses: readonly PreparedBus[]
   inputSrj: SimpleRouteJson
@@ -718,6 +727,7 @@ function matchBusPlanLengthsOnEligibleLayers(params: {
     allowMatchingInsideDenseBounds = false,
     candidatePlansAreFeasible,
     allowDeclaredCrossoverLayers,
+    chamferFraction,
   } = params
   let matchedPlans = [...params.plans]
   const constrainedBuses = preparedBuses.filter(
@@ -866,6 +876,7 @@ function matchBusPlanLengthsOnEligibleLayers(params: {
               sharedBoundary: bus.sharedBoundary,
               allowInsideDenseBounds: allowMatchingInsideDenseBounds,
               allowDeclaredCrossoverLayers,
+              chamferFraction,
             }),
           )
           for (const candidate of candidates) {
@@ -893,6 +904,7 @@ function matchBusPlanLengthsOnEligibleLayers(params: {
           sharedBoundary: bus.sharedBoundary,
           allowInsideDenseBounds: allowMatchingInsideDenseBounds,
           allowDeclaredCrossoverLayers,
+          chamferFraction,
         })
         for (const candidate of candidates) {
           acceptedPlans = acceptCandidate(candidate)
@@ -965,6 +977,7 @@ function matchBusPlanLengthsOnEligibleLayers(params: {
             sharedBoundary: bus.sharedBoundary,
             allowInsideDenseBounds: allowMatchingInsideDenseBounds,
             allowDeclaredCrossoverLayers,
+            chamferFraction,
           })
           for (const candidate of candidates) {
             if (
@@ -994,8 +1007,7 @@ function matchBusPlanLengthsOnEligibleLayers(params: {
               (prepared) => prepared.busId === blocker.busId,
             )
             if (
-              !blockerBus ||
-              blockerBus.termination.type !== "boundary" ||
+              blockerBus?.termination.type !== "boundary" ||
               blockerBus.maxLengthSkew !== undefined ||
               blockerBus.connections.length !== 1 ||
               !blocker.via ||
@@ -1084,15 +1096,17 @@ function matchBusPlanLengthsOnEligibleLayers(params: {
 }
 
 /** Retain ordinary matching before trying existing copper on declared crossover layers. */
-export function matchBusPlanLengths(
+function matchBusPlanLengthsWithChamfer(
   params: Omit<
     Parameters<typeof matchBusPlanLengthsOnEligibleLayers>[0],
-    "allowDeclaredCrossoverLayers"
+    "allowDeclaredCrossoverLayers" | "chamferFraction"
   >,
+  chamferFraction: 0.5 | 0.25,
 ): ReturnType<typeof matchBusPlanLengthsOnEligibleLayers> {
   const ordinary = matchBusPlanLengthsOnEligibleLayers({
     ...params,
     allowDeclaredCrossoverLayers: false,
+    chamferFraction,
   })
   if (ordinary.plans) return ordinary
   const bus = ordinary.failedBus
@@ -1117,5 +1131,133 @@ export function matchBusPlanLengths(
   return matchBusPlanLengthsOnEligibleLayers({
     ...params,
     allowDeclaredCrossoverLayers: true,
+    chamferFraction,
   })
+}
+
+/** Preserve every existing first-success matching path before bounded narrow repairs. */
+export function matchBusPlanLengths(
+  params: Parameters<typeof matchBusPlanLengthsWithChamfer>[0],
+): ReturnType<typeof matchBusPlanLengthsWithChamfer> {
+  const ordinary = matchBusPlanLengthsWithChamfer(params, 0.5)
+  return ordinary.plans
+    ? ordinary
+    : matchBusPlanLengthsWithNarrowChamfers(params)
+}
+
+/** Bounded fallback for a caller that has already attempted normal matching. */
+export function matchBusPlanLengthsWithNarrowChamfers(
+  params: Parameters<typeof matchBusPlanLengthsWithChamfer>[0],
+): ReturnType<typeof matchBusPlanLengthsWithChamfer> {
+  const narrow = matchBusPlanLengthsWithChamfer(params, 0.25)
+  return narrow.plans ? narrow : matchBusPlanLengthsIncrementally(params)
+}
+
+/** Add clear, bounded increments when one full meander cannot fit the available windows. */
+export function matchBusPlanLengthsIncrementally(
+  params: Parameters<typeof matchBusPlanLengthsWithChamfer>[0],
+): ReturnType<typeof matchBusPlanLengthsWithChamfer> {
+  const constrained = params.preparedBuses.filter(
+    (bus) => bus.maxLengthSkew !== undefined && bus.connections.length > 1,
+  )
+  let plans = [...params.plans]
+  let checkedCandidates = 0
+  let committedStages = 0
+  for (const bus of constrained) {
+    if (bus.termination.type !== "boundary")
+      return { plans: null, failedBus: bus }
+    let busPlans = plans.filter((plan) => plan.busId === bus.busId)
+    if (busPlans.length !== bus.connections.length)
+      return { plans: null, failedBus: bus }
+    while (getBusSkew(busPlans) > bus.maxLengthSkew! + EPSILON) {
+      if (committedStages >= 32) return { plans: null, failedBus: bus }
+      const shortest = busPlans.toSorted(
+        (a, b) =>
+          a.length - b.length ||
+          a.connectionName.localeCompare(b.connectionName),
+      )[0]!
+      const longest = Math.max(...busPlans.map((plan) => plan.length))
+      const remaining = longest - bus.maxLengthSkew! - shortest.length + EPSILON
+      const tracePitch = (shortest.segments[0]?.width ?? 0) + params.clearance
+      if (
+        !Number.isFinite(remaining) ||
+        !Number.isFinite(tracePitch) ||
+        tracePitch <= 0
+      )
+        return { plans: null, failedBus: bus }
+      const additions = [remaining]
+      for (let division = 2; division <= 128; division *= 2) {
+        const addition = remaining / division
+        if (addition < tracePitch / 4) break
+        additions.push(addition)
+      }
+      let chosen: FanoutRoutePlan[] | null = null
+      candidateSearch: for (const targetAddedLength of additions) {
+        for (const candidate of createTunedPlanCandidates({
+          plan: shortest,
+          bus,
+          targetAddedLength,
+          clearance: params.clearance,
+          sharedBoundary: bus.sharedBoundary,
+          allowInsideDenseBounds: params.allowMatchingInsideDenseBounds,
+          allowDeclaredCrossoverLayers: true,
+          chamferFraction: 0.25,
+        })) {
+          if (++checkedCandidates > 4096) return { plans: null, failedBus: bus }
+          if (candidate.length <= shortest.length + EPSILON) continue
+          if (
+            !fanoutPlansAreClear({
+              srj: params.inputSrj,
+              plans: [candidate],
+              sharedBoundary: params.sharedBoundary,
+              clearance: params.clearance,
+              allowBlindAndBuriedVias: params.allowBlindAndBuriedVias,
+              allowSameNetMerges: params.allowSameNetMerges,
+            })
+          )
+            continue
+          if (
+            plans.some(
+              (plan) =>
+                plan !== shortest &&
+                !fanoutPlansAreMutuallyClear({
+                  srj: params.inputSrj,
+                  plans: [candidate, plan],
+                  clearance: params.clearance,
+                  allowSameNetMerges: params.allowSameNetMerges,
+                }),
+            )
+          )
+            continue
+          const next = plans.map((plan) =>
+            plan === shortest ? candidate : plan,
+          )
+          if (
+            params.candidatePlansAreFeasible &&
+            !params.candidatePlansAreFeasible(next)
+          )
+            continue
+          chosen = next
+          break candidateSearch
+        }
+      }
+      if (!chosen) return { plans: null, failedBus: bus }
+      plans = chosen
+      committedStages++
+      busPlans = plans.filter((plan) => plan.busId === bus.busId)
+    }
+  }
+  if (
+    constrained.length &&
+    !fanoutPlansAreClear({
+      srj: params.inputSrj,
+      plans,
+      sharedBoundary: params.sharedBoundary,
+      clearance: params.clearance,
+      allowBlindAndBuriedVias: params.allowBlindAndBuriedVias,
+      allowSameNetMerges: params.allowSameNetMerges,
+    })
+  )
+    return { plans: null, failedBus: constrained[0]! }
+  return { plans }
 }
