@@ -1,5 +1,8 @@
 import { buildOutputSimpleRouteJson } from "./build-output"
-import { matchBusPlanLengths } from "./match-bus-lengths"
+import {
+  matchBusPlanLengths,
+  matchBusPlanLengthsWithPeriodicMeanders,
+} from "./match-bus-lengths"
 import { plansPreserveSourcesAndCorners } from "./plans-preserve-sources-and-corners"
 import { repairPeripheralBusLengthsSteps } from "./repair-peripheral-bus-lengths"
 import { routeBottomAddressFeedbackSteps } from "./route-bottom-address-feedback"
@@ -182,12 +185,20 @@ export function* routeBottomReservedRecoverySteps(
     params.onStage?.("source-peaks-shortened", narrowPlans)
     yield { phase: "source-peaks-shortened" }
   }
-  const matched = matchBusPlanLengths({
+  const finalMatchingParams = {
     ...params,
     plans: narrowPlans,
     sharedBoundary: bus.sharedBoundary,
     allowMatchingInsideDenseBounds: true,
-  })
+  }
+  // After ordinary tuning failed, source shortening can expose periodic via-row
+  // windows. Try that bounded recovery before repeating the ordinary search.
+  const periodic = addressMatching.plans
+    ? undefined
+    : matchBusPlanLengthsWithPeriodicMeanders(finalMatchingParams)
+  const matched = periodic?.plans
+    ? periodic
+    : matchBusPlanLengths(finalMatchingParams)
   if (
     !matched.plans ||
     !plansPreserveSourcesAndCorners({
