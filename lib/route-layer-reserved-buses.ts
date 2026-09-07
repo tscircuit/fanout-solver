@@ -1,3 +1,7 @@
+import {
+  retryLayerReservedRoutingSteps,
+  type LayerReservedAttemptState,
+} from "./retry-layer-reserved-routing"
 import { hasOpposedPairSourceEscapes } from "./opposed-pair-source-escapes"
 import { rerouteSourceOriginLengthsSteps } from "./reroute-source-origin-lengths"
 import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
@@ -161,6 +165,16 @@ export function getLayerReservedBusTargets(params: LayerReservedBusesParams) {
 export function* routeLayerReservedBusesSteps(
   params: LayerReservedBusesParams,
 ): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
+  return yield* retryLayerReservedRoutingSteps(
+    params.sourceOriginRouting ?? false,
+    (state) => routeLayerReservedAttemptSteps(params, state),
+  )
+}
+
+function* routeLayerReservedAttemptSteps(
+  params: LayerReservedBusesParams,
+  attemptState: LayerReservedAttemptState,
+): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
   const { buses, srj, layerNames } = params
   const targets = getLayerReservedBusTargets(params)
   if (!targets) return null
@@ -286,6 +300,7 @@ export function* routeLayerReservedBusesSteps(
           )),
     })
     let groupCompleted = false
+    let groupHadLengthFailure = false
     for (let attempt = attempts.next(); attempt; attempt = attempts.next()) {
       // Every search and tuning attempt starts from the same committed set.
       // A complete topology does not reserve copper until its bus lengths pass.
@@ -316,19 +331,20 @@ export function* routeLayerReservedBusesSteps(
         attempt.transitLayers.length < allTransitLayers.length
       const routeParams = {
         ...params,
-        srj: useSourceOrigin
-          ? {
-              ...srj,
-              traces: [
-                ...(srj.traces ?? []),
-                ...getBoundaryApproachReservations({
-                  ...params,
-                  ...targets,
-                  excludedBusIds: new Set(group.map((bus) => bus.busId)),
-                }),
-              ],
-            }
-          : srj,
+        srj:
+          useSourceOrigin && attemptState.reserveFutureApproaches
+            ? {
+                ...srj,
+                traces: [
+                  ...(srj.traces ?? []),
+                  ...getBoundaryApproachReservations({
+                    ...params,
+                    ...targets,
+                    excludedBusIds: new Set(group.map((bus) => bus.busId)),
+                  }),
+                ],
+              }
+            : srj,
         allBuses: buses,
         buses: group,
         targetLayer: layer,
@@ -536,6 +552,7 @@ export function* routeLayerReservedBusesSteps(
       if (matched.plans) {
         completePlans = matched.plans
       } else {
+        groupHadLengthFailure = true
         if (hasTransitRetry) {
           restorePhysicalSources()
           attempts.failed(attempt, "lengths")
@@ -646,7 +663,13 @@ export function* routeLayerReservedBusesSteps(
       groupCompleted = true
       break
     }
-    if (!groupCompleted) return null
+    if (!groupCompleted) {
+      attemptState.failedNarrowMatching =
+        maximumBusSize <= 2 &&
+        groupHadLengthFailure &&
+        previousAccepted.length > 0
+      return null
+    }
   }
   return normalizeFanoutPlanCorners({
     ...params,
