@@ -81,7 +81,7 @@ test("PR benchmark requires an exact human command and current repository write 
   expect(comments).toHaveLength(1)
   expect(comments[0]).toMatchObject({
     body: expect.stringContaining(
-      "All 48 dataset-fanout31-am62l samples (12 AM62L, 12 RK3308, 12 K230, and 12 i.MX6ULL)",
+      "All 60 dataset-fanout31-am62l samples (12 AM62L, 12 RK3308, 12 K230, 12 i.MX6ULL, and 12 T113-S3)",
     ),
   })
 })
