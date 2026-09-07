@@ -433,7 +433,28 @@ function* routeInitializedBottomAddressFeedbackSteps(
     emit("blocked", connection.connectionIndex)
     let acceptedState: SourceState | undefined
     let acceptedPlan: FanoutRoutePlan | null = null
-    for (const candidate of perimeterStates(state, connection)) {
+    // Sliding an existing source tail is cheaper than opening a new perimeter.
+    // Native one-segment dogbones have no tail alternatives.
+    const oldSource = state.sourceEscapes.find(
+      (source) => source.connectionIndex === connection.connectionIndex,
+    )!
+    for (const sourceCandidate of getSourceTailEndpointCandidates({
+      ...params,
+      connection,
+      sourceEscape: oldSource,
+    })) {
+      const candidate = repairRequestedState(state, connection, sourceCandidate)
+      if (!candidate) continue
+      const plan = yield* routeRequested(candidate, connection)
+      if (!plan) continue
+      acceptedState = candidate
+      acceptedPlan = plan
+      emit("source-tail", connection.connectionIndex)
+      break
+    }
+    for (const candidate of acceptedState
+      ? []
+      : perimeterStates(state, connection)) {
       const plan = yield* routeRequested(candidate, connection)
       if (plan) {
         acceptedState = candidate

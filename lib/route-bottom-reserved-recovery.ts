@@ -7,6 +7,7 @@ import type { RouteBusParams } from "./route-bus"
 import { routeFreshReservedBusesSteps } from "./route-fresh-reserved-buses"
 import { routeSingletonWithLocalPlaneRecoverySteps } from "./route-singleton-with-local-plane-recovery"
 import { shortenOverlongSourceEscapeCorners } from "./shorten-overlong-source-corners"
+import { shortenSourceEscapePeaks } from "./shorten-source-peaks"
 import type { FanoutRoutePlan, PreparedBus } from "./types"
 import { validateFanoutSolution } from "./validate-fanout-solution"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
@@ -56,29 +57,36 @@ export function* routeBottomReservedRecoverySteps(
     sharedBoundary: bus.sharedBoundary,
     allowMatchingInsideDenseBounds: true,
   })
+  // A clear bus can reserve its lanes while other buses are completed; its
+  // timing remains mandatory in the final full-layout matching pass.
+  const addressPlans = addressMatching.plans ?? shortened.plans
   if (
-    !addressMatching.plans ||
     !plansPreserveSourcesAndCorners({
       ...params,
-      plans: addressMatching.plans,
+      plans: addressPlans,
       sourceEscapes: shortened.sourceEscapes,
     })
   )
     return null
-  params.onStage?.("address-matched", addressMatching.plans)
-  yield { phase: "address-matched-complete" }
+  params.onStage?.(
+    addressMatching.plans ? "address-matched" : "address-matching-deferred",
+    addressPlans,
+  )
+  yield {
+    phase: addressMatching.plans
+      ? "address-matched-complete"
+      : "address-matching-deferred",
+  }
   let currentSourceEscapes = shortened.sourceEscapes
   const partial = new Map(
-    addressMatching.plans.map((plan) => [plan.connectionIndex, plan]),
+    addressPlans.map((plan) => [plan.connectionIndex, plan]),
   )
   let physical = yield* routeFreshReservedBusesSteps({
     ...params,
     buses: params.preparedBuses.filter((other) => other.busId !== bus.busId),
     sourceEscapes: shortened.sourceEscapes,
     sourceBoundary: address.source.sourceBoundary,
-    initialPlans: addressMatching.plans.filter(
-      (plan) => plan.busId === bus.busId,
-    ),
+    initialPlans: addressPlans.filter((plan) => plan.busId === bus.busId),
     onBusComplete: (completed, plans) => {
       for (const plan of plans) partial.set(plan.connectionIndex, plan)
       params.onStage?.(`bus:${completed.busId}`, plans)
@@ -133,6 +141,47 @@ export function* routeBottomReservedRecoverySteps(
     })
   if (!narrowPlans) return null
   yield { phase: "narrow-matching-complete" }
+  if (!addressMatching.plans) {
+    // Match smaller outstanding deficits first, then keep that copper fixed
+    // while shortening the enclosing source detours.
+    const wideBuses = params.preparedBuses.filter(
+      (other) =>
+        other.busId !== bus.busId &&
+        other.termination.type === "boundary" &&
+        other.connections.length > 2,
+    )
+    const deficit = (other: PreparedBus) => {
+      const lengths = narrowPlans!
+        .filter((plan) => plan.busId === other.busId)
+        .map((plan) => plan.length)
+      return other.maxLengthSkew === undefined
+        ? 0
+        : Math.max(
+            0,
+            Math.max(...lengths) - Math.min(...lengths) - other.maxLengthSkew,
+          )
+    }
+    wideBuses.sort((a, b) => deficit(a) - deficit(b))
+    const wideMatching = matchBusPlanLengths({
+      ...params,
+      plans: narrowPlans,
+      preparedBuses: wideBuses,
+      sharedBoundary: bus.sharedBoundary,
+      allowMatchingInsideDenseBounds: true,
+    })
+    if (!wideMatching.plans) return null
+    narrowPlans = wideMatching.plans
+    params.onStage?.("wide-matching-complete", narrowPlans)
+    const translated = shortenSourceEscapePeaks({
+      ...params,
+      plans: narrowPlans,
+      sourceEscapes: currentSourceEscapes,
+    })
+    narrowPlans = translated.plans
+    currentSourceEscapes = translated.sourceEscapes
+    params.onStage?.("source-peaks-shortened", narrowPlans)
+    yield { phase: "source-peaks-shortened" }
+  }
   const matched = matchBusPlanLengths({
     ...params,
     plans: narrowPlans,
