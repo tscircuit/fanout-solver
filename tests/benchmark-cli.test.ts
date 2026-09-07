@@ -122,4 +122,6 @@ test("benchmark shell entrypoint writes complete ordered JSON and Markdown repor
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
-}, 60_000)
+  // Allow six fresh upstream-capture processes for the six chip families.
+  // Each timed solver process above still has its one-second deadline.
+}, 120_000)
