@@ -1,3 +1,4 @@
+import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { selectCompatibleCandidates } from "./select-compatible-candidates"
@@ -1272,13 +1273,12 @@ export class FanoutSolver extends BaseSolver {
     )
   }
 
-  private *evaluateLayerReservedRoutingSteps(): Generator<
-    FanoutWorkYield,
-    EvaluatedAssignment | null,
-    unknown
-  > {
+  private *evaluateLayerReservedRoutingSteps(
+    sourceOriginRouting = false,
+  ): Generator<FanoutWorkYield, EvaluatedAssignment | null, unknown> {
     const steps = routeLayerReservedBusesSteps({
       ...this.config,
+      sourceOriginRouting,
       srj: this.routingSrj,
       buses: this.preparedBuses,
     })
@@ -6329,10 +6329,15 @@ export class FanoutSolver extends BaseSolver {
 
     if (!this.layerReservedRoutingEvaluated) {
       this.layerReservedRoutingEvaluated = true
-      if (this.shouldTryLayerReservedRouting()) {
+      const sourceOriginRouting = shouldUseSourceOriginRouting(
+        this.preparedBuses,
+        this.config.allowBlindAndBuriedVias,
+      )
+      if (sourceOriginRouting || this.shouldTryLayerReservedRouting()) {
         this.startOperation({
           name: "FanoutLayerReservedSolver",
-          generator: this.evaluateLayerReservedRoutingSteps(),
+          generator:
+            this.evaluateLayerReservedRoutingSteps(sourceOriginRouting),
           onSolved: (attempt) => {
             if (!attempt) {
               this.inProgressPlans = []

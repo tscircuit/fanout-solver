@@ -1,12 +1,32 @@
+import {
+  retryLayerReservedRoutingSteps,
+  type LayerReservedAttemptState,
+} from "./retry-layer-reserved-routing"
+import {
+  getOpposedPairSourceGroups,
+  hasOpposedPairSourceEscapes,
+} from "./opposed-pair-source-escapes"
+import { rerouteSourceOriginLengthsSteps } from "./reroute-source-origin-lengths"
+import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
+import { hasCompressedExitConvergence } from "./compressed-exit-convergence"
+import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
+import {
+  prepareSourceOriginReservations,
+  routeSourceOriginBusesSteps,
+} from "./route-source-origin-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import { sourceTransitHasMajorityCrossings } from "./source-transit-crossing-pressure"
+import { LayerRoutingAttempts } from "./layer-routing-attempts"
 import { packBoundaryBusIntervals } from "./pack-boundary-bus-intervals"
 import { getBoundaryBusSlotOffsets } from "./get-boundary-bus-slot-offsets"
+import { getBoundaryApproachReservations } from "./get-boundary-approach-reservations"
 import { routeLayerReservedSourceEscapesSteps } from "./route-layer-reserved-source-escapes"
 import { routeReservedViaBusesSteps } from "./route-reserved-via-buses"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
 import { rerouteOverlongBusLanesSteps } from "./reroute-overlong-bus-lanes"
 import { repairBusLengthsWithTransitSteps } from "./repair-bus-lengths-with-transit"
+import { rerouteBusWithRetainedBoundaryTailsSteps } from "./reroute-bus-with-retained-boundary-tails"
 import type { FanoutRoutePlan, Point2D, PreparedBus } from "./types"
 
 export interface LayerReservedBusesParams {
@@ -17,6 +37,8 @@ export interface LayerReservedBusesParams {
   clearance: number
   viaDiameter: number
   viaHoleDiameter: number
+  /** Choose first vias jointly for the widest constrained source group. */
+  sourceOriginRouting?: boolean
 }
 
 export interface LayerReservedRoutingProgress {
@@ -146,10 +168,24 @@ export function getLayerReservedBusTargets(params: LayerReservedBusesParams) {
 export function* routeLayerReservedBusesSteps(
   params: LayerReservedBusesParams,
 ): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
+  return yield* retryLayerReservedRoutingSteps(
+    params.sourceOriginRouting ?? false,
+    (state) => routeLayerReservedAttemptSteps(params, state),
+  )
+}
+
+function* routeLayerReservedAttemptSteps(
+  params: LayerReservedBusesParams,
+  attemptState: LayerReservedAttemptState,
+): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
   const { buses, srj, layerNames } = params
   const targets = getLayerReservedBusTargets(params)
   if (!targets) return null
-  const sourceSteps = routeLayerReservedSourceEscapesSteps(params)
+  const sourceSteps = params.sourceOriginRouting
+    ? (function* () {
+        return prepareSourceOriginReservations(params)
+      })()
+    : routeLayerReservedSourceEscapesSteps(params)
   let source = sourceSteps.next()
   while (!source.done) {
     yield { phase: "sources", routedConnectionCount: 0 }
@@ -179,6 +215,14 @@ export function* routeLayerReservedBusesSteps(
       Math.max(...b.map((bus) => bus.connections.length)) -
         Math.max(...a.map((bus) => bus.connections.length)),
   )
+  // Opposed source escapes occupy corridors before any target layer is routed.
+  // Use that initial geometry to order the first constrained wide-group search.
+  const opposedSourceGroups = getOpposedPairSourceGroups({
+    groups: ordered.map(([, group]) => group),
+    fixedViaPointsByConnectionIndex,
+    clearance: params.clearance,
+  })
+  let committedOpposedPairSources = false
   for (const [layer, group] of ordered) {
     const maximumBusSize = Math.max(
       ...group.map((bus) => bus.connections.length),
@@ -210,66 +254,189 @@ export function* routeLayerReservedBusesSteps(
           ).includes(candidate),
         ),
     )
-    const transitChoices = [transitLayers]
-    if (allTransitLayers.length > transitLayers.length)
-      transitChoices.push(allTransitLayers)
+    const opposedPairs = hasOpposedPairSourceEscapes({
+      buses: group,
+      fixedViaPointsByConnectionIndex,
+      clearance: params.clearance,
+    })
+    // Once tightly constrained pairs choose new source escapes, keep the
+    // following flexible groups coherent with that placement: source transit
+    // for two-layer buses, and joint first-via selection for wider layer sets.
+    const preferMappedSourceTransit =
+      committedOpposedPairSources &&
+      maximumBusSize > 2 &&
+      transitLayers.length === 0 &&
+      allTransitLayers.length > 0
+    const preferMappedSourceOrigin =
+      committedOpposedPairSources &&
+      maximumBusSize > 2 &&
+      transitLayers.length > 0
     const previousAccepted = accepted
-    const routingCosts = shortenFirst
-      ? [64, 256]
-      : [maximumBusSize <= 2 ? 256 : 64]
-    let groupCompleted = false
-    for (const ripCost of routingCosts) {
-      // A different congestion cost can remove a length trap in a complete
-      // single-layer topology. Retry from the same committed reservations.
-      accepted = previousAccepted
-      for (const bus of group) completed.delete(bus.busId)
-      let routedPlans: FanoutRoutePlan[] | null = null
-      for (const transitLayers of transitChoices) {
-        const steps = routeReservedViaBusesSteps({
+    const useSourceOrigin =
+      params.sourceOriginRouting && layer === ordered[0]![0] && shortenFirst
+    const attempts = new LayerRoutingAttempts({
+      wideSingleLayer: shortenFirst,
+      retrySourceOriginPhysicalGridPhase: useSourceOrigin,
+      preferAlternateOrder:
+        !params.sourceOriginRouting &&
+        shortenFirst &&
+        layer === ordered[0]![0] &&
+        opposedSourceGroups.some((opposed) =>
+          group.every((bus) =>
+            opposed.every(
+              (pair) =>
+                pair.componentId === bus.componentId &&
+                pair.exitEdge === bus.exitEdge,
+            ),
+          ),
+        ),
+      firstRipCost: maximumBusSize <= 2 ? 256 : 64,
+      transitLayers,
+      allTransitLayers,
+      sourceOriginRipCost: preferMappedSourceOrigin ? 64 : 256,
+      sourceTransitRipCost: preferMappedSourceTransit ? 64 : 8,
+      preferSourceOrigin:
+        opposedPairs ||
+        preferMappedSourceOrigin ||
+        hasCompressedExitConvergence({
           ...params,
-          allBuses: buses,
           buses: group,
           targetLayer: layer,
-          transitLayers,
-          fixedViaPointsByConnectionIndex,
-          sourceEscapePaths,
-          acceptedPlans: accepted,
-          terminals: group.flatMap((bus) =>
-            bus.connections.map((connection) => ({
-              connection,
-              viaPoint: fixedViaPointsByConnectionIndex.get(
-                connection.connectionIndex,
-              )!,
-              exitPoint: targets.exits.get(connection.connectionIndex)!,
-            })),
-          ),
-          tightViaChannels: true,
-          ripCost,
-          maximumRipEvents: 400,
-          // A permitted transit retry can resolve this congestion directly.
-          // Reserve local rip-up repairs for the last available layer choice.
-          maximumLocalRepairAttempts:
-            transitLayers === transitChoices.at(-1) ? 3 : 0,
-          maximumIterations: 100_000_000,
-          shuffleSeed: 1,
-        })
-        let next = steps.next()
-        while (!next.done) {
-          yield {
-            phase: "route-layer",
-            layer,
-            routedConnectionCount:
-              accepted.length + next.value.routedConnectionCount,
-            iterations: next.value.iterations,
+          exits: targets.exits,
+        }),
+      // If most direct escape corridors cross, a wide group on one layer
+      // otherwise winds around itself. Prefer its permitted source transit.
+      preferSourceTransit:
+        preferMappedSourceTransit ||
+        (maximumBusSize > 2 &&
+          transitLayers.length === 0 &&
+          allTransitLayers.length > 0 &&
+          sourceTransitHasMajorityCrossings(
+            group.flatMap((bus) =>
+              bus.connections.map((connection) => ({
+                source: fixedViaPointsByConnectionIndex.get(
+                  connection.connectionIndex,
+                )!,
+                target: targets.exits.get(connection.connectionIndex)!,
+              })),
+            ),
+          )),
+    })
+    let groupCompleted = false
+    let groupHadLengthFailure = false
+    for (let attempt = attempts.next(); attempt; attempt = attempts.next()) {
+      // Every search and tuning attempt starts from the same committed set.
+      // A complete topology does not reserve copper until its bus lengths pass.
+      accepted = previousAccepted
+      for (const bus of group) completed.delete(bus.busId)
+      // The physical-source phase is a provisional alternative. Its selected
+      // vias may move before tuning, but a failed attempt must leave the
+      // ordinary retry with exactly the reservations it received.
+      const previousSources = attempt.sourceOriginPhysicalGridPhase
+        ? {
+            sites: new Map(fixedViaPointsByConnectionIndex),
+            paths: new Map(sourceEscapePaths),
+            plans: [...sourcePlans],
           }
-          next = steps.next()
-        }
-        if (next.value) {
-          routedPlans = next.value
-          break
-        }
+        : undefined
+      const restorePhysicalSources = () => {
+        if (!previousSources) return
+        fixedViaPointsByConnectionIndex.clear()
+        for (const [index, point] of previousSources.sites)
+          fixedViaPointsByConnectionIndex.set(index, point)
+        sourceEscapePaths.clear()
+        for (const [index, path] of previousSources.paths)
+          sourceEscapePaths.set(index, path)
+        sourcePlans.splice(0, sourcePlans.length, ...previousSources.plans)
       }
-      if (!routedPlans) return null
+      const hasTransitRetry =
+        attempt.routeFromSourcePads ||
+        attempt.transitLayers.length < allTransitLayers.length
+      const routeParams = {
+        ...params,
+        srj:
+          useSourceOrigin && attemptState.reserveFutureApproaches
+            ? {
+                ...srj,
+                traces: [
+                  ...(srj.traces ?? []),
+                  ...getBoundaryApproachReservations({
+                    ...params,
+                    ...targets,
+                    excludedBusIds: new Set(group.map((bus) => bus.busId)),
+                  }),
+                ],
+              }
+            : srj,
+        allBuses: buses,
+        buses: group,
+        targetLayer: layer,
+        transitLayers: attempt.transitLayers,
+        fixedViaPointsByConnectionIndex,
+        sourceEscapePaths,
+        acceptedPlans: accepted,
+        terminals: group.flatMap((bus) =>
+          bus.connections.map((connection) => ({
+            connection,
+            viaPoint: fixedViaPointsByConnectionIndex.get(
+              connection.connectionIndex,
+            )!,
+            exitPoint: targets.exits.get(connection.connectionIndex)!,
+          })),
+        ),
+        tightViaChannels: true,
+        ripCost: attempt.ripCost,
+        maximumRipEvents: 400,
+        maximumLocalRepairAttempts: hasTransitRetry ? 0 : 3,
+        maximumIterations: 100_000_000,
+        shuffleSeed: attempt.shuffleSeed,
+        sourceOriginPhysicalGridPhase: attempt.sourceOriginPhysicalGridPhase,
+      }
+      const steps = (function* () {
+        if (attempt.routeFromSourcePads)
+          return yield* routeReservedViaBusesSteps({
+            ...routeParams,
+            routeFromSourcePads: true,
+            sourceLayerTravelCost: 2,
+            maximumRipEvents: 1_200,
+            maximumIterations: 50_000_000,
+            maximumLocalRepairAttempts: 0,
+          })
+        if (!useSourceOrigin)
+          return yield* routeReservedViaBusesSteps(routeParams)
+        const result = yield* routeSourceOriginBusesSteps({
+          ...routeParams,
+          cleanupRetainedBoundaryTails: attempt.sourceOriginPhysicalGridPhase,
+        })
+        if (!result) return null
+        fixedViaPointsByConnectionIndex.clear()
+        for (const [index, point] of result.fixedViaPointsByConnectionIndex)
+          fixedViaPointsByConnectionIndex.set(index, point)
+        sourceEscapePaths.clear()
+        for (const [index, path] of result.sourceEscapePaths)
+          sourceEscapePaths.set(index, path)
+        sourcePlans.splice(0, sourcePlans.length, ...result.sourcePlans)
+        return result.plans
+      })()
+      let next = steps.next()
+      while (!next.done) {
+        yield {
+          phase: "route-layer",
+          layer,
+          routedConnectionCount:
+            accepted.length + next.value.routedConnectionCount,
+          iterations: next.value.iterations,
+        }
+        next = steps.next()
+      }
+      const routedPlans = next.value
+      if (!routedPlans) {
+        restorePhysicalSources()
+        if (useSourceOrigin && !attempt.sourceOriginPhysicalGridPhase)
+          return null
+        attempts.failed(attempt, "routing")
+        continue
+      }
       accepted = [...accepted, ...routedPlans]
       for (const bus of group) completed.add(bus.busId)
       yield {
@@ -292,6 +459,8 @@ export function* routeLayerReservedBusesSteps(
           selectedBusIds: new Set(group.map((bus) => bus.busId)),
           allowBlindAndBuriedVias: false,
         }) ?? completePlans
+      let allowSourcePrefixMatching =
+        attempt.routeFromSourcePads && preferMappedSourceOrigin
       const matchCompletePlans = (maximumWorkUnits?: number) =>
         matchBusPlanLengths({
           ...params,
@@ -302,6 +471,7 @@ export function* routeLayerReservedBusesSteps(
           allowBlindAndBuriedVias: false,
           allowSameNetMerges: false,
           allowMatchingInsideDenseBounds: true,
+          allowSourcePrefixMatching,
           allowPairLaneSpreading: true,
           allowUnconstrainedLaneRerouting: true,
           maximumWorkUnits,
@@ -337,11 +507,85 @@ export function* routeLayerReservedBusesSteps(
         // Preserve directly tunable pairs and flexible buses; moving their
         // copper can occupy corridors needed by another layer group.
         yield* shortenCompletePlans()
-        matched = matchCompletePlans()
+        // Joint source placement has bounded transit/tail repairs below. Keep
+        // that opportunity available, while allowing ordinary fixed-source
+        // buses to finish tuning across many crowded spans.
+        matched = matchCompletePlans(
+          hasTransitRetry ||
+            ((params.sourceOriginRouting || committedOpposedPairSources) &&
+              maximumBusSize > 2)
+            ? 1_000
+            : undefined,
+        )
+      }
+      if (
+        !matched.plans &&
+        matched.failedBus &&
+        attempt.routeFromSourcePads &&
+        (opposedPairs || preferMappedSourceOrigin)
+      ) {
+        // Repair a whole pair, or at most two actual overlong lanes. All
+        // replacements stay provisional until the complete layer group fits
+        // its original length limits; ordinary source reservations survive a
+        // failed transaction unchanged.
+        const repairSteps = rerouteSourceOriginLengthsSteps({
+          ...params,
+          inputSrj: srj,
+          plans: completePlans,
+          preparedBuses: buses,
+          bus: matched.failedBus,
+        })
+        let repair = repairSteps.next()
+        while (!repair.done) {
+          yield {
+            phase: "repair-lengths",
+            layer,
+            routedConnectionCount: accepted.length,
+            iterations: repair.value.iterations,
+          }
+          repair = repairSteps.next()
+        }
+        if (repair.value) {
+          completePlans = repair.value
+          const tuneRepairedPlans = function* (): Generator<
+            LayerReservedRoutingProgress,
+            ReturnType<typeof matchBusPlanLengths>,
+            unknown
+          > {
+            completePlans =
+              shortcutFanoutPlans({
+                ...params,
+                inputSrj: srj,
+                plans: completePlans,
+                preparedBuses: completedBuses,
+                selectedBusIds: new Set(group.map((bus) => bus.busId)),
+                allowBlindAndBuriedVias: false,
+              }) ?? completePlans
+            let result = matchCompletePlans(1_000)
+            if (!result.plans) {
+              yield* shortenCompletePlans()
+              result = matchCompletePlans(1_000)
+            }
+            return result
+          }
+          matched = yield* tuneRepairedPlans()
+          if (!matched.plans && opposedPairs) {
+            // The now-fixed first via and first pad leg remain immutable;
+            // only clear source-prefix spans may add the remaining pair skew.
+            allowSourcePrefixMatching = true
+            matched = yield* tuneRepairedPlans()
+          }
+        }
       }
       if (matched.plans) {
         completePlans = matched.plans
       } else {
+        groupHadLengthFailure = true
+        if (hasTransitRetry) {
+          restorePhysicalSources()
+          attempts.failed(attempt, "lengths")
+          continue
+        }
         const repairSteps = repairBusLengthsWithTransitSteps({
           ...params,
           inputSrj: srj,
@@ -359,21 +603,112 @@ export function* routeLayerReservedBusesSteps(
           }
           repair = repairSteps.next()
         }
-        if (!repair.value) continue
-        completePlans = repair.value
+        if (repair.value) {
+          completePlans = repair.value
+        } else {
+          // A valid near-boundary lead can be unreachable from a clipped grid
+          // cell. Retain that lead while the intact bus seeks shorter paths.
+          const tailSteps = rerouteBusWithRetainedBoundaryTailsSteps({
+            ...params,
+            inputSrj: srj,
+            plans: completePlans,
+            preparedBuses: buses,
+            busIds: group.map((bus) => bus.busId),
+          })
+          let tails = tailSteps.next()
+          while (!tails.done) {
+            yield {
+              phase: "repair-lengths",
+              layer,
+              routedConnectionCount: accepted.length,
+              iterations: tails.value.iterations,
+            }
+            tails = tailSteps.next()
+          }
+          if (!tails.value) {
+            restorePhysicalSources()
+            attempts.failed(attempt, "lengths")
+            continue
+          }
+          completePlans = tails.value
+        }
       }
       accepted = completePlans.filter((plan) =>
         routed.has(plan.connectionIndex),
       )
+      if (attempt.routeFromSourcePads) {
+        // Commit the new first-via reservations only after the intact group
+        // passes length matching. Failed attempts leave the ordinary fallback
+        // with the exact original source map and all previously routed copper.
+        const sources = new Map(
+          group.flatMap((bus) =>
+            bus.connections.map((connection) => {
+              const plan = accepted.find(
+                (candidate) =>
+                  candidate.connectionIndex === connection.connectionIndex,
+              )!
+              if (!plan.via)
+                throw new Error(
+                  "Source-origin routing lost its source reservation",
+                )
+              const path = [
+                connection.sourcePoint,
+                ...plan.segments
+                  .slice(0, plan.sourceEscapeSegmentCount ?? 1)
+                  .map((segment) => segment.end),
+              ]
+              const prefix = buildViaMinimalWindingPlan({
+                ...params,
+                bus,
+                terminal: {
+                  connection,
+                  viaPoint: plan.via.center,
+                  exitPoint: plan.via.center,
+                },
+                targetLayer: plan.via.toLayer,
+                targetLayerPoints: [plan.via.center],
+                sourceEscapePoints: path,
+                allowBlindAndBuriedVias: false,
+              })
+              return [
+                connection.connectionIndex,
+                { plan: prefix, path },
+              ] as const
+            }),
+          ),
+        )
+        for (const [index, source] of sources) {
+          fixedViaPointsByConnectionIndex.set(index, source.plan.via!.center)
+          sourceEscapePaths.set(index, source.path)
+        }
+        for (let index = 0; index < sourcePlans.length; index++)
+          sourcePlans[index] =
+            sources.get(sourcePlans[index]!.connectionIndex)?.plan ??
+            sourcePlans[index]!
+      }
+      if (opposedPairs && attempt.routeFromSourcePads)
+        committedOpposedPairSources = true
       groupCompleted = true
       break
     }
-    if (!groupCompleted) return null
+    if (!groupCompleted) {
+      attemptState.failedNarrowMatching =
+        maximumBusSize <= 2 &&
+        groupHadLengthFailure &&
+        previousAccepted.length > 0
+      return null
+    }
   }
-  return [
-    ...accepted,
-    ...sourcePlans.filter(
-      (plan) => completed.has(plan.busId) && plan.termination.type === "plane",
-    ),
-  ]
+  return normalizeFanoutPlanCorners({
+    ...params,
+    inputSrj: srj,
+    preparedBuses: buses,
+    plans: [
+      ...accepted,
+      ...sourcePlans.filter(
+        (plan) =>
+          completed.has(plan.busId) && plan.termination.type === "plane",
+      ),
+    ],
+  })
 }

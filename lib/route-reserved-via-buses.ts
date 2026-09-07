@@ -1,8 +1,11 @@
+import { getOutwardSourcePadOwner } from "./get-outward-source-pad-owner"
+import { addDiagonalGridNeighbors } from "./add-diagonal-grid-neighbors"
 import {
   PortfolioSingleIntraNodeSolver,
   type SimpleRouteJson,
 } from "@tscircuit/capacity-autorouter"
 import { getExitEdgeForDirection } from "./boundary-exit"
+import { cacheViaOccupantNeighborhoods } from "./cache-via-occupant-neighborhoods"
 import {
   distance,
   distancePointToSegment,
@@ -45,6 +48,10 @@ export interface RouteReservedViaBusesParams {
   viaDiameter: number
   viaHoleDiameter: number
   maximumIterations?: number
+  /** Opt-in 45-degree adjacency; exact copper checks still guard every edge. */
+  includeDiagonalNeighbors?: boolean
+  /** Native Euclidean heuristic multiplier; defaults to the established 1.5. */
+  heuristicWeight?: number
   shuffleSeed?: number
   /** Align a uniform grid and its center keepouts with narrow via channels. */
   tightViaChannels?: boolean
@@ -54,6 +61,12 @@ export interface RouteReservedViaBusesParams {
   maximumLocalRepairAttempts?: number
   /** Additional conservative spacing beyond the physical edge clearance. */
   traceMarginExtra?: number
+  /** Jointly choose each selected TOP source's first through via. */
+  routeFromSourcePads?: boolean
+  /** Search-only cost for TOP travel before that first via; defaults to one. */
+  sourceLayerTravelCost?: number
+  /** Score source-origin grid channels using only vias that remain reserved. */
+  sourceOriginPhysicalGridPhase?: boolean
 }
 
 export interface ReservedViaBusesProgress {
@@ -86,6 +99,9 @@ interface NegotiatedRouter {
   MAX_ITERATIONS: number
   MAX_RIPS: number
   planeSize: number
+  neighborOffset: Int32Array
+  neighborIds: Int32Array
+  neighborCosts: Float32Array
   cellCenterX: Float64Array
   cellCenterY: Float64Array
   cellMinX: Float64Array
@@ -107,15 +123,25 @@ interface NegotiatedRouter {
   activeConnSeg: {
     startCellId: number
     endCellId: number
+    startZ: number
+    endZ: number
     startPoint: HdPoint
     endPoint: HdPoint
   }
-  nodePool: { cellId: Int32Array }
+  nodePool: { cellId: Int32Array; z: Int32Array }
   heap: { pop(): number }
   _moveCost: number
   _setup(): void
   step(): void
   getOutput(): HdRoute[]
+  getSolvedRouteCount(): number
+  _viaOccs: number[]
+  fillViaOccupants(cellId: number, activeConnection: number): void
+  pushFlatOccupants(
+    flatIndex: number,
+    activeConnection: number,
+    occupants: number[],
+  ): void
   computeMoveCostAndRips(...args: MoveArgs): void
   markTraceFootprint(
     connectionId: number,
@@ -362,6 +388,9 @@ export function* routeReservedViaBusesSteps(
     srj,
   } = params
   const maximumIterations = params.maximumIterations ?? 30_000_000
+  const heuristicWeight = params.heuristicWeight ?? 1.5
+  if (!Number.isFinite(heuristicWeight) || heuristicWeight <= 0)
+    throw new Error("heuristicWeight must be finite and positive")
   if (!Number.isSafeInteger(maximumIterations) || maximumIterations < 1)
     throw new Error("maximumIterations must be a positive safe integer")
   const maximumLocalRepairAttempts = params.maximumLocalRepairAttempts ?? 3
@@ -384,9 +413,17 @@ export function* routeReservedViaBusesSteps(
   const marginExtra = params.traceMarginExtra ?? traceWidth / 2
   if (!Number.isFinite(marginExtra) || marginExtra < 0)
     throw new Error("traceMarginExtra must be finite and non-negative")
-  const routingLayers = [
-    ...new Set([targetLayer, ...(params.transitLayers ?? [])]),
-  ]
+  const sourceOrigin = params.routeFromSourcePads ?? false
+  const sourceTravelCost = params.sourceLayerTravelCost ?? 1
+  if (!Number.isFinite(sourceTravelCost) || sourceTravelCost < 1)
+    throw new Error("sourceLayerTravelCost must be finite and at least one")
+  if (sourceOrigin && params.transitLayers?.length)
+    throw new Error(
+      "Source-origin routing permits only one source-to-target transition",
+    )
+  const routingLayers = sourceOrigin
+    ? [...new Set([targetLayer, "top"])]
+    : [...new Set([targetLayer, ...(params.transitLayers ?? [])])]
   const targetZ = layerNames.indexOf(targetLayer)
   if (
     buses.length === 0 ||
@@ -399,6 +436,7 @@ export function* routeReservedViaBusesSteps(
       connections.map((connection) => connection.connectionIndex),
     )
   if (
+    (sourceOrigin && connections.some((c) => c.sourceLayer !== "top")) ||
     expected.size !== connections.length ||
     params.terminals.length !== connections.length ||
     new Set(
@@ -442,6 +480,20 @@ export function* routeReservedViaBusesSteps(
     Math.max(0.5, viaDiameter * 2),
     Math.max(traceWidth, viaDiameter) / 2 + clearance + 1e-7,
   )
+  const sourceOwners = new Map(connections.map((c) => [c.connection.name, c]))
+  const obstacleOwners = new Map(connections.map((c) => [c.sourceObstacle, c]))
+  const sourceObstacleOwners = sourceOrigin
+    ? new Map(
+        connections.map((connection) => [
+          connection.sourceObstacle,
+          {
+            connectionName: connection.connection.name,
+            sourcePoint: sourceOwners.get(connection.connection.name)!
+              .sourcePoint,
+          },
+        ]),
+      )
+    : undefined
   for (const obstacle of srj.obstacles)
     index.add({ kind: "obstacle", obstacle })
   for (const bus of allBuses)
@@ -461,6 +513,7 @@ export function* routeReservedViaBusesSteps(
       )
         return null
       paths.set(connection.connectionIndex, points)
+      if (sourceOrigin && expected.has(connection.connectionIndex)) continue
       index.add({
         kind: "via",
         connectionName: connection.connection.name,
@@ -538,9 +591,15 @@ export function* routeReservedViaBusesSteps(
     height: bounds.maxY - bounds.minY,
     availableZ: routingLayers.map((layer) => layerNames.indexOf(layer)),
     portPoints: params.terminals.flatMap((terminal) =>
-      [terminal.viaPoint, terminal.exitPoint].map((point) => ({
+      [
+        sourceOrigin ? terminal.connection.sourcePoint : terminal.viaPoint,
+        terminal.exitPoint,
+      ].map((point, i) => ({
         ...point,
-        z: targetZ,
+        z:
+          sourceOrigin && i === 0
+            ? layerNames.indexOf(terminal.connection.sourceLayer)
+            : targetZ,
         connectionName: terminal.connection.connection.name,
         rootConnectionName: terminal.connection.connection.name,
       })),
@@ -548,13 +607,18 @@ export function* routeReservedViaBusesSteps(
   }
   if (params.tightViaChannels) {
     const phase = getViaChannelGridPhase({
-      vias: [...params.fixedViaPointsByConnectionIndex].map(
-        ([connectionIndex, center]) => ({
+      vias: [...params.fixedViaPointsByConnectionIndex]
+        .filter(
+          ([index]) =>
+            !sourceOrigin ||
+            !params.sourceOriginPhysicalGridPhase ||
+            !expected.has(index),
+        )
+        .map(([connectionIndex, center]) => ({
           connectionIndex,
           center,
           diameter: viaDiameter,
-        }),
-      ),
+        })),
       activeConnectionIndices: expected,
       traceWidth,
       clearance,
@@ -578,7 +642,8 @@ export function* routeReservedViaBusesSteps(
   if (
     typeof candidate.computeMoveCostAndRips !== "function" ||
     typeof candidate.markTraceFootprint !== "function" ||
-    typeof candidate.addSharedOccupant !== "function"
+    typeof candidate.addSharedOccupant !== "function" ||
+    typeof candidate.getSolvedRouteCount !== "function"
   )
     return null
   const Constructor = candidate.constructor as new (
@@ -595,13 +660,14 @@ export function* routeReservedViaBusesSteps(
     effort: 20,
     hyperParameters: {
       shuffleSeed: params.shuffleSeed ?? 1,
-      greedyMultiplier: 1.5,
+      greedyMultiplier: heuristicWeight,
       ripCost,
     },
   })
   const setup = router._setup.bind(router),
     move = router.computeMoveCostAndRips.bind(router)
   let previousCell = -1
+  let previousZ = -1
   let layersByRouterZ: string[] = []
   let allowedLayersByConnection: boolean[][] = []
   const viaCells = new Map<number, boolean>()
@@ -650,6 +716,9 @@ export function* routeReservedViaBusesSteps(
   router._setup = () => {
     setup()
     if (router.failed) return
+    if (params.includeDiagonalNeighbors)
+      Object.assign(router, addDiagonalGridNeighbors(router))
+    cacheViaOccupantNeighborhoods(router)
     edgeClearance = new StaticEdgeClearanceCache(
       router.planeSize,
       routingLayers.length,
@@ -669,7 +738,10 @@ export function* routeReservedViaBusesSteps(
             (owner.allowedLayers ?? layerNames).includes(layer),
           )
         : []
-      return layersByRouterZ.map((layer) => permitted.includes(layer))
+      return layersByRouterZ.map(
+        (layer) =>
+          permitted.includes(layer) || (sourceOrigin && layer === "top"),
+      )
     })
     router.MAX_ITERATIONS = maximumIterations
     if (params.maximumRipEvents !== undefined)
@@ -680,6 +752,7 @@ export function* routeReservedViaBusesSteps(
     router.heap.pop = () => {
       const item = pop()
       previousCell = router.nodePool.cellId[item]!
+      previousZ = router.nodePool.z[item]!
       return item
     }
   }
@@ -766,6 +839,17 @@ export function* routeReservedViaBusesSteps(
     blockers.every(
       (blocker) =>
         (blocker.kind !== "obstacle" && blocker.connectionName === name) ||
+        (sourceOrigin &&
+          blocker.kind === "obstacle" &&
+          layer === "top" &&
+          obstacleOwners.get(blocker.obstacle)?.connection.name === name &&
+          distanceSegmentToObstacle(
+            { start: a, end: a, width: traceWidth, layer },
+            blocker.obstacle,
+          ) <
+            traceWidth / 2 + clearance - 1e-9 &&
+          distance(b, sourceOwners.get(name)!.sourcePoint) >=
+            distance(a, sourceOwners.get(name)!.sourcePoint) - 1e-9) ||
         blockerIsClear(a, b, layer, blocker),
     )
   const classifyStaticEdge = (
@@ -776,10 +860,25 @@ export function* routeReservedViaBusesSteps(
     let soleOwner: string | undefined
     for (const blocker of index.nearby(a, b)) {
       if (blockerIsClear(a, b, layer, blocker)) continue
-      if (blocker.kind === "obstacle") return false
-      if (soleOwner !== undefined && soleOwner !== blocker.connectionName)
+      if (blocker.kind === "obstacle" && !sourceOrigin) return false
+      const owner =
+        blocker.kind === "obstacle"
+          ? getOutwardSourcePadOwner(
+              a,
+              b,
+              layer,
+              traceWidth,
+              clearance,
+              blocker.obstacle,
+              sourceObstacleOwners?.get(blocker.obstacle),
+            )
+          : blocker.connectionName
+      if (
+        owner === undefined ||
+        (soleOwner !== undefined && soleOwner !== owner)
+      )
         return false
-      soleOwner = blocker.connectionName
+      soleOwner = owner
     }
     return soleOwner ?? true
   }
@@ -797,28 +896,35 @@ export function* routeReservedViaBusesSteps(
       segment = router.activeConnSeg
     if (
       !allowedLayersByConnection[connectionId]![z] ||
-      (isVia && !extraViaIsClear(nextCell))
+      (isVia &&
+        ((sourceOrigin && layer !== targetLayer) || !extraViaIsClear(nextCell)))
     ) {
       router._moveCost = -1
       return
     }
     const edgeOrigin = z * router.planeSize + previousCell
     const usesTerminal =
-      previousCell === segment.startCellId || nextCell === segment.endCellId
+      (previousCell === segment.startCellId &&
+        (!sourceOrigin || previousZ === segment.startZ)) ||
+      (nextCell === segment.endCellId && (!sourceOrigin || z === segment.endZ))
     let classification = edgeClearance.get(edgeOrigin, nextCell, usesTerminal)
     if (classification === undefined) {
       const a =
-        previousCell === segment.startCellId
+        previousCell === segment.startCellId &&
+        (!sourceOrigin || previousZ === segment.startZ)
           ? segment.startPoint
           : pointAt(previousCell)
       const b =
-        nextCell === segment.endCellId ? segment.endPoint : pointAt(nextCell)
+        nextCell === segment.endCellId && (!sourceOrigin || z === segment.endZ)
+          ? segment.endPoint
+          : pointAt(nextCell)
       if (!withinBounds(a) || !withinBounds(b)) {
         router._moveCost = -1
         return
       }
       // Terminal connectors have per-connection coordinates and bypass this
-      // cache. All other grid endpoints and hard copper stay fixed in search.
+      // cache. Other directed grid edges are static, including TOP departures:
+      // an outward source-pad exception belongs only to its exact source owner.
       classification = usesTerminal
         ? segmentIsClear(a, b, layer, name)
         : classifyStaticEdge(a, b, layer)
@@ -829,6 +935,8 @@ export function* routeReservedViaBusesSteps(
       return
     }
     move(connectionId, z, nextCell, isVia, rippedHead, ripCount, baseCost)
+    if (sourceOrigin && !isVia && layer === "top" && router._moveCost >= 0)
+      router._moveCost += baseCost * (sourceTravelCost - 1)
   }
   // A rip-up search can discard its best topology before reaching its limit.
   // Retain a few distinct one-short candidates, but never expose partial buses.
@@ -841,12 +949,13 @@ export function* routeReservedViaBusesSteps(
       batch++
     )
       router.step()
-    const output = router.getOutput()
+    const routedConnectionCount = router.getSolvedRouteCount()
     if (
       maximumLocalRepairAttempts > 0 &&
       connections.length >= 3 &&
-      output.length === connections.length - 1
+      routedConnectionCount === connections.length - 1
     ) {
+      const output = router.getOutput()
       const signature = output
         .map((route) => {
           const middle = route.route[Math.floor(route.route.length / 2)]!
@@ -863,7 +972,7 @@ export function* routeReservedViaBusesSteps(
     }
     yield {
       iterations: router.iterations,
-      routedConnectionCount: output.length,
+      routedConnectionCount,
       connectionCount: connections.length,
     }
   }
@@ -925,6 +1034,163 @@ export function* routeReservedViaBusesSteps(
         allowBlindAndBuriedVias: false,
       }).valid
     )
+  }
+  const finalizeSourceOriginRoutes = (
+    inputRoutes: HdRoute[],
+  ): FanoutRoutePlan[] | null => {
+    const rawPaths = new Map(paths)
+    const rawTerminals: ViaMinimalWindingTerminal[] = []
+    const targetRoutes: HdRoute[] = []
+    for (const route of inputRoutes) {
+      const terminal = params.terminals.find(
+        (t) => t.connection.connection.name === route.connectionName,
+      )!
+      const transition = route.route.findIndex(
+        (point, i) => i > 0 && point.z !== route.route[i - 1]!.z,
+      )
+      if (
+        transition < 1 ||
+        route.route
+          .slice(0, transition)
+          .some((p) => layerNames[p.z] !== "top") ||
+        route.route
+          .slice(transition)
+          .some((p) => layerNames[p.z] !== targetLayer) ||
+        distance(route.route[transition - 1]!, route.route[transition]!) > 1e-7
+      )
+        return null
+      const via = route.route[transition]!
+      rawPaths.set(
+        terminal.connection.connectionIndex,
+        compactPoints(route.route.slice(0, transition)).map(({ x, y }) => ({
+          x,
+          y,
+        })),
+      )
+      rawTerminals.push({ ...terminal, viaPoint: { x: via.x, y: via.y } })
+      targetRoutes.push({
+        ...route,
+        route: route.route.slice(transition),
+        vias: [],
+      })
+    }
+    const rawPlans = convertRoutes(
+      { ...params, terminals: rawTerminals },
+      targetRoutes,
+      rawPaths,
+    )
+    if (!rawPlans) return null
+    const repaired = repairBoundaryRouteTails({
+      ...params,
+      inputSrj: srj,
+      plans: rawPlans,
+      preparedBuses: buses,
+      reservedPlans: [...params.acceptedPlans, ...makePrefixes(expected)],
+      allowBlindAndBuriedVias: false,
+      allowSameNetMerges: false,
+    })
+    if (!repaired) return null
+    const routes: HdRoute[] = repaired.map((plan) => ({
+      connectionName: plan.connectionName,
+      route: plan.trace.route.flatMap((point) =>
+        point.route_type === "wire"
+          ? [{ x: point.x, y: point.y, z: layerNames.indexOf(point.layer) }]
+          : [],
+      ),
+      vias: [plan.via!.center],
+    }))
+    const normalizationIndex = index.clone()
+    const addRoute = (route: HdRoute) => {
+      for (let i = 1; i < route.route.length; i++) {
+        const a = route.route[i - 1]!,
+          b = route.route[i]!
+        if (a.z === b.z)
+          normalizationIndex.add({
+            kind: "segment",
+            connectionName: route.connectionName,
+            segment: {
+              start: a,
+              end: b,
+              width: traceWidth,
+              layer: layerNames[a.z]!,
+            },
+          })
+        else
+          normalizationIndex.add({
+            kind: "via",
+            connectionName: route.connectionName,
+            center: a,
+            diameter: viaDiameter,
+            layers: layerNames,
+          })
+      }
+    }
+    routes.forEach(addRoute)
+    const normalizedTargets: HdRoute[] = []
+    const normalizedTerminals: ViaMinimalWindingTerminal[] = []
+    for (const route of routes) {
+      const terminal = params.terminals.find(
+        (t) => t.connection.connection.name === route.connectionName,
+      )!
+      const normalized = normalizeLayeredPath({
+        points: compactPoints(route.route),
+        chamfer: traceWidth / 4,
+        segmentIsClear: (a, b) => {
+          for (const point of [a, b]) {
+            if (!withinBounds(point)) return false
+            const onBoundary =
+              Math.abs(point.x - bounds.minX) < 1e-7 ||
+              Math.abs(point.x - bounds.maxX) < 1e-7 ||
+              Math.abs(point.y - bounds.minY) < 1e-7 ||
+              Math.abs(point.y - bounds.maxY) < 1e-7
+            if (onBoundary && distance(point, terminal.exitPoint) > 1e-7)
+              return false
+          }
+          return segmentIsClear(
+            a,
+            b,
+            layerNames[a.z]!,
+            route.connectionName,
+            normalizationIndex.nearby(a, b),
+          )
+        },
+      })
+      if (!normalized) return null
+      const transition = normalized.findIndex(
+        (point, i) => i > 0 && point.z !== normalized[i - 1]!.z,
+      )
+      if (
+        transition < 1 ||
+        normalized
+          .slice(0, transition)
+          .some((p) => layerNames[p.z] !== "top") ||
+        normalized
+          .slice(transition)
+          .some((p) => layerNames[p.z] !== targetLayer)
+      )
+        return null
+      const via = normalized[transition]!
+      paths.set(
+        terminal.connection.connectionIndex,
+        normalized.slice(0, transition).map(({ x, y }) => ({ x, y })),
+      )
+      normalizedTerminals.push({
+        ...terminal,
+        viaPoint: { x: via.x, y: via.y },
+      })
+      normalizedTargets.push({
+        ...route,
+        route: normalized.slice(transition),
+        vias: [],
+      })
+      addRoute({ ...route, route: normalized })
+    }
+    const plans = convertRoutes(
+      { ...params, terminals: normalizedTerminals },
+      normalizedTargets,
+      paths,
+    )
+    return plans && fullPlansAreValid(plans) ? plans : null
   }
   const finalizeRoutes = (inputRoutes: HdRoute[]): FanoutRoutePlan[] | null => {
     let routes = inputRoutes
@@ -1038,9 +1304,15 @@ export function* routeReservedViaBusesSteps(
         connections.length
     )
       return null
-    return finalizeRoutes(routes)
+    return sourceOrigin
+      ? finalizeSourceOriginRoutes(routes)
+      : finalizeRoutes(routes)
   }
-  if (maximumLocalRepairAttempts === 0 || partialCandidates.length === 0)
+  if (
+    sourceOrigin ||
+    maximumLocalRepairAttempts === 0 ||
+    partialCandidates.length === 0
+  )
     return null
   const prefixes = makePrefixes(
     new Set(params.acceptedPlans.map((plan) => plan.connectionIndex)),
