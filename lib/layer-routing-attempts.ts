@@ -1,0 +1,77 @@
+export interface LayerRoutingAttempt {
+  ripCost: number
+  shuffleSeed: number
+  transitLayers: string[]
+}
+
+/** Bounded retry order; successful attempts never schedule extra work. */
+export class LayerRoutingAttempts {
+  private readonly pending: LayerRoutingAttempt[]
+  private readonly attempted = new Set<string>()
+
+  constructor(
+    private readonly options: {
+      wideSingleLayer: boolean
+      firstRipCost: number
+      transitLayers: string[]
+      allTransitLayers: string[]
+      preferSourceTransit?: boolean
+    },
+  ) {
+    this.pending = [
+      options.preferSourceTransit
+        ? {
+            ripCost: 8,
+            shuffleSeed: 1,
+            transitLayers: options.allTransitLayers,
+          }
+        : {
+            ripCost: options.firstRipCost,
+            shuffleSeed: 1,
+            transitLayers: options.transitLayers,
+          },
+    ]
+  }
+
+  next(): LayerRoutingAttempt | undefined {
+    while (this.pending.length > 0) {
+      const attempt = this.pending.shift()!
+      const key = JSON.stringify(attempt)
+      if (this.attempted.has(key)) continue
+      this.attempted.add(key)
+      return attempt
+    }
+    return undefined
+  }
+
+  failed(attempt: LayerRoutingAttempt, reason: "routing" | "lengths"): void {
+    const enqueue = (candidate: LayerRoutingAttempt) => {
+      if (!this.attempted.has(JSON.stringify(candidate)))
+        this.pending.unshift(candidate)
+    }
+    if (this.options.preferSourceTransit && attempt.ripCost === 8) {
+      enqueue({
+        ripCost: this.options.firstRipCost,
+        shuffleSeed: 1,
+        transitLayers: this.options.transitLayers,
+      })
+    } else if (this.options.wideSingleLayer) {
+      // Preserve the existing length-cost retry. Change route order only when
+      // the previous search did not find the complete group topology.
+      if (reason === "lengths" && attempt.ripCost === 64)
+        enqueue({ ...attempt, ripCost: 256, shuffleSeed: 1 })
+      if (reason === "routing" && attempt.shuffleSeed === 1)
+        enqueue({ ...attempt, ripCost: 64, shuffleSeed: 2 })
+    } else if (
+      attempt.transitLayers.length < this.options.allTransitLayers.length
+    ) {
+      enqueue({
+        ripCost: reason === "lengths" ? 8 : this.options.firstRipCost,
+        shuffleSeed: 1,
+        transitLayers: this.options.allTransitLayers,
+      })
+    } else if (reason === "routing" && attempt.ripCost !== 256) {
+      enqueue({ ...attempt, ripCost: 256 })
+    }
+  }
+}

@@ -1,4 +1,6 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import { sourceTransitHasMajorityCrossings } from "./source-transit-crossing-pressure"
+import { LayerRoutingAttempts } from "./layer-routing-attempts"
 import { packBoundaryBusIntervals } from "./pack-boundary-bus-intervals"
 import { getBoundaryBusSlotOffsets } from "./get-boundary-bus-slot-offsets"
 import { routeLayerReservedSourceEscapesSteps } from "./route-layer-reserved-source-escapes"
@@ -210,66 +212,78 @@ export function* routeLayerReservedBusesSteps(
           ).includes(candidate),
         ),
     )
-    const transitChoices = [transitLayers]
-    if (allTransitLayers.length > transitLayers.length)
-      transitChoices.push(allTransitLayers)
     const previousAccepted = accepted
-    const routingCosts = shortenFirst
-      ? [64, 256]
-      : [maximumBusSize <= 2 ? 256 : 64]
-    let groupCompleted = false
-    for (const ripCost of routingCosts) {
-      // A different congestion cost can remove a length trap in a complete
-      // single-layer topology. Retry from the same committed reservations.
-      accepted = previousAccepted
-      for (const bus of group) completed.delete(bus.busId)
-      let routedPlans: FanoutRoutePlan[] | null = null
-      for (const transitLayers of transitChoices) {
-        const steps = routeReservedViaBusesSteps({
-          ...params,
-          allBuses: buses,
-          buses: group,
-          targetLayer: layer,
-          transitLayers,
-          fixedViaPointsByConnectionIndex,
-          sourceEscapePaths,
-          acceptedPlans: accepted,
-          terminals: group.flatMap((bus) =>
+    const attempts = new LayerRoutingAttempts({
+      wideSingleLayer: shortenFirst,
+      firstRipCost: maximumBusSize <= 2 ? 256 : 64,
+      transitLayers,
+      allTransitLayers,
+      // If most direct escape corridors cross, a wide group on one layer
+      // otherwise winds around itself. Prefer its permitted source transit.
+      preferSourceTransit:
+        maximumBusSize > 2 &&
+        transitLayers.length === 0 &&
+        allTransitLayers.length > 0 &&
+        sourceTransitHasMajorityCrossings(
+          group.flatMap((bus) =>
             bus.connections.map((connection) => ({
-              connection,
-              viaPoint: fixedViaPointsByConnectionIndex.get(
+              source: fixedViaPointsByConnectionIndex.get(
                 connection.connectionIndex,
               )!,
-              exitPoint: targets.exits.get(connection.connectionIndex)!,
+              target: targets.exits.get(connection.connectionIndex)!,
             })),
           ),
-          tightViaChannels: true,
-          ripCost,
-          maximumRipEvents: 400,
-          // A permitted transit retry can resolve this congestion directly.
-          // Reserve local rip-up repairs for the last available layer choice.
-          maximumLocalRepairAttempts:
-            transitLayers === transitChoices.at(-1) ? 3 : 0,
-          maximumIterations: 100_000_000,
-          shuffleSeed: 1,
-        })
-        let next = steps.next()
-        while (!next.done) {
-          yield {
-            phase: "route-layer",
-            layer,
-            routedConnectionCount:
-              accepted.length + next.value.routedConnectionCount,
-            iterations: next.value.iterations,
-          }
-          next = steps.next()
+        ),
+    })
+    let groupCompleted = false
+    for (let attempt = attempts.next(); attempt; attempt = attempts.next()) {
+      // Every search and tuning attempt starts from the same committed set.
+      // A complete topology does not reserve copper until its bus lengths pass.
+      accepted = previousAccepted
+      for (const bus of group) completed.delete(bus.busId)
+      const hasTransitRetry =
+        attempt.transitLayers.length < allTransitLayers.length
+      const steps = routeReservedViaBusesSteps({
+        ...params,
+        allBuses: buses,
+        buses: group,
+        targetLayer: layer,
+        transitLayers: attempt.transitLayers,
+        fixedViaPointsByConnectionIndex,
+        sourceEscapePaths,
+        acceptedPlans: accepted,
+        terminals: group.flatMap((bus) =>
+          bus.connections.map((connection) => ({
+            connection,
+            viaPoint: fixedViaPointsByConnectionIndex.get(
+              connection.connectionIndex,
+            )!,
+            exitPoint: targets.exits.get(connection.connectionIndex)!,
+          })),
+        ),
+        tightViaChannels: true,
+        ripCost: attempt.ripCost,
+        maximumRipEvents: 400,
+        maximumLocalRepairAttempts: hasTransitRetry ? 0 : 3,
+        maximumIterations: 100_000_000,
+        shuffleSeed: attempt.shuffleSeed,
+      })
+      let next = steps.next()
+      while (!next.done) {
+        yield {
+          phase: "route-layer",
+          layer,
+          routedConnectionCount:
+            accepted.length + next.value.routedConnectionCount,
+          iterations: next.value.iterations,
         }
-        if (next.value) {
-          routedPlans = next.value
-          break
-        }
+        next = steps.next()
       }
-      if (!routedPlans) return null
+      const routedPlans = next.value
+      if (!routedPlans) {
+        attempts.failed(attempt, "routing")
+        continue
+      }
       accepted = [...accepted, ...routedPlans]
       for (const bus of group) completed.add(bus.busId)
       yield {
@@ -337,11 +351,15 @@ export function* routeLayerReservedBusesSteps(
         // Preserve directly tunable pairs and flexible buses; moving their
         // copper can occupy corridors needed by another layer group.
         yield* shortenCompletePlans()
-        matched = matchCompletePlans()
+        matched = matchCompletePlans(hasTransitRetry ? 1_000 : undefined)
       }
       if (matched.plans) {
         completePlans = matched.plans
       } else {
+        if (hasTransitRetry) {
+          attempts.failed(attempt, "lengths")
+          continue
+        }
         const repairSteps = repairBusLengthsWithTransitSteps({
           ...params,
           inputSrj: srj,
@@ -359,7 +377,10 @@ export function* routeLayerReservedBusesSteps(
           }
           repair = repairSteps.next()
         }
-        if (!repair.value) continue
+        if (!repair.value) {
+          attempts.failed(attempt, "lengths")
+          continue
+        }
         completePlans = repair.value
       }
       accepted = completePlans.filter((plan) =>
