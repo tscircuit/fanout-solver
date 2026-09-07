@@ -31,7 +31,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   if (values.help) {
     console.log(`Usage: ./benchmark.sh [options]
 
-Runs only dataset-fanout31-am62l: all 48 directional cases (12 AM62L, 12 RK3308, 12 K230, 12 i.MX6ULL).
+Runs only dataset-fanout31-am62l: all 60 directional cases (12 AM62L, 12 RK3308, 12 K230, 12 i.MX6ULL, 12 T113-S3).
 Captures the upstream TSX/core inputs, then benchmarks this checkout's solver.
 Failures and timeouts are results, not fatal errors.
 
