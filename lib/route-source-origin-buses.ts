@@ -167,11 +167,20 @@ export function* routeSourceOriginBusesSteps(
     ])
   }
   plans.forEach(updateSource)
+  const isOverlong = (plan: FanoutRoutePlan) => {
+    const bus = owners.get(plan.connectionIndex)!.bus
+    if (bus.connections.length <= 2 || bus.maxLengthSkew === undefined)
+      return false
+    const minimum = Math.min(
+      ...plans
+        .filter((other) => other.busId === plan.busId)
+        .map((other) => other.length),
+    )
+    return plan.length > minimum + bus.maxLengthSkew + 1e-7
+  }
   for (let pass = 0; pass < 2; pass++) {
     const candidates = plans
-      .filter(
-        (plan) => owners.get(plan.connectionIndex)!.bus.connections.length > 2,
-      )
+      .filter(isOverlong)
       .toSorted((a, b) => b.length - a.length)
       .slice(0, 8)
     let changed = false
@@ -179,6 +188,7 @@ export function* routeSourceOriginBusesSteps(
       const original = plans.find(
         (plan) => plan.connectionIndex === candidate.connectionIndex,
       )!
+      if (!isOverlong(original)) continue
       const { bus, connection } = owners.get(original.connectionIndex)!
       const steps = routeReservedViaBusesSteps({
         ...params,

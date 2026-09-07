@@ -129,11 +129,29 @@ test("a whole bus can choose first vias beyond a blocked target layer without mo
   let fixed = fixedSteps.next()
   while (!fixed.done) fixed = fixedSteps.next()
   expect(fixed.value).toBeNull()
+  const initialSourceSteps = routeReservedViaBusesSteps({
+    ...routeParams,
+    routeFromSourcePads: true,
+    sourceLayerTravelCost: 2,
+    maximumRipEvents: 1_200,
+    maximumIterations: 50_000_000,
+    maximumLocalRepairAttempts: 0,
+    shuffleSeed: 1,
+  })
+  let initialSource = initialSourceSteps.next()
+  while (!initialSource.done) initialSource = initialSourceSteps.next()
+  expect(initialSource.value).not.toBeNull()
+  expect(
+    Math.max(...initialSource.value!.map((plan) => plan.length)) -
+      Math.min(...initialSource.value!.map((plan) => plan.length)),
+  ).toBeLessThan(15)
   const originSteps = routeSourceOriginBusesSteps(routeParams)
   let origin = originSteps.next()
   while (!origin.done) origin = originSteps.next()
   const transaction = origin.value!
   expect(transaction).not.toBeNull()
+  // A whole bus that already meets its original skew keeps its routed copper.
+  expect(transaction.plans).toEqual(initialSource.value!)
   expect(transaction.fixedViaPointsByConnectionIndex).not.toBe(
     initial.fixedViaPointsByConnectionIndex,
   )
