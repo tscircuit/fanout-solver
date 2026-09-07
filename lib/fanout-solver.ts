@@ -1,8 +1,5 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
-import { selectCompatibleCandidates } from "./select-compatible-candidates"
-import { refineAdaptivePlaneReservationCore } from "./refine-adaptive-plane-reservations"
-import { shouldUseAdaptiveDensePlaneRouting } from "./should-use-adaptive-dense-plane-routing"
 import { type GraphicsObject, mergeGraphics } from "graphics-debug"
 import { addViaLayerMetadataToSrj } from "./add-via-layer-metadata"
 import {
@@ -31,6 +28,9 @@ import {
   prepareFanoutBuses,
   resolveAvailableBoundaryRegions,
 } from "./prepare-buses"
+import { refineAdaptivePlaneReservationCore } from "./refine-adaptive-plane-reservations"
+import { repairPeripheralBusLengthsSteps } from "./repair-peripheral-bus-lengths"
+import { routeBottomReservedRecoverySteps } from "./route-bottom-reserved-recovery"
 import {
   fanoutPlansAreClear,
   fanoutPlansAreMutuallyClear,
@@ -40,16 +40,17 @@ import {
   routeBusAlternativesSteps,
 } from "./route-bus"
 import { routePeripheralSourceEscapesSteps } from "./route-peripheral-source-escapes"
-import { routeStagedPerimeterBusSteps } from "./route-staged-perimeter-bus"
 import { routeReservedSourceBusesSteps } from "./route-reserved-source-buses"
-import { repairPeripheralBusLengthsSteps } from "./repair-peripheral-bus-lengths"
-import { routeSplitPerimeterSourceEscapesSteps } from "./route-split-perimeter-source-escapes"
-import { routeSplitPerimeterBusSteps } from "./route-split-perimeter-bus"
 import { routeShallowSplitPerimeterBusSteps } from "./route-shallow-split-perimeter-bus"
 import { routeSingleLayerWithAdaptiveExitsSteps } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
+import { routeSplitPerimeterBusSteps } from "./route-split-perimeter-bus"
+import { routeSplitPerimeterSourceEscapesSteps } from "./route-split-perimeter-source-escapes"
+import { routeStagedPerimeterBusSteps } from "./route-staged-perimeter-bus"
 import { getRuntimeProcess } from "./runtime-process"
+import { selectCompatibleCandidates } from "./select-compatible-candidates"
 import { shortenBusPlans } from "./shorten-bus-plans"
+import { shouldUseAdaptiveDensePlaneRouting } from "./should-use-adaptive-dense-plane-routing"
 import type {
   AssignmentAttempt,
   Bounds,
@@ -5321,6 +5322,47 @@ export class FanoutSolver extends BaseSolver {
         type: "subsolver",
         solver: peripheralSolver,
       }) as MixedTerminationState | null
+    }
+    if (
+      !mixedTerminationState &&
+      !useSingleLayerPushAndShove &&
+      routingStrategy === "default"
+    ) {
+      const bottomSolver = this.createWorkSolver(
+        "BottomReservedRecoverySolver",
+        routeBottomReservedRecoverySteps({
+          ...this.config,
+          srj: this.routingSrj,
+          inputSrj: this.inputSrj,
+          preparedBuses: this.preparedBuses,
+          targetLayerByBusId: new Map(Object.entries(busLayerAssignments)),
+          staticClearanceCache: this.routeStaticClearanceCache,
+          onStage: (stage, recoveredPlans) => {
+            this.setInProgressPlans({
+              phase: `route-bottom-reserved-${stage}`,
+              plans: [...recoveredPlans],
+              strategy: routingStrategy,
+              unitIndex: recoveredPlans.filter(
+                (plan) => plan.termination.type === "boundary",
+              ).length,
+              unitCount: this.preparedBuses
+                .filter((bus) => bus.termination.type === "boundary")
+                .reduce((count, bus) => count + bus.connections.length, 0),
+            })
+          },
+        }),
+      )
+      const bottomPlans = (yield {
+        type: "subsolver",
+        solver: bottomSolver,
+      }) as FanoutRoutePlan[] | null
+      if (bottomPlans) {
+        mixedTerminationState = {
+          plans: bottomPlans,
+          failedBusIds: [],
+          stopAfterCompleteValidation: true,
+        }
+      }
     }
     if (
       !mixedTerminationState &&

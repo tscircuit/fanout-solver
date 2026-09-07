@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test"
+import "bun-match-svg"
 import type {
   Obstacle,
   SimpleRouteConnection,
   SimpleRouteJson,
 } from "@tscircuit/capacity-autorouter"
+import { getSvgFromGraphicsObject } from "graphics-debug"
 import { buildOutputSimpleRouteJson } from "lib/build-output"
 import { distance } from "lib/geometry"
 import { matchBusPlanLengths } from "lib/match-bus-lengths"
@@ -16,6 +18,7 @@ import type {
   RoutedSegment,
 } from "lib/types"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
+import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
 
 const traceWidth = 0.1
 const clearance = 0.1
@@ -120,7 +123,7 @@ function createBoundaryPlan(params: {
   }
 }
 
-test("length matches the outside portion of a 45-degree dense-boundary crossing", () => {
+test("length matches dense-boundary crossings without splitting source escapes", async () => {
   const names = ["SHORT", "LONG"] as const
   const sources = [
     { x: -0.5, y: 0 },
@@ -325,4 +328,125 @@ test("length matches the outside portion of a 45-degree dense-boundary crossing"
     checkedViaCount: 2,
     issues: [],
   })
+
+  // The first via may itself lie outside the dense envelope. Splitting target
+  // copper at that envelope must not also subdivide the unchanged TOP escape.
+  const outsideSources = [
+    { x: -1.5, y: 0 },
+    { x: -0.5, y: -2 },
+  ]
+  const outsideVias = [
+    { x: -2, y: 0 },
+    { x: -2, y: -2 },
+  ]
+  const outsideExits = [
+    { x: 6, y: 8 },
+    { x: 6, y: 6 },
+  ]
+  const outsidePads = sourceObstacles.map((pad, i) => ({
+    ...pad,
+    center: outsideSources[i]!,
+  }))
+  const outsideMarker = { ...denseMarker, center: { x: 3.4, y: 5.4 } }
+  const outsideConnections = connections.map((connection, i) => ({
+    ...connection,
+    pointsToConnect: [
+      { ...connection.pointsToConnect[0]!, ...outsideSources[i]! },
+      { ...connection.pointsToConnect[1]!, y: outsideExits[i]!.y },
+    ],
+  }))
+  const outsideBoundary = { ...sharedBoundary, maxY: 10 }
+  const outsideBus: PreparedBus = {
+    ...preparedBus,
+    componentObstacles: [...outsidePads, outsideMarker],
+    componentBounds: { ...preparedBus.componentBounds, maxY: 5.5 },
+    sharedBoundary: outsideBoundary,
+    connections: preparedConnections.map((connection, i) => ({
+      ...connection,
+      connection: outsideConnections[i]!,
+      sourcePoint: outsideConnections[i]!.pointsToConnect[0]!,
+      targetPoint: outsideConnections[i]!.pointsToConnect[1]!,
+      sourceObstacle: outsidePads[i]!,
+    })),
+  }
+  const outsideInput: SimpleRouteJson = {
+    ...inputSrj,
+    bounds: { ...inputSrj.bounds, maxY: 10 },
+    connections: outsideConnections,
+    obstacles: [
+      ...outsidePads,
+      outsideMarker,
+      ...tuningWindowKeepouts.map((obstacle) => ({
+        ...obstacle,
+        center: { ...obstacle.center, y: obstacle.center.y + 2 },
+      })),
+    ],
+  }
+  const outsidePlans = names.map((name, i) =>
+    createBoundaryPlan({
+      name,
+      connectionIndex: i,
+      source: outsideSources[i]!,
+      via: outsideVias[i]!,
+      exit: outsideExits[i]!,
+      sourceObstacle: outsidePads[i]!,
+      connection: outsideConnections[i]!,
+    }),
+  )
+  const before = JSON.stringify(outsidePlans)
+  const outsideResult = matchBusPlanLengths({
+    plans: outsidePlans,
+    preparedBuses: [outsideBus],
+    inputSrj: outsideInput,
+    sharedBoundary: outsideBoundary,
+    clearance,
+    // A downstream reservation requires the target path to keep its original
+    // entrance into the dense envelope, leaving its far end available to tune.
+    candidatePlansAreFeasible: (candidatePlans) => {
+      const firstTarget = candidatePlans[0]!.segments.find(
+        (segment) => segment.layer === "bottom",
+      )!
+      return (
+        Math.abs(firstTarget.end.x + 1.75) < 1e-7 &&
+        Math.abs(firstTarget.end.y - 0.25) < 1e-7
+      )
+    },
+  })
+  expect(outsideResult.plans).not.toBeNull()
+  if (!outsideResult.plans) throw Error("Expected matching outside first vias")
+  expect(JSON.stringify(outsidePlans)).toBe(before)
+  for (const [i, plan] of outsideResult.plans.entries()) {
+    expect(plan.segments.filter((segment) => segment.layer === "top")).toEqual([
+      outsidePlans[i]!.segments[0]!,
+    ])
+    expect(plan.sourceEscapeSegmentCount).toBe(
+      outsidePlans[i]!.sourceEscapeSegmentCount,
+    )
+    expect(plan.via).toEqual(outsidePlans[i]!.via)
+  }
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: outsideInput,
+      routedSrj: buildOutputSimpleRouteJson({
+        inputSrj: outsideInput,
+        plans: outsideResult.plans,
+        layerNames: ["top", "bottom"],
+      }),
+      clearance,
+    }).valid,
+  ).toBe(true)
+
+  const outsideLengths = outsideResult.plans.map((plan) => plan.length)
+  expect(
+    Math.max(...outsideLengths) - Math.min(...outsideLengths),
+  ).toBeLessThanOrEqual(0.250001)
+  await expect(
+    getSvgFromGraphicsObject(
+      visualizeSimpleRouteJson({
+        ...outsideInput,
+        bounds: outsideBoundary,
+        traces: outsideResult.plans.map((plan) => plan.trace),
+      }),
+    ),
+  ).toMatchSvgSnapshot(import.meta.path)
 })

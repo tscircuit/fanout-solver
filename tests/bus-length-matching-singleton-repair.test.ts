@@ -23,7 +23,7 @@ const sharedBoundary: Bounds = {
   maxY: 8.627,
 }
 // The pair is enclosed by a fixed guard and an unconstrained auxiliary lane.
-// Moving the auxiliary lane opens the short member's only tuning window.
+// Moving the auxiliary lane opens a wider tuning window for ordinary chamfers.
 const fixtures = [
   {
     name: "AUXILIARY",
@@ -237,7 +237,37 @@ test("length matches a crowded pair by rerouting one unconstrained singleton", a
     allowPairLaneSpreading: true,
   }
   expect(fanoutPlansAreClear({ ...options, srj: inputSrj })).toBe(true)
-  expect(matchBusPlanLengths(options).plans).toBeNull()
+  const fixedSingletons = matchBusPlanLengths(options).plans
+  expect(fixedSingletons).not.toBeNull()
+  if (!fixedSingletons)
+    throw Error("Expected narrow-chamfer matching with fixed singletons")
+  for (const plan of fixedSingletons.filter((plan) => plan.busId !== "PAIR"))
+    expect(plan).toBe(
+      plans.find(
+        (original) => original.connectionIndex === plan.connectionIndex,
+      )!,
+    )
+  const fixedPair = fixedSingletons.filter((plan) => plan.busId === "PAIR")
+  expect(
+    Math.max(...fixedPair.map((plan) => plan.length)) -
+      Math.min(...fixedPair.map((plan) => plan.length)),
+  ).toBeLessThanOrEqual(0.250001)
+  expect(
+    fanoutPlansAreClear({ ...options, srj: inputSrj, plans: fixedSingletons }),
+  ).toBe(true)
+  const fixedOutput = buildOutputSimpleRouteJson({
+    inputSrj,
+    plans: fixedSingletons,
+    layerNames: ["top", "bottom"],
+  })
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj,
+      routedSrj: fixedOutput,
+      clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, issues: [] })
   const result = matchBusPlanLengths({
     ...options,
     allowUnconstrainedLaneRerouting: true,
