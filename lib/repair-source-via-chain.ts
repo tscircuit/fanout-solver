@@ -116,8 +116,14 @@ export function repairSourceViaChain(params: RepairSourceViaChainParams) {
     plan.sourceEscapeSegmentCount = e.segments.length
     return { source: e, plan }
   }
+  const acceptedByIndex = new Map(
+    params.acceptedPlans.map((plan) => [plan.connectionIndex, plan]),
+  )
   const initial = new Map(
-    params.sourceEscapes.map((e) => [e.connectionIndex, candidate(e).plan]),
+    params.sourceEscapes.map((e) => [
+      e.connectionIndex,
+      acceptedByIndex.get(e.connectionIndex) ?? candidate(e).plan,
+    ]),
   )
   for (const plan of params.acceptedPlans)
     initial.set(plan.connectionIndex, plan)
@@ -129,10 +135,16 @@ export function repairSourceViaChain(params: RepairSourceViaChainParams) {
     })
   const first = candidate(params.requestedEscape)
   if (!singleClear(first)) return null
-  const native = getComponentDogboneViaSiteCandidates(params.buses, {
-    ...params,
-    additionalObstacles: params.srj.obstacles,
-  })
+  let native:
+    | ReturnType<typeof getComponentDogboneViaSiteCandidates>
+    | undefined
+  const getNative = () => {
+    native ??= getComponentDogboneViaSiteCandidates(params.buses, {
+      ...params,
+      additionalObstacles: params.srj.obstacles,
+    })
+    return native
+  }
   const domainCache = new Map<number, Candidate[]>()
   const domains = (id: number) => {
     const cached = domainCache.get(id)
@@ -144,7 +156,7 @@ export function repairSourceViaChain(params: RepairSourceViaChainParams) {
     const old = sourceMap.get(id)!
     const h = byIndex.get(id)!
     const q = h.connection.sourcePoint
-    const points = native
+    const points = getNative()
       .filter((s) => s.connectionIndex === id)
       .map((s) => s.point)
     // Short straight escapes also cover a perimeter pad whose four native
