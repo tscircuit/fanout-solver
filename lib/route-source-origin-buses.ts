@@ -109,6 +109,8 @@ export interface SourceOriginBusRoutingParams
   extends RouteReservedViaBusesParams {
   /** Reconnect shorter source routes to successively narrower retained exit tails. */
   cleanupRetainedBoundaryTails?: boolean
+  /** Bound speculative first-via searches independently of later cleanup. */
+  maximumSourceIterations?: number
 }
 
 interface SourceOriginResult extends SourceOriginReservations {
@@ -130,7 +132,7 @@ export function* routeSourceOriginBusesSteps(
     routeFromSourcePads: true,
     sourceLayerTravelCost: params.sourceLayerTravelCost ?? 2,
     maximumRipEvents: 1_200,
-    maximumIterations: 50_000_000,
+    maximumIterations: params.maximumSourceIterations ?? 50_000_000,
     maximumLocalRepairAttempts: 0,
     shuffleSeed: 1,
   })

@@ -5,6 +5,7 @@ export interface LayerRoutingAttempt {
   routeFromSourcePads?: boolean
   sourceOriginPhysicalGridPhase?: boolean
   sourceLayerTravelCost?: number
+  maximumSourceIterations?: number
   reserveFutureApproaches?: boolean
 }
 
@@ -86,8 +87,12 @@ export class LayerRoutingAttempts {
       return
     }
     if (attempt.sourceLayerTravelCost !== undefined) {
-      const { reserveFutureApproaches, sourceLayerTravelCost, ...ordinary } =
-        attempt
+      const {
+        reserveFutureApproaches,
+        sourceLayerTravelCost,
+        maximumSourceIterations,
+        ...ordinary
+      } = attempt
       // The original topology was complete but untunable. If the fresh-source
       // alternative cannot route, retain the future approaches with a stronger
       // source-layer penalty once. Otherwise resume the original sequence.
@@ -120,11 +125,13 @@ export class LayerRoutingAttempts {
       // the previous search did not find the complete group topology.
       if (reason === "lengths" && attempt.ripCost === 64) {
         // Release future approach hints and penalize long top-layer runs.
+        // Bound this speculative search before the protected alternatives.
         // The ordinary successful first topology never pays for this search.
         const fresh: LayerRoutingAttempt = {
           ...attempt,
           shuffleSeed: 1,
           sourceLayerTravelCost: 3,
+          maximumSourceIterations: 20_000_000,
           reserveFutureApproaches: false,
         }
         const physical = {

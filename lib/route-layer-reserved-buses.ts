@@ -408,6 +408,7 @@ function* routeLayerReservedAttemptSteps(
         shuffleSeed: attempt.shuffleSeed,
         sourceOriginPhysicalGridPhase: attempt.sourceOriginPhysicalGridPhase,
         sourceLayerTravelCost: attempt.sourceLayerTravelCost,
+        maximumSourceIterations: attempt.maximumSourceIterations,
       }
       const steps = (function* () {
         if (attempt.routeFromSourcePads)

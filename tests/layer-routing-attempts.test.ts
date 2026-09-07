@@ -182,6 +182,7 @@ test("layer retries preserve the first successful choice and distinguish topolog
     expect(alternative).toEqual({
       ...original,
       sourceLayerTravelCost: 3,
+      maximumSourceIterations: 20_000_000,
       reserveFutureApproaches: false,
     })
     fresh.failed(alternative, failure)
