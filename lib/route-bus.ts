@@ -2270,44 +2270,70 @@ export function createFanoutPlanClearanceValidator(
     FanoutRoutePlan,
     WeakMap<FanoutRoutePlan, boolean>
   >()
+  let lastClearPlans = new Set<FanoutRoutePlan>()
+  const staticallyClear = (plan: FanoutRoutePlan): boolean => {
+    let clear = staticResults.get(plan)
+    if (clear === undefined) {
+      clear = planIsStaticallyClear({
+        segmentCache,
+        plan,
+        srj,
+        sharedBoundary,
+        clearance,
+        allowBlindAndBuriedVias,
+        allowSameNetMerges,
+      })
+      staticResults.set(plan, clear)
+    }
+    return clear
+  }
+  const clearOf = (plan: FanoutRoutePlan, other: FanoutRoutePlan): boolean => {
+    let pairs = mutualResults.get(plan)
+    if (!pairs) {
+      pairs = new WeakMap()
+      mutualResults.set(plan, pairs)
+    }
+    let clear = pairs.get(other)
+    if (clear === undefined) {
+      clear = planIsClearOfPlans({
+        plan,
+        otherPlans: [other],
+        segmentIndexes,
+        srj,
+        clearance,
+        allowSameNetMerges,
+      })
+      pairs.set(other, clear)
+    }
+    return clear
+  }
   return (plans) => {
-    for (const [index, plan] of plans.entries()) {
-      let staticClear = staticResults.get(plan)
-      if (staticClear === undefined) {
-        staticClear = planIsStaticallyClear({
-          segmentCache,
-          plan,
-          srj,
-          sharedBoundary,
-          clearance,
-          allowBlindAndBuriedVias,
-          allowSameNetMerges,
-        })
-        staticResults.set(plan, staticClear)
-      }
-      if (!staticClear) return false
-      let pairs = mutualResults.get(plan)
-      if (!pairs) {
-        pairs = new WeakMap()
-        mutualResults.set(plan, pairs)
-      }
-      for (const [otherIndex, other] of plans.entries()) {
-        if (otherIndex === index) continue
-        let clear = pairs.get(other)
-        if (clear === undefined) {
-          clear = planIsClearOfPlans({
-            plan,
-            otherPlans: [other],
-            segmentIndexes,
-            srj,
-            clearance,
-            allowSameNetMerges,
-          })
-          pairs.set(other, clear)
+    const currentPlans = new Set(plans)
+    if (currentPlans.size === plans.length) {
+      // Retained immutable plans already form a clear set. Check each new
+      // plan against the whole candidate in both directions; a failed
+      // candidate never becomes the basis for a later validation.
+      const changed = plans.filter((plan) => !lastClearPlans.has(plan))
+      for (const plan of plans) {
+        const retained = lastClearPlans.has(plan)
+        if (!retained && !staticallyClear(plan)) return false
+        // Keep the complete validator's directional check order. The order
+        // matters for quickly rejecting a candidate beside dense copper.
+        for (const other of retained ? changed : plans) {
+          if (plan === other) continue
+          if (!clearOf(plan, other)) return false
         }
-        if (!clear) return false
+      }
+    } else {
+      // Duplicate entries retain the original index-based self-checks.
+      for (const [index, plan] of plans.entries()) {
+        if (!staticallyClear(plan)) return false
+        for (const [otherIndex, other] of plans.entries()) {
+          if (otherIndex !== index && !clearOf(plan, other)) return false
+        }
       }
     }
+    lastClearPlans = currentPlans
     return true
   }
 }

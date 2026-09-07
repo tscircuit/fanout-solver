@@ -121,6 +121,30 @@ test("cached clearance rechecks replacement traces and vias during length tuning
       expect(cached(plans)).toBe(fanoutPlansAreClear({ ...rules, plans }))
     }
   }
+  const tunedB = makePlan(1, [
+    b.sourcePoint,
+    { x: -1, y: 0.5 },
+    { x: -0.5, y: 1 },
+    { x: 0.5, y: 1 },
+    { x: 1, y: 0.5 },
+    b.exitPoint,
+  ])
+  // Subsets, two simultaneous replacements, and reintroduced plans must
+  // retain the same answer as a complete clearance check.
+  for (const plans of [
+    [a, b],
+    [tuned],
+    [tuned, tunedB],
+    [tunedB, a],
+    [crossing, tunedB],
+    [blockedVia, b],
+    [tunedB, tuned],
+    [],
+    [b],
+    [a, b],
+  ]) {
+    expect(cached(plans)).toBe(fanoutPlansAreClear({ ...rules, plans }))
+  }
   expect(cached([a, a])).toBe(fanoutPlansAreClear({ ...rules, plans: [a, a] }))
   expect(
     createFanoutPlanClearanceValidator({ ...rules, clearance: 1 })([a, b]),
