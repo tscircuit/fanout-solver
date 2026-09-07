@@ -1,3 +1,4 @@
+import { getOutwardSourcePadOwner } from "./get-outward-source-pad-owner"
 import { addDiagonalGridNeighbors } from "./add-diagonal-grid-neighbors"
 import {
   PortfolioSingleIntraNodeSolver,
@@ -133,6 +134,7 @@ interface NegotiatedRouter {
   _setup(): void
   step(): void
   getOutput(): HdRoute[]
+  getSolvedRouteCount(): number
   _viaOccs: number[]
   fillViaOccupants(cellId: number, activeConnection: number): void
   pushFlatOccupants(
@@ -480,6 +482,18 @@ export function* routeReservedViaBusesSteps(
   )
   const sourceOwners = new Map(connections.map((c) => [c.connection.name, c]))
   const obstacleOwners = new Map(connections.map((c) => [c.sourceObstacle, c]))
+  const sourceObstacleOwners = sourceOrigin
+    ? new Map(
+        connections.map((connection) => [
+          connection.sourceObstacle,
+          {
+            connectionName: connection.connection.name,
+            sourcePoint: sourceOwners.get(connection.connection.name)!
+              .sourcePoint,
+          },
+        ]),
+      )
+    : undefined
   for (const obstacle of srj.obstacles)
     index.add({ kind: "obstacle", obstacle })
   for (const bus of allBuses)
@@ -628,7 +642,8 @@ export function* routeReservedViaBusesSteps(
   if (
     typeof candidate.computeMoveCostAndRips !== "function" ||
     typeof candidate.markTraceFootprint !== "function" ||
-    typeof candidate.addSharedOccupant !== "function"
+    typeof candidate.addSharedOccupant !== "function" ||
+    typeof candidate.getSolvedRouteCount !== "function"
   )
     return null
   const Constructor = candidate.constructor as new (
@@ -845,10 +860,25 @@ export function* routeReservedViaBusesSteps(
     let soleOwner: string | undefined
     for (const blocker of index.nearby(a, b)) {
       if (blockerIsClear(a, b, layer, blocker)) continue
-      if (blocker.kind === "obstacle") return false
-      if (soleOwner !== undefined && soleOwner !== blocker.connectionName)
+      if (blocker.kind === "obstacle" && !sourceOrigin) return false
+      const owner =
+        blocker.kind === "obstacle"
+          ? getOutwardSourcePadOwner(
+              a,
+              b,
+              layer,
+              traceWidth,
+              clearance,
+              blocker.obstacle,
+              sourceObstacleOwners?.get(blocker.obstacle),
+            )
+          : blocker.connectionName
+      if (
+        owner === undefined ||
+        (soleOwner !== undefined && soleOwner !== owner)
+      )
         return false
-      soleOwner = blocker.connectionName
+      soleOwner = owner
     }
     return soleOwner ?? true
   }
@@ -874,7 +904,6 @@ export function* routeReservedViaBusesSteps(
     }
     const edgeOrigin = z * router.planeSize + previousCell
     const usesTerminal =
-      (sourceOrigin && layer === "top") ||
       (previousCell === segment.startCellId &&
         (!sourceOrigin || previousZ === segment.startZ)) ||
       (nextCell === segment.endCellId && (!sourceOrigin || z === segment.endZ))
@@ -894,7 +923,8 @@ export function* routeReservedViaBusesSteps(
         return
       }
       // Terminal connectors have per-connection coordinates and bypass this
-      // cache. All other grid endpoints and hard copper stay fixed in search.
+      // cache. Other directed grid edges are static, including TOP departures:
+      // an outward source-pad exception belongs only to its exact source owner.
       classification = usesTerminal
         ? segmentIsClear(a, b, layer, name)
         : classifyStaticEdge(a, b, layer)
@@ -919,12 +949,13 @@ export function* routeReservedViaBusesSteps(
       batch++
     )
       router.step()
-    const output = router.getOutput()
+    const routedConnectionCount = router.getSolvedRouteCount()
     if (
       maximumLocalRepairAttempts > 0 &&
       connections.length >= 3 &&
-      output.length === connections.length - 1
+      routedConnectionCount === connections.length - 1
     ) {
+      const output = router.getOutput()
       const signature = output
         .map((route) => {
           const middle = route.route[Math.floor(route.route.length / 2)]!
@@ -941,7 +972,7 @@ export function* routeReservedViaBusesSteps(
     }
     yield {
       iterations: router.iterations,
-      routedConnectionCount: output.length,
+      routedConnectionCount,
       connectionCount: connections.length,
     }
   }
