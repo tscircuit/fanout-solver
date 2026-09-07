@@ -2,6 +2,7 @@ export interface LayerRoutingAttempt {
   ripCost: number
   shuffleSeed: number
   transitLayers: string[]
+  routeFromSourcePads?: boolean
 }
 
 /** Bounded retry order; successful attempts never schedule extra work. */
@@ -16,6 +17,7 @@ export class LayerRoutingAttempts {
       transitLayers: string[]
       allTransitLayers: string[]
       preferSourceTransit?: boolean
+      preferSourceOrigin?: boolean
     },
   ) {
     this.pending = [
@@ -31,6 +33,13 @@ export class LayerRoutingAttempts {
             transitLayers: options.transitLayers,
           },
     ]
+    if (options.preferSourceOrigin)
+      this.pending.unshift({
+        ripCost: 256,
+        shuffleSeed: 1,
+        transitLayers: [],
+        routeFromSourcePads: true,
+      })
   }
 
   next(): LayerRoutingAttempt | undefined {
@@ -45,6 +54,9 @@ export class LayerRoutingAttempts {
   }
 
   failed(attempt: LayerRoutingAttempt, reason: "routing" | "lengths"): void {
+    // The original fixed-source attempt is already pending. Do not multiply
+    // the source-origin search if either topology or length matching fails.
+    if (attempt.routeFromSourcePads) return
     const enqueue = (candidate: LayerRoutingAttempt) => {
       if (!this.attempted.has(JSON.stringify(candidate)))
         this.pending.unshift(candidate)

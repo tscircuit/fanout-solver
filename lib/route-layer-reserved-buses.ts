@@ -1,4 +1,6 @@
 import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
+import { hasCompressedExitConvergence } from "./compressed-exit-convergence"
+import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
 import {
   prepareSourceOriginReservations,
   routeSourceOriginBusesSteps,
@@ -231,6 +233,12 @@ export function* routeLayerReservedBusesSteps(
       firstRipCost: maximumBusSize <= 2 ? 256 : 64,
       transitLayers,
       allTransitLayers,
+      preferSourceOrigin: hasCompressedExitConvergence({
+        ...params,
+        buses: group,
+        targetLayer: layer,
+        exits: targets.exits,
+      }),
       // If most direct escape corridors cross, a wide group on one layer
       // otherwise winds around itself. Prefer its permitted source transit.
       preferSourceTransit:
@@ -257,6 +265,7 @@ export function* routeLayerReservedBusesSteps(
       accepted = previousAccepted
       for (const bus of group) completed.delete(bus.busId)
       const hasTransitRetry =
+        attempt.routeFromSourcePads ||
         attempt.transitLayers.length < allTransitLayers.length
       const routeParams = {
         ...params,
@@ -297,6 +306,15 @@ export function* routeLayerReservedBusesSteps(
         shuffleSeed: attempt.shuffleSeed,
       }
       const steps = (function* () {
+        if (attempt.routeFromSourcePads)
+          return yield* routeReservedViaBusesSteps({
+            ...routeParams,
+            routeFromSourcePads: true,
+            sourceLayerTravelCost: 2,
+            maximumRipEvents: 1_200,
+            maximumIterations: 50_000_000,
+            maximumLocalRepairAttempts: 0,
+          })
         if (!useSourceOrigin)
           return yield* routeReservedViaBusesSteps(routeParams)
         const result = yield* routeSourceOriginBusesSteps(routeParams)
@@ -452,6 +470,56 @@ export function* routeLayerReservedBusesSteps(
       accepted = completePlans.filter((plan) =>
         routed.has(plan.connectionIndex),
       )
+      if (attempt.routeFromSourcePads) {
+        // Commit the new first-via reservations only after the intact group
+        // passes length matching. Failed attempts leave the ordinary fallback
+        // with the exact original source map and all previously routed copper.
+        const sources = new Map(
+          group.flatMap((bus) =>
+            bus.connections.map((connection) => {
+              const plan = accepted.find(
+                (candidate) =>
+                  candidate.connectionIndex === connection.connectionIndex,
+              )!
+              if (!plan.via)
+                throw new Error(
+                  "Source-origin routing lost its source reservation",
+                )
+              const path = [
+                connection.sourcePoint,
+                ...plan.segments
+                  .slice(0, plan.sourceEscapeSegmentCount ?? 1)
+                  .map((segment) => segment.end),
+              ]
+              const prefix = buildViaMinimalWindingPlan({
+                ...params,
+                bus,
+                terminal: {
+                  connection,
+                  viaPoint: plan.via.center,
+                  exitPoint: plan.via.center,
+                },
+                targetLayer: plan.via.toLayer,
+                targetLayerPoints: [plan.via.center],
+                sourceEscapePoints: path,
+                allowBlindAndBuriedVias: false,
+              })
+              return [
+                connection.connectionIndex,
+                { plan: prefix, path },
+              ] as const
+            }),
+          ),
+        )
+        for (const [index, source] of sources) {
+          fixedViaPointsByConnectionIndex.set(index, source.plan.via!.center)
+          sourceEscapePaths.set(index, source.path)
+        }
+        for (let index = 0; index < sourcePlans.length; index++)
+          sourcePlans[index] =
+            sources.get(sourcePlans[index]!.connectionIndex)?.plan ??
+            sourcePlans[index]!
+      }
       groupCompleted = true
       break
     }
