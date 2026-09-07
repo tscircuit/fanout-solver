@@ -484,10 +484,15 @@ function* routeLayerReservedAttemptSteps(
         // Preserve directly tunable pairs and flexible buses; moving their
         // copper can occupy corridors needed by another layer group.
         yield* shortenCompletePlans()
-        // Flexible wide groups have bounded transit/tail repairs below. Avoid
-        // exhausting that opportunity on a second unbounded failed search.
+        // Joint source placement has bounded transit/tail repairs below. Keep
+        // that opportunity available, while allowing ordinary fixed-source
+        // buses to finish tuning across many crowded spans.
         matched = matchCompletePlans(
-          hasTransitRetry || maximumBusSize > 2 ? 1_000 : undefined,
+          hasTransitRetry ||
+            ((params.sourceOriginRouting || committedOpposedPairSources) &&
+              maximumBusSize > 2)
+            ? 1_000
+            : undefined,
         )
       }
       if (
