@@ -125,6 +125,36 @@ test("cached clearance rechecks replacement traces and vias during length tuning
   expect(
     createFanoutPlanClearanceValidator({ ...rules, clearance: 1 })([a, b]),
   ).toBe(false)
+  // Reusing a segment must not reuse another source-pad exemption or net.
+  const untaggedSourcePad = { ...pads[0]!, connectedTo: [] }
+  const sourceRules = {
+    ...rules,
+    srj: { ...srj, obstacles: [untaggedSourcePad, pads[1]!] },
+  }
+  const sourceCached = createFanoutPlanClearanceValidator(sourceRules)
+  const sourcePlan = {
+    ...a,
+    sourceObstacle: untaggedSourcePad,
+    sourceEscapeSegmentCount: 1,
+  }
+  for (const [replacement, expected] of [
+    [sourcePlan, true],
+    [{ ...sourcePlan, sourceEscapeSegmentCount: 0 }, false],
+    [{ ...sourcePlan, sourceObstacle: pads[1]! }, false],
+    [sourcePlan, true],
+  ] as const) {
+    expect(sourceCached([replacement, b])).toBe(expected)
+    expect(sourceCached([replacement, b])).toBe(
+      fanoutPlansAreClear({ ...sourceRules, plans: [replacement, b] }),
+    )
+  }
+  const unexempted = { ...a, sourceEscapeSegmentCount: 0 }
+  expect(cached([unexempted, b])).toBe(true)
+  const otherNet = { ...unexempted, connectionName: "foreign-net" }
+  expect(cached([otherNet, b])).toBe(false)
+  expect(cached([otherNet, b])).toBe(
+    fanoutPlansAreClear({ ...rules, plans: [otherNet, b] }),
+  )
   await expect(
     getSvgFromGraphicsObject(
       visualizeSimpleRouteJson({

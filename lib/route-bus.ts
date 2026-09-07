@@ -1814,7 +1814,9 @@ function segmentIsClearOfObstacles(params: {
 }
 
 function getPlanSegments(plan: FanoutRoutePlan): RoutedSegment[] {
-  return [...plan.segments, ...(plan.planeEndpointSegments ?? [])]
+  return plan.planeEndpointSegments?.length
+    ? [...plan.segments, ...plan.planeEndpointSegments]
+    : plan.segments
 }
 
 function getPlanVias(plan: FanoutRoutePlan) {
@@ -1839,7 +1841,19 @@ function viaFitsInsidePlanSourcePad(
   )
 }
 
+interface StaticPlanSegmentCache {
+  obstaclesByLayer: Map<string, Obstacle[]>
+  byConnection: Map<
+    string,
+    WeakMap<
+      Obstacle,
+      [WeakMap<RoutedSegment, boolean>, WeakMap<RoutedSegment, boolean>]
+    >
+  >
+}
+
 function planIsStaticallyClear(params: {
+  segmentCache?: StaticPlanSegmentCache
   plan: FanoutRoutePlan
   srj: SimpleRouteJson
   sharedBoundary: Bounds
@@ -1867,20 +1881,45 @@ function planIsStaticallyClear(params: {
     return false
   }
   const segments = getPlanSegments(plan)
+  let segmentResults:
+    | [WeakMap<RoutedSegment, boolean>, WeakMap<RoutedSegment, boolean>]
+    | undefined
+  if (params.segmentCache) {
+    let contexts = params.segmentCache.byConnection.get(plan.connectionName)
+    if (!contexts) {
+      contexts = new WeakMap()
+      params.segmentCache.byConnection.set(plan.connectionName, contexts)
+    }
+    segmentResults = contexts.get(plan.sourceObstacle)
+    if (!segmentResults) {
+      segmentResults = [new WeakMap(), new WeakMap()]
+      contexts.set(plan.sourceObstacle, segmentResults)
+    }
+  }
   for (let index = 0; index < segments.length; index++) {
-    if (
-      !segmentIsClearOfObstacles({
-        segment: segments[index]!,
+    const segment = segments[index]!
+    const segmentIndex = index < plan.segments.length ? index : -1
+    const sourceExemption =
+      segmentIndex >= 0 &&
+      segmentIndex < (plan.sourceEscapeSegmentCount ?? 1) &&
+      segment.layer === plan.sourceLayer
+    const results = segmentResults?.[sourceExemption ? 1 : 0]
+    let clear = results?.get(segment)
+    if (clear === undefined) {
+      clear = segmentIsClearOfObstacles({
+        segment,
         plan,
-        segmentIndex: index < plan.segments.length ? index : -1,
+        segmentIndex,
         srj,
         allowSameNetMerges,
-        obstacles: srj.obstacles,
+        obstacles: params.segmentCache
+          ? (params.segmentCache.obstaclesByLayer.get(segment.layer) ?? [])
+          : srj.obstacles,
         clearance,
       })
-    ) {
-      return false
+      results?.set(segment, clear)
     }
+    if (!clear) return false
   }
   for (const via of getPlanVias(plan)) {
     for (const obstacle of srj.obstacles) {
@@ -2212,6 +2251,16 @@ export function createFanoutPlanClearanceValidator(
     allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
   } = params
+  const segmentCache: StaticPlanSegmentCache = {
+    obstaclesByLayer: new Map(),
+    byConnection: new Map(),
+  }
+  for (const obstacle of srj.obstacles)
+    for (const layer of obstacle.layers) {
+      const obstacles = segmentCache.obstaclesByLayer.get(layer) ?? []
+      obstacles.push(obstacle)
+      segmentCache.obstaclesByLayer.set(layer, obstacles)
+    }
   const segmentIndexes = new WeakMap<
     FanoutRoutePlan,
     RouteSegmentSpatialIndex
@@ -2226,6 +2275,7 @@ export function createFanoutPlanClearanceValidator(
       let staticClear = staticResults.get(plan)
       if (staticClear === undefined) {
         staticClear = planIsStaticallyClear({
+          segmentCache,
           plan,
           srj,
           sharedBoundary,
