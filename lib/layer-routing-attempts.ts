@@ -5,7 +5,7 @@ export interface LayerRoutingAttempt {
   routeFromSourcePads?: boolean
   sourceOriginPhysicalGridPhase?: boolean
   sourceLayerTravelCost?: number
-  reserveFutureApproaches?: false
+  reserveFutureApproaches?: boolean
 }
 
 /** Bounded retry order; successful attempts never schedule extra work. */
@@ -85,12 +85,19 @@ export class LayerRoutingAttempts {
         this.pending.push({ ...this.originalOrder!, ripCost: 256 })
       return
     }
-    if (attempt.reserveFutureApproaches === false) {
+    if (attempt.sourceLayerTravelCost !== undefined) {
       const { reserveFutureApproaches, sourceLayerTravelCost, ...ordinary } =
         attempt
       // The original topology was complete but untunable. If the fresh-source
-      // alternative fails, resume that original length-retry sequence.
-      this.failed(ordinary, "lengths")
+      // alternative cannot route, retain the future approaches with a stronger
+      // source-layer penalty once. Otherwise resume the original sequence.
+      if (reserveFutureApproaches === false && reason === "routing")
+        enqueue({
+          ...ordinary,
+          sourceLayerTravelCost: 4,
+          reserveFutureApproaches: true,
+        })
+      else this.failed(ordinary, "lengths")
       return
     }
     if (attempt.sourceOriginPhysicalGridPhase) {

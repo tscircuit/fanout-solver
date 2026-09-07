@@ -185,6 +185,15 @@ test("layer retries preserve the first successful choice and distinguish topolog
       reserveFutureApproaches: false,
     })
     fresh.failed(alternative, failure)
+    if (failure === "routing") {
+      const protectedRetry = fresh.next()!
+      expect(protectedRetry).toEqual({
+        ...original,
+        sourceLayerTravelCost: 4,
+        reserveFutureApproaches: true,
+      })
+      fresh.failed(protectedRetry, failure)
+    }
     const physical = fresh.next()!
     expect(physical).toEqual({
       ...original,

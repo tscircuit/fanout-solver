@@ -350,7 +350,7 @@ function* routeLayerReservedAttemptSteps(
       // ordinary retry with exactly the reservations it received.
       const previousSources =
         attempt.sourceOriginPhysicalGridPhase ||
-        attempt.reserveFutureApproaches === false
+        attempt.sourceLayerTravelCost !== undefined
           ? {
               sites: new Map(fixedViaPointsByConnectionIndex),
               paths: new Map(sourceEscapePaths),
@@ -361,7 +361,7 @@ function* routeLayerReservedAttemptSteps(
         if (!previousSources) return
         restoreSources(previousSources)
       }
-      if (attempt.reserveFutureApproaches === false)
+      if (attempt.sourceLayerTravelCost !== undefined)
         restoreSources(originalSources)
       const hasTransitRetry =
         attempt.routeFromSourcePads ||
@@ -452,7 +452,7 @@ function* routeLayerReservedAttemptSteps(
         if (
           useSourceOrigin &&
           !attempt.sourceOriginPhysicalGridPhase &&
-          attempt.reserveFutureApproaches !== false
+          attempt.sourceLayerTravelCost === undefined
         ) {
           attemptState.failedWideMatching = groupHadLengthFailure
           return null
