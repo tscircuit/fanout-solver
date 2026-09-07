@@ -332,7 +332,7 @@ export function* routeLayerReservedBusesSteps(
       // A wide bus restricted to one layer cannot use transit to shorten a
       // detour. Remove avoidable winding before spending time on meanders.
       if (shortenFirst) yield* shortenCompletePlans()
-      let matched = matchCompletePlans(shortenFirst ? undefined : 5_000)
+      let matched = matchCompletePlans(shortenFirst ? undefined : 1_000)
       if (!matched.plans && !shortenFirst) {
         // Preserve directly tunable pairs and flexible buses; moving their
         // copper can occupy corridors needed by another layer group.
