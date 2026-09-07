@@ -294,12 +294,20 @@ export function validateRoutedCopperDrc(params: {
   }
 
   for (const copper of traceCopper) {
+    // Electrical ownership is constant throughout this synchronous validation.
+    // Resolve it once per trace, rather than rescanning each pad's metadata
+    // for every segment. Keep the original obstacle order for diagnostics.
+    const sameNetObstacles = new Set(
+      inputSrj.obstacles.filter((obstacle) =>
+        obstacleSharesElectricalNet(inputSrj, obstacle, copper.connectionName),
+      ),
+    )
+    const differentNetObstacles = inputSrj.obstacles.filter(
+      (obstacle) => !sameNetObstacles.has(obstacle),
+    )
     for (const segment of copper.segments) {
-      for (const obstacle of inputSrj.obstacles) {
-        if (
-          !obstacle.layers.includes(segment.layer) ||
-          obstacleSharesElectricalNet(inputSrj, obstacle, copper.connectionName)
-        ) {
+      for (const obstacle of differentNetObstacles) {
+        if (!obstacle.layers.includes(segment.layer)) {
           continue
         }
         if (
@@ -336,11 +344,7 @@ export function validateRoutedCopperDrc(params: {
         inputSrj.obstacles.some(
           (obstacle) =>
             obstacle.layers.some((layer) => via.spanLayers.includes(layer)) &&
-            obstacleSharesElectricalNet(
-              inputSrj,
-              obstacle,
-              copper.connectionName,
-            ) &&
+            sameNetObstacles.has(obstacle) &&
             circleFitsInsideObstacle({
               center: via.center,
               diameter: via.diameter,
@@ -357,11 +361,8 @@ export function validateRoutedCopperDrc(params: {
           message: `Via in ${copper.trace.pcb_trace_id} is placed directly at an original or routed connection endpoint`,
         })
       }
-      for (const obstacle of inputSrj.obstacles) {
-        if (
-          !obstacle.layers.some((layer) => via.spanLayers.includes(layer)) ||
-          obstacleSharesElectricalNet(inputSrj, obstacle, copper.connectionName)
-        ) {
+      for (const obstacle of differentNetObstacles) {
+        if (!obstacle.layers.some((layer) => via.spanLayers.includes(layer))) {
           continue
         }
         const actual = distancePointToObstacle(via.center, obstacle)
