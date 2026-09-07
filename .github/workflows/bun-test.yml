@@ -37,10 +37,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Record temporary routing provenance
-        continue-on-error: true
-        run: bun tests/helpers/write-ci-routing-provenance.ts ${{ matrix.shard }}
-
       - name: Run test shard
         run: bun scripts/run-test-shard.ts ${{ matrix.shard }} 8
 
@@ -49,11 +45,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-snapshots-${{ matrix.shard }}
-          path: |
-            tests/**/__snapshots__/*.diff.png
-            tests/**/__snapshots__/*.actual.svg
-            .ci-routing-diagnostics/
-          include-hidden-files: true
+          path: tests/**/__snapshots__/*.diff.png
           if-no-files-found: ignore
 
   test:
