@@ -476,6 +476,7 @@ function createTunedPlanCandidates(params: {
   sharedBoundary: Bounds
   allowInsideDenseBounds?: boolean
   denseBoundarySplitApplied?: boolean
+  allowDeclaredCrossoverLayers?: boolean
 }): FanoutRoutePlan[] {
   const {
     plan,
@@ -485,19 +486,41 @@ function createTunedPlanCandidates(params: {
     sharedBoundary,
     allowInsideDenseBounds = false,
     denseBoundarySplitApplied = false,
+    allowDeclaredCrossoverLayers = false,
   } = params
   const candidates: FanoutRoutePlan[] = []
   const denseCopperBounds = getDenseCopperBounds(bus)
   const denseMargin = plan.segments[0]?.width
     ? plan.segments[0].width / 2 + clearance
     : clearance
+  const sourcePrefixEnd =
+    allowDeclaredCrossoverLayers && plan.via
+      ? plan.segments.findIndex(
+          (segment) =>
+            segment.layer === plan.via!.fromLayer &&
+            pointsMatch(segment.end, plan.via!.center),
+        ) + 1
+      : 0
+  const declaredLayers = (
+    bus.routableEscapeLayers ??
+    bus.allowedLayers ??
+    []
+  ).filter((layer) => !bus.allowedLayers || bus.allowedLayers.includes(layer))
   const eligibleSegments = plan.segments
     .map((segment, segmentIndex) => ({ segment, segmentIndex }))
-    .filter(({ segment }) => segment.layer === plan.targetLayer)
+    .filter(
+      ({ segment, segmentIndex }) =>
+        segmentIndex >= sourcePrefixEnd &&
+        (segment.layer === plan.targetLayer ||
+          (allowDeclaredCrossoverLayers &&
+            declaredLayers.includes(segment.layer))),
+    )
     .toSorted(
       (first, second) =>
+        Number(second.segment.layer === plan.targetLayer) -
+          Number(first.segment.layer === plan.targetLayer) ||
         distance(second.segment.start, second.segment.end) -
-        distance(first.segment.start, first.segment.end),
+          distance(first.segment.start, first.segment.end),
     )
 
   for (const { segment, segmentIndex } of eligibleSegments) {
@@ -569,12 +592,14 @@ function createTunedPlanCandidates(params: {
     }
   }
   if (denseBoundarySplitApplied) return candidates
-  const splitSegments = plan.segments.flatMap((segment) =>
-    splitSegmentAtDenseBounds({
-      segment,
-      bounds: denseCopperBounds,
-      margin: denseMargin,
-    }),
+  const splitSegments = plan.segments.flatMap((segment, index) =>
+    index < sourcePrefixEnd
+      ? [segment]
+      : splitSegmentAtDenseBounds({
+          segment,
+          bounds: denseCopperBounds,
+          margin: denseMargin,
+        }),
   )
   const splitPlan = createPlanWithSegments(plan, splitSegments)
   if (!splitPlan) return candidates
@@ -657,7 +682,8 @@ function* createSpreadLaneCandidates(
  * is atomic: a constrained bus either satisfies its declared skew with the
  * complete fanout copper still clear, or the complete assignment is rejected.
  */
-export function matchBusPlanLengths(params: {
+function matchBusPlanLengthsOnEligibleLayers(params: {
+  allowDeclaredCrossoverLayers: boolean
   plans: readonly FanoutRoutePlan[]
   preparedBuses: readonly PreparedBus[]
   inputSrj: SimpleRouteJson
@@ -692,6 +718,7 @@ export function matchBusPlanLengths(params: {
     allowSameNetMerges = false,
     allowMatchingInsideDenseBounds = false,
     candidatePlansAreFeasible,
+    allowDeclaredCrossoverLayers,
   } = params
   let matchedPlans = [...params.plans]
   const constrainedBuses = preparedBuses.filter(
@@ -839,6 +866,7 @@ export function matchBusPlanLengths(params: {
               clearance,
               sharedBoundary: bus.sharedBoundary,
               allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+              allowDeclaredCrossoverLayers,
             }),
           )
           for (const candidate of candidates) {
@@ -865,6 +893,7 @@ export function matchBusPlanLengths(params: {
           clearance,
           sharedBoundary: bus.sharedBoundary,
           allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+          allowDeclaredCrossoverLayers,
         })
         for (const candidate of candidates) {
           acceptedPlans = acceptCandidate(candidate)
@@ -909,7 +938,7 @@ export function matchBusPlanLengths(params: {
             !candidatePlansAreFeasible(nextPlans)
           )
             continue
-          const result = matchBusPlanLengths({
+          const result = matchBusPlanLengthsOnEligibleLayers({
             ...params,
             plans: nextPlans,
             preparedBuses: [bus],
@@ -936,6 +965,7 @@ export function matchBusPlanLengths(params: {
             clearance,
             sharedBoundary: bus.sharedBoundary,
             allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+            allowDeclaredCrossoverLayers,
           })
           for (const candidate of candidates) {
             if (
@@ -1052,4 +1082,41 @@ export function matchBusPlanLengths(params: {
     }
   }
   return { plans: matchedPlans }
+}
+
+/** Retain ordinary matching before trying existing copper on declared crossover layers. */
+export function matchBusPlanLengths(
+  params: Omit<
+    Parameters<typeof matchBusPlanLengthsOnEligibleLayers>[0],
+    "allowDeclaredCrossoverLayers"
+  >,
+): ReturnType<typeof matchBusPlanLengthsOnEligibleLayers> {
+  const ordinary = matchBusPlanLengthsOnEligibleLayers({
+    ...params,
+    allowDeclaredCrossoverLayers: false,
+  })
+  if (ordinary.plans) return ordinary
+  const bus = ordinary.failedBus
+  const declaredLayers = bus.routableEscapeLayers ?? bus.allowedLayers ?? []
+  const hasDeclaredCrossover = params.plans.some((plan) => {
+    if (plan.busId !== bus.busId || !plan.via) return false
+    const prefixEnd =
+      plan.segments.findIndex(
+        (segment) =>
+          segment.layer === plan.via!.fromLayer &&
+          pointsMatch(segment.end, plan.via!.center),
+      ) + 1
+    return plan.segments.some(
+      (segment, index) =>
+        index >= prefixEnd &&
+        segment.layer !== plan.targetLayer &&
+        declaredLayers.includes(segment.layer) &&
+        (!bus.allowedLayers || bus.allowedLayers.includes(segment.layer)),
+    )
+  })
+  if (!hasDeclaredCrossover) return ordinary
+  return matchBusPlanLengthsOnEligibleLayers({
+    ...params,
+    allowDeclaredCrossoverLayers: true,
+  })
 }
