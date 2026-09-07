@@ -9,6 +9,7 @@ import { matchBusPlanLengths } from "./match-bus-lengths"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
 import { rerouteOverlongBusLanesSteps } from "./reroute-overlong-bus-lanes"
 import { repairBusLengthsWithTransitSteps } from "./repair-bus-lengths-with-transit"
+import { rerouteBusWithRetainedBoundaryTailsSteps } from "./reroute-bus-with-retained-boundary-tails"
 import type { FanoutRoutePlan, Point2D, PreparedBus } from "./types"
 
 export interface LayerReservedBusesParams {
@@ -377,11 +378,34 @@ export function* routeLayerReservedBusesSteps(
           }
           repair = repairSteps.next()
         }
-        if (!repair.value) {
-          attempts.failed(attempt, "lengths")
-          continue
+        if (repair.value) {
+          completePlans = repair.value
+        } else {
+          // A valid near-boundary lead can be unreachable from a clipped grid
+          // cell. Retain that lead while the intact bus seeks shorter paths.
+          const tailSteps = rerouteBusWithRetainedBoundaryTailsSteps({
+            ...params,
+            inputSrj: srj,
+            plans: completePlans,
+            preparedBuses: buses,
+            busIds: group.map((bus) => bus.busId),
+          })
+          let tails = tailSteps.next()
+          while (!tails.done) {
+            yield {
+              phase: "repair-lengths",
+              layer,
+              routedConnectionCount: accepted.length,
+              iterations: tails.value.iterations,
+            }
+            tails = tailSteps.next()
+          }
+          if (!tails.value) {
+            attempts.failed(attempt, "lengths")
+            continue
+          }
+          completePlans = tails.value
         }
-        completePlans = repair.value
       }
       accepted = completePlans.filter((plan) =>
         routed.has(plan.connectionIndex),

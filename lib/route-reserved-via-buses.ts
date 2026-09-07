@@ -1,8 +1,10 @@
+import { addDiagonalGridNeighbors } from "./add-diagonal-grid-neighbors"
 import {
   PortfolioSingleIntraNodeSolver,
   type SimpleRouteJson,
 } from "@tscircuit/capacity-autorouter"
 import { getExitEdgeForDirection } from "./boundary-exit"
+import { cacheViaOccupantNeighborhoods } from "./cache-via-occupant-neighborhoods"
 import {
   distance,
   distancePointToSegment,
@@ -45,6 +47,10 @@ export interface RouteReservedViaBusesParams {
   viaDiameter: number
   viaHoleDiameter: number
   maximumIterations?: number
+  /** Opt-in 45-degree adjacency; exact copper checks still guard every edge. */
+  includeDiagonalNeighbors?: boolean
+  /** Native Euclidean heuristic multiplier; defaults to the established 1.5. */
+  heuristicWeight?: number
   shuffleSeed?: number
   /** Align a uniform grid and its center keepouts with narrow via channels. */
   tightViaChannels?: boolean
@@ -86,6 +92,9 @@ interface NegotiatedRouter {
   MAX_ITERATIONS: number
   MAX_RIPS: number
   planeSize: number
+  neighborOffset: Int32Array
+  neighborIds: Int32Array
+  neighborCosts: Float32Array
   cellCenterX: Float64Array
   cellCenterY: Float64Array
   cellMinX: Float64Array
@@ -116,6 +125,13 @@ interface NegotiatedRouter {
   _setup(): void
   step(): void
   getOutput(): HdRoute[]
+  _viaOccs: number[]
+  fillViaOccupants(cellId: number, activeConnection: number): void
+  pushFlatOccupants(
+    flatIndex: number,
+    activeConnection: number,
+    occupants: number[],
+  ): void
   computeMoveCostAndRips(...args: MoveArgs): void
   markTraceFootprint(
     connectionId: number,
@@ -362,6 +378,9 @@ export function* routeReservedViaBusesSteps(
     srj,
   } = params
   const maximumIterations = params.maximumIterations ?? 30_000_000
+  const heuristicWeight = params.heuristicWeight ?? 1.5
+  if (!Number.isFinite(heuristicWeight) || heuristicWeight <= 0)
+    throw new Error("heuristicWeight must be finite and positive")
   if (!Number.isSafeInteger(maximumIterations) || maximumIterations < 1)
     throw new Error("maximumIterations must be a positive safe integer")
   const maximumLocalRepairAttempts = params.maximumLocalRepairAttempts ?? 3
@@ -595,7 +614,7 @@ export function* routeReservedViaBusesSteps(
     effort: 20,
     hyperParameters: {
       shuffleSeed: params.shuffleSeed ?? 1,
-      greedyMultiplier: 1.5,
+      greedyMultiplier: heuristicWeight,
       ripCost,
     },
   })
@@ -650,6 +669,9 @@ export function* routeReservedViaBusesSteps(
   router._setup = () => {
     setup()
     if (router.failed) return
+    if (params.includeDiagonalNeighbors)
+      Object.assign(router, addDiagonalGridNeighbors(router))
+    cacheViaOccupantNeighborhoods(router)
     edgeClearance = new StaticEdgeClearanceCache(
       router.planeSize,
       routingLayers.length,
