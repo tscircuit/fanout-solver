@@ -14,6 +14,7 @@ import { getViaChannelGridPhase } from "./get-via-channel-grid-phase"
 import { normalizeLayeredPath } from "./normalize-layered-path"
 import { repairBoundaryRouteTails } from "./repair-boundary-route-tails"
 import { fanoutPlansAreClear } from "./route-bus"
+import { StaticEdgeClearanceCache } from "./static-edge-clearance-cache"
 import {
   buildViaMinimalWindingPlan,
   routeViaMinimalWindingAlternativesSteps,
@@ -606,7 +607,7 @@ export function* routeReservedViaBusesSteps(
   const viaCells = new Map<number, boolean>()
   // Each immutable edge is clear, blocked, or permitted only to one owner.
   // Dynamic congestion and rip decisions still run in the native router.
-  const edgeClearance = new Map<number, boolean | string>()
+  let edgeClearance: StaticEdgeClearanceCache
   const pointAt = (cell: number): Point2D => ({
     x: router.cellCenterX[cell]!,
     y: router.cellCenterY[cell]!,
@@ -649,6 +650,10 @@ export function* routeReservedViaBusesSteps(
   router._setup = () => {
     setup()
     if (router.failed) return
+    edgeClearance = new StaticEdgeClearanceCache(
+      router.planeSize,
+      routingLayers.length,
+    )
     layersByRouterZ = Array.from(
       { length: routingLayers.length },
       (_, z) => layerNames[router.layerToZ.get(z)!]!,
@@ -797,11 +802,10 @@ export function* routeReservedViaBusesSteps(
       router._moveCost = -1
       return
     }
-    const edgeKey =
-      (z * router.planeSize + previousCell) * router.planeSize + nextCell
+    const edgeOrigin = z * router.planeSize + previousCell
     const usesTerminal =
       previousCell === segment.startCellId || nextCell === segment.endCellId
-    let classification = usesTerminal ? undefined : edgeClearance.get(edgeKey)
+    let classification = edgeClearance.get(edgeOrigin, nextCell, usesTerminal)
     if (classification === undefined) {
       const a =
         previousCell === segment.startCellId
@@ -818,7 +822,7 @@ export function* routeReservedViaBusesSteps(
       classification = usesTerminal
         ? segmentIsClear(a, b, layer, name)
         : classifyStaticEdge(a, b, layer)
-      if (!usesTerminal) edgeClearance.set(edgeKey, classification)
+      edgeClearance.set(edgeOrigin, nextCell, classification, usesTerminal)
     }
     if (classification !== true && classification !== name) {
       router._moveCost = -1
