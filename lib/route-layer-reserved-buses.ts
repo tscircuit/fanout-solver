@@ -8,6 +8,7 @@ import { sourceTransitHasMajorityCrossings } from "./source-transit-crossing-pre
 import { LayerRoutingAttempts } from "./layer-routing-attempts"
 import { packBoundaryBusIntervals } from "./pack-boundary-bus-intervals"
 import { getBoundaryBusSlotOffsets } from "./get-boundary-bus-slot-offsets"
+import { getBoundaryApproachReservations } from "./get-boundary-approach-reservations"
 import { routeLayerReservedSourceEscapesSteps } from "./route-layer-reserved-source-escapes"
 import { routeReservedViaBusesSteps } from "./route-reserved-via-buses"
 import { matchBusPlanLengths } from "./match-bus-lengths"
@@ -259,6 +260,19 @@ export function* routeLayerReservedBusesSteps(
         attempt.transitLayers.length < allTransitLayers.length
       const routeParams = {
         ...params,
+        srj: useSourceOrigin
+          ? {
+              ...srj,
+              traces: [
+                ...(srj.traces ?? []),
+                ...getBoundaryApproachReservations({
+                  ...params,
+                  ...targets,
+                  excludedBusIds: new Set(group.map((bus) => bus.busId)),
+                }),
+              ],
+            }
+          : srj,
         allBuses: buses,
         buses: group,
         targetLayer: layer,
