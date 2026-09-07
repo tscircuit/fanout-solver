@@ -6,6 +6,7 @@ import {
   distance,
   distancePointToSegment,
   distanceSegmentToSegment,
+  distanceSegmentToObstacle,
   segmentsAreClear,
 } from "./geometry"
 import { getCopperLayerNames } from "./layer-names"
@@ -131,6 +132,7 @@ function rebuildTraceRoute(
 function createPlanWithSegments(
   plan: FanoutRoutePlan,
   segments: RoutedSegment[],
+  updateSourceEscapeCount = false,
 ): FanoutRoutePlan | null {
   const route = rebuildTraceRoute(plan, segments)
   if (!route) return null
@@ -138,8 +140,16 @@ function createPlanWithSegments(
     (total, segment) => total + distance(segment.start, segment.end),
     0,
   )
+  const sourceEscapeSegmentCount = segments.findIndex(
+    (s) => s.layer !== plan.sourceLayer,
+  )
   return {
     ...plan,
+    ...(updateSourceEscapeCount &&
+    plan.sourceEscapeSegmentCount !== undefined &&
+    sourceEscapeSegmentCount >= 0
+      ? { sourceEscapeSegmentCount }
+      : {}),
     trace: { ...plan.trace, route },
     segments,
     length,
@@ -553,6 +563,7 @@ function* createTunedPlanCandidates(params: {
   clearance: number
   sharedBoundary: Bounds
   allowInsideDenseBounds?: boolean
+  allowSourcePrefixMatching?: boolean
   denseBoundarySplitApplied?: boolean
   workBudget?: MatchingWorkBudget
 }): Generator<FanoutRoutePlan> {
@@ -563,6 +574,7 @@ function* createTunedPlanCandidates(params: {
     clearance,
     sharedBoundary,
     allowInsideDenseBounds = false,
+    allowSourcePrefixMatching = false,
     denseBoundarySplitApplied = false,
   } = params
   const denseCopperBounds = getDenseCopperBounds(bus)
@@ -573,7 +585,16 @@ function* createTunedPlanCandidates(params: {
     : clearance
   const eligibleSegments = plan.segments
     .map((segment, segmentIndex) => ({ segment, segmentIndex }))
-    .filter(({ segment }) => segment.layer === plan.targetLayer)
+    .filter(
+      ({ segment, segmentIndex }) =>
+        segment.layer === plan.targetLayer ||
+        (allowSourcePrefixMatching &&
+          plan.via &&
+          plan.sourceLayer !== plan.targetLayer &&
+          segmentIndex > 0 &&
+          segmentIndex < (plan.sourceEscapeSegmentCount ?? 1) &&
+          segment.layer === plan.sourceLayer),
+    )
     .toSorted(
       (first, second) =>
         distance(second.segment.start, second.segment.end) -
@@ -632,6 +653,16 @@ function* createTunedPlanCandidates(params: {
             ...plan.segments.slice(segmentIndex + 1),
           ]
           if (
+            segment.layer === plan.sourceLayer &&
+            segment.layer !== plan.targetLayer &&
+            replacementSegments.some(
+              (s) =>
+                distanceSegmentToObstacle(s, plan.sourceObstacle) <
+                s.width / 2 + clearance - EPSILON,
+            )
+          )
+            continue
+          if (
             replacementHasSelfIntersection(
               segments,
               segmentIndex,
@@ -650,21 +681,31 @@ function* createTunedPlanCandidates(params: {
           ) {
             continue
           }
-          const candidate = createPlanWithSegments(plan, segments)
+          const candidate = createPlanWithSegments(
+            plan,
+            segments,
+            allowSourcePrefixMatching,
+          )
           if (candidate) yield candidate
         }
       }
     }
   }
   if (denseBoundarySplitApplied) return
-  const splitSegments = plan.segments.flatMap((segment) =>
-    splitSegmentAtDenseBounds({
-      segment,
-      bounds: denseCopperBounds,
-      margin: denseMargin,
-    }),
+  const splitSegments = plan.segments.flatMap((segment, index) =>
+    allowSourcePrefixMatching && index === 0
+      ? [segment]
+      : splitSegmentAtDenseBounds({
+          segment,
+          bounds: denseCopperBounds,
+          margin: denseMargin,
+        }),
   )
-  const splitPlan = createPlanWithSegments(plan, splitSegments)
+  const splitPlan = createPlanWithSegments(
+    plan,
+    splitSegments,
+    allowSourcePrefixMatching,
+  )
   if (!splitPlan) return
   yield* createTunedPlanCandidates({
     ...params,
@@ -763,6 +804,13 @@ export interface MatchBusPlanLengthsParams {
    * revalidated and whose remaining dogbone capacity is checked atomically.
    */
   allowMatchingInsideDenseBounds?: boolean
+  /**
+   * Tune existing source-layer copper after the first pad-escape segment and
+   * before its fixed first via. Source counts are rebuilt; callers retaining
+   * separate source-path maps must rebuild those maps from returned plans.
+   * New meanders must also clear the source pad and all retained self copper.
+   */
+  allowSourcePrefixMatching?: boolean
   /** Allow a differential pair's longer lane to move aside before tuning its mate. */
   allowPairLaneSpreading?: boolean
   /** Allow one unconstrained boundary lane to move around a tuning meander. */
@@ -943,6 +991,7 @@ function matchBusPlanLengthsWithBudget(
               clearance,
               sharedBoundary: bus.sharedBoundary,
               allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+              allowSourcePrefixMatching: params.allowSourcePrefixMatching,
               workBudget,
             }),
           ])
@@ -970,6 +1019,7 @@ function matchBusPlanLengthsWithBudget(
           clearance,
           sharedBoundary: bus.sharedBoundary,
           allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+          allowSourcePrefixMatching: params.allowSourcePrefixMatching,
           workBudget,
         })
         for (const candidate of candidates) {
@@ -1039,6 +1089,7 @@ function matchBusPlanLengthsWithBudget(
             clearance,
             sharedBoundary: bus.sharedBoundary,
             allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+            allowSourcePrefixMatching: params.allowSourcePrefixMatching,
             workBudget,
           })
           for (const candidate of candidates) {
