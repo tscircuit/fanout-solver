@@ -1,3 +1,4 @@
+import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
 import {
   prepareSourceOriginReservations,
   routeSourceOriginBusesSteps,
@@ -442,10 +443,16 @@ export function* routeLayerReservedBusesSteps(
     }
     if (!groupCompleted) return null
   }
-  return [
-    ...accepted,
-    ...sourcePlans.filter(
-      (plan) => completed.has(plan.busId) && plan.termination.type === "plane",
-    ),
-  ]
+  return normalizeFanoutPlanCorners({
+    ...params,
+    inputSrj: srj,
+    preparedBuses: buses,
+    plans: [
+      ...accepted,
+      ...sourcePlans.filter(
+        (plan) =>
+          completed.has(plan.busId) && plan.termination.type === "plane",
+      ),
+    ],
+  })
 }

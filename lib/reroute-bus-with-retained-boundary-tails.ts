@@ -1,19 +1,9 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
-import {
-  distance,
-  distancePointToSegment,
-  distanceSegmentToObstacle,
-  segmentsAreClear,
-} from "./geometry"
-import {
-  getAllRoutedTraceCopper,
-  getRoutedTraceCopper,
-} from "./get-routed-trace-copper"
+import { distance } from "./geometry"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
-import { normalizeLayeredPath } from "./normalize-layered-path"
+import { normalizeFanoutPlanTargetPath } from "./normalize-fanout-plan-corners"
 import { fanoutPlansAreClear } from "./route-bus"
-import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
 import {
   routeReservedViaBusesSteps,
   type ReservedViaBusesProgress,
@@ -136,141 +126,6 @@ function getRetainedTail(
         width: segments[0]!.width,
       })),
     },
-  }
-}
-
-/** Normalize the new join, retaining the actual source prefix and every via. */
-function normalizeJoinedPlan(
-  params: RetainedBoundaryTailRepairParams,
-  plan: FanoutRoutePlan,
-  others: readonly FanoutRoutePlan[],
-  bus: PreparedBus,
-): FanoutRoutePlan | null {
-  const { inputSrj, layerNames, traceWidth, clearance } = params
-  const firstVia = plan.trace.route.findIndex((p) => p.route_type === "via")
-  if (firstVia < 0) return null
-  const points = plan.trace.route
-    .slice(firstVia + 1)
-    .flatMap((p) =>
-      p.route_type === "wire"
-        ? [{ x: p.x, y: p.y, z: layerNames.indexOf(p.layer) }]
-        : [],
-    )
-  // A temporary cut has no incoming heading. Remove a reversing join before
-  // trying exact-clearance endpoint bends and 45-degree chamfers below.
-  for (let i = 1; i < points.length - 1; i++) {
-    const a = points[i - 1]!,
-      b = points[i]!,
-      c = points[i + 1]!
-    if (a.z !== b.z || b.z !== c.z) continue
-    const dot =
-      ((b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y)) /
-      (distance(a, b) * distance(b, c))
-    if (dot < -EPSILON) {
-      points.splice(i, 1)
-      i--
-    }
-  }
-  const supplied = getAllRoutedTraceCopper(inputSrj, false)
-  const index = new RouteSegmentSpatialIndex([
-    ...others.flatMap((p) => [
-      ...p.segments,
-      ...(p.planeEndpointSegments ?? []),
-    ]),
-    ...supplied.flatMap((p) => p.segments),
-  ])
-  const vias = [
-    ...others.flatMap((p) =>
-      [p.via, ...(p.additionalVias ?? []), p.planeEndpointVia].filter(
-        (v) => !!v,
-      ),
-    ),
-    ...supplied.flatMap((p) => p.vias),
-  ]
-  const normalized = normalizeLayeredPath({
-    points,
-    chamfer: traceWidth / 4,
-    segmentIsClear: (a, b) => {
-      const segment = {
-        start: a,
-        end: b,
-        layer: layerNames[a.z]!,
-        width: traceWidth,
-      }
-      for (const p of [a, b]) {
-        const bounds = bus.sharedBoundary
-        if (
-          p.x < bounds.minX - EPSILON ||
-          p.x > bounds.maxX + EPSILON ||
-          p.y < bounds.minY - EPSILON ||
-          p.y > bounds.maxY + EPSILON
-        )
-          return false
-        if (
-          (Math.abs(p.x - bounds.minX) < EPSILON ||
-            Math.abs(p.x - bounds.maxX) < EPSILON ||
-            Math.abs(p.y - bounds.minY) < EPSILON ||
-            Math.abs(p.y - bounds.maxY) < EPSILON) &&
-          distance(p, plan.exitPoint) > EPSILON
-        )
-          return false
-      }
-      return (
-        inputSrj.obstacles.every(
-          (o) =>
-            !o.layers.includes(segment.layer) ||
-            distanceSegmentToObstacle(segment, o) >=
-              traceWidth / 2 + clearance - 1e-9,
-        ) &&
-        index
-          .querySegment(segment, clearance)
-          .every((s) => segmentsAreClear(segment, s, clearance)) &&
-        vias.every(
-          (v) =>
-            !v.spanLayers.includes(segment.layer) ||
-            distancePointToSegment(v.center, a, b) >=
-              (traceWidth + v.diameter) / 2 + clearance - 1e-9,
-        )
-      )
-    },
-  })
-  if (!normalized) return null
-  const route = plan.trace.route.slice(0, firstVia + 1)
-  for (let i = 0; i < normalized.length; i++) {
-    const point = normalized[i]!,
-      previous = normalized[i - 1]
-    if (previous && previous.z !== point.z) {
-      const via = plan.trace.route.find(
-        (p) =>
-          p.route_type === "via" &&
-          distance(p, point) < EPSILON &&
-          p.from_layer === layerNames[previous.z] &&
-          p.to_layer === layerNames[point.z],
-      )
-      if (!via) return null
-      route.push(via)
-    }
-    route.push({
-      route_type: "wire",
-      x: point.x,
-      y: point.y,
-      layer: layerNames[point.z]!,
-      width: traceWidth,
-    })
-  }
-  route[route.length - 1] = plan.trace.route.at(-1)!
-  const trace = { ...plan.trace, route },
-    extracted = getRoutedTraceCopper(inputSrj, trace, false).segments
-  const sourceCount = plan.sourceEscapeSegmentCount ?? 1
-  const segments = [
-    ...plan.segments.slice(0, sourceCount),
-    ...extracted.slice(sourceCount),
-  ]
-  return {
-    ...plan,
-    trace,
-    segments,
-    length: segments.reduce((sum, s) => sum + distance(s.start, s.end), 0),
   }
 }
 
@@ -483,11 +338,12 @@ function* rerouteIndividualBusesSteps(
       const candidate = combined.find(
         (p) => p.connectionIndex === original.connectionIndex,
       )!
-      const normalized = normalizeJoinedPlan(
+      const normalized = normalizeFanoutPlanTargetPath(
         params,
         candidate,
         combined.filter((p) => p !== candidate),
         bus,
+        true,
       )
       if (!normalized) return null
       combined = combined.map((p) => (p === candidate ? normalized : p))
@@ -666,11 +522,12 @@ export function* rerouteBusWithRetainedBoundaryTailsSteps(
       const candidate = combined.find(
         (p) => p.connectionIndex === original.connectionIndex,
       )!
-      const normalized = normalizeJoinedPlan(
+      const normalized = normalizeFanoutPlanTargetPath(
         params,
         candidate,
         combined.filter((p) => p !== candidate),
         buses.find((bus) => bus.busId === original.busId)!,
+        true,
       )
       if (!normalized) return null
       combined = combined.map((p) => (p === candidate ? normalized : p))
