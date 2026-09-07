@@ -10,7 +10,6 @@ import {
   getRoutedTraceCopper,
 } from "./get-routed-trace-copper"
 import { normalizeLayeredPath } from "./normalize-layered-path"
-import { replacementCopperIsSelfClear } from "./match-bus-lengths"
 import { repairBoundaryRouteTails } from "./repair-boundary-route-tails"
 import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
 import type { FanoutRoutePlan, PreparedBus, RoutedSegment } from "./types"
@@ -30,6 +29,143 @@ export interface FinalFanoutPlanNormalizationParams
   viaHoleDiameter: number
 }
 const EPSILON = 1e-7
+
+/** Check new copper without reinterpreting retained runs as one replaced edge. */
+export function changedFanoutCopperIsSelfClear(
+  plan: FanoutRoutePlan,
+  segments: readonly RoutedSegment[],
+  clearance: number,
+): boolean {
+  const lengths = new Float64Array(segments.length + 1)
+  const groups = new Int32Array(segments.length)
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index]!,
+      previous = segments[index - 1]
+    lengths[index + 1] = lengths[index]! + distance(segment.start, segment.end)
+    groups[index] =
+      index === 0
+        ? 0
+        : groups[index - 1]! +
+          Number(
+            previous!.layer !== segment.layer ||
+              distance(previous!.end, segment.start) > EPSILON,
+          )
+  }
+  const vias = [
+    plan.via,
+    ...(plan.additionalVias ?? []),
+    plan.planeEndpointVia,
+  ].filter((v) => !!v)
+  const connectsMonotonically = (lo: number, hi: number): boolean => {
+    if (groups[lo] !== groups[hi]) return false
+    let xSign = 0,
+      ySign = 0
+    for (let index = lo; index <= hi; index++) {
+      const segment = segments[index]!
+      const dx = segment.end.x - segment.start.x,
+        dy = segment.end.y - segment.start.y
+      if (Math.abs(dx) > EPSILON) {
+        const sign = Math.sign(dx)
+        if (xSign && xSign !== sign) return false
+        xSign = sign
+      }
+      if (Math.abs(dy) > EPSILON) {
+        const sign = Math.sign(dy)
+        if (ySign && ySign !== sign) return false
+        ySign = sign
+      }
+    }
+    return true
+  }
+  for (const [index, segment] of segments.entries()) {
+    // Splitting or trimming an original straight run introduces no copper.
+    if (
+      plan.segments.some(
+        (old) =>
+          old.layer === segment.layer &&
+          old.width === segment.width &&
+          distancePointToSegment(segment.start, old.start, old.end) <=
+            EPSILON &&
+          distancePointToSegment(segment.end, old.start, old.end) <= EPSILON,
+      )
+    )
+      continue
+    for (const [otherIndex, other] of segments.entries()) {
+      if (other.layer !== segment.layer) continue
+      const required = (segment.width + other.width) / 2 + clearance
+      const lo = Math.min(index, otherIndex),
+        hi = Math.max(index, otherIndex)
+      // Consecutive short chamfers form a single connected trace body. Beyond
+      // that local body, every retained and changed run is hard copper.
+      if (
+        groups[index] === groups[otherIndex] &&
+        Math.max(0, lengths[hi]! - lengths[lo + 1]!) <= required + EPSILON
+      )
+        continue
+      if (!segmentsAreClear(segment, other, clearance)) {
+        // Several tiny 45-degree bends may form one uninterrupted staircase.
+        // Such a monotone run cannot fold onto itself. A nearby returning arm
+        // has a sign reversal and retains the full configured clearance.
+        if (!connectsMonotonically(lo, hi)) return false
+      }
+    }
+    for (const via of vias) {
+      if (!via.spanLayers.includes(segment.layer)) continue
+      const required = (segment.width + via.diameter) / 2 + clearance
+      if (
+        distancePointToSegment(via.center, segment.start, segment.end) >=
+        required - EPSILON
+      )
+        continue
+      if (
+        [segment.start, segment.end].some(
+          (p) => distance(p, via.center) <= EPSILON,
+        )
+      )
+        continue
+      const joinsVia = (direction: -1 | 1): boolean => {
+        let point = direction === -1 ? segment.start : segment.end
+        const far = direction === -1 ? segment.end : segment.start
+        if (
+          distance(point, via.center) > required + EPSILON ||
+          (point.x - via.center.x) * (far.x - point.x) +
+            (point.y - via.center.y) * (far.y - point.y) <
+            -EPSILON
+        )
+          return false
+        for (
+          let adjacent = index + direction;
+          adjacent >= 0 && adjacent < segments.length;
+          adjacent += direction
+        ) {
+          const next = segments[adjacent]!
+          if (
+            next.layer !== segment.layer ||
+            distance(point, direction === -1 ? next.end : next.start) > EPSILON
+          )
+            return false
+          const nearer = direction === -1 ? next.start : next.end
+          // A connected lead may bend while leaving its via. Its path length
+          // can exceed the radial clearance radius without returning toward
+          // the barrel. Require radial monotonicity over the entire segment,
+          // not merely proximity to a via elsewhere on the same net.
+          if (
+            distance(nearer, via.center) > required + EPSILON ||
+            (nearer.x - via.center.x) * (nearer.x - point.x) +
+              (nearer.y - via.center.y) * (nearer.y - point.y) >
+              EPSILON
+          )
+            return false
+          point = nearer
+          if (distance(point, via.center) <= EPSILON) return true
+        }
+        return false
+      }
+      if (!joinsVia(-1) && !joinsVia(1)) return false
+    }
+  }
+  return true
+}
 
 /** Normalize target-side corners, retaining the source prefix and every via. */
 export function normalizeFanoutPlanTargetPath(
@@ -159,16 +295,7 @@ export function normalizeFanoutPlanTargetPath(
     ...plan.segments.slice(0, sourceCount),
     ...extracted.slice(sourceCount),
   ]
-  if (
-    !replacementCopperIsSelfClear({
-      plan,
-      segments,
-      replacementStartIndex: sourceCount,
-      replacementSegmentCount: segments.length - sourceCount,
-      clearance,
-    })
-  )
-    return null
+  if (!changedFanoutCopperIsSelfClear(plan, segments, clearance)) return null
   return {
     ...plan,
     trace,
