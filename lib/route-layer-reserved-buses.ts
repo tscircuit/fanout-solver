@@ -412,7 +412,11 @@ export function* routeLayerReservedBusesSteps(
         // Preserve directly tunable pairs and flexible buses; moving their
         // copper can occupy corridors needed by another layer group.
         yield* shortenCompletePlans()
-        matched = matchCompletePlans(hasTransitRetry ? 1_000 : undefined)
+        // Flexible wide groups have bounded transit/tail repairs below. Avoid
+        // exhausting that opportunity on a second unbounded failed search.
+        matched = matchCompletePlans(
+          hasTransitRetry || maximumBusSize > 2 ? 1_000 : undefined,
+        )
       }
       if (matched.plans) {
         completePlans = matched.plans
