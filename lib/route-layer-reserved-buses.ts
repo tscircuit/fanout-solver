@@ -490,6 +490,14 @@ function* routeLayerReservedAttemptSteps(
         params.sourceOriginRouting === true &&
         maximumBusSize <= 2 &&
         previousAccepted.length > 0
+      const unroutedSourceBuses =
+        params.sourceOriginRouting && shortenFirst
+          ? buses.filter(
+              (bus) =>
+                bus.termination.type === "boundary" &&
+                !completed.has(bus.busId),
+            )
+          : undefined
       const matchCompletePlans = (maximumWorkUnits?: number) =>
         matchBusPlanLengths({
           ...params,
@@ -503,6 +511,7 @@ function* routeLayerReservedAttemptSteps(
           allowSourcePrefixMatching,
           allowPairLaneSpreading: true,
           allowUnconstrainedLaneRerouting: true,
+          unroutedSourceBuses,
           maximumWorkUnits,
         })
       function* shortenCompletePlans(): Generator<
@@ -757,14 +766,14 @@ function* routeLayerReservedAttemptSteps(
       accepted = completePlans.filter((plan) =>
         routed.has(plan.connectionIndex),
       )
-      if (sourceReservationsChanged) {
+      if (sourceReservationsChanged || unroutedSourceBuses?.length) {
         // Commit the new first-via reservations only after the intact group
         // passes length matching. Failed attempts leave the ordinary fallback
         // with the exact original source map and all previously routed copper.
         const sources = new Map(
-          group.flatMap((bus) =>
+          [...group, ...(unroutedSourceBuses ?? [])].flatMap((bus) =>
             bus.connections.map((connection) => {
-              const plan = accepted.find(
+              const plan = completePlans.find(
                 (candidate) =>
                   candidate.connectionIndex === connection.connectionIndex,
               )!
