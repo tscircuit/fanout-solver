@@ -193,13 +193,12 @@ function inferGridOrigin(
   return { x: phase("x"), y: phase("y") }
 }
 
-/** Minimum-pitch exits can require a perpendicular grid phase of their own. */
+/** Existing approach corridors can require the exact exit grid phase. */
 function getRepairGridOrigins(
   plans: readonly FanoutRoutePlan[],
   edge: FanoutEdge,
   origin: Point2D,
   step: number,
-  pitch: number,
 ): Point2D[] {
   const axis = edge === "left" || edge === "right" ? "y" : "x",
     coordinates = plans
@@ -209,7 +208,6 @@ function getRepairGridOrigins(
   const samePhase = (a: number, b: number) =>
     Math.abs(a - b - Math.round((a - b) / step) * step) <= EPSILON
   for (let i = 1; i < coordinates.length; i++) {
-    if (coordinates[i]! - coordinates[i - 1]! > pitch + EPSILON) continue
     for (const coordinate of [coordinates[i - 1]!, coordinates[i]!]) {
       if (samePhase(coordinate, origin[axis])) continue
       const existing = candidates.find((entry) =>
@@ -381,7 +379,6 @@ export function repairBoundaryRouteTails(
       edge,
       params.gridOrigin ?? inferGridOrigin(active, step),
       step,
-      pitch,
     )
     let repaired: FanoutRoutePlan[] | null = null
     for (const origin of origins) {
