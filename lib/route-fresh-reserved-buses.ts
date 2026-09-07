@@ -363,10 +363,19 @@ export function* routeFreshReservedBusesSteps(
         result = yield* winding(
           routeExtendedBridgeSteps({
             ...nativeParams,
-            maximumDirectOrders: 6,
-            maximumSearches: 384,
+            maximumDirectOrders: 2,
+            maximumSearches: 256,
+            preferAlternateBlockedLane: true,
           }),
         )
+        if (!result)
+          result = yield* winding(
+            routeExtendedBridgeSteps({
+              ...nativeParams,
+              maximumDirectOrders: 6,
+              maximumSearches: 384,
+            }),
+          )
         if (result) resultView = nativeView
       }
       if (!result)

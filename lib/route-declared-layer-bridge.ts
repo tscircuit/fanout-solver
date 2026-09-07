@@ -40,6 +40,8 @@ export interface DeclaredLayerBridgeParams extends RouteBusParams {
   /** Leave a longer target-layer tail for subsequent bus length matching. */
   minimumPrimaryReturnSteps?: number
   maximumPartialCandidates?: number
+  /** Prioritize one nearby lane substitution within the same partial budget. */
+  preferAlternateBlockedLane?: boolean
   onDirectCandidate?: (
     plans: readonly FanoutRoutePlan[],
     blocked: ViaMinimalWindingTerminal,
@@ -448,6 +450,7 @@ export function* routeDeclaredLayerBridgeSteps(
       else orders.push(order)
     }
   }
+  const maximumPartials = params.maximumPartialCandidates ?? 3
   const partials: {
     plans: FanoutRoutePlan[]
     blocked: ViaMinimalWindingTerminal
@@ -489,9 +492,13 @@ export function* routeDeclaredLayerBridgeSteps(
             )
             if (!partialKeys.has(key)) {
               partialKeys.add(key)
-              if (plans.length === terminals.length - 1)
-                partials.push({ plans, blocked: terminal })
-              else if (
+              if (plans.length === terminals.length - 1) {
+                if (
+                  !params.preferAlternateBlockedLane ||
+                  partials.length < maximumPartials
+                )
+                  partials.push({ plans, blocked: terminal })
+              } else if (
                 doublePartials.length <
                   (params.maximumPartialCandidates ?? 3) &&
                 !doublePartials.some((prior) =>
@@ -541,9 +548,13 @@ export function* routeDeclaredLayerBridgeSteps(
         )
         if (!partialKeys.has(key)) {
           partialKeys.add(key)
-          if (missing.length === 1)
-            partials.push({ plans, blocked: missing[0]! })
-          else if (
+          if (missing.length === 1) {
+            if (
+              !params.preferAlternateBlockedLane ||
+              partials.length < maximumPartials
+            )
+              partials.push({ plans, blocked: missing[0]! })
+          } else if (
             doublePartials.length < (params.maximumPartialCandidates ?? 3) &&
             !doublePartials.some((prior) =>
               missing.every(
@@ -562,9 +573,12 @@ export function* routeDeclaredLayerBridgeSteps(
         if (result) return result
       }
     }
-  const maximumPartials = params.maximumPartialCandidates ?? 3
   const anchor = partials[0]
-  if (anchor && partials.length < maximumPartials) {
+  if (
+    anchor &&
+    maximumPartials > 0 &&
+    (params.preferAlternateBlockedLane || partials.length < maximumPartials)
+  ) {
     const nearby = anchor.plans
       .toSorted((a, b) => {
         const nearest = (plan: FanoutRoutePlan) =>
@@ -599,6 +613,13 @@ export function* routeDeclaredLayerBridgeSteps(
         (terminal) =>
           terminal.connection.connectionIndex === deferred.connectionIndex,
       )!
+      if (params.preferAlternateBlockedLane) {
+        // Preserve a bounded portfolio while trying a different blocked lane
+        // before geometrically different routes for the same blocked lane.
+        partials.length = Math.min(partials.length, maximumPartials - 1)
+        partials.unshift({ plans, blocked })
+        break
+      }
       partials.push({ plans, blocked })
       if (partials.length >= maximumPartials) break
     }
