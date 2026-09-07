@@ -2,6 +2,7 @@ import {
   PortfolioSingleIntraNodeSolver,
   type SimpleRouteJson,
 } from "@tscircuit/capacity-autorouter"
+import { getExitEdgeForDirection } from "./boundary-exit"
 import {
   distance,
   distancePointToSegment,
@@ -15,6 +16,7 @@ import { repairBoundaryRouteTails } from "./repair-boundary-route-tails"
 import { fanoutPlansAreClear } from "./route-bus"
 import {
   buildViaMinimalWindingPlan,
+  routeViaMinimalWindingAlternativesSteps,
   type ViaMinimalWindingTerminal,
 } from "./route-via-minimal-winding"
 import type {
@@ -47,6 +49,8 @@ export interface RouteReservedViaBusesParams {
   tightViaChannels?: boolean
   ripCost?: number
   maximumRipEvents?: number
+  /** Bound local reroutes after a validated candidate is one connection short. */
+  maximumLocalRepairAttempts?: number
   /** Additional conservative spacing beyond the physical edge clearance. */
   traceMarginExtra?: number
 }
@@ -195,6 +199,13 @@ class CopperIndex {
           result.add(blocker)
       }
     return [...result]
+  }
+
+  clone(): CopperIndex {
+    const copy = new CopperIndex(this.cellSize, this.margin)
+    for (const [key, bucket] of this.buckets)
+      copy.buckets.set(key, new Set(bucket))
+    return copy
   }
 
   private cell(value: number): number {
@@ -352,6 +363,14 @@ export function* routeReservedViaBusesSteps(
   const maximumIterations = params.maximumIterations ?? 30_000_000
   if (!Number.isSafeInteger(maximumIterations) || maximumIterations < 1)
     throw new Error("maximumIterations must be a positive safe integer")
+  const maximumLocalRepairAttempts = params.maximumLocalRepairAttempts ?? 3
+  if (
+    !Number.isSafeInteger(maximumLocalRepairAttempts) ||
+    maximumLocalRepairAttempts < 0
+  )
+    throw new Error(
+      "maximumLocalRepairAttempts must be a non-negative safe integer",
+    )
   const ripCost = params.ripCost ?? 8
   if (!Number.isFinite(ripCost) || ripCost <= 0)
     throw new Error("ripCost must be finite and positive")
@@ -796,6 +815,10 @@ export function* routeReservedViaBusesSteps(
     }
     move(connectionId, z, nextCell, isVia, rippedHead, ripCount, baseCost)
   }
+  // A rip-up search can discard its best topology before reaching its limit.
+  // Retain a few distinct one-short candidates, but never expose partial buses.
+  const partialCandidates: HdRoute[][] = []
+  const partialSignatures = new Set<string>()
   while (!router.solved && !router.failed) {
     for (
       let batch = 0;
@@ -803,156 +826,369 @@ export function* routeReservedViaBusesSteps(
       batch++
     )
       router.step()
-    if (router.failed) return null
+    const output = router.getOutput()
+    if (
+      maximumLocalRepairAttempts > 0 &&
+      connections.length >= 3 &&
+      output.length === connections.length - 1
+    ) {
+      const signature = output
+        .map((route) => {
+          const middle = route.route[Math.floor(route.route.length / 2)]!
+          return `${route.connectionName}:${route.route.length}:${middle.x},${middle.y}`
+        })
+        .sort()
+        .join(";")
+      if (!partialSignatures.has(signature)) {
+        partialSignatures.add(signature)
+        partialCandidates.push(output)
+        if (partialCandidates.length > maximumLocalRepairAttempts)
+          partialCandidates.shift()
+      }
+    }
     yield {
       iterations: router.iterations,
-      routedConnectionCount: router.getOutput().length,
+      routedConnectionCount: output.length,
       connectionCount: connections.length,
     }
   }
-  if (!router.solved || router.failed) return null
-  let routes = router.getOutput()
-  if (
-    routes.length !== connections.length ||
-    new Set(routes.map((route) => route.connectionName)).size !==
-      connections.length
-  )
-    return null
-  const alreadyRouted = new Set([
-    ...expected,
-    ...params.acceptedPlans.map((plan) => plan.connectionIndex),
-  ])
-  const prefixes = allBuses.flatMap((bus) =>
-    bus.connections
-      .filter((connection) => !alreadyRouted.has(connection.connectionIndex))
-      .map((connection) => {
-        const viaPoint = params.fixedViaPointsByConnectionIndex.get(
-            connection.connectionIndex,
-          )!,
-          prefixLayer =
-            bus.termination.type === "plane"
-              ? bus.termination.layer
-              : (bus.allowedLayers ?? layerNames).find(
-                  (layer) => layer !== connection.sourceLayer,
-                )!
-        return buildViaMinimalWindingPlan({
-          ...params,
-          bus,
-          terminal: { connection, viaPoint, exitPoint: viaPoint },
-          targetLayer: prefixLayer,
-          targetLayerPoints: [viaPoint],
-          sourceEscapePoints: paths.get(connection.connectionIndex),
-          allowBlindAndBuriedVias: false,
-        })
-      }),
-  )
-  const rawPlans = convertRoutes(params, routes, paths)
-  if (!rawPlans) return null
-  const repairedPlans = repairBoundaryRouteTails({
-    ...params,
-    inputSrj: srj,
-    plans: rawPlans,
-    preparedBuses: buses,
-    reservedPlans: [...params.acceptedPlans, ...prefixes],
-    allowBlindAndBuriedVias: false,
-    allowSameNetMerges: false,
-  })
-  if (!repairedPlans) return null
-  routes = repairedPlans.map((plan) => {
-    const firstVia = plan.trace.route.findIndex(
-      (point) => point.route_type === "via",
+  const makePrefixes = (routed: ReadonlySet<number>): FanoutRoutePlan[] =>
+    allBuses.flatMap((bus) =>
+      bus.connections
+        .filter((connection) => !routed.has(connection.connectionIndex))
+        .map((connection) => {
+          const viaPoint = params.fixedViaPointsByConnectionIndex.get(
+              connection.connectionIndex,
+            )!,
+            prefixLayer =
+              bus.termination.type === "plane"
+                ? bus.termination.layer
+                : (bus.allowedLayers ?? layerNames).find(
+                    (layer) => layer !== connection.sourceLayer,
+                  )!
+          return buildViaMinimalWindingPlan({
+            ...params,
+            bus,
+            terminal: { connection, viaPoint, exitPoint: viaPoint },
+            targetLayer: prefixLayer,
+            targetLayerPoints: [viaPoint],
+            sourceEscapePoints: paths.get(connection.connectionIndex),
+            allowBlindAndBuriedVias: false,
+          })
+        }),
     )
-    return {
-      connectionName: plan.connectionName,
-      route: plan.trace.route
-        .slice(firstVia + 1)
-        .flatMap((point) =>
-          point.route_type === "wire"
-            ? [{ x: point.x, y: point.y, z: layerNames.indexOf(point.layer) }]
-            : [],
-        ),
-      vias: (plan.additionalVias ?? []).map((via) => via.center),
-    }
-  })
-  const addRouteCopper = (route: HdRoute): void => {
-    for (let i = 1; i < route.route.length; i++) {
-      const a = route.route[i - 1]!,
-        b = route.route[i]!
-      if (a.z === b.z)
-        index.add({
-          kind: "segment",
-          connectionName: route.connectionName,
-          segment: {
-            start: a,
-            end: b,
-            width: traceWidth,
-            layer: layerNames[a.z]!,
-          },
-        })
-    }
-    for (const center of route.vias)
-      index.add({
-        kind: "via",
-        connectionName: route.connectionName,
-        center,
-        diameter: viaDiameter,
-        layers: layerNames,
-      })
+  const fullPlansAreValid = (plans: readonly FanoutRoutePlan[]): boolean => {
+    const prefixes = makePrefixes(
+      new Set(
+        [...plans, ...params.acceptedPlans].map((plan) => plan.connectionIndex),
+      ),
+    )
+    return (
+      fanoutPlansAreClear({
+        plans: [...plans],
+        srj,
+        sharedBoundary: bounds,
+        clearance,
+        allowBlindAndBuriedVias: false,
+        allowSameNetMerges: false,
+      }) &&
+      validateRoutedCopperDrc({
+        inputSrj: srj,
+        routedSrj: {
+          ...srj,
+          traces: [
+            ...(srj.traces ?? []),
+            ...[...plans, ...params.acceptedPlans, ...prefixes].flatMap(
+              (plan) => [
+                plan.trace,
+                ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
+              ],
+            ),
+          ],
+        },
+        clearance,
+        allowBlindAndBuriedVias: false,
+      }).valid
+    )
   }
-  for (const route of routes) addRouteCopper(route)
-  for (const route of routes) {
-    const terminal = params.terminals.find(
-      (item) => item.connection.connection.name === route.connectionName,
-    )!
-    const normalized = normalizeLayeredPath({
-      points: compactPoints(route.route),
-      chamfer: traceWidth / 4,
-      segmentIsClear: (a, b) => {
-        for (const point of [a, b]) {
-          if (!withinBounds(point)) return false
-          const onBoundary =
-            Math.abs(point.x - bounds.minX) < 1e-7 ||
-            Math.abs(point.x - bounds.maxX) < 1e-7 ||
-            Math.abs(point.y - bounds.minY) < 1e-7 ||
-            Math.abs(point.y - bounds.maxY) < 1e-7
-          if (onBoundary && distance(point, terminal.exitPoint) > 1e-7)
-            return false
-        }
-        return segmentIsClear(a, b, layerNames[a.z]!, route.connectionName)
-      },
-    })
-    if (!normalized) return null
-    route.route = normalized
-    // Keep both versions while normalizing the remaining paths. This is
-    // conservative and prevents a later corner from consuming earlier copper.
-    addRouteCopper(route)
-  }
-  const plans = convertRoutes(params, routes, paths)
-  if (
-    !plans ||
-    !fanoutPlansAreClear({
-      plans,
-      srj,
-      sharedBoundary: bounds,
-      clearance,
+  const finalizeRoutes = (inputRoutes: HdRoute[]): FanoutRoutePlan[] | null => {
+    let routes = inputRoutes
+    const normalizationIndex = index.clone()
+    const alreadyRouted = new Set([
+      ...routes.map(
+        (route) =>
+          params.terminals.find(
+            (terminal) =>
+              terminal.connection.connection.name === route.connectionName,
+          )!.connection.connectionIndex,
+      ),
+      ...params.acceptedPlans.map((plan) => plan.connectionIndex),
+    ])
+    const prefixes = makePrefixes(alreadyRouted)
+    const rawPlans = convertRoutes(params, routes, paths)
+    if (!rawPlans) return null
+    const repairedPlans = repairBoundaryRouteTails({
+      ...params,
+      inputSrj: srj,
+      plans: rawPlans,
+      preparedBuses: buses,
+      reservedPlans: [...params.acceptedPlans, ...prefixes],
       allowBlindAndBuriedVias: false,
       allowSameNetMerges: false,
     })
-  )
+    if (!repairedPlans) return null
+    routes = repairedPlans.map((plan) => {
+      const firstVia = plan.trace.route.findIndex(
+        (point) => point.route_type === "via",
+      )
+      return {
+        connectionName: plan.connectionName,
+        route: plan.trace.route
+          .slice(firstVia + 1)
+          .flatMap((point) =>
+            point.route_type === "wire"
+              ? [{ x: point.x, y: point.y, z: layerNames.indexOf(point.layer) }]
+              : [],
+          ),
+        vias: (plan.additionalVias ?? []).map((via) => via.center),
+      }
+    })
+    const addRouteCopper = (route: HdRoute): void => {
+      for (let i = 1; i < route.route.length; i++) {
+        const a = route.route[i - 1]!,
+          b = route.route[i]!
+        if (a.z === b.z)
+          normalizationIndex.add({
+            kind: "segment",
+            connectionName: route.connectionName,
+            segment: {
+              start: a,
+              end: b,
+              width: traceWidth,
+              layer: layerNames[a.z]!,
+            },
+          })
+      }
+      for (const center of route.vias)
+        normalizationIndex.add({
+          kind: "via",
+          connectionName: route.connectionName,
+          center,
+          diameter: viaDiameter,
+          layers: layerNames,
+        })
+    }
+    for (const route of routes) addRouteCopper(route)
+    for (const route of routes) {
+      const terminal = params.terminals.find(
+        (item) => item.connection.connection.name === route.connectionName,
+      )!
+      const normalized = normalizeLayeredPath({
+        points: compactPoints(route.route),
+        chamfer: traceWidth / 4,
+        segmentIsClear: (a, b) => {
+          for (const point of [a, b]) {
+            if (!withinBounds(point)) return false
+            const onBoundary =
+              Math.abs(point.x - bounds.minX) < 1e-7 ||
+              Math.abs(point.x - bounds.maxX) < 1e-7 ||
+              Math.abs(point.y - bounds.minY) < 1e-7 ||
+              Math.abs(point.y - bounds.maxY) < 1e-7
+            if (onBoundary && distance(point, terminal.exitPoint) > 1e-7)
+              return false
+          }
+          return segmentIsClear(
+            a,
+            b,
+            layerNames[a.z]!,
+            route.connectionName,
+            normalizationIndex.nearby(a, b),
+          )
+        },
+      })
+      if (!normalized) return null
+      route.route = normalized
+      // Keep both versions while normalizing the remaining paths. This is
+      // conservative and prevents a later corner from consuming earlier copper.
+      addRouteCopper(route)
+    }
+    const plans = convertRoutes(params, routes, paths)
+    return plans && fullPlansAreValid(plans) ? plans : null
+  }
+  if (router.solved && !router.failed) {
+    const routes = router.getOutput()
+    if (
+      routes.length !== connections.length ||
+      new Set(routes.map((route) => route.connectionName)).size !==
+        connections.length
+    )
+      return null
+    return finalizeRoutes(routes)
+  }
+  if (maximumLocalRepairAttempts === 0 || partialCandidates.length === 0)
     return null
-  const traces = [
-    ...(srj.traces ?? []),
-    ...[...plans, ...params.acceptedPlans, ...prefixes].flatMap((plan) => [
-      plan.trace,
-      ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
-    ]),
-  ]
-  return validateRoutedCopperDrc({
-    inputSrj: srj,
-    routedSrj: { ...srj, traces },
-    clearance,
-    allowBlindAndBuriedVias: false,
-  }).valid
-    ? plans
-    : null
+  const prefixes = makePrefixes(
+    new Set(params.acceptedPlans.map((plan) => plan.connectionIndex)),
+  )
+  const prefixByIndex = new Map(
+    prefixes.map((plan) => [plan.connectionIndex, plan]),
+  )
+  const reservedVias = prefixes.flatMap((plan) =>
+    plan.via ? [{ connectionName: plan.connectionName, via: plan.via }] : [],
+  )
+  const gridOrigin = getViaChannelGridPhase({
+    ...params,
+    gridStep: traceWidth,
+    vias: allBuses.flatMap((bus) =>
+      bus.connections.map((connection) => ({
+        connectionIndex: connection.connectionIndex,
+        center: params.fixedViaPointsByConnectionIndex.get(
+          connection.connectionIndex,
+        )!,
+        diameter: viaDiameter,
+      })),
+    ),
+    activeConnectionIndices: expected,
+  })
+  let repairAttempts = 0
+  for (const rawCandidate of partialCandidates.toReversed()) {
+    const partial = finalizeRoutes(rawCandidate)
+    if (!partial) continue
+    const completed = new Set(partial.map((plan) => plan.connectionIndex)),
+      missing = params.terminals.find(
+        (terminal) => !completed.has(terminal.connection.connectionIndex),
+      )!
+    // Neighbors in the target band often form a fence around a source. Confirm
+    // the blocker with an exact single-net search before releasing extra copper.
+    const neighbors = partial.toSorted(
+      (a, b) =>
+        distance(a.exitPoint!, missing.exitPoint) -
+        distance(b.exitPoint!, missing.exitPoint),
+    )
+    for (const blocker of neighbors.slice(0, 16)) {
+      const missingIndex = missing.connection.connectionIndex,
+        retained = partial.filter((plan) => plan !== blocker),
+        held = [
+          ...params.acceptedPlans,
+          ...retained,
+          ...prefixes.filter(
+            (plan) =>
+              !completed.has(plan.connectionIndex) &&
+              plan.connectionIndex !== missingIndex,
+          ),
+          prefixByIndex.get(blocker.connectionIndex)!,
+        ],
+        bus = owners.get(missing.connection.connection.name)!
+      const probe = routeViaMinimalWindingAlternativesSteps(
+        {
+          ...params,
+          bus: {
+            ...bus,
+            exitEdge: bus.exitEdge ?? getExitEdgeForDirection(bus.direction),
+            connections: [missing.connection],
+          },
+          terminals: [missing],
+          acceptedPlans: held,
+          reservedVias: reservedVias.filter(
+            (via) => via.connectionName !== missing.connection.connection.name,
+          ),
+          sourceEscapePaths: paths,
+          gridStep: traceWidth,
+          gridOrigin,
+          gridStepDivisor: 2,
+          maximumRouteOrderAttempts: 1,
+          maximumSearchStates: 240_000,
+          heuristicWeight: 1,
+          alignGridToPads: true,
+        },
+        1,
+        false,
+      )
+      let probeResult = probe.next()
+      while (!probeResult.done) {
+        yield {
+          iterations: router.iterations + probeResult.value.expandedStateCount,
+          routedConnectionCount: partial.length,
+          connectionCount: connections.length,
+        }
+        probeResult = probe.next()
+      }
+      if (!probeResult.value[0]?.length) continue
+      const thirds = retained.toSorted((a, b) => {
+        const score = (plan: FanoutRoutePlan) =>
+          Math.min(
+            ...plan.segments
+              .filter((segment) => segment.layer === targetLayer)
+              .map((segment) =>
+                distancePointToSegment(
+                  missing.viaPoint,
+                  segment.start,
+                  segment.end,
+                ),
+              ),
+          )
+        return score(a) - score(b)
+      })
+      // Try one nearest third per retained topology before repeating a fence.
+      for (const third of thirds.slice(0, 1)) {
+        if (repairAttempts++ >= maximumLocalRepairAttempts) return null
+        const selected = new Set([
+            missingIndex,
+            blocker.connectionIndex,
+            third.connectionIndex,
+          ]),
+          localBuses = buses
+            .map((original) => ({
+              ...original,
+              connections: original.connections.filter((connection) =>
+                selected.has(connection.connectionIndex),
+              ),
+            }))
+            .filter((original) => original.connections.length > 0),
+          accepted = [
+            ...params.acceptedPlans,
+            ...partial.filter((plan) => !selected.has(plan.connectionIndex)),
+            ...prefixes.filter(
+              (plan) =>
+                !completed.has(plan.connectionIndex) &&
+                !selected.has(plan.connectionIndex),
+            ),
+          ],
+          repair = routeReservedViaBusesSteps({
+            ...params,
+            buses: localBuses,
+            terminals: params.terminals.filter((terminal) =>
+              selected.has(terminal.connection.connectionIndex),
+            ),
+            acceptedPlans: accepted,
+            maximumLocalRepairAttempts: 0,
+            maximumIterations: Math.min(maximumIterations, 2_000_000),
+          })
+        let result = repair.next()
+        while (!result.done) {
+          yield {
+            iterations: router.iterations + result.value.iterations,
+            routedConnectionCount:
+              partial.length - 2 + result.value.routedConnectionCount,
+            connectionCount: connections.length,
+          }
+          result = repair.next()
+        }
+        if (!result.value) continue
+        const merged = [
+          ...partial.filter((plan) => !selected.has(plan.connectionIndex)),
+          ...result.value,
+        ]
+        if (
+          merged.length === connections.length &&
+          new Set(merged.map((plan) => plan.connectionIndex)).size ===
+            expected.size &&
+          fullPlansAreValid(merged)
+        )
+          return merged
+      }
+      break
+    }
+  }
+  return null
 }
