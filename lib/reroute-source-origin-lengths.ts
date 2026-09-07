@@ -101,56 +101,70 @@ export function* rerouteSourceOriginLengthsSteps(
   const selectedConnections = bus.connections.filter((c) =>
     selected.has(c.connectionIndex),
   )
-  const routed = yield* routeReservedViaBusesSteps({
-    ...params,
-    srj: inputSrj,
-    allBuses: preparedBuses,
-    buses: [{ ...bus, connections: selectedConnections }],
-    targetLayer,
-    transitLayers: [],
-    terminals: selectedConnections.map((connection) => ({
-      connection,
-      viaPoint: fixed.get(connection.connectionIndex)!,
-      exitPoint: byIndex.get(connection.connectionIndex)!.exitPoint,
-    })),
-    fixedViaPointsByConnectionIndex: fixed,
-    sourceEscapePaths: paths,
-    acceptedPlans: plans.filter((plan) => !selected.has(plan.connectionIndex)),
-    routeFromSourcePads: true,
-    sourceLayerTravelCost: 1,
-    tightViaChannels: true,
-    ripCost: 256,
-    shuffleSeed: 1,
-    maximumRipEvents: 40,
-    maximumIterations: 5_000_000,
-    maximumLocalRepairAttempts: 0,
-  })
-  if (!routed || routed.length !== selected.size) return null
-  const replacements = new Map(
-    routed.map((plan) => [plan.connectionIndex, plan]),
-  )
-  const candidate = plans.map(
-    (plan) => replacements.get(plan.connectionIndex) ?? plan,
-  )
-  if (
-    skew(own.map((plan) => replacements.get(plan.connectionIndex) ?? plan)) >=
-    skew(own) - EPSILON
-  )
-    return null
-  const validation = validateRoutedCopperDrc({
-    inputSrj,
-    routedSrj: {
-      ...inputSrj,
-      traces: [
-        ...(inputSrj.traces ?? []),
-        ...candidate.flatMap((plan) => [
-          plan.trace,
-          ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
-        ]),
-      ],
-    },
-    clearance: params.clearance,
-    allowBlindAndBuriedVias: false,
-  })
-  return validation.valid ? candidate : null
+  // Keep the existing cardinal search first. If it cannot improve a valid
+  // candidate, diagonal grid edges may reach a shorter source escape corridor.
+  for (const includeDiagonalNeighbors of [false, true]) {
+    const routed = yield* routeReservedViaBusesSteps({
+      ...params,
+      srj: inputSrj,
+      allBuses: preparedBuses,
+      buses: [{ ...bus, connections: selectedConnections }],
+      targetLayer,
+      transitLayers: [],
+      terminals: selectedConnections.map((connection) => ({
+        connection,
+        viaPoint: fixed.get(connection.connectionIndex)!,
+        exitPoint: byIndex.get(connection.connectionIndex)!.exitPoint,
+      })),
+      fixedViaPointsByConnectionIndex: fixed,
+      sourceEscapePaths: paths,
+      acceptedPlans: plans.filter(
+        (plan) => !selected.has(plan.connectionIndex),
+      ),
+      routeFromSourcePads: true,
+      includeDiagonalNeighbors,
+      sourceLayerTravelCost: 1,
+      tightViaChannels: true,
+      ripCost: 256,
+      shuffleSeed: 1,
+      maximumRipEvents: 40,
+      maximumIterations: 5_000_000,
+      maximumLocalRepairAttempts: 0,
+    })
+    if (!routed || routed.length !== selected.size) continue
+    const replacements = new Map(
+      routed.map((plan) => [plan.connectionIndex, plan]),
+    )
+    const candidate = plans.map(
+      (plan) => replacements.get(plan.connectionIndex) ?? plan,
+    )
+    const changed = own.map(
+      (plan) => replacements.get(plan.connectionIndex) ?? plan,
+    )
+    // Shorter lanes can expose tuning room even when their provisional skew
+    // increases. The caller must still match and validate the complete bus.
+    if (
+      skew(changed) >= skew(own) - EPSILON &&
+      Math.max(...changed.map((plan) => plan.length)) >=
+        Math.max(...own.map((plan) => plan.length)) - EPSILON
+    )
+      continue
+    const validation = validateRoutedCopperDrc({
+      inputSrj,
+      routedSrj: {
+        ...inputSrj,
+        traces: [
+          ...(inputSrj.traces ?? []),
+          ...candidate.flatMap((plan) => [
+            plan.trace,
+            ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
+          ]),
+        ],
+      },
+      clearance: params.clearance,
+      allowBlindAndBuriedVias: false,
+    })
+    if (validation.valid) return candidate
+  }
+  return null
 }
