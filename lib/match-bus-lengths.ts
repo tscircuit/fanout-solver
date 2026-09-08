@@ -157,6 +157,130 @@ function createPlanWithSegments(
   }
 }
 
+/** Open a tuning window on another permitted layer without moving either endpoint. */
+function* createTransitTuningBases(params: {
+  plan: FanoutRoutePlan
+  bus: PreparedBus
+  layerNames: string[]
+  clearance: number
+  workBudget?: MatchingWorkBudget
+}): Generator<{ plan: FanoutRoutePlan; tuningLayer: string }> {
+  const { plan, bus, layerNames, clearance, workBudget } = params
+  if (!plan.via || getPlanVias(plan).length > 5) return
+  const allowed = bus.allowedLayers ?? layerNames
+  const layers = (bus.routableEscapeLayers ?? allowed).filter(
+    (layer) =>
+      allowed.includes(layer) &&
+      layerNames.includes(layer) &&
+      layer !== plan.sourceLayer &&
+      layer !== plan.targetLayer,
+  )
+  const compact: RoutedSegment[] = []
+  for (const segment of plan.segments) {
+    const previous = compact.at(-1)
+    if (
+      previous?.layer === segment.layer &&
+      segment.layer === plan.targetLayer
+    ) {
+      const ax = previous.end.x - previous.start.x
+      const ay = previous.end.y - previous.start.y
+      const bx = segment.end.x - segment.start.x
+      const by = segment.end.y - segment.start.y
+      if (
+        Math.abs(ax * by - ay * bx) <=
+          EPSILON * Math.hypot(ax, ay) * Math.hypot(bx, by) &&
+        ax * bx + ay * by > 0
+      ) {
+        previous.end = segment.end
+        continue
+      }
+    }
+    compact.push({ ...segment })
+  }
+  const original = createPlanWithSegments(plan, compact)
+  if (!original) return
+  const newVia = (
+    center: Point2D,
+    fromLayer: string,
+    toLayer: string,
+  ): RoutedVia => ({
+    center,
+    fromLayer,
+    toLayer,
+    diameter: plan.via!.diameter,
+    holeDiameter: plan.via!.holeDiameter,
+    spanLayers: layerNames,
+  })
+  for (const tuningLayer of layers) {
+    for (const reuseFirst of [true, false]) {
+      if (
+        reuseFirst &&
+        (original.additionalVias?.length ||
+          original.via!.toLayer !== original.targetLayer)
+      )
+        continue
+      for (const [index, segment] of original.segments.entries()) {
+        if (segment.layer !== original.targetLayer) continue
+        if (distance(segment.start, segment.end) <= EPSILON) continue
+        for (let step = 0; step < 37; step++) {
+          const fraction = 0.05 + step * 0.025
+          if (!reuseFirst && fraction >= 0.5) break
+          consumeMatchingWork(workBudget)
+          const point = (t: number): Point2D => ({
+            x: segment.start.x + (segment.end.x - segment.start.x) * t,
+            y: segment.start.y + (segment.end.y - segment.start.y) * t,
+          })
+          const first = point(fraction),
+            last = point(1 - fraction)
+          if (
+            !reuseFirst &&
+            distance(first, last) < plan.via.diameter + clearance
+          )
+            continue
+          const base = reuseFirst
+            ? createPlanWithSegments(
+                {
+                  ...original,
+                  via: { ...original.via!, toLayer: tuningLayer },
+                  additionalVias: [newVia(last, tuningLayer, segment.layer)],
+                },
+                [
+                  ...original.segments
+                    .slice(0, index)
+                    .map((s) =>
+                      s.layer === original.targetLayer
+                        ? { ...s, layer: tuningLayer }
+                        : s,
+                    ),
+                  { ...segment, end: last, layer: tuningLayer },
+                  { ...segment, start: last },
+                  ...original.segments.slice(index + 1),
+                ],
+              )
+            : createPlanWithSegments(
+                {
+                  ...original,
+                  additionalVias: [
+                    ...(original.additionalVias ?? []),
+                    newVia(first, segment.layer, tuningLayer),
+                    newVia(last, tuningLayer, segment.layer),
+                  ],
+                },
+                [
+                  ...original.segments.slice(0, index),
+                  { ...segment, end: first },
+                  { ...segment, start: first, end: last, layer: tuningLayer },
+                  { ...segment, start: last },
+                  ...original.segments.slice(index + 1),
+                ],
+              )
+          if (base) yield { plan: base, tuningLayer }
+        }
+      }
+    }
+  }
+}
+
 function pointIsOutsideDenseBounds(
   point: Point2D,
   bounds: Bounds,
@@ -956,6 +1080,8 @@ export interface MatchBusPlanLengthsParams {
   allowTransitLayerMatching?: boolean
   /** Grow existing folds and distribute bounded additions across tuning sites. */
   allowDistributedMatching?: boolean
+  /** Add clear through vias to open a tuning window on another permitted signal layer. */
+  allowAdditionalMatchingVias?: boolean
   /** Allow a differential pair's longer lane to move aside before tuning its mate. */
   allowPairLaneSpreading?: boolean
   /** Allow one unconstrained boundary lane to move around a tuning meander. */
@@ -1253,6 +1379,47 @@ function matchBusPlanLengthsWithBudget(
             acceptedPlans = findMultiSpanCandidate(targetAddedLength)
         }
         if (acceptedPlans) break
+      }
+      if (!acceptedPlans && params.allowAdditionalMatchingVias) {
+        for (const base of createTransitTuningBases({
+          plan: shortest,
+          bus,
+          layerNames: getCopperLayerNames(inputSrj.layerCount),
+          clearance,
+          workBudget,
+        })) {
+          if (
+            !plansAreClear(
+              matchedPlans.map((plan) =>
+                plan === shortest ? base.plan : plan,
+              ),
+            )
+          )
+            continue
+          const options = {
+            plan: { ...base.plan, targetLayer: base.tuningLayer },
+            bus,
+            targetAddedLength: minimumRequiredAddition,
+            clearance,
+            sharedBoundary: bus.sharedBoundary,
+            allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+            workBudget,
+          }
+          for (const candidates of [
+            createExtendedFoldCandidates(options),
+            createTunedPlanCandidates(options),
+          ]) {
+            for (const tuned of candidates) {
+              acceptedPlans = acceptCandidate({
+                ...tuned,
+                targetLayer: shortest.targetLayer,
+              })
+              if (acceptedPlans) break
+            }
+            if (acceptedPlans) break
+          }
+          if (acceptedPlans) break
+        }
       }
       if (
         !acceptedPlans &&
