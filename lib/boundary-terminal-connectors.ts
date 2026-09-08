@@ -77,7 +77,7 @@ export function createBoundaryTerminalConnector(params: {
   }
 }
 
-/** A 45-degree alignment followed by a perpendicular approach to the exit. */
+/** Preserve a perpendicular tail, aligning with its lane through one 45-degree bend. */
 export function getBoundaryTerminalEntry(
   start: Point2D,
   connector: BoundaryTerminalConnector,
@@ -87,7 +87,24 @@ export function getBoundaryTerminalEntry(
   const sign = edge === "left" || edge === "bottom" ? -1 : 1
   const normal = horizontal ? goal.x - start.x : goal.y - start.y
   const transverse = horizontal ? goal.y - start.y : goal.x - start.x
-  if (sign * normal < Math.abs(transverse) - 1e-9) return null
+  const outwardDistance = sign * normal
+  if (outwardDistance < Math.abs(transverse) - 1e-9) {
+    if (outwardDistance <= 1e-9) return null
+    // A nearby barrel can force entry from beside the goal. Align along the
+    // transverse axis first, then turn 45 degrees onto the exact goal. The
+    // following reserved tail adds only another 45-degree turn. The caller
+    // checks both segments against the same static and negotiated copper.
+    const bend = horizontal
+      ? {
+          x: start.x,
+          y: goal.y - Math.sign(transverse) * outwardDistance,
+        }
+      : {
+          x: goal.x - Math.sign(transverse) * outwardDistance,
+          y: start.y,
+        }
+    return [start, bend, goal]
+  }
   const bend = horizontal
     ? { x: start.x + sign * Math.abs(transverse), y: goal.y }
     : { x: goal.x, y: start.y + sign * Math.abs(transverse) }
