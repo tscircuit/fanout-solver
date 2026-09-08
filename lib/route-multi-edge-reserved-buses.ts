@@ -143,7 +143,7 @@ export function* routeMultiEdgeReservedBusesSteps(
         ...plans.filter((plan) => !selected.has(plan.connectionIndex)),
         ...routed.value,
       ]
-      const match = () => {
+      const match = (allowDistributedMatching = false) => {
         // A failed later bus must not discard useful earlier tuning. Keep it
         // only in this attempt's scratch plans until the entire group passes.
         for (const bus of group) {
@@ -153,9 +153,11 @@ export function* routeMultiEdgeReservedBusesSteps(
             plans: candidate,
             preparedBuses: [bus],
             sharedBoundary: bus.sharedBoundary,
-            maximumWorkUnits: 1000,
+            maximumWorkUnits: allowDistributedMatching ? 100_000 : 1000,
             allowMatchingInsideDenseBounds: true,
             allowSourcePrefixMatching: true,
+            allowDistributedMatching,
+            allowTransitLayerMatching: allowDistributedMatching,
           })
           if (!result.plans) return result
           candidate = result.plans
@@ -231,6 +233,11 @@ export function* routeMultiEdgeReservedBusesSteps(
         candidate = repaired.value
         matched = match()
       }
+      // Exhaust the existing geometry cleanup before spending the larger,
+      // bounded tuning budget. Legal transit folds can supply length where a
+      // new target-layer meander cannot fit. Its source-path changes remain
+      // provisional until the entire edge/layer group is validated below.
+      if (!matched.plans) matched = match(true)
       if (!matched.plans) continue
       const held = matched.plans.filter(
         (plan) => !selected.has(plan.connectionIndex),
