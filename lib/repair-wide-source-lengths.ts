@@ -22,6 +22,43 @@ interface RepairWideSourceLengthsParams {
   viaHoleDiameter: number
 }
 
+type WideSourceGeometry = Pick<
+  RepairWideSourceLengthsParams,
+  "plans" | "completedBuses" | "selectedBusIds"
+>
+
+function getConstrainedWideBuses(params: WideSourceGeometry) {
+  return params.completedBuses.filter(
+    (bus) =>
+      params.selectedBusIds.has(bus.busId) &&
+      bus.termination.type === "boundary" &&
+      bus.connections.length > 2 &&
+      bus.allowedLayers?.length === 1 &&
+      bus.maxLengthSkew !== undefined,
+  )
+}
+
+/** Cheap eligibility check, before consuming a group's single cleanup attempt. */
+export function hasOverlongWideSourcePrefix(
+  params: WideSourceGeometry,
+): boolean {
+  return getConstrainedWideBuses(params).some((bus) => {
+    const own = params.plans.filter((plan) => plan.busId === bus.busId)
+    const allowance =
+      Math.min(...own.map((plan) => plan.length)) + bus.maxLengthSkew!
+    return own.some(
+      (plan) =>
+        plan.segments
+          .slice(0, plan.sourceEscapeSegmentCount ?? 1)
+          .reduce(
+            (sum, segment) => sum + distance(segment.start, segment.end),
+            0,
+          ) >
+        allowance + 1e-6,
+    )
+  })
+}
+
 /**
  * A source prefix can itself exceed the complete bus's length allowance.
  * Shorten that retained copper, distribute the remaining tuning, then try one
@@ -32,32 +69,8 @@ export function* repairWideSourceLengthsSteps(
   params: RepairWideSourceLengthsParams,
 ): Generator<ReservedViaBusesProgress, FanoutRoutePlan[] | null> {
   const { inputSrj, preparedBuses, completedBuses, selectedBusIds } = params
-  const selected = completedBuses.filter(
-    (bus) =>
-      selectedBusIds.has(bus.busId) &&
-      bus.termination.type === "boundary" &&
-      bus.connections.length > 2 &&
-      bus.allowedLayers?.length === 1 &&
-      bus.maxLengthSkew !== undefined,
-  )
-  if (
-    !selected.some((bus) => {
-      const own = params.plans.filter((plan) => plan.busId === bus.busId)
-      const allowance =
-        Math.min(...own.map((plan) => plan.length)) + bus.maxLengthSkew!
-      return own.some(
-        (plan) =>
-          plan.segments
-            .slice(0, plan.sourceEscapeSegmentCount ?? 1)
-            .reduce(
-              (sum, segment) => sum + distance(segment.start, segment.end),
-              0,
-            ) >
-          allowance + 1e-6,
-      )
-    })
-  )
-    return null
+  if (!hasOverlongWideSourcePrefix(params)) return null
+  const selected = getConstrainedWideBuses(params)
   const connections = preparedBuses.flatMap((bus) => bus.connections)
   const byIndex = new Map(connections.map((c) => [c.connectionIndex, c]))
   const assertOriginals = (plans: readonly FanoutRoutePlan[]) => {

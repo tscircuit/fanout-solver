@@ -7,7 +7,10 @@ import {
   hasOpposedPairSourceEscapes,
 } from "./opposed-pair-source-escapes"
 import { rerouteSourceOriginLengthsSteps } from "./reroute-source-origin-lengths"
-import { repairWideSourceLengthsSteps } from "./repair-wide-source-lengths"
+import {
+  hasOverlongWideSourcePrefix,
+  repairWideSourceLengthsSteps,
+} from "./repair-wide-source-lengths"
 import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
 import { hasCompressedExitConvergence } from "./compressed-exit-convergence"
 import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
@@ -942,10 +945,18 @@ function* routeLayerReservedAttemptSteps(
             // Try this costly provisional cleanup once per original group,
             // across source-cost, grid and shared-reservation retries. Repeating
             // a failed repair can otherwise starve an existing successful retry.
+            const selectedBusIds = new Set(group.map((bus) => bus.busId))
             const canRepairSources =
               params.sourceOriginRouting &&
               shortenFirst &&
-              group.every((bus) => !attemptedWideSourceRepairs.has(bus.busId))
+              group.every(
+                (bus) => !attemptedWideSourceRepairs.has(bus.busId),
+              ) &&
+              hasOverlongWideSourcePrefix({
+                plans: completePlans,
+                completedBuses,
+                selectedBusIds,
+              })
             if (canRepairSources)
               for (const bus of group) attemptedWideSourceRepairs.add(bus.busId)
             const sourceRepair = canRepairSources
@@ -955,7 +966,7 @@ function* routeLayerReservedAttemptSteps(
                   plans: completePlans,
                   preparedBuses: buses,
                   completedBuses,
-                  selectedBusIds: new Set(group.map((bus) => bus.busId)),
+                  selectedBusIds,
                 })
               : undefined
             let repaired = sourceRepair?.next()
