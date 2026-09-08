@@ -764,7 +764,6 @@ function* createExtendedFoldCandidates(params: {
       last < Math.min(plan.segments.length, first + 16);
       last++
     ) {
-      consumeMatchingWork(params.workBudget)
       const span = plan.segments.slice(first, last + 1)
       if (span.some((segment) => segment.layer !== start.layer)) break
       const end = plan.segments[last]!,
@@ -779,6 +778,7 @@ function* createExtendedFoldCandidates(params: {
         Math.abs(direction.y + reverse.y) > EPSILON
       )
         continue
+      consumeMatchingWork(params.workBudget)
       const move = (point: Point2D): Point2D => ({
         ...point,
         x: point.x + (direction.x * targetAddedLength) / 2,
@@ -1050,6 +1050,7 @@ function matchBusPlanLengthsWithBudget(
     }
     const maximumIterations =
       bus.connections.length * (params.allowDistributedMatching ? 24 : 2)
+    const deferredLanes = new Set<number>()
     for (let iteration = 0; iteration < maximumIterations; iteration++) {
       const busPlans = matchedPlans.filter((plan) => plan.busId === bus.busId)
       if (busPlans.length !== bus.connections.length) {
@@ -1058,12 +1059,19 @@ function matchBusPlanLengthsWithBudget(
       const maxLengthSkew = bus.maxLengthSkew!
       const skew = getBusSkew(busPlans)
       if (skew <= maxLengthSkew + EPSILON) break
-      const shortest = busPlans.toSorted(
-        (first, second) =>
-          first.length - second.length ||
-          first.connectionName.localeCompare(second.connectionName),
-      )[0]!
+      const shortest = busPlans
+        .filter((plan) => !deferredLanes.has(plan.connectionIndex))
+        .toSorted(
+          (first, second) =>
+            first.length - second.length ||
+            first.connectionName.localeCompare(second.connectionName),
+        )[0]!
       const longestLength = Math.max(...busPlans.map((plan) => plan.length))
+      if (
+        !shortest ||
+        longestLength - shortest.length <= maxLengthSkew + EPSILON
+      )
+        return { plans: null, failedBus: bus }
       const deficit = longestLength - shortest.length
       const minimumRequiredAddition = Math.max(
         EPSILON,
@@ -1446,7 +1454,15 @@ function matchBusPlanLengthsWithBudget(
           }
         }
       }
-      if (!acceptedPlans) return { plans: null, failedBus: bus }
+      if (!acceptedPlans) {
+        if (params.allowDistributedMatching) {
+          // Finish the other lanes in this private candidate before reporting
+          // the blocked bus. No partly matched bus escapes the final check.
+          deferredLanes.add(shortest.connectionIndex)
+          continue
+        }
+        return { plans: null, failedBus: bus }
+      }
       matchedPlans = acceptedPlans
     }
     const matchedBusPlans = matchedPlans.filter(
