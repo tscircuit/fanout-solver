@@ -1207,6 +1207,10 @@ type MatchBusPlanLengthsResult =
   | { plans: FanoutRoutePlan[]; failedBus?: never }
   | { plans: null; failedBus: PreparedBus }
 
+type PlanClearanceValidator = ReturnType<
+  typeof createFanoutPlanClearanceValidator
+>
+
 export function matchBusPlanLengths(
   params: MatchBusPlanLengthsParams,
 ): MatchBusPlanLengthsResult {
@@ -1257,10 +1261,30 @@ export function matchBusPlanLengths(
     )
       return { plans: null, failedBus: bus }
   }
+  // Recursive pair repairs share this call's fixed SRJ and clearance rules.
+  // Keep their immutable-plan checks warm without extending the cache beyond
+  // the public call or caching work budgets and downstream feasibility checks.
+  const validatePlans = createFanoutPlanClearanceValidator({
+    srj: params.inputSrj,
+    sharedBoundary: params.sharedBoundary,
+    clearance: params.clearance,
+    allowBlindAndBuriedVias: params.allowBlindAndBuriedVias,
+    allowSameNetMerges: params.allowSameNetMerges,
+  })
   try {
-    const matched = matchBusPlanLengthsWithBudget(params, workBudget)
+    const matched = matchBusPlanLengthsWithBudget(
+      params,
+      validatePlans,
+      workBudget,
+    )
     return matched.plans
-      ? matchDeclaredPairLengths(params, matched.plans, pairs, workBudget)
+      ? matchDeclaredPairLengths(
+          params,
+          matched.plans,
+          pairs,
+          validatePlans,
+          workBudget,
+        )
       : matched
   } catch (error) {
     if (error instanceof MatchingWorkBudgetExhausted && workBudget?.activeBus)
@@ -1280,6 +1304,7 @@ function matchDeclaredPairLengths(
   params: MatchBusPlanLengthsParams,
   originalPlans: FanoutRoutePlan[],
   pairs: readonly DeclaredDifferentialPair[],
+  validatePlans: PlanClearanceValidator,
   workBudget?: MatchingWorkBudget,
 ): MatchBusPlanLengthsResult {
   const byIndex = new Map(
@@ -1378,6 +1403,7 @@ function matchDeclaredPairLengths(
             (!params.candidatePlansAreFeasible ||
               params.candidatePlansAreFeasible(candidate)),
         },
+        validatePlans,
         workBudget,
       )
       if (!result.plans) return { plans: null, failedBus: laneBus }
@@ -1416,6 +1442,7 @@ function matchDeclaredPairLengths(
 
 function matchBusPlanLengthsWithBudget(
   params: MatchBusPlanLengthsParams,
+  validatePlans: PlanClearanceValidator,
   workBudget?: MatchingWorkBudget,
 ): MatchBusPlanLengthsResult {
   const {
@@ -1428,13 +1455,6 @@ function matchBusPlanLengthsWithBudget(
     allowMatchingInsideDenseBounds = false,
     candidatePlansAreFeasible,
   } = params
-  const validatePlans = createFanoutPlanClearanceValidator({
-    srj: inputSrj,
-    sharedBoundary,
-    clearance,
-    allowBlindAndBuriedVias,
-    allowSameNetMerges,
-  })
   const plansAreClear = (plans: readonly FanoutRoutePlan[]): boolean => {
     consumeMatchingWork(workBudget)
     return validatePlans(plans)
@@ -1739,6 +1759,7 @@ function matchBusPlanLengthsWithBudget(
               preparedBuses: [bus],
               allowPairLaneSpreading: false,
             },
+            validatePlans,
             workBudget,
           )
           if (result.plans) {
