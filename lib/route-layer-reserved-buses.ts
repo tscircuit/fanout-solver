@@ -53,6 +53,11 @@ export interface LayerReservedRoutingProgress {
   iterations?: number
 }
 
+interface FixedRoutingRetryPause {
+  requested: boolean
+  reached: boolean
+}
+
 export function getLayerReservedBusTargets(params: LayerReservedBusesParams) {
   const { buses, layerNames, traceWidth, clearance } = params
   const boundaries = buses.filter((b) => b.termination.type === "boundary")
@@ -174,6 +179,9 @@ export function* routeLayerReservedBusesSteps(
   params: LayerReservedBusesParams,
 ): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
   const attemptedWideSourceRepairs = new Set<string>()
+  let deferredFixedRouting:
+    | ReturnType<typeof routeLayerReservedAttemptSteps>
+    | undefined
   const freshSourceTrial = () =>
     routeLayerReservedAttemptSteps(
       params,
@@ -187,10 +195,14 @@ export function* routeLayerReservedBusesSteps(
     )
   let deferFreshSourceTrial = false
   if (params.sourceOriginRouting && hasSplitFixedWideLayer(params.buses)) {
-    // Keep every ordinary successful route intact. If the fixed-source
-    // strategy fails, jointly free the shared constrained buses' first vias
-    // before retrying around a fresh set of source reservations.
-    const fixed = yield* routeLayerReservedAttemptSteps(
+    // Keep the initial fixed-source attempt first. Once its topology fails,
+    // an opposed field can benefit from jointly choosing new first vias
+    // before another route order around the same source reservations.
+    const retryPause: FixedRoutingRetryPause = {
+      requested: hasOppositeFixedWideBus(params.buses),
+      reached: false,
+    }
+    const fixedSteps = routeLayerReservedAttemptSteps(
       { ...params, sourceOriginRouting: false },
       {
         reserveFutureApproaches: true,
@@ -198,8 +210,21 @@ export function* routeLayerReservedBusesSteps(
         failedWideMatching: false,
       },
       attemptedWideSourceRepairs,
+      undefined,
+      retryPause,
     )
-    if (fixed) return fixed
+    let fixed = fixedSteps.next()
+    while (!fixed.done && !retryPause.reached) {
+      yield fixed.value
+      fixed = fixedSteps.next()
+    }
+    if (fixed.done) {
+      if (fixed.value) return fixed.value
+    } else {
+      // Keep the original generator intact and resume its remaining retries if the
+      // source-placement strategies below cannot finish the full circuit.
+      deferredFixedRouting = fixedSteps
+    }
     const targets = getLayerReservedBusTargets(params)
     if (hasOppositeFixedWideBus(params.buses)) {
       deferFreshSourceTrial =
@@ -213,7 +238,7 @@ export function* routeLayerReservedBusesSteps(
       }
     }
   }
-  const routed = yield* retryLayerReservedRoutingSteps(
+  let routed = yield* retryLayerReservedRoutingSteps(
     params.sourceOriginRouting ?? false,
     (state) =>
       routeLayerReservedAttemptSteps(params, state, attemptedWideSourceRepairs),
@@ -221,8 +246,9 @@ export function* routeLayerReservedBusesSteps(
   // A directly aligned opposite pair needs its approach reserved while the
   // wide group crosses the field. Retain the unprotected trial after those
   // protected strategies fail, instead of paying for it before the clear path.
-  if (routed || !deferFreshSourceTrial) return routed
-  return yield* freshSourceTrial()
+  if (!routed && deferFreshSourceTrial) routed = yield* freshSourceTrial()
+  if (routed) return routed
+  return deferredFixedRouting ? yield* deferredFixedRouting : null
 }
 
 function* routeLayerReservedAttemptSteps(
@@ -230,6 +256,7 @@ function* routeLayerReservedAttemptSteps(
   attemptState: LayerReservedAttemptState,
   attemptedWideSourceRepairs: Set<string>,
   initialSourcePolicy?: { travelCost: number; maximumIterations: number },
+  fixedRetryPause?: FixedRoutingRetryPause,
 ): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
   const { buses, srj, layerNames } = params
   const targets = getLayerReservedBusTargets(params)
@@ -409,6 +436,7 @@ function* routeLayerReservedAttemptSteps(
     })
     let groupCompleted = false
     let groupHadLengthFailure = false
+    let groupAttemptIndex = 0
     const originalSources = {
       sites: new Map(fixedViaPointsByConnectionIndex),
       paths: new Map(sourceEscapePaths),
@@ -424,6 +452,7 @@ function* routeLayerReservedAttemptSteps(
       sourcePlans.splice(0, sourcePlans.length, ...sources.plans)
     }
     for (let attempt = attempts.next(); attempt; attempt = attempts.next()) {
+      const firstGroupAttempt = groupAttemptIndex++ === 0
       // Every search and tuning attempt starts from the same committed set.
       // A complete topology does not reserve copper until its bus lengths pass.
       accepted = previousAccepted
@@ -549,6 +578,23 @@ function* routeLayerReservedAttemptSteps(
           return null
         }
         attempts.failed(attempt, "routing")
+        if (
+          fixedRetryPause?.requested &&
+          !params.sourceOriginRouting &&
+          shortenFirst &&
+          layer === ordered[0]![0] &&
+          firstGroupAttempt &&
+          attempt.shuffleSeed === 1 &&
+          !attempt.routeFromSourcePads
+        ) {
+          fixedRetryPause.requested = false
+          fixedRetryPause.reached = true
+          yield {
+            phase: "route-layer",
+            layer,
+            routedConnectionCount: accepted.length,
+          }
+        }
         continue
       }
       accepted = [...accepted, ...routedPlans]
