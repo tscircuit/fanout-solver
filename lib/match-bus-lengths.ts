@@ -157,6 +157,82 @@ function createPlanWithSegments(
   }
 }
 
+/** New barrels must not bypass an earlier or later part of their own route. */
+function addedTuningViasAreSelfClear(
+  plan: FanoutRoutePlan,
+  addedVias: readonly RoutedVia[],
+  clearance: number,
+): boolean {
+  const vias = [
+    ...getPlanVias(plan),
+    ...(plan.planeEndpointVia ? [plan.planeEndpointVia] : []),
+  ]
+  for (const via of addedVias) {
+    for (const other of vias) {
+      if (other === via) continue
+      if (
+        via.spanLayers.some((layer) => other.spanLayers.includes(layer)) &&
+        distance(via.center, other.center) <
+          (via.diameter + other.diameter) / 2 + clearance - 1e-9
+      )
+        return false
+    }
+    // Only the actual transition in the ordered path joins this barrel. A
+    // distant same-net segment at the same coordinate is still a shortcut.
+    const transitions = plan.segments.flatMap((segment, index) => {
+      const next = plan.segments[index + 1]
+      return segment.layer === via.fromLayer &&
+        next?.layer === via.toLayer &&
+        pointsMatch(segment.end, via.center) &&
+        pointsMatch(next.start, via.center)
+        ? [index]
+        : []
+    })
+    if (transitions.length !== 1) return false
+    const incident = new Set<number>()
+    // Short chamfered leads can join a via through several segments. Bound
+    // that exemption by distance along its actual lead, never by proximity
+    // alone, which would also exempt a distant returning arm of the trace.
+    for (const direction of [-1, 1] as const) {
+      let point = via.center
+      let pathDistance = 0
+      const layer = direction === -1 ? via.fromLayer : via.toLayer
+      for (
+        let index = transitions[0]! + (direction === 1 ? 1 : 0);
+        index >= 0 && index < plan.segments.length;
+        index += direction
+      ) {
+        const segment = plan.segments[index]!
+        const near = direction === -1 ? segment.end : segment.start
+        const far = direction === -1 ? segment.start : segment.end
+        const radius = (via.diameter + segment.width) / 2 + clearance
+        if (
+          segment.layer !== layer ||
+          !pointsMatch(point, near) ||
+          pathDistance > radius + EPSILON
+        )
+          break
+        incident.add(index)
+        pathDistance += distance(near, far)
+        point = far
+      }
+    }
+    for (const [index, segment] of [
+      ...plan.segments,
+      ...(plan.planeEndpointSegments ?? []),
+    ].entries()) {
+      if (incident.has(index) || !via.spanLayers.includes(segment.layer))
+        continue
+      if (
+        distancePointToSegment(via.center, segment.start, segment.end) <
+        (via.diameter + segment.width) / 2 + clearance - 1e-9
+      )
+        return false
+    }
+  }
+  return true
+}
+
 /** Open a tuning window on another permitted layer without moving either endpoint. */
 function* createTransitTuningBases(params: {
   plan: FanoutRoutePlan
@@ -164,7 +240,11 @@ function* createTransitTuningBases(params: {
   layerNames: string[]
   clearance: number
   workBudget?: MatchingWorkBudget
-}): Generator<{ plan: FanoutRoutePlan; tuningLayer: string }> {
+}): Generator<{
+  plan: FanoutRoutePlan
+  tuningLayer: string
+  addedVias: RoutedVia[]
+}> {
   const { plan, bus, layerNames, clearance, workBudget } = params
   if (!plan.via || getPlanVias(plan).length > 5) return
   const allowed = bus.allowedLayers ?? layerNames
@@ -237,12 +317,18 @@ function* createTransitTuningBases(params: {
             distance(first, last) < plan.via.diameter + clearance
           )
             continue
+          const addedVias = reuseFirst
+            ? [newVia(last, tuningLayer, segment.layer)]
+            : [
+                newVia(first, segment.layer, tuningLayer),
+                newVia(last, tuningLayer, segment.layer),
+              ]
           const base = reuseFirst
             ? createPlanWithSegments(
                 {
                   ...original,
                   via: { ...original.via!, toLayer: tuningLayer },
-                  additionalVias: [newVia(last, tuningLayer, segment.layer)],
+                  additionalVias: addedVias,
                 },
                 [
                   ...original.segments
@@ -262,8 +348,7 @@ function* createTransitTuningBases(params: {
                   ...original,
                   additionalVias: [
                     ...(original.additionalVias ?? []),
-                    newVia(first, segment.layer, tuningLayer),
-                    newVia(last, tuningLayer, segment.layer),
+                    ...addedVias,
                   ],
                 },
                 [
@@ -274,7 +359,8 @@ function* createTransitTuningBases(params: {
                   ...original.segments.slice(index + 1),
                 ],
               )
-          if (base) yield { plan: base, tuningLayer }
+          if (base && addedTuningViasAreSelfClear(base, addedVias, clearance))
+            yield { plan: base, tuningLayer, addedVias }
         }
       }
     }
@@ -1410,6 +1496,10 @@ function matchBusPlanLengthsWithBudget(
             createTunedPlanCandidates(options),
           ]) {
             for (const tuned of candidates) {
+              if (
+                !addedTuningViasAreSelfClear(tuned, base.addedVias, clearance)
+              )
+                continue
               acceptedPlans = acceptCandidate({
                 ...tuned,
                 targetLayer: shortest.targetLayer,
