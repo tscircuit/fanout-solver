@@ -5,17 +5,21 @@ import type {
 import {
   distance,
   distancePointToSegment,
-  distanceSegmentToSegment,
   distanceSegmentToObstacle,
+  distanceSegmentToSegment,
   segmentsAreClear,
 } from "./geometry"
+import {
+  type DeclaredDifferentialPair,
+  getDeclaredDifferentialPairs,
+} from "./get-declared-differential-pairs"
 import { getCopperLayerNames } from "./layer-names"
+import { rematchUnroutedSourceDogbones } from "./rematch-unrouted-source-dogbones"
 import {
   createFanoutPlanClearanceValidator,
   fanoutPlansAreMutuallyClear,
 } from "./route-bus"
 import { routeViaMinimalWinding } from "./route-via-minimal-winding"
-import { rematchUnroutedSourceDogbones } from "./rematch-unrouted-source-dogbones"
 import type {
   Bounds,
   FanoutRoutePlan,
@@ -1070,6 +1074,13 @@ function getBusSkew(plans: readonly FanoutRoutePlan[]): number {
   return Math.max(...lengths) - Math.min(...lengths)
 }
 
+function getPlansForIndices(
+  plans: readonly FanoutRoutePlan[],
+  indices: ReadonlySet<number>,
+): FanoutRoutePlan[] {
+  return plans.filter((plan) => indices.has(plan.connectionIndex))
+}
+
 function* createSpreadLaneCandidates(
   plan: FanoutRoutePlan,
   clearance: number,
@@ -1209,12 +1220,184 @@ export function matchBusPlanLengths(
     params.maximumWorkUnits === undefined
       ? undefined
       : ({ remaining: params.maximumWorkUnits } as MatchingWorkBudget)
+  const pairs = getDeclaredDifferentialPairs(params.inputSrj)
+  const plansByIndex = new Map<number, FanoutRoutePlan[]>()
+  for (const plan of params.plans) {
+    const matches = plansByIndex.get(plan.connectionIndex) ?? []
+    matches.push(plan)
+    plansByIndex.set(plan.connectionIndex, matches)
+  }
+  // Matching subsets below are internal only. Public callers still identify
+  // complete original buses and exactly one original plan for each member.
+  for (const bus of params.preparedBuses) {
+    if (
+      bus.connections.some((connection) => {
+        const matches = plansByIndex.get(connection.connectionIndex)
+        return (
+          matches?.length !== 1 ||
+          matches[0]!.busId !== bus.busId ||
+          matches[0]!.connectionName !== connection.connection.name ||
+          params.inputSrj.connections[connection.connectionIndex]?.name !==
+            connection.connection.name
+        )
+      })
+    )
+      return { plans: null, failedBus: bus }
+  }
   try {
-    return matchBusPlanLengthsWithBudget(params, workBudget)
+    const matched = matchBusPlanLengthsWithBudget(params, workBudget)
+    return matched.plans
+      ? matchDeclaredPairLengths(params, matched.plans, pairs, workBudget)
+      : matched
   } catch (error) {
     if (error instanceof MatchingWorkBudgetExhausted && workBudget?.activeBus)
-      return { plans: null, failedBus: workBudget.activeBus }
+      return {
+        plans: null,
+        failedBus:
+          params.preparedBuses.find(
+            (bus) => bus.busId === workBudget.activeBus!.busId,
+          ) ?? workBudget.activeBus,
+      }
     throw error
+  }
+}
+
+/** Pair tuning is private to the complete original bus and the caller's scope. */
+function matchDeclaredPairLengths(
+  params: MatchBusPlanLengthsParams,
+  originalPlans: FanoutRoutePlan[],
+  pairs: readonly DeclaredDifferentialPair[],
+  workBudget?: MatchingWorkBudget,
+): MatchBusPlanLengthsResult {
+  const byIndex = new Map(
+    params.preparedBuses.flatMap((bus) =>
+      bus.connections.map(
+        (connection) =>
+          [connection.connectionIndex, { bus, connection }] as const,
+      ),
+    ),
+  )
+  const activePairs = pairs.filter((pair) =>
+    pair.connectionIndices.some((index) => byIndex.has(index)),
+  )
+  if (!activePairs.length) return { plans: originalPlans }
+  const scopedBuses = params.preparedBuses.map((bus) => ({
+    bus,
+    indices: new Set(
+      bus.connections.map((connection) => connection.connectionIndex),
+    ),
+  }))
+  let plans = originalPlans
+  const pairPlans = (
+    candidate: readonly FanoutRoutePlan[],
+    pair: DeclaredDifferentialPair,
+  ) =>
+    pair.connectionIndices.map((index, i) => {
+      const matches = candidate.filter((plan) => plan.connectionIndex === index)
+      const plan = matches[0]
+      if (
+        matches.length !== 1 ||
+        plan?.connectionName !== pair.connectionNames[i] ||
+        !Number.isFinite(plan.length)
+      )
+        throw new Error(
+          `Differential-pair matching cannot resolve exactly one original plan for ${pair.connectionNames[i]}`,
+        )
+      const measured = [
+        ...plan.segments,
+        ...(plan.planeEndpointSegments ?? []),
+      ].reduce((sum, segment) => sum + distance(segment.start, segment.end), 0)
+      if (
+        !Number.isFinite(measured) ||
+        Math.abs(measured - plan.length) > EPSILON
+      )
+        throw new Error(
+          `Differential-pair matching found inconsistent copper length for ${plan.connectionName}`,
+        )
+      return plan
+    })
+  const originalBusLimitsHold = (candidate: readonly FanoutRoutePlan[]) =>
+    scopedBuses.every(({ bus, indices }) => {
+      if (bus.maxLengthSkew === undefined) return true
+      const own = getPlansForIndices(candidate, indices)
+      return (
+        own.length === bus.connections.length &&
+        getBusSkew(own) <= bus.maxLengthSkew + EPSILON
+      )
+    })
+  // Overlapping pairs may require propagating a new minimum through their
+  // connected members. Lengthening is bounded by the existing pair maximum,
+  // and every pass shares the original deterministic matching work budget.
+  for (let pass = 0; pass <= activePairs.length; pass++) {
+    for (const pair of activePairs) {
+      const own = pairPlans(plans, pair)
+      if (getBusSkew(own) <= pair.lengthTolerance + EPSILON) continue
+      const entries = pair.connectionIndices.map((index) => byIndex.get(index))
+      const owner = entries.find((entry) => entry)!.bus
+      // A single-bus repair must never tune a mate outside its explicit scope.
+      if (entries.some((entry) => !entry))
+        return { plans: null, failedBus: owner }
+      const shortest = own[0]!.length <= own[1]!.length ? 0 : 1
+      const laneBus = entries[shortest]!.bus
+      const constraintBus: PreparedBus = {
+        ...laneBus,
+        connections: entries.map((entry) => entry!.connection),
+        maxLengthSkew: pair.lengthTolerance,
+      }
+      const maximum = Math.max(...own.map((plan) => plan.length))
+      const result = matchBusPlanLengthsWithBudget(
+        {
+          ...params,
+          plans,
+          preparedBuses: [constraintBus],
+          // A synthetic matching subset never changes route bus IDs or gives
+          // permission to move a different bus's source reservations.
+          unroutedSourceBuses: undefined,
+          allowUnconstrainedLaneRerouting: false,
+          allowPairLaneSpreading:
+            entries[0]!.bus === entries[1]!.bus &&
+            params.allowPairLaneSpreading,
+          candidatePlansAreFeasible: (candidate) =>
+            originalBusLimitsHold(candidate) &&
+            pairPlans(candidate, pair).every(
+              (plan) => plan.length <= maximum + EPSILON,
+            ) &&
+            (!params.candidatePlansAreFeasible ||
+              params.candidatePlansAreFeasible(candidate)),
+        },
+        workBudget,
+      )
+      if (!result.plans) return { plans: null, failedBus: laneBus }
+      plans = result.plans
+    }
+    if (
+      activePairs.every(
+        (pair) =>
+          getBusSkew(pairPlans(plans, pair)) <= pair.lengthTolerance + EPSILON,
+      )
+    ) {
+      if (!originalBusLimitsHold(plans))
+        return {
+          plans: null,
+          failedBus: scopedBuses.find(
+            ({ bus, indices }) =>
+              bus.maxLengthSkew !== undefined &&
+              getBusSkew(getPlansForIndices(plans, indices)) >
+                bus.maxLengthSkew + EPSILON,
+          )!.bus,
+        }
+      return { plans }
+    }
+  }
+  const failed = activePairs.find(
+    (pair) =>
+      getBusSkew(pairPlans(plans, pair)) > pair.lengthTolerance + EPSILON,
+  )!
+  return {
+    plans: null,
+    failedBus: failed.connectionIndices
+      .map((index) => byIndex.get(index)?.bus)
+      .find((bus) => bus)!,
   }
 }
 
@@ -1256,6 +1439,9 @@ function matchBusPlanLengthsWithBudget(
   if (constrainedBuses.length === 0) return { plans: matchedPlans }
 
   for (const bus of constrainedBuses) {
+    const busIndices = new Set(
+      bus.connections.map((connection) => connection.connectionIndex),
+    )
     if (workBudget) workBudget.activeBus = bus
     if (bus.termination.type !== "boundary") {
       return { plans: null, failedBus: bus }
@@ -1264,7 +1450,7 @@ function matchBusPlanLengthsWithBudget(
       bus.connections.length * (params.allowDistributedMatching ? 24 : 2)
     const deferredLanes = new Set<number>()
     for (let iteration = 0; iteration < maximumIterations; iteration++) {
-      const busPlans = matchedPlans.filter((plan) => plan.busId === bus.busId)
+      const busPlans = getPlansForIndices(matchedPlans, busIndices)
       if (busPlans.length !== bus.connections.length) {
         return { plans: null, failedBus: bus }
       }
@@ -1312,9 +1498,7 @@ function matchBusPlanLengthsWithBudget(
         const nextPlans = matchedPlans.map((plan) =>
           plan === shortest ? candidate : plan,
         )
-        const nextBusPlans = nextPlans.filter(
-          (plan) => plan.busId === bus.busId,
-        )
+        const nextBusPlans = getPlansForIndices(nextPlans, busIndices)
         if (getBusSkew(nextBusPlans) > skew + EPSILON) return null
         if (!plansAreClear(nextPlans)) {
           return null
@@ -1640,9 +1824,7 @@ function matchBusPlanLengthsWithBudget(
                 plan === blocker ? repaired : plan,
               )
               if (
-                getBusSkew(
-                  repairedPlans.filter((plan) => plan.busId === bus.busId),
-                ) >
+                getBusSkew(getPlansForIndices(repairedPlans, busIndices)) >
                   maxLengthSkew + EPSILON ||
                 !plansAreClear(repairedPlans) ||
                 (candidatePlansAreFeasible &&
@@ -1699,7 +1881,7 @@ function matchBusPlanLengthsWithBudget(
             })
             if (
               !repaired ||
-              getBusSkew(repaired.filter((plan) => plan.busId === bus.busId)) >
+              getBusSkew(getPlansForIndices(repaired, busIndices)) >
                 skew + EPSILON ||
               !plansAreClear(repaired) ||
               (candidatePlansAreFeasible &&
@@ -1722,9 +1904,7 @@ function matchBusPlanLengthsWithBudget(
       }
       matchedPlans = acceptedPlans
     }
-    const matchedBusPlans = matchedPlans.filter(
-      (plan) => plan.busId === bus.busId,
-    )
+    const matchedBusPlans = getPlansForIndices(matchedPlans, busIndices)
     if (getBusSkew(matchedBusPlans) > bus.maxLengthSkew! + EPSILON) {
       return { plans: null, failedBus: bus }
     }

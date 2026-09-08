@@ -3,8 +3,8 @@ import { matchBusPlanLengths } from "./match-bus-lengths"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
 import type { RerouteSourceOriginLengthsParams } from "./reroute-source-origin-lengths"
 import {
-  routeReservedViaBusesSteps,
   type ReservedViaBusesProgress,
+  routeReservedViaBusesSteps,
 } from "./route-reserved-via-buses"
 import type { FanoutRoutePlan, Point2D } from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
@@ -149,9 +149,7 @@ export function* repairPairLengthsWithSourceTransitSteps(
     const matched = matchBusPlanLengths({
       ...params,
       plans: candidate,
-      preparedBuses: preparedBuses.map((b) =>
-        b.busId === bus.busId ? b : { ...b, maxLengthSkew: undefined },
-      ),
+      preparedBuses: [bus],
       sharedBoundary: bus.sharedBoundary,
       maximumWorkUnits: 100_000,
       allowSourcePrefixMatching: true,
