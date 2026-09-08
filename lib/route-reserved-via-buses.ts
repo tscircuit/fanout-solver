@@ -37,6 +37,8 @@ export interface RouteReservedViaBusesParams {
   allBuses: readonly PreparedBus[]
   buses: readonly PreparedBus[]
   targetLayer: string
+  /** Opt-in joint search with one final layer per intact bus. Every selected bus must be mapped. */
+  targetLayerByBusId?: ReadonlyMap<string, string>
   /** Optional bus-permitted transit layers. Source-origin paths never return to TOP. */
   transitLayers?: readonly string[]
   terminals: readonly ViaMinimalWindingTerminal[]
@@ -76,6 +78,13 @@ export interface ReservedViaBusesProgress {
   iterations: number
   routedConnectionCount: number
   connectionCount: number
+}
+
+function getBusTargetLayer(
+  params: RouteReservedViaBusesParams,
+  busId: string,
+): string {
+  return params.targetLayerByBusId?.get(busId) ?? params.targetLayer
 }
 
 type HdPoint = Point2D & { z: number }
@@ -292,6 +301,8 @@ function convertRoutes(
       !points.length ||
       distance(points[0]!, terminal.viaPoint) > 1e-7 ||
       distance(points.at(-1)!, terminal.exitPoint) > 1e-7 ||
+      params.layerNames[points.at(-1)!.z] !==
+        getBusTargetLayer(params, bus.busId) ||
       points.some(
         (point) =>
           !(bus.allowedLayers ?? params.layerNames).includes(
@@ -365,7 +376,7 @@ function convertRoutes(
     }
     plans.push({
       ...base,
-      targetLayer: params.targetLayer,
+      targetLayer: getBusTargetLayer(params, bus.busId),
       trace: { ...base.trace, route: traceRoute },
       segments,
       additionalVias,
@@ -431,13 +442,32 @@ export function* routeReservedViaBusesSteps(
   const sourceTravelCost = params.sourceLayerTravelCost ?? 1
   if (!Number.isFinite(sourceTravelCost) || sourceTravelCost < 1)
     throw new Error("sourceLayerTravelCost must be finite and at least one")
+  const targetLayers = [
+    ...new Set(buses.map((bus) => getBusTargetLayer(params, bus.busId))),
+  ]
   const routingLayers = sourceOrigin
-    ? [...new Set([targetLayer, "top", ...(params.transitLayers ?? [])])]
-    : [...new Set([targetLayer, ...(params.transitLayers ?? [])])]
+    ? [
+        ...new Set([
+          targetLayer,
+          "top",
+          ...(params.transitLayers ?? []),
+          ...targetLayers,
+        ]),
+      ]
+    : [
+        ...new Set([
+          targetLayer,
+          ...(params.transitLayers ?? []),
+          ...targetLayers,
+        ]),
+      ]
   const targetZ = layerNames.indexOf(targetLayer)
   if (
     buses.length === 0 ||
     targetZ < 0 ||
+    targetLayers.some((layer) => !layerNames.includes(layer)) ||
+    (params.targetLayerByBusId &&
+      buses.some((bus) => !params.targetLayerByBusId!.has(bus.busId))) ||
     routingLayers.some((layer) => !layerNames.includes(layer))
   )
     return null
@@ -461,14 +491,16 @@ export function* routeReservedViaBusesSteps(
     buses.some(
       (bus) =>
         bus.termination.type !== "boundary" ||
-        !(bus.allowedLayers ?? layerNames).includes(targetLayer) ||
+        !(bus.allowedLayers ?? layerNames).includes(
+          getBusTargetLayer(params, bus.busId),
+        ) ||
         !(bus.routableEscapeLayers ?? bus.allowedLayers ?? layerNames).includes(
-          targetLayer,
+          getBusTargetLayer(params, bus.busId),
         ),
     ) ||
     allBuses.some((bus) =>
-      bus.connections.some(
-        (connection) => targetLayer === connection.sourceLayer,
+      bus.connections.some((connection) =>
+        targetLayers.includes(connection.sourceLayer),
       ),
     )
   )
@@ -609,7 +641,12 @@ export function* routeReservedViaBusesSteps(
         z:
           sourceOrigin && i === 0
             ? layerNames.indexOf(terminal.connection.sourceLayer)
-            : targetZ,
+            : layerNames.indexOf(
+                getBusTargetLayer(
+                  params,
+                  owners.get(terminal.connection.connection.name)!.busId,
+                ),
+              ),
         connectionName: terminal.connection.connection.name,
         rootConnectionName: terminal.connection.connection.name,
       })),
@@ -1077,7 +1114,8 @@ export function* routeReservedViaBusesSteps(
           .slice(0, transition)
           .some((p) => layerNames[p.z] !== "top") ||
         route.route.slice(transition).some((p) => layerNames[p.z] === "top") ||
-        layerNames[route.route.at(-1)!.z] !== targetLayer ||
+        layerNames[route.route.at(-1)!.z] !==
+          getBusTargetLayer(params, owners.get(route.connectionName)!.busId) ||
         distance(route.route[transition - 1]!, route.route[transition]!) > 1e-7
       )
         return null
@@ -1187,7 +1225,8 @@ export function* routeReservedViaBusesSteps(
           .slice(0, transition)
           .some((p) => layerNames[p.z] !== "top") ||
         normalized.slice(transition).some((p) => layerNames[p.z] === "top") ||
-        layerNames[normalized.at(-1)!.z] !== targetLayer
+        layerNames[normalized.at(-1)!.z] !==
+          getBusTargetLayer(params, owners.get(route.connectionName)!.busId)
       )
         return null
       const via = normalized[transition]!
@@ -1431,6 +1470,7 @@ export function* routeReservedViaBusesSteps(
             connections: [missing.connection],
           },
           terminals: [missing],
+          targetLayer: getBusTargetLayer(params, bus.busId),
           acceptedPlans: held,
           reservedVias: reservedVias.filter(
             (via) => via.connectionName !== missing.connection.connection.name,
@@ -1461,7 +1501,10 @@ export function* routeReservedViaBusesSteps(
         const score = (plan: FanoutRoutePlan) =>
           Math.min(
             ...plan.segments
-              .filter((segment) => segment.layer === targetLayer)
+              .filter(
+                (segment) =>
+                  segment.layer === getBusTargetLayer(params, bus.busId),
+              )
               .map((segment) =>
                 distancePointToSegment(
                   missing.viaPoint,
@@ -1544,7 +1587,7 @@ export function* completeSourceOriginBusSteps(
   params: RouteReservedViaBusesParams,
   partial: readonly FanoutRoutePlan[],
 ): Generator<ReservedViaBusesProgress, FanoutRoutePlan[] | null, unknown> {
-  const { buses, targetLayer, layerNames } = params
+  const { buses, layerNames } = params
   if (!params.routeFromSourcePads) return null
   const expected = new Map(
     params.terminals.map((terminal) => [
@@ -1561,7 +1604,7 @@ export function* completeSourceOriginBusSteps(
       (plan) =>
         expected.get(plan.connectionIndex)?.connection.connection.name !==
           plan.connectionName ||
-        plan.targetLayer !== targetLayer ||
+        plan.targetLayer !== getBusTargetLayer(params, plan.busId) ||
         plan.sourceLayer !==
           expected.get(plan.connectionIndex)!.connection.sourceLayer ||
         distance(
@@ -1599,6 +1642,7 @@ export function* completeSourceOriginBusSteps(
       ),
     }))
     .filter((bus) => bus.connections.length > 0)
+  const targetLayer = getBusTargetLayer(params, localBuses[0]!.busId)
   const transitLayers = layerNames.filter(
     (layer) =>
       layer !== targetLayer &&
@@ -1615,6 +1659,7 @@ export function* completeSourceOriginBusSteps(
   const repair = routeReservedViaBusesSteps({
     ...params,
     buses: localBuses,
+    targetLayer,
     terminals: missing,
     transitLayers,
     fixedViaPointsByConnectionIndex: sites,
