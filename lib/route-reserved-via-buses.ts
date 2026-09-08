@@ -1,6 +1,16 @@
 import { getOutwardSourcePadOwner } from "./get-outward-source-pad-owner"
 import { addDiagonalGridNeighbors } from "./add-diagonal-grid-neighbors"
 import {
+  addBoundaryTerminalNeighbors,
+  appendBoundaryTerminalApproach,
+  boundaryTerminalPlanIsSelfClear,
+  BoundaryTerminalCopper,
+  createBoundaryTerminalConnector,
+  getBoundaryTerminalEntry,
+  type BoundaryTerminalConnector,
+  type TerminalConnectorRegion,
+} from "./boundary-terminal-connectors"
+import {
   PortfolioSingleIntraNodeSolver,
   type SimpleRouteJson,
 } from "@tscircuit/capacity-autorouter"
@@ -78,6 +88,8 @@ export interface RouteReservedViaBusesParams {
   sourceLayerTravelCost?: number
   /** Score source-origin grid channels using only vias that remain reserved. */
   sourceOriginPhysicalGridPhase?: boolean
+  /** Reserve an exact perpendicular exit tail and use checked 45-degree entry links. */
+  terminalApproachLength?: number
 }
 
 export interface ReservedViaBusesProgress {
@@ -166,6 +178,16 @@ interface NegotiatedRouter {
   }
   heap: { pop(): number }
   _moveCost: number
+  _moveRippedHead: number
+  _moveRipCount: number
+  ripChain: {
+    contains(head: number, owner: number): boolean
+    append(head: number, owner: number): number
+  }
+  hyperParameters: { ripTracePenalty: number; ripViaPenalty: number }
+  finalizeRoute(goalNode: number): void
+  ripTrace(connectionId: number): void
+  pointToCell(point: Point2D): { cellId: number }
   _setup(): void
   step(): void
   getOutput(): HdRoute[]
@@ -465,8 +487,16 @@ export function* routeReservedViaBusesSteps(
   if (!Number.isFinite(marginExtra) || marginExtra < 0)
     throw new Error("traceMarginExtra must be finite and non-negative")
   const sourceOrigin = params.routeFromSourcePads ?? false
+  if (
+    params.terminalApproachLength !== undefined &&
+    (!Number.isFinite(params.terminalApproachLength) ||
+      params.terminalApproachLength <= 0)
+  )
+    throw new Error("terminalApproachLength must be finite and positive")
   const layerSpecificTerminals =
-    sourceOrigin || params.startLayerByBusId !== undefined
+    sourceOrigin ||
+    params.startLayerByBusId !== undefined ||
+    params.terminalApproachLength !== undefined
   const sourceTravelCost = params.sourceLayerTravelCost ?? 1
   if (!Number.isFinite(sourceTravelCost) || sourceTravelCost < 1)
     throw new Error("sourceLayerTravelCost must be finite and at least one")
@@ -735,6 +765,31 @@ export function* routeReservedViaBusesSteps(
         layers: via.spanLayers,
       })
   }
+  const terminalConnectors = new Map<string, BoundaryTerminalConnector>()
+  if (params.terminalApproachLength !== undefined)
+    for (const terminal of params.terminals) {
+      const name = terminal.connection.connection.name
+      const bus = owners.get(name)!
+      const connector = createBoundaryTerminalConnector({
+        connectionName: name,
+        edge: bus.exitEdge ?? getExitEdgeForDirection(bus.direction),
+        layer: getBusTargetLayer(params, bus.busId),
+        exit: terminal.exitPoint,
+        bounds,
+        approachLength: params.terminalApproachLength,
+      })
+      terminalConnectors.set(name, connector)
+      index.add({
+        kind: "segment",
+        connectionName: name,
+        segment: {
+          start: connector.goal,
+          end: connector.exit,
+          width: traceWidth,
+          layer: connector.layer,
+        },
+      })
+    }
   const node: NodeWithPorts = {
     capacityMeshNodeId: "reserved-via-buses",
     center: {
@@ -747,7 +802,8 @@ export function* routeReservedViaBusesSteps(
     portPoints: params.terminals.flatMap((terminal) =>
       [
         sourceOrigin ? terminal.connection.sourcePoint : terminal.viaPoint,
-        terminal.exitPoint,
+        terminalConnectors.get(terminal.connection.connection.name)?.goal ??
+          terminal.exitPoint,
       ].map((point, i) => ({
         ...point,
         z:
@@ -808,7 +864,11 @@ export function* routeReservedViaBusesSteps(
     typeof candidate.computeMoveCostAndRips !== "function" ||
     typeof candidate.markTraceFootprint !== "function" ||
     typeof candidate.addSharedOccupant !== "function" ||
-    typeof candidate.getSolvedRouteCount !== "function"
+    typeof candidate.getSolvedRouteCount !== "function" ||
+    (terminalConnectors.size > 0 &&
+      (typeof candidate.pointToCell !== "function" ||
+        typeof candidate.finalizeRoute !== "function" ||
+        typeof candidate.ripTrace !== "function"))
   )
     return null
   const Constructor = candidate.constructor as new (
@@ -839,6 +899,10 @@ export function* routeReservedViaBusesSteps(
     | ReturnType<typeof attachSourceOriginTransitSearch>
     | undefined
   let requiresTopTransit: boolean[] = []
+  let extendedTerminalEdges: ReadonlySet<string> = new Set()
+  let terminalCopper: BoundaryTerminalCopper | undefined
+  let terminalRegions: readonly TerminalConnectorRegion[] = []
+  const retainedTerminalPrefixes = new Map<string, RoutedSegment[]>()
   const viaCells = new Map<number, boolean>()
   // Each immutable edge is clear, blocked, or permitted only to one owner.
   // Dynamic congestion and rip decisions still run in the native router.
@@ -887,6 +951,103 @@ export function* routeReservedViaBusesSteps(
     if (router.failed) return
     if (params.includeDiagonalNeighbors)
       Object.assign(router, addDiagonalGridNeighbors(router))
+    if (terminalConnectors.size > 0) {
+      if (
+        typeof router.ripChain?.contains !== "function" ||
+        typeof router.ripChain?.append !== "function" ||
+        !Number.isFinite(router.hyperParameters.ripTracePenalty) ||
+        !Number.isFinite(router.hyperParameters.ripViaPenalty)
+      ) {
+        router.failed = true
+        return
+      }
+      for (const connector of terminalConnectors.values())
+        if (
+          !segmentIsClear(
+            connector.goal,
+            connector.exit,
+            connector.layer,
+            connector.connectionName,
+          )
+        ) {
+          router.failed = true
+          return
+        }
+      const terminals = [...terminalConnectors.values()].map((connector) => ({
+        connector,
+        cellId: router.pointToCell(connector.goal).cellId,
+      }))
+      const extended = addBoundaryTerminalNeighbors({
+        grid: router,
+        terminals,
+        margin: Math.max(traceWidth, viaDiameter) + clearance + 1e-7,
+        segmentIsClear: (a, b, connector) =>
+          withinBounds(a) &&
+          withinBounds(b) &&
+          segmentIsClear(a, b, connector.layer, connector.connectionName),
+      })
+      router.neighborOffset = extended.neighborOffset
+      router.neighborIds = extended.neighborIds
+      router.neighborCosts = extended.neighborCosts
+      extendedTerminalEdges = extended.extendedEdges
+      terminalRegions = extended.regions
+      const cells = new Map(
+        terminals.map(({ connector, cellId }) => [
+          connector.connectionName,
+          cellId,
+        ]),
+      )
+      const output = router.getOutput.bind(router)
+      router.getOutput = () =>
+        output().map((route) => {
+          const retained: RoutedSegment[] = []
+          for (let i = 1; i < route.route.length - 1; i++) {
+            const a = route.route[i - 1]!,
+              b = route.route[i]!
+            if (a.z === b.z)
+              retained.push({
+                start: a,
+                end: b,
+                width: traceWidth,
+                layer: layerNames[a.z]!,
+              })
+          }
+          if (!sourceOrigin) {
+            const connection = sourceOwners.get(route.connectionName)!
+            const prefix = paths.get(connection.connectionIndex)!
+            for (let i = 1; i < prefix.length; i++)
+              retained.push({
+                start: prefix[i - 1]!,
+                end: prefix[i]!,
+                width: traceWidth,
+                layer: connection.sourceLayer,
+              })
+          }
+          retainedTerminalPrefixes.set(route.connectionName, retained)
+          return appendBoundaryTerminalApproach(
+            route,
+            terminalConnectors.get(route.connectionName)!,
+            pointAt(cells.get(route.connectionName)!),
+          )
+        })
+      terminalCopper = new BoundaryTerminalCopper({
+        regions: extended.regions,
+        traceWidth,
+        clearance,
+        viaDiameter,
+        getRoutes: () => router.getOutput(),
+      })
+      const finalize = router.finalizeRoute.bind(router),
+        rip = router.ripTrace.bind(router)
+      router.finalizeRoute = (goal) => {
+        finalize(goal)
+        terminalCopper!.invalidate()
+      }
+      router.ripTrace = (owner) => {
+        rip(owner)
+        terminalCopper!.invalidate()
+      }
+    }
     cacheViaOccupantNeighborhoods(router)
     edgeClearance = new StaticEdgeClearanceCache(
       router.planeSize,
@@ -1118,19 +1279,45 @@ export function* routeReservedViaBusesSteps(
       router._moveCost = -1
       return
     }
-    const edgeOrigin = z * router.planeSize + previousCell
     const usesSourceTerminal =
       previousCell === segment.startCellId &&
       (!layerSpecificTerminals || previousZ === segment.startZ) &&
       (!transitSearch || transitSearch.beforeFirstVia())
+    let a: Point2D | undefined, b: Point2D | undefined
+    let entry: Point2D[] | null | undefined
+    if (terminalCopper) {
+      const entersTerminal =
+        nextCell === segment.endCellId && z === segment.endZ
+      if (
+        extendedTerminalEdges.has(`${previousCell}:${nextCell}`) &&
+        !entersTerminal
+      ) {
+        router._moveCost = -1
+        return
+      }
+      const connector = terminalConnectors.get(name)!
+      a = usesSourceTerminal ? segment.startPoint : pointAt(previousCell)
+      b = entersTerminal ? segment.endPoint : pointAt(nextCell)
+      entry = entersTerminal
+        ? getBoundaryTerminalEntry(isVia ? pointAt(nextCell) : a, connector)
+        : undefined
+      if (
+        entersTerminal &&
+        (!entry || (isVia && distance(a, pointAt(nextCell)) > 1e-7))
+      ) {
+        router._moveCost = -1
+        return
+      }
+    }
+    const edgeOrigin = z * router.planeSize + previousCell
     const usesTerminal =
       usesSourceTerminal ||
       (nextCell === segment.endCellId &&
         (!layerSpecificTerminals || z === segment.endZ))
     let classification = edgeClearance.get(edgeOrigin, nextCell, usesTerminal)
     if (classification === undefined) {
-      const a = usesSourceTerminal ? segment.startPoint : pointAt(previousCell)
-      const b =
+      a ??= usesSourceTerminal ? segment.startPoint : pointAt(previousCell)
+      b ??=
         nextCell === segment.endCellId &&
         (!layerSpecificTerminals || z === segment.endZ)
           ? segment.endPoint
@@ -1143,7 +1330,13 @@ export function* routeReservedViaBusesSteps(
       // cache. Other directed grid edges are static, including TOP departures:
       // an outward source-pad exception belongs only to its exact source owner.
       classification = usesTerminal
-        ? segmentIsClear(a, b, layer, name)
+        ? entry
+          ? entry
+              .slice(1)
+              .every((point, i) =>
+                segmentIsClear(entry[i]!, point, layer, name),
+              )
+          : segmentIsClear(a, b, layer, name)
         : classifyStaticEdge(a, b, layer)
       edgeClearance.set(edgeOrigin, nextCell, classification, usesTerminal)
     }
@@ -1152,6 +1345,40 @@ export function* routeReservedViaBusesSteps(
       return
     }
     move(connectionId, z, nextCell, isVia, rippedHead, ripCount, baseCost)
+    if (terminalCopper && router._moveCost >= 0) {
+      const blocked = isVia
+        ? terminalCopper.blockingViaOwners(name, pointAt(nextCell))
+        : terminalCopper.blockingSegmentOwners(
+            name,
+            entry ?? [a!, b!],
+            router.layerToZ.get(z)!,
+          )
+      // An end-cell via also emits target-layer copper to the off-grid goal.
+      // The physical barrel query above is independent of that entry's length.
+      if (isVia && entry)
+        for (const owner of terminalCopper.blockingSegmentOwners(
+          name,
+          entry,
+          router.layerToZ.get(z)!,
+        ))
+          blocked.add(owner)
+      for (const owner of blocked) {
+        const id = router.connIdToName.indexOf(owner)
+        if (id < 0)
+          throw new Error("Cannot resolve dynamic terminal copper owner")
+        if (!router.ripChain.contains(router._moveRippedHead, id)) {
+          router._moveRippedHead = router.ripChain.append(
+            router._moveRippedHead,
+            id,
+          )
+          router._moveRipCount++
+          router._moveCost += ripCost
+        }
+        router._moveCost += isVia
+          ? router.hyperParameters.ripViaPenalty
+          : router.hyperParameters.ripTracePenalty
+      }
+    }
     if (
       sourceOrigin &&
       !isVia &&
@@ -1243,6 +1470,26 @@ export function* routeReservedViaBusesSteps(
       ]),
     )
     return (
+      (terminalConnectors.size === 0 ||
+        plans.every((plan) => {
+          const connector = terminalConnectors.get(plan.connectionName)
+          if (!connector) return true
+          const last = plan.segments.at(-1)
+          return (
+            !!last &&
+            last.layer === connector.layer &&
+            distance(last.end, connector.exit) < 1e-7 &&
+            distancePointToSegment(connector.goal, last.start, last.end) <
+              1e-7 &&
+            boundaryTerminalPlanIsSelfClear({
+              plan,
+              retainedSegments:
+                retainedTerminalPrefixes.get(plan.connectionName) ?? [],
+              regions: terminalRegions,
+              clearance,
+            })
+          )
+        })) &&
       fanoutPlansAreClear({
         plans: [...plans],
         srj,

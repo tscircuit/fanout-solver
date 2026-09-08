@@ -162,7 +162,7 @@ function createPlanWithSegments(
 }
 
 /** New barrels must not bypass an earlier or later part of their own route. */
-function addedTuningViasAreSelfClear(
+export function addedTuningViasAreSelfClear(
   plan: FanoutRoutePlan,
   addedVias: readonly RoutedVia[],
   clearance: number,
