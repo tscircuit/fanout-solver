@@ -1,6 +1,7 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import {
   distance,
+  distancePointToObstacle,
   distancePointToSegment,
   distanceSegmentToObstacle,
   segmentsAreClear,
@@ -19,6 +20,7 @@ import {
 } from "./normalize-layered-path"
 import { fanoutPlansAreClear } from "./route-bus"
 import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
+import { sourceOriginRouteIsSelfClear } from "./source-origin-route-self-clear"
 import type {
   Bounds,
   FanoutRoutePlan,
@@ -39,6 +41,8 @@ export interface ShortcutFanoutPlansParams {
   selectedConnectionIndices?: ReadonlySet<number>
   allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
+  /** Shorten pad-clear source copper too, retaining its pad lead and first via. */
+  allowSourcePrefixShortcuts?: boolean
 }
 
 const EPSILON = 1e-7
@@ -181,8 +185,9 @@ function inside(
 
 /**
  * Bounded same-layer shortcuts for lanes exceeding their original bus minimum
- * plus allowed skew. Every physical via, source prefix, layer transition and
- * boundary endpoint stays fixed. No bus minimum is lowered; remaining skew is
+ * plus allowed skew. Every physical via, layer transition and boundary endpoint
+ * stays fixed; source prefixes stay fixed unless explicitly enabled. No bus
+ * minimum is lowered; remaining skew is
  * handled by the caller's length matcher. Null means complete copper validation
  * failed, so the caller must retain its original plans.
  */
@@ -273,8 +278,22 @@ export function shortcutFanoutPlans(
             obstacleSharesElectricalNet(inputSrj, o, original.connectionName)
           ),
       )
-      const route = original.trace.route.slice(0, firstVia + 1)
-      let sectionStart = firstVia + 1
+      let prefixStart = firstVia + 1
+      if (params.allowSourcePrefixShortcuts) {
+        prefixStart = 1
+        while (prefixStart < firstVia) {
+          const point = original.trace.route[prefixStart]!
+          if (
+            point.route_type === "wire" &&
+            distancePointToObstacle(point, original.sourceObstacle) >=
+              point.width / 2 + clearance - 1e-9
+          )
+            break
+          prefixStart++
+        }
+      }
+      const route = original.trace.route.slice(0, prefixStart)
+      let sectionStart = prefixStart
       while (sectionStart < original.trace.route.length) {
         const first = original.trace.route[sectionStart]!
         if (first.route_type !== "wire") {
@@ -296,6 +315,7 @@ export function shortcutFanoutPlans(
           )
         const points = wires.map((p) => ({ x: p.x, y: p.y, z })),
           width = Math.max(...wires.map((p) => p.width))
+        const incoming = route.at(-1)
         const clear = (a: LayeredPathPoint, b: LayeredPathPoint) => {
           const segment = { start: a, end: b, layer: first.layer, width }
           return (
@@ -304,6 +324,13 @@ export function shortcutFanoutPlans(
             obstacles.every(
               (o) =>
                 !o.layers.includes(first.layer) ||
+                // Normalizing the join may trim the retained incident lead.
+                // Only that exact old segment can still touch the source pad.
+                (sectionStart < firstVia &&
+                  o === original.sourceObstacle &&
+                  incoming?.route_type === "wire" &&
+                  distancePointToSegment(a, incoming, points[0]!) < EPSILON &&
+                  distancePointToSegment(b, incoming, points[0]!) < EPSILON) ||
                 distanceSegmentToObstacle(segment, o) >=
                   width / 2 + clearance - 1e-9,
             ) &&
@@ -318,9 +345,29 @@ export function shortcutFanoutPlans(
             )
           )
         }
-        const shortened = shortcutSection(points, width, clear)
+        let shortened = shortcutSection(points, width, clear)
+        let retainedFirstWire: Wire | undefined
+        if (
+          sectionStart < firstVia &&
+          incoming?.route_type === "wire" &&
+          incoming.layer === first.layer
+        ) {
+          // Include the preceding direction, so a shortcut cannot introduce
+          // an unchecked orthogonal or acute corner at the preserved lead.
+          const joined = normalizeLayeredPath({
+            points: [{ x: incoming.x, y: incoming.y, z }, ...shortened],
+            chamfer: width / 4,
+            segmentIsClear: clear,
+          })
+          if (joined) {
+            route.pop()
+            retainedFirstWire = incoming
+            shortened = joined
+          } else shortened = points
+        }
         route.push(
-          ...shortened.map((p) => ({
+          ...shortened.map((p, index) => ({
+            ...(index === 0 ? retainedFirstWire : undefined),
             route_type: "wire" as const,
             x: p.x,
             y: p.y,
@@ -340,11 +387,33 @@ export function shortcutFanoutPlans(
         ...original,
         trace,
         segments,
+        ...(params.allowSourcePrefixShortcuts
+          ? {
+              sourceEscapeSegmentCount: segments.findIndex(
+                (segment) => segment.layer !== original.sourceLayer,
+              ),
+            }
+          : {}),
         length: segments.reduce((sum, s) => sum + distance(s.start, s.end), 0),
       }
       if (
         candidate.length < minimum - EPSILON ||
         candidate.length >= original.length - EPSILON
+      )
+        continue
+      if (
+        params.allowSourcePrefixShortcuts &&
+        !sourceOriginRouteIsSelfClear({
+          points: trace.route.flatMap((point) =>
+            point.route_type === "wire"
+              ? [{ x: point.x, y: point.y, z: layerNames.indexOf(point.layer) }]
+              : [],
+          ),
+          topZ: layerNames.indexOf(original.sourceLayer),
+          traceWidth: params.traceWidth,
+          viaDiameter: original.via!.diameter,
+          clearance,
+        })
       )
         continue
       if (

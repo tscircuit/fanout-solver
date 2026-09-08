@@ -7,6 +7,7 @@ import {
   hasOpposedPairSourceEscapes,
 } from "./opposed-pair-source-escapes"
 import { rerouteSourceOriginLengthsSteps } from "./reroute-source-origin-lengths"
+import { repairWideSourceLengthsSteps } from "./repair-wide-source-lengths"
 import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
 import { hasCompressedExitConvergence } from "./compressed-exit-convergence"
 import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
@@ -886,11 +887,38 @@ function* routeLayerReservedAttemptSteps(
             tails = tailSteps.next()
           }
           if (!tails.value) {
-            restoreProvisionalSources()
-            attempts.failed(attempt, "lengths")
-            continue
-          }
-          completePlans = tails.value
+            // Preserve all existing successful matching and tail repairs.
+            // Only a failed constrained source group may reconsider its
+            // pad-clear prefix and one blocked shortest lane provisionally.
+            const sourceRepair =
+              params.sourceOriginRouting && shortenFirst
+                ? repairWideSourceLengthsSteps({
+                    ...params,
+                    inputSrj: srj,
+                    plans: completePlans,
+                    preparedBuses: buses,
+                    completedBuses,
+                    selectedBusIds: new Set(group.map((bus) => bus.busId)),
+                  })
+                : undefined
+            let repaired = sourceRepair?.next()
+            while (repaired && !repaired.done) {
+              yield {
+                phase: "repair-lengths",
+                layer,
+                routedConnectionCount: accepted.length,
+                iterations: repaired.value.iterations,
+              }
+              repaired = sourceRepair!.next()
+            }
+            if (!repaired?.value) {
+              restoreProvisionalSources()
+              attempts.failed(attempt, "lengths")
+              continue
+            }
+            completePlans = repaired.value
+            sourceReservationsChanged = true
+          } else completePlans = tails.value
         }
       }
       accepted = completePlans.filter((plan) =>
