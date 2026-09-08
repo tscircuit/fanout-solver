@@ -143,17 +143,25 @@ export function* routeMultiEdgeReservedBusesSteps(
         ...plans.filter((plan) => !selected.has(plan.connectionIndex)),
         ...routed.value,
       ]
-      const match = () =>
-        matchBusPlanLengths({
-          ...params,
-          inputSrj: srj,
-          plans: candidate,
-          preparedBuses: group,
-          sharedBoundary: group[0]!.sharedBoundary,
-          maximumWorkUnits: 1000,
-          allowMatchingInsideDenseBounds: true,
-          allowSourcePrefixMatching: true,
-        })
+      const match = () => {
+        // A failed later bus must not discard useful earlier tuning. Keep it
+        // only in this attempt's scratch plans until the entire group passes.
+        for (const bus of group) {
+          const result = matchBusPlanLengths({
+            ...params,
+            inputSrj: srj,
+            plans: candidate,
+            preparedBuses: [bus],
+            sharedBoundary: bus.sharedBoundary,
+            maximumWorkUnits: 1000,
+            allowMatchingInsideDenseBounds: true,
+            allowSourcePrefixMatching: true,
+          })
+          if (!result.plans) return result
+          candidate = result.plans
+        }
+        return { plans: candidate, failedBus: undefined }
+      }
       if (group.some((bus) => bus.maxLengthSkew !== undefined)) {
         candidate =
           shortcutFanoutPlans({
