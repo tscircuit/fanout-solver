@@ -1,4 +1,6 @@
 import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
+import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
+import { routePeripheralBusesSteps } from "./route-peripheral-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { selectCompatibleCandidates } from "./select-compatible-candidates"
@@ -1275,13 +1277,17 @@ export class FanoutSolver extends BaseSolver {
 
   private *evaluateLayerReservedRoutingSteps(
     sourceOriginRouting = false,
+    peripheralRouting = false,
   ): Generator<FanoutWorkYield, EvaluatedAssignment | null, unknown> {
-    const steps = routeLayerReservedBusesSteps({
+    const params = {
       ...this.config,
       sourceOriginRouting,
       srj: this.routingSrj,
       buses: this.preparedBuses,
-    })
+    }
+    const steps = peripheralRouting
+      ? routePeripheralBusesSteps(params)
+      : routeLayerReservedBusesSteps(params)
     let next = steps.next()
     while (!next.done) {
       this.stats = {
@@ -6333,11 +6339,24 @@ export class FanoutSolver extends BaseSolver {
         this.preparedBuses,
         this.config.allowBlindAndBuriedVias,
       )
-      if (sourceOriginRouting || this.shouldTryLayerReservedRouting()) {
+      const peripheralRouting =
+        !sourceOriginRouting &&
+        preparePeripheralSourceReservations({
+          ...this.config,
+          srj: this.routingSrj,
+          buses: this.preparedBuses,
+        }) !== null
+      if (
+        peripheralRouting ||
+        sourceOriginRouting ||
+        this.shouldTryLayerReservedRouting()
+      ) {
         this.startOperation({
           name: "FanoutLayerReservedSolver",
-          generator:
-            this.evaluateLayerReservedRoutingSteps(sourceOriginRouting),
+          generator: this.evaluateLayerReservedRoutingSteps(
+            sourceOriginRouting,
+            peripheralRouting,
+          ),
           onSolved: (attempt) => {
             if (!attempt) {
               this.inProgressPlans = []

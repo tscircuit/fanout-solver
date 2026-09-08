@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { prepareFanoutBuses } from "lib/prepare-buses"
+import { FanoutSolver } from "lib/fanout-solver"
 import { routePeripheralBusesSteps } from "lib/route-peripheral-buses"
 import { buildOutputSimpleRouteJson } from "lib/build-output"
 import { validateFanoutSolution } from "lib/validate-fanout-solution"
@@ -181,6 +182,28 @@ test("routes every four-sided lead and exposed pad while preserving atomic paire
   let rejected = unsupported.next()
   while (!rejected.done) rejected = unsupported.next()
   expect(rejected.value).toBeNull()
+  expect(JSON.stringify({ srj, buses })).toBe(original)
+  const solver = new FanoutSolver(srj, { ...rules, ...options })
+  solver.solve()
+  expect(solver.solved).toBe(true)
+  const publicOutput = solver.getOutput()
+  expect(publicOutput.validation).toMatchObject({
+    valid: true,
+    checkedConnectionCount: 9,
+    brokenOutConnectionCount: 9,
+    issues: [],
+  })
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: srj,
+      routedSrj: {
+        ...publicOutput.simpleRouteJson,
+        traces: publicOutput.fanoutTraces,
+      },
+      clearance: rules.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, checkedTraceCount: 9, issues: [] })
   expect(JSON.stringify({ srj, buses })).toBe(original)
   await expect(
     getSvgFromGraphicsObject(
