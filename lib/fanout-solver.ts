@@ -1811,6 +1811,49 @@ export class FanoutSolver extends BaseSolver {
     const wideBoundaryBuses = unsortedBoundaryBuses.filter(
       (bus) => bus.connections.length >= 8,
     )
+    const hasForeignAllLayerObstaclesInComponent = wideBoundaryBuses.some(
+      (bus) =>
+        this.routingSrj.obstacles.some(
+          (obstacle) =>
+            obstacle.componentId !== bus.componentId &&
+            this.config.layerNames.every((layer) =>
+              obstacle.layers.includes(layer),
+            ) &&
+            obstacle.center.x >= bus.componentBounds.minX &&
+            obstacle.center.x <= bus.componentBounds.maxX &&
+            obstacle.center.y >= bus.componentBounds.minY &&
+            obstacle.center.y <= bus.componentBounds.maxY,
+        ),
+    )
+    const dogboneCandidateCountByConnectionIndex = new Map<number, number>()
+    if (hasForeignAllLayerObstaclesInComponent) {
+      for (const candidate of getComponentDogboneViaSiteCandidates(
+        unsortedBoundaryBuses,
+        {
+          viaDiameter: this.config.viaDiameter,
+          viaHoleDiameter: this.config.viaHoleDiameter,
+          traceWidth: this.config.traceWidth,
+          clearance: this.config.clearance,
+          additionalObstacles: this.routingSrj.obstacles,
+        },
+      )) {
+        dogboneCandidateCountByConnectionIndex.set(
+          candidate.connectionIndex,
+          (dogboneCandidateCountByConnectionIndex.get(
+            candidate.connectionIndex,
+          ) ?? 0) + 1,
+        )
+      }
+    }
+    const getBusDogboneCandidateCount = (bus: PreparedBus): number =>
+      bus.connections.reduce(
+        (total, connection) =>
+          total +
+          (dogboneCandidateCountByConnectionIndex.get(
+            connection.connectionIndex,
+          ) ?? 0),
+        0,
+      )
     // A single-layer turning bus beside the end of a centered source field
     // has fewer escape choices than a corner bus farther behind it. Reserve
     // that turning channel before the farther bus fences its local via sites.
@@ -1953,6 +1996,18 @@ export class FanoutSolver extends BaseSolver {
               ? first.connections.length - second.connections.length
               : second.connections.length - first.connections.length
           if (connectionCountDifference !== 0) return connectionCountDifference
+          if (
+            hasForeignAllLayerObstaclesInComponent &&
+            first.connections.length >= 8 &&
+            second.connections.length >= 8
+          ) {
+            const dogboneCandidateCountDifference =
+              getBusDogboneCandidateCount(first) -
+              getBusDogboneCandidateCount(second)
+            if (dogboneCandidateCountDifference !== 0) {
+              return dogboneCandidateCountDifference
+            }
+          }
         }
         const firstLayer = params.busLayerAssignments[first.busId]
         const secondLayer = params.busLayerAssignments[second.busId]
@@ -2571,11 +2626,14 @@ export class FanoutSolver extends BaseSolver {
     yield
     if (seedViaPoints) {
       const denseBoundaryBusesInRoutingOrder = [
-        ...multiLayerLeadingSingletonBuses,
+        ...(hasForeignAllLayerObstaclesInComponent
+          ? []
+          : multiLayerLeadingSingletonBuses),
         ...boundaryBuses
           .filter(
             (bus) =>
-              !multiLayerLeadingSingletonBuses.includes(bus) &&
+              (hasForeignAllLayerObstaclesInComponent ||
+                !multiLayerLeadingSingletonBuses.includes(bus)) &&
               !throughAllLeadingBuses.includes(bus),
           )
           .flatMap((bus) => [
@@ -4643,7 +4701,7 @@ export class FanoutSolver extends BaseSolver {
           debugDense("plane-route:start", bus.busId)
           const targetLayer = params.busLayerAssignments[bus.busId]
           const blockingBusCounts = new Map<string, number>()
-          const busPlans = targetLayer
+          let busPlans = targetLayer
             ? routeBus({
                 srj: this.routingSrj,
                 bus,
@@ -4662,6 +4720,42 @@ export class FanoutSolver extends BaseSolver {
                 fixedViaPointsByConnectionIndex,
               })
             : null
+          if (
+            !busPlans &&
+            targetLayer &&
+            hasForeignAllLayerObstaclesInComponent
+          ) {
+            // Plane dogbones are matched before their full routes exist. A
+            // preceding plane escape can therefore consume copper clearance
+            // that the site matcher could not account for. Re-select only the
+            // failed dogbone against the routes that are actually committed.
+            busPlans = routeBus({
+              srj: this.routingSrj,
+              bus,
+              targetLayer,
+              acceptedPlans: matchedPlans,
+              layerNames: this.config.layerNames,
+              traceWidth: this.config.traceWidth,
+              viaDiameter: this.config.viaDiameter,
+              viaHoleDiameter: this.config.viaHoleDiameter,
+              clearance: this.config.clearance,
+              compactBusTracks: this.config.compactBusTracks,
+              allowBlindAndBuriedVias: false,
+              allowSameNetMerges: this.config.allowSameNetMerges,
+              staticClearanceCache: this.routeStaticClearanceCache,
+              blockingBusCounts,
+            })
+            if (busPlans) {
+              fixedViaPointsByConnectionIndex = new Map([
+                ...fixedViaPointsByConnectionIndex,
+                ...busPlans.flatMap((plan) =>
+                  plan.via
+                    ? [[plan.connectionIndex, plan.via.center] as const]
+                    : [],
+                ),
+              ])
+            }
+          }
           if (!busPlans) {
             debugDense(
               "plane-route:failed",
