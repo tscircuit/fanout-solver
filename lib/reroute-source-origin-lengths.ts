@@ -18,6 +18,8 @@ export interface RerouteSourceOriginLengthsParams {
   clearance: number
   viaDiameter: number
   viaHoleDiameter: number
+  /** Optional original bus-permitted layers for provisional length cleanup. */
+  transitLayers?: readonly string[]
 }
 
 const EPSILON = 1e-6
@@ -110,7 +112,7 @@ export function* rerouteSourceOriginLengthsSteps(
       allBuses: preparedBuses,
       buses: [{ ...bus, connections: selectedConnections }],
       targetLayer,
-      transitLayers: [],
+      transitLayers: params.transitLayers ?? [],
       terminals: selectedConnections.map((connection) => ({
         connection,
         viaPoint: fixed.get(connection.connectionIndex)!,
