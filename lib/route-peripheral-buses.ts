@@ -112,7 +112,7 @@ export function* routePeripheralBusesSteps(
     if (repaired.value) plans = repaired.value
   }
   yield { phase: "match-layer", routedConnectionCount: plans.length }
-  const matching = matchBusPlanLengths({
+  const matchingParams = {
     ...params,
     inputSrj: srj,
     plans,
@@ -120,7 +120,17 @@ export function* routePeripheralBusesSteps(
     sharedBoundary: boundaries[0]!.sharedBoundary,
     maximumWorkUnits: 1000,
     allowSourcePrefixMatching: true,
-  })
+  }
+  let matching = matchBusPlanLengths(matchingParams)
+  if (!matching.plans) {
+    matching = matchBusPlanLengths({
+      ...matchingParams,
+      maximumWorkUnits: 100_000,
+      allowDistributedMatching: true,
+      allowTransitLayerMatching: true,
+      allowMatchingInsideDenseBounds: true,
+    })
+  }
   if (!matching.plans) return null
   const normalized = normalizeFanoutPlanCorners({
     ...params,
