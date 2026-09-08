@@ -2,15 +2,15 @@ import { expect, test } from "bun:test"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { getExitEdgeForDirection } from "lib/boundary-exit"
+import { buildOutputSimpleRouteJson } from "lib/build-output"
 import { prepareFanoutBuses } from "lib/prepare-buses"
 import { routeMultiEdgeReservedBusesSteps } from "lib/route-multi-edge-reserved-buses"
 import { prepareSourceOriginReservations } from "lib/route-source-origin-buses"
-import { buildOutputSimpleRouteJson } from "lib/build-output"
 import { validateFanoutSolution } from "lib/validate-fanout-solution"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
 
-test("routes every connected BGA pad with atomic multi-edge groups and retained plane sources", async () => {
+test("routes intact buses jointly per edge with distinct legal layers and retained plane sources", async () => {
   const bounds = { minX: -3, maxX: 3, minY: -3, maxY: 3 }
   const rules = {
     traceWidth: 0.08128,
@@ -25,6 +25,7 @@ test("routes every connected BGA pad with atomic multi-edge groups and retained 
     { edge: "top" as const, indices: [12, 15] },
     { edge: "bottom" as const, indices: [0, 3] },
   ]
+  const rearLeftIndices = [5, 9]
   const points = Array.from({ length: 16 }, (_, i) => ({
     x: ((i % 4) - 1.5) * 0.8,
     y: (Math.floor(i / 4) - 1.5) * 0.8,
@@ -34,7 +35,9 @@ test("routes every connected BGA pad with atomic multi-edge groups and retained 
     layerCount: layerNames.length,
     minTraceWidth: rules.traceWidth,
     connections: points.map((point, i) => {
-      const side = sides.find((side) => side.indices.includes(i))
+      const side =
+        sides.find((side) => side.indices.includes(i)) ??
+        (rearLeftIndices.includes(i) ? sides[0] : undefined)
       const target = side
         ? {
             ...point,
@@ -82,11 +85,22 @@ test("routes every connected BGA pad with atomic multi-edge groups and retained 
               ? ("down" as const)
               : edge,
         preferredExit: edge,
-        allowedLayers: ["top", "inner2", "inner3", "bottom"],
+        allowedLayers:
+          edge === "left" ? ["inner2"] : ["top", "inner2", "inner3", "bottom"],
         maxLengthSkew: 2,
       })),
+      {
+        busId: "left-rear",
+        sourceComponentId: "U1",
+        connectionNames: rearLeftIndices.map((i) => `N${i}`),
+        direction: "left",
+        preferredExit: "left",
+        allowedLayers: ["inner3"],
+        maxLengthSkew: 2,
+      },
       ...points.flatMap((_, i) =>
-        sides.some((side) => side.indices.includes(i))
+        sides.some((side) => side.indices.includes(i)) ||
+        rearLeftIndices.includes(i)
           ? []
           : [
               {
@@ -113,11 +127,59 @@ test("routes every connected BGA pad with atomic multi-edge groups and retained 
   expect(plans).not.toBeNull()
   expect(plans).toHaveLength(16)
   expect({ srj, buses }).toEqual(original)
+  expect(
+    plans
+      .filter((plan) => plan.busId === "left")
+      .map((plan) => plan.targetLayer),
+  ).toEqual(["inner2", "inner2"])
+  expect(
+    plans
+      .filter((plan) => plan.busId === "left-rear")
+      .map((plan) => plan.targetLayer),
+  ).toEqual(["inner3", "inner3"])
   for (const bus of buses) {
     const own = plans.filter((plan) => plan.busId === bus.busId)
     expect(own).toHaveLength(bus.connections.length)
     expect(new Set(own.map((plan) => plan.targetLayer)).size).toBe(1)
     expect(own.every((plan) => plan.via)).toBe(true)
+    for (const plan of own) {
+      for (const [index, segment] of plan.segments.entries()) {
+        const dx = segment.end.x - segment.start.x
+        const dy = segment.end.y - segment.start.y
+        if (Math.hypot(dx, dy) < 1e-9) continue
+        expect(
+          Math.min(
+            Math.abs(dx),
+            Math.abs(dy),
+            Math.abs(Math.abs(dx) - Math.abs(dy)),
+          ),
+        ).toBeLessThan(1e-7)
+        const previous = plan.segments[index - 1]
+        if (previous?.layer === segment.layer) {
+          const px = previous.end.x - previous.start.x
+          const py = previous.end.y - previous.start.y
+          expect(
+            (px * dx + py * dy) / Math.hypot(px, py) / Math.hypot(dx, dy),
+          ).toBeGreaterThanOrEqual(Math.SQRT1_2 - 1e-7)
+        }
+        for (const point of [segment.start, segment.end]) {
+          expect(
+            Math.max(Math.abs(point.x), Math.abs(point.y)),
+          ).toBeLessThanOrEqual(3 + 1e-7)
+          if (
+            plan.termination.type === "boundary" &&
+            Math.max(Math.abs(point.x), Math.abs(point.y)) >= 3 - 1e-7
+          ) {
+            expect(
+              Math.hypot(
+                point.x - plan.exitPoint.x,
+                point.y - plan.exitPoint.y,
+              ),
+            ).toBeLessThan(1e-7)
+          }
+        }
+      }
+    }
     if (bus.termination.type === "plane")
       expect(own).toEqual(
         source.sourcePlans.filter((plan) => plan.busId === bus.busId),

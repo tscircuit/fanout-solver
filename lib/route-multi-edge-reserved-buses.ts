@@ -1,3 +1,4 @@
+import { getExitEdgeForDirection } from "./boundary-exit"
 import { getBoundaryApproachReservations } from "./get-boundary-approach-reservations"
 import { getMultiEdgeBusTargets } from "./get-multi-edge-bus-targets"
 import { matchBusPlanLengths } from "./match-bus-lengths"
@@ -21,7 +22,7 @@ const copperTraces = (plans: readonly FanoutRoutePlan[]) =>
     ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
   ])
 
-/** Route intact edge/layer groups around one shared, validated source reservation.
+/** Route intact edge groups around one shared, validated source reservation.
  * Unfinished sources and packed boundary approaches remain hard throughout.
  * A group's new first vias become visible only after its complete lengths pass.
  */
@@ -49,7 +50,7 @@ export function* routeMultiEdgeReservedBusesSteps(
   const groups = new Map<string, PreparedBus[]>()
   for (const bus of buses)
     if (bus.termination.type === "boundary") {
-      const key = `${bus.exitEdge}:${targets.targetLayerByBusId.get(bus.busId)}`
+      const key = bus.exitEdge ?? getExitEdgeForDirection(bus.direction)
       groups.set(key, [...(groups.get(key) ?? []), bus])
     }
   const ordered = [...groups.values()].sort(
@@ -105,6 +106,7 @@ export function* routeMultiEdgeReservedBusesSteps(
         allBuses: buses,
         buses: group,
         targetLayer: layer,
+        targetLayerByBusId: targets.targetLayerByBusId,
         terminals: group.flatMap((bus) =>
           bus.connections.map((connection) => ({
             connection,
@@ -123,7 +125,12 @@ export function* routeMultiEdgeReservedBusesSteps(
         ripCost: attempt ? 256 : 64,
         shuffleSeed: 1,
         maximumRipEvents: 400,
-        maximumIterations: selected.size > 16 ? 20_000_000 : 5_000_000,
+        maximumIterations:
+          selected.size > 32
+            ? 40_000_000
+            : selected.size > 16
+              ? 20_000_000
+              : 5_000_000,
         maximumLocalRepairAttempts: 0,
         maximumSourceOriginRepairAttempts: 1,
       })
@@ -236,7 +243,7 @@ export function* routeMultiEdgeReservedBusesSteps(
       // Exhaust the existing geometry cleanup before spending the larger,
       // bounded tuning budget. Legal transit folds can supply length where a
       // new target-layer meander cannot fit. Its source-path changes remain
-      // provisional until the entire edge/layer group is validated below.
+      // provisional until the entire edge group is validated below.
       if (!matched.plans) matched = match(true)
       if (!matched.plans) continue
       const held = matched.plans.filter(
