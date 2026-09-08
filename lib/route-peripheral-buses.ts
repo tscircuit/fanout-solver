@@ -3,6 +3,7 @@ import { matchBusPlanLengths } from "./match-bus-lengths"
 import { mergeLayeredBoundaryTargets } from "./merge-layered-boundary-targets"
 import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
+import { repairPairLengthsWithSourceTransitSteps } from "./repair-pair-lengths-with-source-transit"
 import { rerouteSourceOriginLengthsSteps } from "./reroute-source-origin-lengths"
 import type {
   LayerReservedBusesParams,
@@ -112,6 +113,7 @@ export function* routePeripheralBusesSteps(
     if (repaired.value) plans = repaired.value
   }
   yield { phase: "match-layer", routedConnectionCount: plans.length }
+  let privatePlans = plans
   const matchingParams = {
     ...params,
     inputSrj: srj,
@@ -120,11 +122,54 @@ export function* routePeripheralBusesSteps(
     sharedBoundary: boundaries[0]!.sharedBoundary,
     maximumWorkUnits: 1000,
     allowSourcePrefixMatching: true,
+    candidatePlansAreFeasible: (candidate: readonly FanoutRoutePlan[]) => {
+      privatePlans = [...candidate]
+      return true
+    },
   }
   let matching = matchBusPlanLengths(matchingParams)
   if (!matching.plans) {
     matching = matchBusPlanLengths({
       ...matchingParams,
+      maximumWorkUnits: 100_000,
+      allowDistributedMatching: true,
+      allowTransitLayerMatching: true,
+      allowMatchingInsideDenseBounds: true,
+    })
+  }
+  const attemptedPairs = new Set<string>()
+  while (!matching.plans) {
+    const failedBusId = matching.failedBus.busId
+    const bus = boundaries.find((bus) => bus.busId === failedBusId)
+    if (
+      !bus ||
+      bus.connections.length !== 2 ||
+      bus.maxLengthSkew === undefined ||
+      attemptedPairs.has(bus.busId)
+    )
+      return null
+    attemptedPairs.add(bus.busId)
+    const repair = repairPairLengthsWithSourceTransitSteps({
+      ...params,
+      inputSrj: srj,
+      plans: privatePlans,
+      preparedBuses: buses,
+      bus,
+    })
+    let step = repair.next()
+    while (!step.done) {
+      yield {
+        phase: "repair-lengths",
+        iterations: step.value.iterations,
+        routedConnectionCount: plans.length,
+      }
+      step = repair.next()
+    }
+    if (!step.value) return null
+    privatePlans = step.value
+    matching = matchBusPlanLengths({
+      ...matchingParams,
+      plans: privatePlans,
       maximumWorkUnits: 100_000,
       allowDistributedMatching: true,
       allowTransitLayerMatching: true,
