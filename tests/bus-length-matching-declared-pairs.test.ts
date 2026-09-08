@@ -145,6 +145,22 @@ test("matches declared pairs within intact buses, including overlapping and pair
     clearance: 0.05,
     maximumWorkUnits: 10000,
   }
+  // Signal stages can finish before unconstrained buses are routed, including
+  // buses whose declared pairs will be matched in their own later stage.
+  const staged = matchBusPlanLengths({ ...params, plans: plans.slice(0, 3) })
+  expect(staged.plans).toHaveLength(3)
+  expect(
+    Math.abs(staged.plans![0]!.length - staged.plans![1]!.length),
+  ).toBeLessThanOrEqual(0.100001)
+  const partial = matchBusPlanLengths({ ...params, plans: plans.slice(0, 4) })
+  expect(partial.plans).toBeNull()
+  expect(partial.failedBus).toBe(buses[1])
+  const missingConstrained = matchBusPlanLengths({
+    ...params,
+    plans: plans.slice(3),
+  })
+  expect(missingConstrained.plans).toBeNull()
+  expect(missingConstrained.failedBus).toBe(buses[0])
   const original = structuredClone({ inputSrj, plans, buses })
   const scoped = matchBusPlanLengths({ ...params, preparedBuses: [buses[0]!] })
     .plans!

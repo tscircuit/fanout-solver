@@ -1227,6 +1227,19 @@ export function matchBusPlanLengths(
     matches.push(plan)
     plansByIndex.set(plan.connectionIndex, matches)
   }
+  // Callers may match a completed signal stage before routing unconstrained
+  // planes or other buses. An absent bus has no copper to tune yet; once any
+  // member is present, its complete original membership is still required.
+  params = {
+    ...params,
+    preparedBuses: params.preparedBuses.filter(
+      (bus) =>
+        bus.maxLengthSkew !== undefined ||
+        bus.connections.some((connection) =>
+          plansByIndex.has(connection.connectionIndex),
+        ),
+    ),
+  }
   // Matching subsets below are internal only. Public callers still identify
   // complete original buses and exactly one original plan for each member.
   for (const bus of params.preparedBuses) {
