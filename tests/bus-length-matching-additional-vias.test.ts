@@ -193,4 +193,6 @@ test("opens a permitted transit tuning window with a clear through via and prese
       visualizeSimpleRouteJson({ ...outputSrj, connections: [] }),
     ),
   ).toMatchSvgSnapshot(import.meta.path)
-})
+  // Exercise the bounded matcher with and without via repair, then DRC and SVG.
+  // Allow ARM CI runtime variance without changing the benchmark deadline.
+}, 30_000)

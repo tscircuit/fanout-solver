@@ -350,4 +350,6 @@ test("a whole bus can choose first vias beyond a blocked target layer without mo
       visualizeSimpleRouteJson({ ...output, connections: [] }),
     ),
   ).toMatchSvgSnapshot(import.meta.path)
-})
+  // This compound regression runs several routers, native DRC, and SVG rendering.
+  // Allow ARM CI runtime variance without changing the benchmark deadline.
+}, 30_000)
