@@ -25,6 +25,8 @@ import { getBoundaryApproachReservations } from "./get-boundary-approach-reserva
 import { routeLayerReservedSourceEscapesSteps } from "./route-layer-reserved-source-escapes"
 import { routeReservedViaBusesSteps } from "./route-reserved-via-buses"
 import { matchBusPlanLengths } from "./match-bus-lengths"
+import { mergeLayeredBoundaryTargets } from "./merge-layered-boundary-targets"
+import { hasAlignedOppositeApproach } from "./aligned-opposite-approach"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
 import { rerouteOverlongBusLanesSteps } from "./reroute-overlong-bus-lanes"
 import { repairBusLengthsWithTransitSteps } from "./repair-bus-lengths-with-transit"
@@ -170,6 +172,17 @@ export function getLayerReservedBusTargets(params: LayerReservedBusesParams) {
 export function* routeLayerReservedBusesSteps(
   params: LayerReservedBusesParams,
 ): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
+  const freshSourceTrial = () =>
+    routeLayerReservedAttemptSteps(
+      params,
+      {
+        reserveFutureApproaches: false,
+        failedNarrowGroup: false,
+        failedWideMatching: false,
+      },
+      { travelCost: 3, maximumIterations: 20_000_000 },
+    )
+  let deferFreshSourceTrial = false
   if (params.sourceOriginRouting && hasSplitFixedWideLayer(params.buses)) {
     // Keep every ordinary successful route intact. If the fixed-source
     // strategy fails, jointly free the shared constrained buses' first vias
@@ -183,26 +196,28 @@ export function* routeLayerReservedBusesSteps(
       },
     )
     if (fixed) return fixed
+    const targets = getLayerReservedBusTargets(params)
     if (hasOppositeFixedWideBus(params.buses)) {
+      deferFreshSourceTrial =
+        !!targets && hasAlignedOppositeApproach(params.buses, targets.exits)
       // A failed fixed-source field may need clear approach corridors more than
       // future reservations. Bound one fresh, stronger source-cost trial before
       // retaining the established protected-source fallback.
-      const fresh = yield* routeLayerReservedAttemptSteps(
-        params,
-        {
-          reserveFutureApproaches: false,
-          failedNarrowGroup: false,
-          failedWideMatching: false,
-        },
-        { travelCost: 3, maximumIterations: 20_000_000 },
-      )
-      if (fresh) return fresh
+      if (!deferFreshSourceTrial) {
+        const fresh = yield* freshSourceTrial()
+        if (fresh) return fresh
+      }
     }
   }
-  return yield* retryLayerReservedRoutingSteps(
+  const routed = yield* retryLayerReservedRoutingSteps(
     params.sourceOriginRouting ?? false,
     (state) => routeLayerReservedAttemptSteps(params, state),
   )
+  // A directly aligned opposite pair needs its approach reserved while the
+  // wide group crosses the field. Retain the unprotected trial after those
+  // protected strategies fail, instead of paying for it before the clear path.
+  if (routed || !deferFreshSourceTrial) return routed
+  return yield* freshSourceTrial()
 }
 
 function* routeLayerReservedAttemptSteps(
@@ -256,8 +271,19 @@ function* routeLayerReservedAttemptSteps(
   })
   const splitFixedWideLayer =
     params.sourceOriginRouting && hasSplitFixedWideLayer(buses)
+  const recoverOppositeSplitField =
+    splitFixedWideLayer &&
+    !initialSourcePolicy &&
+    hasOppositeFixedWideBus(buses)
   let committedOpposedPairSources = false
   for (const [layer, group] of ordered) {
+    if (recoverOppositeSplitField && layer === ordered.at(-1)![0]) {
+      const merged = mergeLayeredBoundaryTargets({
+        buses: group,
+        exits: targets.exits,
+      })
+      for (const [index, point] of merged) targets.exits.set(index, point)
+    }
     const maximumBusSize = Math.max(
       ...group.map((bus) => bus.connections.length),
     )
@@ -305,6 +331,11 @@ function* routeLayerReservedAttemptSteps(
       committedOpposedPairSources &&
       maximumBusSize > 2 &&
       transitLayers.length > 0
+    const preferFixedTargetSearch =
+      recoverOppositeSplitField &&
+      maximumBusSize > 2 &&
+      transitLayers.length === 0 &&
+      allTransitLayers.length > 0
     const previousAccepted = accepted
     const useSourceOrigin =
       params.sourceOriginRouting && layer === ordered[0]![0] && shortenFirst
@@ -354,20 +385,21 @@ function* routeLayerReservedAttemptSteps(
       // If most direct escape corridors cross, a wide group on one layer
       // otherwise winds around itself. Prefer its permitted source transit.
       preferSourceTransit:
-        preferMappedSourceTransit ||
-        (maximumBusSize > 2 &&
-          transitLayers.length === 0 &&
-          allTransitLayers.length > 0 &&
-          sourceTransitHasMajorityCrossings(
-            group.flatMap((bus) =>
-              bus.connections.map((connection) => ({
-                source: fixedViaPointsByConnectionIndex.get(
-                  connection.connectionIndex,
-                )!,
-                target: targets.exits.get(connection.connectionIndex)!,
-              })),
-            ),
-          )),
+        !preferFixedTargetSearch &&
+        (preferMappedSourceTransit ||
+          (maximumBusSize > 2 &&
+            transitLayers.length === 0 &&
+            allTransitLayers.length > 0 &&
+            sourceTransitHasMajorityCrossings(
+              group.flatMap((bus) =>
+                bus.connections.map((connection) => ({
+                  source: fixedViaPointsByConnectionIndex.get(
+                    connection.connectionIndex,
+                  )!,
+                  target: targets.exits.get(connection.connectionIndex)!,
+                })),
+              ),
+            ))),
     })
     let groupCompleted = false
     let groupHadLengthFailure = false
@@ -446,6 +478,7 @@ function* routeLayerReservedAttemptSteps(
           })),
         ),
         tightViaChannels: true,
+        heuristicWeight: preferFixedTargetSearch ? 2 : undefined,
         ripCost: attempt.ripCost,
         maximumRipEvents: 400,
         maximumLocalRepairAttempts: hasTransitRetry ? 0 : 3,
@@ -592,6 +625,36 @@ function* routeLayerReservedAttemptSteps(
       // detour. Remove avoidable winding before spending time on meanders.
       if (shortenFirst) yield* shortenCompletePlans()
       let matched = matchCompletePlans(shortenFirst ? undefined : 1_000)
+      if (
+        !matched.plans &&
+        recoverOppositeSplitField &&
+        maximumBusSize > 2 &&
+        layer === ordered.at(-1)![0]
+      ) {
+        // Keep the ordinary match first. Once all boundary copper is present,
+        // legal internal spans and several short clear folds can share the
+        // remaining skew without releasing any committed source or route.
+        const distributed = matchBusPlanLengths({
+          ...params,
+          inputSrj: srj,
+          sharedBoundary: buses[0]!.sharedBoundary,
+          plans: completePlans,
+          preparedBuses: completedBuses,
+          allowBlindAndBuriedVias: false,
+          allowSameNetMerges: false,
+          allowMatchingInsideDenseBounds: true,
+          allowSourcePrefixMatching: true,
+          allowTransitLayerMatching: true,
+          allowDistributedMatching: true,
+          allowPairLaneSpreading: true,
+          allowUnconstrainedLaneRerouting: true,
+          maximumWorkUnits: 100_000,
+        })
+        if (distributed.plans) {
+          matched = distributed
+          sourceReservationsChanged = true
+        }
+      }
       if (!matched.plans && !shortenFirst && !repairConstrainedSourcePairs) {
         // Preserve directly tunable pairs and flexible buses; moving their
         // copper can occupy corridors needed by another layer group.
