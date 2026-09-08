@@ -156,7 +156,7 @@ export function* routeMultiEdgeReservedBusesSteps(
         for (const bus of group) {
           const result = matchBusPlanLengths({
             ...params,
-            inputSrj: srj,
+            inputSrj: reservedSrj,
             plans: candidate,
             preparedBuses: [bus],
             sharedBoundary: bus.sharedBoundary,
@@ -175,7 +175,7 @@ export function* routeMultiEdgeReservedBusesSteps(
         candidate =
           shortcutFanoutPlans({
             ...params,
-            inputSrj: srj,
+            inputSrj: reservedSrj,
             plans: candidate,
             preparedBuses: buses,
             selectedBusIds,
@@ -183,7 +183,7 @@ export function* routeMultiEdgeReservedBusesSteps(
           }) ?? candidate
         const shorter = rerouteOverlongBusLanesSteps({
           ...params,
-          inputSrj: srj,
+          inputSrj: reservedSrj,
           plans: candidate,
           preparedBuses: buses,
           selectedBusIds,
@@ -214,7 +214,7 @@ export function* routeMultiEdgeReservedBusesSteps(
       ) {
         const repair = rerouteSourceOriginLengthsSteps({
           ...params,
-          inputSrj: srj,
+          inputSrj: reservedSrj,
           plans: candidate,
           preparedBuses: buses,
           bus: matched.failedBus,
@@ -252,8 +252,8 @@ export function* routeMultiEdgeReservedBusesSteps(
       const normalized = normalizeFanoutPlanCorners({
         ...params,
         inputSrj: {
-          ...srj,
-          traces: [...(srj.traces ?? []), ...copperTraces(held)],
+          ...reservedSrj,
+          traces: [...(reservedSrj.traces ?? []), ...copperTraces(held)],
         },
         plans: matched.plans.filter((plan) =>
           selected.has(plan.connectionIndex),
@@ -264,10 +264,13 @@ export function* routeMultiEdgeReservedBusesSteps(
       const completeCandidate = [...held, ...normalized]
       if (
         !validateRoutedCopperDrc({
-          inputSrj: srj,
+          inputSrj: reservedSrj,
           routedSrj: {
-            ...srj,
-            traces: [...(srj.traces ?? []), ...copperTraces(completeCandidate)],
+            ...reservedSrj,
+            traces: [
+              ...(reservedSrj.traces ?? []),
+              ...copperTraces(completeCandidate),
+            ],
           },
           clearance: params.clearance,
           allowBlindAndBuriedVias: false,

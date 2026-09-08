@@ -3,6 +3,9 @@ import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { getExitEdgeForDirection } from "lib/boundary-exit"
 import { buildOutputSimpleRouteJson } from "lib/build-output"
+import { getBoundaryApproachReservations } from "lib/get-boundary-approach-reservations"
+import { getMultiEdgeBusTargets } from "lib/get-multi-edge-bus-targets"
+import { mergeLayeredBoundaryTargets } from "lib/merge-layered-boundary-targets"
 import { prepareFanoutBuses } from "lib/prepare-buses"
 import { routeMultiEdgeReservedBusesSteps } from "lib/route-multi-edge-reserved-buses"
 import { prepareSourceOriginReservations } from "lib/route-source-origin-buses"
@@ -221,6 +224,25 @@ test("routes intact buses jointly per edge with distinct legal layers and retain
       allowBlindAndBuriedVias: false,
     }),
   ).toMatchObject({ valid: true, issues: [] })
+  // The later edges' packed approach copper stays available after all earlier
+  // routing and length cleanup. These temporary reservations are never emitted.
+  const allocated = getMultiEdgeBusTargets(params)!
+  const approaches = getBoundaryApproachReservations({
+    ...params,
+    ...allocated,
+    exits: mergeLayeredBoundaryTargets({ buses, exits: allocated.exits }),
+    excludedBusIds: new Set(),
+  })
+  expect(approaches).toHaveLength(10)
+  expect(output.traces).toHaveLength(16)
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: srj,
+      routedSrj: { ...output, traces: [...output.traces!, ...approaches] },
+      clearance: rules.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, issues: [], checkedTraceCount: 26 })
   await expect(
     getSvgFromGraphicsObject(
       visualizeSimpleRouteJson({ ...output, connections: [] }),
