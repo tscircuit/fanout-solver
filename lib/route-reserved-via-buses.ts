@@ -19,6 +19,7 @@ import { repairBoundaryRouteTails } from "./repair-boundary-route-tails"
 import { fanoutPlansAreClear } from "./route-bus"
 import { StaticEdgeClearanceCache } from "./static-edge-clearance-cache"
 import { attachSourceOriginTransitSearch } from "./source-origin-transit-search"
+import { sourceOriginRouteIsSelfClear } from "./source-origin-route-self-clear"
 import {
   buildViaMinimalWindingPlan,
   routeViaMinimalWindingAlternativesSteps,
@@ -1302,7 +1303,16 @@ export function* routeReservedViaBusesSteps(
         returned = true
       }
     }
-    return returned
+    return (
+      returned &&
+      sourceOriginRouteIsSelfClear({
+        points,
+        topZ: layerNames.indexOf("top"),
+        traceWidth,
+        viaDiameter,
+        clearance,
+      })
+    )
   }
   const finalizeSourceOriginRoutes = (
     inputRoutes: HdRoute[],
