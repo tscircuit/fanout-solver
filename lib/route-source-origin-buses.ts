@@ -368,6 +368,30 @@ export function hasSplitFixedWideLayer(buses: readonly PreparedBus[]): boolean {
   )
 }
 
+/** Bias a whole-package traverse onto the constrained target layer. */
+export function hasOppositeFixedWideBus(
+  buses: readonly PreparedBus[],
+): boolean {
+  return buses.some((bus) => {
+    if (
+      bus.termination.type !== "boundary" ||
+      bus.connections.length < 8 ||
+      bus.allowedLayers?.length !== 1 ||
+      bus.allowedLayers[0] === "top"
+    )
+      return false
+    const axis = bus.exitEdge === "left" || bus.exitEdge === "right" ? "x" : "y"
+    const sign = bus.exitEdge === "left" || bus.exitEdge === "bottom" ? -1 : 1
+    const center =
+      axis === "x"
+        ? (bus.componentBounds.minX + bus.componentBounds.maxX) / 2
+        : (bus.componentBounds.minY + bus.componentBounds.maxY) / 2
+    return bus.connections.every(
+      (connection) => sign * (connection.sourcePoint[axis] - center) < -1e-7,
+    )
+  })
+}
+
 /** Dense fields with a wide, fixed-layer group need joint first-via ordering. */
 export function shouldUseSourceOriginRouting(
   buses: readonly PreparedBus[],

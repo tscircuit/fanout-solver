@@ -12,6 +12,7 @@ import { hasCompressedExitConvergence } from "./compressed-exit-convergence"
 import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
 import {
   hasSplitFixedWideLayer,
+  hasOppositeFixedWideBus,
   prepareSourceOriginReservations,
   routeSourceOriginBusesSteps,
 } from "./route-source-origin-buses"
@@ -182,6 +183,21 @@ export function* routeLayerReservedBusesSteps(
       },
     )
     if (fixed) return fixed
+    if (hasOppositeFixedWideBus(params.buses)) {
+      // A failed fixed-source field may need clear approach corridors more than
+      // future reservations. Bound one fresh, stronger source-cost trial before
+      // retaining the established protected-source fallback.
+      const fresh = yield* routeLayerReservedAttemptSteps(
+        params,
+        {
+          reserveFutureApproaches: false,
+          failedNarrowGroup: false,
+          failedWideMatching: false,
+        },
+        { travelCost: 3, maximumIterations: 20_000_000 },
+      )
+      if (fresh) return fresh
+    }
   }
   return yield* retryLayerReservedRoutingSteps(
     params.sourceOriginRouting ?? false,
@@ -192,6 +208,7 @@ export function* routeLayerReservedBusesSteps(
 function* routeLayerReservedAttemptSteps(
   params: LayerReservedBusesParams,
   attemptState: LayerReservedAttemptState,
+  initialSourcePolicy?: { travelCost: number; maximumIterations: number },
 ): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
   const { buses, srj, layerNames } = params
   const targets = getLayerReservedBusTargets(params)
@@ -293,9 +310,12 @@ function* routeLayerReservedAttemptSteps(
       params.sourceOriginRouting && layer === ordered[0]![0] && shortenFirst
     const attempts = new LayerRoutingAttempts({
       wideSingleLayer: shortenFirst,
-      retrySourceOriginPhysicalGridPhase: useSourceOrigin,
+      retrySourceOriginPhysicalGridPhase:
+        useSourceOrigin && !initialSourcePolicy,
       retrySourceOriginFreshReservations:
-        useSourceOrigin && attemptState.reserveFutureApproaches,
+        useSourceOrigin &&
+        !initialSourcePolicy &&
+        attemptState.reserveFutureApproaches,
       preferAlternateOrder:
         (!params.sourceOriginRouting &&
           shortenFirst &&
@@ -432,8 +452,14 @@ function* routeLayerReservedAttemptSteps(
         maximumIterations: 100_000_000,
         shuffleSeed: attempt.shuffleSeed,
         sourceOriginPhysicalGridPhase: attempt.sourceOriginPhysicalGridPhase,
-        sourceLayerTravelCost: attempt.sourceLayerTravelCost,
-        maximumSourceIterations: attempt.maximumSourceIterations,
+        sourceLayerTravelCost:
+          attempt.sourceLayerTravelCost ??
+          (useSourceOrigin ? initialSourcePolicy?.travelCost : undefined),
+        maximumSourceIterations:
+          attempt.maximumSourceIterations ??
+          (useSourceOrigin
+            ? initialSourcePolicy?.maximumIterations
+            : undefined),
       }
       const steps = (function* () {
         if (attempt.routeFromSourcePads)
@@ -750,6 +776,7 @@ function* routeLayerReservedAttemptSteps(
       if (matched.plans) {
         completePlans = matched.plans
       } else {
+        if (initialSourcePolicy && useSourceOrigin) return null
         groupHadLengthFailure = true
         if (hasTransitRetry) {
           restoreProvisionalSources()
