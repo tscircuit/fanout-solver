@@ -11,6 +11,16 @@ const fixture = sample004ControllerFixture as unknown as {
 }
 
 test("visual regression: guided tracks stay inside the fanout boundary", async () => {
+  // This reduced fixture omits both UDQS connections from the source board;
+  // retain only pair declarations whose two original connections are present.
+  const connectionNames = new Set(
+    fixture.inputSrj.connections.map((connection) => connection.name),
+  )
+  expect(fixture.inputSrj.differentialPairs).toHaveLength(1)
+  for (const pair of fixture.inputSrj.differentialPairs ?? [])
+    expect(
+      pair.connectionNames.every((name) => connectionNames.has(name)),
+    ).toBe(true)
   const solver = new FanoutSolver(fixture.inputSrj, fixture.options)
   solver.solve()
 
