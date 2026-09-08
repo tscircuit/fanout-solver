@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import type { Obstacle } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject, mergeGraphics } from "graphics-debug"
 import { FanoutSolver } from "../lib/fanout-solver"
+import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
 import captured from "./fixtures/am62l-core-progressive-fanout.json"
 
 // Exact through-via centers from core's original 46 under-BGA AM62L
@@ -126,7 +127,7 @@ const futureDecouplingViaObstacles: Obstacle[] = futureDecouplingViaCenters.map(
   }),
 )
 
-test("reproduces core's AM62L fanout failure with its future decoupling vias", async () => {
+test("routes core's AM62L fanout around its future decoupling vias", async () => {
   const inputSrj = {
     ...captured.inputSrj,
     obstacles: [
@@ -152,10 +153,33 @@ test("reproduces core's AM62L fanout failure with its future decoupling vias", a
     maxLayerCombinations: 1,
   })
   solver.solve()
-  expect(solver.solved).toBe(false)
-  expect(solver.failed).toBe(true)
-  expect(solver.error).toBe("FanoutSolver ran out of iterations")
-
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  const output = solver.getOutput()
+  expect(output.fanoutTraces).toHaveLength(135)
+  expect(output.validation).toEqual({
+    valid: true,
+    checkedConnectionCount: 135,
+    brokenOutConnectionCount: 135,
+    issues: [],
+  })
+  const routedSrj = {
+    ...output.simpleRouteJson,
+    traces: output.fanoutTraces,
+  }
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj,
+      routedSrj,
+      clearance: inputSrj.minViaEdgeToPadEdgeClearance!,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({
+    valid: true,
+    checkedTraceCount: 135,
+    checkedViaCount: 135,
+    issues: [],
+  })
   const visualization = mergeGraphics(solver.visualize(), {
     texts: [
       {
@@ -169,8 +193,8 @@ test("reproduces core's AM62L fanout failure with its future decoupling vias", a
       {
         x: inputSrj.bounds.minX,
         y: inputSrj.bounds.maxY + 1,
-        text: `solved=${solver.solved} · failed=${solver.failed} · ${String(solver.error)}`,
-        color: "#b91c1c",
+        text: `solved=${solver.solved} · failed=${solver.failed} · routed=135/135 · DRC valid`,
+        color: "#166534",
         fontSize: 0.6,
         anchorSide: "bottom_left",
       },
