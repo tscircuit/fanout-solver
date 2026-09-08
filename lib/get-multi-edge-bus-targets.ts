@@ -35,7 +35,12 @@ function crosses(a: Point2D, b: Point2D, c: Point2D, d: Point2D) {
  * Constrained buses reserve capacity first; flexible buses account for every
  * earlier assignment instead of all choosing the same otherwise empty layer.
  */
-export function getMultiEdgeBusTargets(params: LayerReservedBusesParams) {
+export function getMultiEdgeBusTargets(
+  params: LayerReservedBusesParams & {
+    /** Caller must implement a legal source-layer final escape for each bus. */
+    allowSourceLayerTargets?: boolean
+  },
+) {
   const { buses, layerNames, traceWidth, clearance } = params
   const pitch = traceWidth + clearance
   const targetLayerByBusId = new Map<string, string>()
@@ -54,7 +59,9 @@ export function getMultiEdgeBusTargets(params: LayerReservedBusesParams) {
       bus.routableEscapeLayers ??
       bus.allowedLayers ??
       layerNames
-    ).filter((layer) => !sourceLayers.has(layer))
+    ).filter(
+      (layer) => params.allowSourceLayerTargets || !sourceLayers.has(layer),
+    )
     if (!layers.length) return null
     const intervals = layers.map(
       (layer) =>

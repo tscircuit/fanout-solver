@@ -128,6 +128,30 @@ test("allocates flexible whole buses across layers before packing multiple bound
       })),
     }),
   ).toBeNull()
+  const threeSignalLayers = {
+    ...params,
+    buses: buses.map((bus) => ({
+      ...bus,
+      allowedLayers: ["top", "inner3", "bottom"],
+      routableEscapeLayers: ["top", "inner3", "bottom"],
+    })),
+  }
+  expect(getMultiEdgeBusTargets(threeSignalLayers)).toBeNull()
+  const sourceTargets = getMultiEdgeBusTargets({
+    ...threeSignalLayers,
+    allowSourceLayerTargets: true,
+  })!
+  expect(sourceTargets.exits.size).toBe(18)
+  for (const edge of ["right", "top"]) {
+    expect(
+      new Set(
+        buses
+          .filter((bus) => bus.exitEdge === edge)
+          .map((bus) => sourceTargets.targetLayerByBusId.get(bus.busId)),
+      ),
+    ).toEqual(new Set(["top", "inner3", "bottom"]))
+  }
+  expect(allBuses).toEqual(original)
   const colors = [
     "#2563eb",
     "#059669",
