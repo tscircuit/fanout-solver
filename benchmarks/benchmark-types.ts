@@ -1,5 +1,22 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
-import type { FanoutSolverOptions } from "../lib/types"
+import type { TraceTurnDensityMetric } from "../lib/measure-trace-turn-density"
+import type {
+  FanoutSimplifiedPcbTrace,
+  FanoutSolverOptions,
+} from "../lib/types"
+
+export interface BenchmarkTurnDensitySummary {
+  traceCount: number
+  median: number | null
+  max: number | null
+}
+
+export interface BenchmarkTurnDensitySample {
+  sample: string
+  trace: FanoutSimplifiedPcbTrace
+  metric: TraceTurnDensityMetric
+  isPlaneTermination: boolean
+}
 
 export interface BenchmarkSample {
   dataset: "dataset31"
@@ -19,12 +36,15 @@ export interface BenchmarkRow {
   attempts: number
   vias: number | null
   milliseconds: number
+  turnDensity?: BenchmarkTurnDensitySummary
+  signalTurnDensity?: BenchmarkTurnDensitySummary
   error?: string
 }
 
 /** Worker-only payload; SVGs are saved separately from the compact reports. */
 export interface BenchmarkWorkerResult extends BenchmarkRow {
   svg?: string
+  turnDensitySamples?: BenchmarkTurnDensitySample[]
 }
 
 export interface BenchmarkConfiguration {

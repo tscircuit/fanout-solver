@@ -2,15 +2,18 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { availableParallelism } from "node:os"
 import { join } from "node:path"
 import { parseArgs } from "node:util"
+import { summarizeTraceTurnDensity } from "../lib/measure-trace-turn-density"
 import { dataset31Source } from "../scripts/generate-repro/dataset31-source"
 import { selectBenchmarkSamples } from "./benchmark-catalog"
 import type {
   BenchmarkConfiguration,
   BenchmarkReport,
   BenchmarkRow,
+  BenchmarkTurnDensitySample,
 } from "./benchmark-types"
 import { prepareDataset31Samples } from "./prepare-dataset31"
 import { renderBenchmarkMarkdown } from "./render-benchmark-markdown"
+import { renderTraceTurnDensitySvg } from "./render-trace-turn-density-svg"
 import { runSampleProcess } from "./run-sample-process"
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
@@ -100,6 +103,8 @@ Failures and timeouts are results, not fatal errors.
   const commit =
     revision.exitCode === 0 ? revision.stdout.toString().trim() : null
   const results = new Map<number, BenchmarkRow>()
+  const turnDensityResults = new Map<number, BenchmarkTurnDensitySample[]>()
+  const sampleSvgs: Record<string, string> = {}
   await mkdir(outputDirectory, { recursive: true })
   // A selected case that regresses must not retain an old successful picture.
   // Filtered runs leave snapshots of unselected cases untouched.
@@ -124,6 +129,66 @@ Failures and timeouts are results, not fatal errors.
         .sort(([a], [b]) => a - b)
         .map(([, row]) => row),
     }
+    const turnDensitySamples = [...turnDensityResults.entries()]
+      .sort(([a], [b]) => a - b)
+      .flatMap(([, traces]) => traces)
+    const solvedSampleCount = report.rows.filter(
+      (row) => row.status === "solved",
+    ).length
+    const excludedSampleCount = report.rows.length - solvedSampleCount
+    const pendingSampleCount = samples.length - report.rows.length
+    const turnDensityReport = {
+      version: 1,
+      metric: "5mm 90 degree turns",
+      spanMm: 5,
+      description:
+        "Maximum completed 90-degree heading changes within any 5 mm path-length span per trace; opposing 45-degree bends cancel. Only complete, validated fanout solutions contribute. Signal traces exclude plane terminations.",
+      dataset: report.dataset,
+      datasetSource: report.datasetSource,
+      generatedAt: report.generatedAt,
+      commit: report.commit,
+      configuration: report.configuration,
+      coverage: {
+        selectedSamples: samples.length,
+        solvedSamples: solvedSampleCount,
+        excludedSamples: excludedSampleCount,
+        pendingSamples: pendingSampleCount,
+      },
+      summary: summarizeTraceTurnDensity(
+        turnDensitySamples.map(({ metric }) => metric),
+      ),
+      signalSummary: summarizeTraceTurnDensity(
+        turnDensitySamples
+          .filter(({ isPlaneTermination }) => !isPlaneTermination)
+          .map(({ metric }) => metric),
+      ),
+      samples: samples.map((sample, index) => ({
+        sample: sample.id,
+        status: results.get(index)?.status ?? "pending",
+      })),
+      traces: turnDensitySamples.map(
+        ({ sample, metric, isPlaneTermination }) => ({
+          sample,
+          isPlaneTermination,
+          pcbTraceId: metric.pcbTraceId,
+          connectionName: metric.connectionName,
+          spanMm: metric.spanMm,
+          traceLengthMm: metric.traceLengthMm,
+          max90DegreeTurns: metric.max90DegreeTurns,
+          worstWindow: metric.worstWindow && {
+            sectionIndex: metric.worstWindow.sectionIndex,
+            layer: metric.worstWindow.layer,
+            startDistanceMm: metric.worstWindow.startDistanceMm,
+            endDistanceMm: metric.worstWindow.endDistanceMm,
+            turnCount: metric.worstWindow.turnCount,
+          },
+        }),
+      ),
+    }
+    const turnDensitySvg = renderTraceTurnDensitySvg(turnDensitySamples, {
+      sampleSvgs,
+      subtitle: `Dataset 31 · ${solvedSampleCount}/${samples.length} selected cases solved · ${excludedSampleCount} unsolved excluded · ${pendingSampleCount} pending`,
+    })
     writes = writes.then(async () => {
       await writeFile(
         join(outputDirectory, "benchmark.json.tmp"),
@@ -141,6 +206,22 @@ Failures and timeouts are results, not fatal errors.
         join(outputDirectory, "benchmark.md.tmp"),
         join(outputDirectory, "benchmark.md"),
       )
+      await writeFile(
+        join(outputDirectory, "trace-turn-density.json.tmp"),
+        `${JSON.stringify(turnDensityReport, null, 2)}\n`,
+      )
+      await rename(
+        join(outputDirectory, "trace-turn-density.json.tmp"),
+        join(outputDirectory, "trace-turn-density.json"),
+      )
+      await writeFile(
+        join(outputDirectory, "trace-turn-density.svg.tmp"),
+        turnDensitySvg,
+      )
+      await rename(
+        join(outputDirectory, "trace-turn-density.svg.tmp"),
+        join(outputDirectory, "trace-turn-density.svg"),
+      )
     })
     return writes
   }
@@ -156,13 +237,22 @@ Failures and timeouts are results, not fatal errors.
         while (nextIndex < samples.length) {
           const index = nextIndex++
           const sample = samples[index]!
-          const { svg, ...row } = await runSampleProcess(sample, configuration)
+          const { svg, turnDensitySamples, ...row } = await runSampleProcess(
+            sample,
+            configuration,
+          )
           if (row.status === "solved") {
             if (!svg)
               throw new Error(`Missing SVG for solved sample ${sample.id}`)
+            if (!turnDensitySamples || turnDensitySamples.length !== row.routed)
+              throw new Error(
+                `Missing trace turn metrics for solved sample ${sample.id}`,
+              )
             const svgPath = join(outputDirectory, `${sample.id}.svg`)
             await writeFile(`${svgPath}.tmp`, svg)
             await rename(`${svgPath}.tmp`, svgPath)
+            turnDensityResults.set(index, turnDensitySamples)
+            sampleSvgs[sample.id] = svg
           }
           results.set(index, row)
           console.log(
@@ -180,7 +270,7 @@ Failures and timeouts are results, not fatal errors.
     `Solved ${rows.filter((row) => row.status === "solved").length}/${samples.length}; partial ${rows.filter((row) => row.status === "partial").length}; errors ${rows.filter((row) => row.status === "error").length}; timeouts ${rows.filter((row) => row.status === "timeout").length}`,
   )
   console.log(
-    `Reports: ${join(outputDirectory, "benchmark.json")} and ${join(outputDirectory, "benchmark.md")}; solved SVGs: ${join(outputDirectory, "*.svg")}`,
+    `Reports: ${join(outputDirectory, "benchmark.json")} and ${join(outputDirectory, "benchmark.md")}; trace quality: ${join(outputDirectory, "trace-turn-density.svg")} and ${join(outputDirectory, "trace-turn-density.json")}; solved SVGs: ${join(outputDirectory, "*.svg")}`,
   )
 }
 

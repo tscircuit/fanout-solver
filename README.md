@@ -390,6 +390,54 @@ fanout phase; RAM fanout and downstream inter-chip routing are separate phases.
 Partial, error, and timeout rows are benchmark results (exit 0); invalid CLI arguments or report
 I/O failures are command failures (nonzero exit).
 
+### Trace turn density
+
+Each benchmark run also writes `trace-turn-density.svg` and
+`trace-turn-density.json` in its output directory. The SVG shows four complete
+fanout samples using `getSvgFromGraphicsObject(solver.visualize())`, with each
+sample's all-trace median, signal median, and maximum count. The default selection
+uses the four samples with the highest maximum counts. Both reports include the median of **per-trace
+maxima**, including zeros. The all-trace median includes short power/ground
+plane terminations; the separate signal median excludes those terminations.
+Only complete, validated solutions in the selected run contribute; coverage
+and exclusions are reported. A 72-case run selects the highest-scoring solved
+samples across all six processor families.
+To measure all 12 AM62L direction cases:
+
+```sh
+bun run benchmark --limit 12 --output-directory benchmark-results/turn-density-am62l
+```
+
+The **5mm 90 degree turns** metric slides a 5 mm window along each continuous
+same-layer wire section. Inside a window, consecutive bends with the same sign
+form a group; its count is `floor(abs(group angle) / 90)`. Sum the group counts
+and take the maximum over all windows in the trace. Thus `+45, +45` counts one,
+`+45, -45` counts zero, and `+90, -90` counts two. Incomplete groups do not carry
+through a reversal or across a window boundary. Exact 180-degree reversals count
+two independently. Distance follows the centerline, not a spatial radius;
+bends exactly on window endpoints are included. Windows stop at vias, jumpers,
+and layer changes; sections shorter than 5 mm use their full length. Duplicate
+points and collinear vertices do not add bends.
+
+The public API can measure individual traces or enforce an explicit quality
+budget without changing the routing or electrical validation:
+
+```ts
+import {
+  checkTraceTurnDensity,
+  measureTraceTurnDensity,
+} from "@tscircuit/fanout-solver"
+
+const metric = measureTraceTurnDensity(output.fanoutTraces[0]!)
+console.log(metric.max90DegreeTurns, metric.worstWindow)
+
+// Example project budget, not a DDR design rule. Counts strictly above it fail.
+const quality = checkTraceTurnDensity(output.fanoutTraces, {
+  max90DegreeTurns: 2,
+})
+console.log(quality.valid, quality.summary.median, quality.issues)
+```
+
 ### PR comment trigger
 
 Once `.github/workflows/benchmark.yml` is on the default branch, a repository

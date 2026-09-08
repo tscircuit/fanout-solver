@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { FanoutSolver } from "../lib/fanout-solver"
+import {
+  measureTraceTurnDensity,
+  summarizeTraceTurnDensity,
+} from "../lib/measure-trace-turn-density"
 import type { BenchmarkSample, BenchmarkWorkerResult } from "./benchmark-types"
 
 export function solveBenchmarkSample(
@@ -57,8 +61,26 @@ export function solveBenchmarkSample(
     row.error = error instanceof Error ? error.message : String(error)
   }
   row.milliseconds = Math.round(performance.now() - startedAt)
-  // Preserve solver timing; render only complete, validated solutions.
+  // Preserve solver timing; measure/render only complete, validated solutions.
   if (solvedSolver) {
+    const output = solvedSolver.getOutput()
+    const planeConnections = new Set(
+      output.planeTerminations.map((termination) => termination.connectionName),
+    )
+    row.turnDensitySamples = output.fanoutTraces.map((trace) => ({
+      sample: sample.id,
+      trace,
+      metric: measureTraceTurnDensity(trace),
+      isPlaneTermination: planeConnections.has(trace.connection_name),
+    }))
+    row.turnDensity = summarizeTraceTurnDensity(
+      row.turnDensitySamples.map(({ metric }) => metric),
+    )
+    row.signalTurnDensity = summarizeTraceTurnDensity(
+      row.turnDensitySamples
+        .filter(({ isPlaneTermination }) => !isPlaneTermination)
+        .map(({ metric }) => metric),
+    )
     row.svg = `${getSvgFromGraphicsObject(solvedSolver.visualize())
       .trimEnd()
       .split("\n")

@@ -4,6 +4,16 @@ export { FanoutSolver } from "./fanout-solver"
 export { getCopperLayerColor } from "./layer-colors"
 export { getCopperLayerNames } from "./layer-names"
 export type {
+  TraceTurn,
+  TraceTurnDensityMetric,
+  TraceTurnWindow,
+} from "./measure-trace-turn-density"
+export {
+  checkTraceTurnDensity,
+  measureTraceTurnDensity,
+  summarizeTraceTurnDensity,
+} from "./measure-trace-turn-density"
+export type {
   Bounds,
   FanoutAttemptSummary,
   FanoutAvailableCornerAndSide,
