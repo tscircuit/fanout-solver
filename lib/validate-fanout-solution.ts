@@ -930,6 +930,101 @@ function validateClearances(params: {
   }
 }
 
+function validateDifferentialPairs(
+  inputSrj: SimpleRouteJson,
+  plansByConnection: ReadonlyMap<string, readonly FanoutRoutePlan[]>,
+  issues: FanoutValidationIssue[],
+): void {
+  const pairs: unknown = inputSrj.differentialPairs
+  if (pairs === undefined) return
+  if (!Array.isArray(pairs)) {
+    addIssue(
+      issues,
+      "invalid-differential-pair",
+      "Differential pairs must be an array",
+    )
+    return
+  }
+  const inputIndicesByName = new Map<string, number[]>()
+  inputSrj.connections.forEach((connection, index) => {
+    const indices = inputIndicesByName.get(connection.name) ?? []
+    indices.push(index)
+    inputIndicesByName.set(connection.name, indices)
+  })
+  pairs.forEach((value: unknown, pairIndex) => {
+    const pair = value as {
+      connectionNames?: unknown
+      lengthTolerance?: unknown
+    } | null
+    const names = pair?.connectionNames
+    const tolerance = pair?.lengthTolerance
+    if (
+      !Array.isArray(names) ||
+      names.length !== 2 ||
+      names.some((name) => typeof name !== "string" || name.length === 0) ||
+      names[0] === names[1] ||
+      typeof tolerance !== "number" ||
+      !Number.isFinite(tolerance) ||
+      tolerance < 0
+    ) {
+      addIssue(
+        issues,
+        "invalid-differential-pair",
+        `Differential pair ${pairIndex} must name two distinct connections and a finite nonnegative length tolerance`,
+      )
+      return
+    }
+    // Resolve original connection identity, never an electrical-net alias or an
+    // output SRJ declaration. A pair can be stricter than its containing bus.
+    const pairPlans: FanoutRoutePlan[] = []
+    for (const name of names) {
+      const indices = inputIndicesByName.get(name)
+      const plans = plansByConnection.get(name)
+      if (
+        indices?.length !== 1 ||
+        plans?.length !== 1 ||
+        plans[0]!.connectionIndex !== indices[0]
+      ) {
+        addIssue(
+          issues,
+          "invalid-differential-pair",
+          `Differential pair ${pairIndex} cannot resolve exactly one original plan for connection ${name}`,
+        )
+        return
+      }
+      pairPlans.push(plans[0]!)
+    }
+    // Measure copper rather than trusting cached plan.length metadata. Vertical
+    // via barrel lengths are not represented in the SRJ's planar length units.
+    const lengths = pairPlans.map((plan) =>
+      getPlanSegments(plan).reduce(
+        (sum, segment) => sum + distance(segment.start, segment.end),
+        0,
+      ),
+    )
+    if (lengths.some((length) => !Number.isFinite(length))) {
+      addIssue(
+        issues,
+        "invalid-differential-pair",
+        `Differential pair ${pairIndex} has nonfinite routed copper length`,
+        pairPlans[0],
+        names[1],
+      )
+      return
+    }
+    const skew = Math.abs(lengths[0]! - lengths[1]!)
+    if (skew > tolerance + EPSILON) {
+      addIssue(
+        issues,
+        "differential-pair-length-skew",
+        `Differential pair ${names[0]}/${names[1]} has ${skew.toFixed(6)}mm routed-length skew; ${tolerance.toFixed(6)}mm is allowed`,
+        pairPlans[0],
+        names[1],
+      )
+    }
+  })
+}
+
 export function validateFanoutSolution(params: {
   inputSrj: SimpleRouteJson
   outputSrj: SimpleRouteJson
@@ -956,6 +1051,7 @@ export function validateFanoutSolution(params: {
     connectionPlans.push(plan)
     plansByConnection.set(plan.connectionName, connectionPlans)
   }
+  validateDifferentialPairs(inputSrj, plansByConnection, issues)
   for (const bus of preparedBuses) {
     if (bus.maxLengthSkew === undefined) continue
     const busPlans = plans.filter((plan) => plan.busId === bus.busId)

@@ -287,6 +287,8 @@ export interface FanoutValidationIssue {
     | "different-net-via-clearance"
     | "plan-length-mismatch"
     | "bus-length-skew"
+    | "invalid-differential-pair"
+    | "differential-pair-length-skew"
   message: string
   connectionName?: string
   otherConnectionName?: string
