@@ -18,6 +18,7 @@ import { normalizeLayeredPath } from "./normalize-layered-path"
 import { repairBoundaryRouteTails } from "./repair-boundary-route-tails"
 import { fanoutPlansAreClear } from "./route-bus"
 import { StaticEdgeClearanceCache } from "./static-edge-clearance-cache"
+import { attachSourceOriginTransitSearch } from "./source-origin-transit-search"
 import {
   buildViaMinimalWindingPlan,
   routeViaMinimalWindingAlternativesSteps,
@@ -41,7 +42,7 @@ export interface RouteReservedViaBusesParams {
   targetLayerByBusId?: ReadonlyMap<string, string>
   /** Fixed first-via landing layers, specified independently of the final layers. Every selected bus must be mapped. */
   startLayerByBusId?: ReadonlyMap<string, string>
-  /** Optional bus-permitted transit layers. Source-origin paths never return to TOP. */
+  /** Optional bus-permitted transit layers. TOP return requires allowSourceOriginTopFinal. */
   transitLayers?: readonly string[]
   terminals: readonly ViaMinimalWindingTerminal[]
   fixedViaPointsByConnectionIndex: ReadonlyMap<number, Point2D>
@@ -70,6 +71,8 @@ export interface RouteReservedViaBusesParams {
   traceMarginExtra?: number
   /** Jointly choose each selected TOP source's first through via. */
   routeFromSourcePads?: boolean
+  /** Permit originally allowed TOP final layers after real internal travel through distinct through-vias. */
+  allowSourceOriginTopFinal?: boolean
   /** Search-only cost for TOP travel before that first via; defaults to one. */
   sourceLayerTravelCost?: number
   /** Score source-origin grid channels using only vias that remain reserved. */
@@ -113,6 +116,12 @@ interface NegotiatedRouter {
   MAX_ITERATIONS: number
   MAX_RIPS: number
   planeSize: number
+  layers: number
+  activeConnId: number
+  visitedStamp: Uint32Array
+  bestGStamp: Uint32Array
+  bestGValue: Float64Array
+  getSearchStateIdx(flat: number, ripCount: number): number
   neighborOffset: Int32Array
   neighborIds: Int32Array
   neighborCosts: Float32Array
@@ -142,7 +151,18 @@ interface NegotiatedRouter {
     startPoint: HdPoint
     endPoint: HdPoint
   }
-  nodePool: { cellId: Int32Array; z: Int32Array }
+  nodePool: {
+    cellId: Int32Array
+    z: Int32Array
+    push(
+      z: number,
+      cell: number,
+      g: number,
+      parent: number,
+      ripHead: number,
+      ripCount: number,
+    ): number
+  }
   heap: { pop(): number }
   _moveCost: number
   _setup(): void
@@ -474,6 +494,66 @@ export function* routeReservedViaBusesSteps(
         ]),
       ]
   const targetZ = layerNames.indexOf(targetLayer)
+  const sourceTopFinal =
+    sourceOrigin &&
+    params.allowSourceOriginTopFinal === true &&
+    targetLayers.includes("top")
+  const topFinalBuses = sourceTopFinal
+    ? buses.filter((bus) => getBusTargetLayer(params, bus.busId) === "top")
+    : []
+  const originalTopFinalBuses = new Map(
+    topFinalBuses.map((bus) => [
+      bus.busId,
+      allBuses.find((original) => original.busId === bus.busId),
+    ]),
+  )
+  const planeLayers = new Set(
+    (sourceTopFinal ? allBuses : []).flatMap((bus) =>
+      bus.termination.type === "plane" ? [bus.termination.layer] : [],
+    ),
+  )
+  if (
+    topFinalBuses.some((bus) => {
+      const original = originalTopFinalBuses.get(bus.busId)
+      if (
+        !original ||
+        bus.connections.length !== original.connections.length ||
+        bus.connections.some(
+          (c) =>
+            !original.connections.some(
+              (o) =>
+                o.connectionIndex === c.connectionIndex &&
+                o.connection.name === c.connection.name &&
+                o.sourceObstacle === c.sourceObstacle,
+            ),
+        )
+      )
+        return true
+      const permitted = (
+        original.routableEscapeLayers ??
+        original.allowedLayers ??
+        layerNames
+      ).filter((layer) =>
+        (original.allowedLayers ?? layerNames).includes(layer),
+      )
+      return (
+        !permitted.includes("top") ||
+        !routingLayers.some(
+          (layer) =>
+            layer !== "top" &&
+            !planeLayers.has(layer) &&
+            permitted.includes(layer) &&
+            (
+              bus.routableEscapeLayers ??
+              bus.allowedLayers ??
+              layerNames
+            ).includes(layer) &&
+            (bus.allowedLayers ?? layerNames).includes(layer),
+        )
+      )
+    })
+  )
+    return null
   if (
     buses.length === 0 ||
     targetZ < 0 ||
@@ -528,7 +608,8 @@ export function* routeReservedViaBusesSteps(
             )
           )
         })
-      : allBuses.some((bus) =>
+      : !sourceTopFinal &&
+        allBuses.some((bus) =>
           bus.connections.some((connection) =>
             targetLayers.includes(connection.sourceLayer),
           ),
@@ -753,6 +834,10 @@ export function* routeReservedViaBusesSteps(
   let previousZ = -1
   let layersByRouterZ: string[] = []
   let allowedLayersByConnection: boolean[][] = []
+  let transitSearch:
+    | ReturnType<typeof attachSourceOriginTransitSearch>
+    | undefined
+  let requiresTopTransit: boolean[] = []
   const viaCells = new Map<number, boolean>()
   // Each immutable edge is clear, blocked, or permitted only to one owner.
   // Dynamic congestion and rip decisions still run in the native router.
@@ -821,9 +906,22 @@ export function* routeReservedViaBusesSteps(
             (owner.allowedLayers ?? layerNames).includes(layer),
           )
         : []
+      const original = owner && originalTopFinalBuses.get(owner.busId)
+      const originalPermitted = original
+        ? (
+            original.routableEscapeLayers ??
+            original.allowedLayers ??
+            layerNames
+          ).filter(
+            (layer) =>
+              (original.allowedLayers ?? layerNames).includes(layer) &&
+              !planeLayers.has(layer),
+          )
+        : undefined
       return layersByRouterZ.map(
         (layer) =>
-          permitted.includes(layer) || (sourceOrigin && layer === "top"),
+          (permitted.includes(layer) || (sourceOrigin && layer === "top")) &&
+          (!originalPermitted || originalPermitted.includes(layer)),
       )
     })
     router.MAX_ITERATIONS = maximumIterations
@@ -837,6 +935,36 @@ export function* routeReservedViaBusesSteps(
       previousCell = router.nodePool.cellId[item]!
       previousZ = router.nodePool.z[item]!
       return item
+    }
+    if (sourceTopFinal) {
+      const stateCount = router.layers * router.planeSize
+      const topRouterZ = layersByRouterZ.indexOf("top")
+      if (
+        typeof router.getSearchStateIdx !== "function" ||
+        typeof router.nodePool.push !== "function" ||
+        !(router.visitedStamp instanceof Uint32Array) ||
+        !(router.bestGStamp instanceof Uint32Array) ||
+        !(router.bestGValue instanceof Float64Array) ||
+        router.visitedStamp.length !== stateCount ||
+        router.bestGStamp.length !== stateCount ||
+        router.bestGValue.length !== stateCount ||
+        router.getSearchStateIdx(0, 0) !== 0 ||
+        router.getSearchStateIdx(stateCount - 1, 1) !== stateCount - 1 ||
+        topRouterZ < 0
+      ) {
+        router.failed = true
+        return
+      }
+      requiresTopTransit = router.connIdToName.map((name) => {
+        const owner = owners.get(name)
+        return !!owner && getBusTargetLayer(params, owner.busId) === "top"
+      })
+      transitSearch = attachSourceOriginTransitSearch(
+        router,
+        requiresTopTransit,
+        topRouterZ,
+        viaDiameter + clearance,
+      )
     }
   }
   router.markTraceFootprint = (connectionId, z, sourceCell, indices) => {
@@ -978,26 +1106,29 @@ export function* routeReservedViaBusesSteps(
       layer = layersByRouterZ[z]!,
       segment = router.activeConnSeg
     if (
+      (transitSearch && !transitSearch.prepareMove(z, nextCell, isVia)) ||
       !allowedLayersByConnection[connectionId]![z] ||
       (isVia &&
-        ((sourceOrigin && layer === "top") || !extraViaIsClear(nextCell)))
+        ((sourceOrigin &&
+          layer === "top" &&
+          !requiresTopTransit[connectionId]) ||
+          !extraViaIsClear(nextCell)))
     ) {
       router._moveCost = -1
       return
     }
     const edgeOrigin = z * router.planeSize + previousCell
+    const usesSourceTerminal =
+      previousCell === segment.startCellId &&
+      (!layerSpecificTerminals || previousZ === segment.startZ) &&
+      (!transitSearch || transitSearch.beforeFirstVia())
     const usesTerminal =
-      (previousCell === segment.startCellId &&
-        (!layerSpecificTerminals || previousZ === segment.startZ)) ||
+      usesSourceTerminal ||
       (nextCell === segment.endCellId &&
         (!layerSpecificTerminals || z === segment.endZ))
     let classification = edgeClearance.get(edgeOrigin, nextCell, usesTerminal)
     if (classification === undefined) {
-      const a =
-        previousCell === segment.startCellId &&
-        (!layerSpecificTerminals || previousZ === segment.startZ)
-          ? segment.startPoint
-          : pointAt(previousCell)
+      const a = usesSourceTerminal ? segment.startPoint : pointAt(previousCell)
       const b =
         nextCell === segment.endCellId &&
         (!layerSpecificTerminals || z === segment.endZ)
@@ -1020,7 +1151,13 @@ export function* routeReservedViaBusesSteps(
       return
     }
     move(connectionId, z, nextCell, isVia, rippedHead, ripCount, baseCost)
-    if (sourceOrigin && !isVia && layer === "top" && router._moveCost >= 0)
+    if (
+      sourceOrigin &&
+      !isVia &&
+      layer === "top" &&
+      router._moveCost >= 0 &&
+      (!transitSearch || transitSearch.beforeFirstVia())
+    )
       router._moveCost += baseCost * (sourceTravelCost - 1)
   }
   // A rip-up search can discard its best topology before reaching its limit.
@@ -1132,6 +1269,41 @@ export function* routeReservedViaBusesSteps(
       }).valid
     )
   }
+  const hasRequiredSourceTransitions = (
+    points: HdPoint[],
+    name: string,
+  ): boolean => {
+    const first = points.findIndex(
+      (point, i) => i > 0 && point.z !== points[i - 1]!.z,
+    )
+    if (
+      first < 1 ||
+      points.slice(0, first).some((p) => layerNames[p.z] !== "top") ||
+      distance(points[first - 1]!, points[first]!) > 1e-7
+    )
+      return false
+    const bus = owners.get(name)!
+    if (!originalTopFinalBuses.has(bus.busId))
+      return !points.slice(first).some((p) => layerNames[p.z] === "top")
+    let internalTravel = false,
+      returned = false
+    for (let i = first + 1; i < points.length; i++) {
+      const a = points[i - 1]!,
+        b = points[i]!
+      if (a.z === b.z && layerNames[a.z] !== "top" && distance(a, b) > 1e-7)
+        internalTravel = true
+      if (a.z !== b.z && layerNames[b.z] === "top") {
+        if (
+          !internalTravel ||
+          distance(a, b) > 1e-7 ||
+          distance(points[first]!, b) < viaDiameter + clearance - 1e-9
+        )
+          return false
+        returned = true
+      }
+    }
+    return returned
+  }
   const finalizeSourceOriginRoutes = (
     inputRoutes: HdRoute[],
     deferredSources: ReadonlySet<number> = new Set(),
@@ -1147,11 +1319,7 @@ export function* routeReservedViaBusesSteps(
         (point, i) => i > 0 && point.z !== route.route[i - 1]!.z,
       )
       if (
-        transition < 1 ||
-        route.route
-          .slice(0, transition)
-          .some((p) => layerNames[p.z] !== "top") ||
-        route.route.slice(transition).some((p) => layerNames[p.z] === "top") ||
+        !hasRequiredSourceTransitions(route.route, route.connectionName) ||
         layerNames[route.route.at(-1)!.z] !==
           getBusTargetLayer(params, owners.get(route.connectionName)!.busId) ||
         distance(route.route[transition - 1]!, route.route[transition]!) > 1e-7
@@ -1258,11 +1426,7 @@ export function* routeReservedViaBusesSteps(
         (point, i) => i > 0 && point.z !== normalized[i - 1]!.z,
       )
       if (
-        transition < 1 ||
-        normalized
-          .slice(0, transition)
-          .some((p) => layerNames[p.z] !== "top") ||
-        normalized.slice(transition).some((p) => layerNames[p.z] === "top") ||
+        !hasRequiredSourceTransitions(normalized, route.connectionName) ||
         layerNames[normalized.at(-1)!.z] !==
           getBusTargetLayer(params, owners.get(route.connectionName)!.busId)
       )
