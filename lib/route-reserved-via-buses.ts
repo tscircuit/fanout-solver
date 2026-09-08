@@ -39,6 +39,8 @@ export interface RouteReservedViaBusesParams {
   targetLayer: string
   /** Opt-in joint search with one final layer per intact bus. Every selected bus must be mapped. */
   targetLayerByBusId?: ReadonlyMap<string, string>
+  /** Fixed first-via landing layers, specified independently of the final layers. Every selected bus must be mapped. */
+  startLayerByBusId?: ReadonlyMap<string, string>
   /** Optional bus-permitted transit layers. Source-origin paths never return to TOP. */
   transitLayers?: readonly string[]
   terminals: readonly ViaMinimalWindingTerminal[]
@@ -301,6 +303,9 @@ function convertRoutes(
       !points.length ||
       distance(points[0]!, terminal.viaPoint) > 1e-7 ||
       distance(points.at(-1)!, terminal.exitPoint) > 1e-7 ||
+      (params.startLayerByBusId !== undefined &&
+        params.layerNames[points[0]!.z] !==
+          params.startLayerByBusId.get(bus.busId)) ||
       params.layerNames[points.at(-1)!.z] !==
         getBusTargetLayer(params, bus.busId) ||
       points.some(
@@ -439,12 +444,17 @@ export function* routeReservedViaBusesSteps(
   if (!Number.isFinite(marginExtra) || marginExtra < 0)
     throw new Error("traceMarginExtra must be finite and non-negative")
   const sourceOrigin = params.routeFromSourcePads ?? false
+  const layerSpecificTerminals =
+    sourceOrigin || params.startLayerByBusId !== undefined
   const sourceTravelCost = params.sourceLayerTravelCost ?? 1
   if (!Number.isFinite(sourceTravelCost) || sourceTravelCost < 1)
     throw new Error("sourceLayerTravelCost must be finite and at least one")
   const targetLayers = [
     ...new Set(buses.map((bus) => getBusTargetLayer(params, bus.busId))),
   ]
+  const startLayers = params.startLayerByBusId
+    ? buses.map((bus) => params.startLayerByBusId!.get(bus.busId)!)
+    : []
   const routingLayers = sourceOrigin
     ? [
         ...new Set([
@@ -452,6 +462,7 @@ export function* routeReservedViaBusesSteps(
           "top",
           ...(params.transitLayers ?? []),
           ...targetLayers,
+          ...startLayers,
         ]),
       ]
     : [
@@ -459,6 +470,7 @@ export function* routeReservedViaBusesSteps(
           targetLayer,
           ...(params.transitLayers ?? []),
           ...targetLayers,
+          ...startLayers,
         ]),
       ]
   const targetZ = layerNames.indexOf(targetLayer)
@@ -468,6 +480,9 @@ export function* routeReservedViaBusesSteps(
     targetLayers.some((layer) => !layerNames.includes(layer)) ||
     (params.targetLayerByBusId &&
       buses.some((bus) => !params.targetLayerByBusId!.has(bus.busId))) ||
+    (params.startLayerByBusId &&
+      (sourceOrigin ||
+        buses.some((bus) => !params.startLayerByBusId!.has(bus.busId)))) ||
     routingLayers.some((layer) => !layerNames.includes(layer))
   )
     return null
@@ -498,11 +513,26 @@ export function* routeReservedViaBusesSteps(
           getBusTargetLayer(params, bus.busId),
         ),
     ) ||
-    allBuses.some((bus) =>
-      bus.connections.some((connection) =>
-        targetLayers.includes(connection.sourceLayer),
-      ),
-    )
+    (params.startLayerByBusId
+      ? buses.some((bus) => {
+          const start = params.startLayerByBusId!.get(bus.busId)!
+          return (
+            !(bus.allowedLayers ?? layerNames).includes(start) ||
+            !(
+              bus.routableEscapeLayers ??
+              bus.allowedLayers ??
+              layerNames
+            ).includes(start) ||
+            bus.connections.some(
+              (connection) => connection.sourceLayer === start,
+            )
+          )
+        })
+      : allBuses.some((bus) =>
+          bus.connections.some((connection) =>
+            targetLayers.includes(connection.sourceLayer),
+          ),
+        ))
   )
     return null
   const bounds = buses[0]!.sharedBoundary
@@ -641,12 +671,18 @@ export function* routeReservedViaBusesSteps(
         z:
           sourceOrigin && i === 0
             ? layerNames.indexOf(terminal.connection.sourceLayer)
-            : layerNames.indexOf(
-                getBusTargetLayer(
-                  params,
-                  owners.get(terminal.connection.connection.name)!.busId,
+            : i === 0 && params.startLayerByBusId
+              ? layerNames.indexOf(
+                  params.startLayerByBusId.get(
+                    owners.get(terminal.connection.connection.name)!.busId,
+                  )!,
+                )
+              : layerNames.indexOf(
+                  getBusTargetLayer(
+                    params,
+                    owners.get(terminal.connection.connection.name)!.busId,
+                  ),
                 ),
-              ),
         connectionName: terminal.connection.connection.name,
         rootConnectionName: terminal.connection.connection.name,
       })),
@@ -952,17 +988,19 @@ export function* routeReservedViaBusesSteps(
     const edgeOrigin = z * router.planeSize + previousCell
     const usesTerminal =
       (previousCell === segment.startCellId &&
-        (!sourceOrigin || previousZ === segment.startZ)) ||
-      (nextCell === segment.endCellId && (!sourceOrigin || z === segment.endZ))
+        (!layerSpecificTerminals || previousZ === segment.startZ)) ||
+      (nextCell === segment.endCellId &&
+        (!layerSpecificTerminals || z === segment.endZ))
     let classification = edgeClearance.get(edgeOrigin, nextCell, usesTerminal)
     if (classification === undefined) {
       const a =
         previousCell === segment.startCellId &&
-        (!sourceOrigin || previousZ === segment.startZ)
+        (!layerSpecificTerminals || previousZ === segment.startZ)
           ? segment.startPoint
           : pointAt(previousCell)
       const b =
-        nextCell === segment.endCellId && (!sourceOrigin || z === segment.endZ)
+        nextCell === segment.endCellId &&
+        (!layerSpecificTerminals || z === segment.endZ)
           ? segment.endPoint
           : pointAt(nextCell)
       if (!withinBounds(a) || !withinBounds(b)) {
