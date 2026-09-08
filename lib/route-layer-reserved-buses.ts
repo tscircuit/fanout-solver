@@ -173,6 +173,7 @@ export function getLayerReservedBusTargets(params: LayerReservedBusesParams) {
 export function* routeLayerReservedBusesSteps(
   params: LayerReservedBusesParams,
 ): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
+  const attemptedWideSourceRepairs = new Set<string>()
   const freshSourceTrial = () =>
     routeLayerReservedAttemptSteps(
       params,
@@ -181,6 +182,7 @@ export function* routeLayerReservedBusesSteps(
         failedNarrowGroup: false,
         failedWideMatching: false,
       },
+      attemptedWideSourceRepairs,
       { travelCost: 3, maximumIterations: 20_000_000 },
     )
   let deferFreshSourceTrial = false
@@ -195,6 +197,7 @@ export function* routeLayerReservedBusesSteps(
         failedNarrowGroup: false,
         failedWideMatching: false,
       },
+      attemptedWideSourceRepairs,
     )
     if (fixed) return fixed
     const targets = getLayerReservedBusTargets(params)
@@ -212,7 +215,8 @@ export function* routeLayerReservedBusesSteps(
   }
   const routed = yield* retryLayerReservedRoutingSteps(
     params.sourceOriginRouting ?? false,
-    (state) => routeLayerReservedAttemptSteps(params, state),
+    (state) =>
+      routeLayerReservedAttemptSteps(params, state, attemptedWideSourceRepairs),
   )
   // A directly aligned opposite pair needs its approach reserved while the
   // wide group crosses the field. Retain the unprotected trial after those
@@ -224,6 +228,7 @@ export function* routeLayerReservedBusesSteps(
 function* routeLayerReservedAttemptSteps(
   params: LayerReservedBusesParams,
   attemptState: LayerReservedAttemptState,
+  attemptedWideSourceRepairs: Set<string>,
   initialSourcePolicy?: { travelCost: number; maximumIterations: number },
 ): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
   const { buses, srj, layerNames } = params
@@ -888,19 +893,25 @@ function* routeLayerReservedAttemptSteps(
           }
           if (!tails.value) {
             // Preserve all existing successful matching and tail repairs.
-            // Only a failed constrained source group may reconsider its
-            // pad-clear prefix and one blocked shortest lane provisionally.
-            const sourceRepair =
-              params.sourceOriginRouting && shortenFirst
-                ? repairWideSourceLengthsSteps({
-                    ...params,
-                    inputSrj: srj,
-                    plans: completePlans,
-                    preparedBuses: buses,
-                    completedBuses,
-                    selectedBusIds: new Set(group.map((bus) => bus.busId)),
-                  })
-                : undefined
+            // Try this costly provisional cleanup once per original group,
+            // across source-cost, grid and shared-reservation retries. Repeating
+            // a failed repair can otherwise starve an existing successful retry.
+            const canRepairSources =
+              params.sourceOriginRouting &&
+              shortenFirst &&
+              group.every((bus) => !attemptedWideSourceRepairs.has(bus.busId))
+            if (canRepairSources)
+              for (const bus of group) attemptedWideSourceRepairs.add(bus.busId)
+            const sourceRepair = canRepairSources
+              ? repairWideSourceLengthsSteps({
+                  ...params,
+                  inputSrj: srj,
+                  plans: completePlans,
+                  preparedBuses: buses,
+                  completedBuses,
+                  selectedBusIds: new Set(group.map((bus) => bus.busId)),
+                })
+              : undefined
             let repaired = sourceRepair?.next()
             while (repaired && !repaired.done) {
               yield {

@@ -25,7 +25,7 @@ interface RepairWideSourceLengthsParams {
 /**
  * A source prefix can itself exceed the complete bus's length allowance.
  * Shorten that retained copper, distribute the remaining tuning, then try one
- * new first via for a blocked shortest lane. Everything stays provisional
+ * new first via when only one lane remains short. Everything stays provisional
  * until the entire completed group matches and every original source clears.
  */
 export function* repairWideSourceLengthsSteps(
@@ -125,16 +125,14 @@ export function* repairWideSourceLengthsSteps(
     if (!selected.some((candidate) => candidate.busId === bus.busId))
       return null
     const own = plans.filter((plan) => plan.busId === bus.busId)
-    const shortest = own.toSorted(
-      (a, b) =>
-        a.length - b.length || a.connectionName.localeCompare(b.connectionName),
-    )[0]!
-    if (
-      Math.max(...own.map((plan) => plan.length)) - shortest.length <=
-        bus.maxLengthSkew! + 1e-6 ||
-      plans.some((plan) => !plan.via)
+    const maximumLength = Math.max(...own.map((plan) => plan.length))
+    const deficient = own.filter(
+      (plan) => maximumLength - plan.length > bus.maxLengthSkew! + 1e-6,
     )
-      return null
+    // This bounded repair only frees one lane. Leave a group with several
+    // untuned lanes to the ordinary joint routing retries.
+    if (deficient.length !== 1 || plans.some((plan) => !plan.via)) return null
+    const shortest = deficient[0]!
     const connection = byIndex.get(shortest.connectionIndex)!
     const replacements = yield* routeReservedViaBusesSteps({
       ...params,
