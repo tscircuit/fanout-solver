@@ -25,12 +25,12 @@ test("captures the isolated AM62L DDR4 processor fanout", async () => {
   const { generatedFrom, simpleRouteJson, solverOptions } = fixture
   expect(generatedFrom).toEqual({
     repository: "https://github.com/tscircuit/dataset-fanout31-am62l",
-    commit: "a0ac381440acf6ea47784c0f32b97f4932200896",
+    commit: "8eabec2516c5066d43ec7672511a1134430c5d45",
     sample: "samples/73-am62l-ddr4-processor.tsx",
     generator: "scripts/generate-repro/generate-am62l-ddr4-processor.tsx",
   })
   expect(simpleRouteJson.connections).toHaveLength(49)
-  expect(simpleRouteJson.obstacles).toHaveLength(469)
+  expect(simpleRouteJson.obstacles).toHaveLength(422)
   expect(simpleRouteJson.traces ?? []).toHaveLength(0)
   expect(simpleRouteJson.layerCount).toBe(10)
   expect(simpleRouteJson.minTraceWidth).toBe(0.08)
