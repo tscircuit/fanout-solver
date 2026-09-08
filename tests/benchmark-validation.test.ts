@@ -18,6 +18,17 @@ test("benchmark worker requires validated AM62L fanout and records constructor e
   expect(row.validatedBreakouts).toBe(row.connections)
   expect(row.svg).toContain("<svg")
   expect(row.svg).not.toMatch(/[\t ]+\n/)
+  expect(row.turnDensitySamples).toHaveLength(8)
+  expect(row.turnDensity?.traceCount).toBe(8)
+  expect(row.turnDensity?.median).toBeNumber()
+  expect(row.signalTurnDensity).toEqual(row.turnDensity)
+  for (const measured of row.turnDensitySamples!) {
+    expect(measured.sample).toBe(sample.id)
+    expect(measured.metric.pcbTraceId).toBe(measured.trace.pcb_trace_id)
+    expect(measured.metric.max90DegreeTurns).toBeGreaterThanOrEqual(0)
+    expect(measured.metric.spanMm).toBe(5)
+    expect(measured.isPlaneTermination).toBe(false)
+  }
   const invalid = solveBenchmarkSample({
     ...sample,
     solverOptions: { ...sample.solverOptions, viaDiameter: -1 },
@@ -25,4 +36,7 @@ test("benchmark worker requires validated AM62L fanout and records constructor e
   expect(invalid.status).toBe("error")
   expect(invalid.error).toBeTruthy()
   expect(invalid.svg).toBeUndefined()
+  expect(invalid.turnDensitySamples).toBeUndefined()
+  expect(invalid.turnDensity).toBeUndefined()
+  expect(invalid.signalTurnDensity).toBeUndefined()
 }, 30_000)

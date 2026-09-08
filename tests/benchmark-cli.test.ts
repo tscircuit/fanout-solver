@@ -10,6 +10,7 @@ test("benchmark shell entrypoint writes complete ordered JSON and Markdown repor
     await writeFile(join(directory, "01-top-left-offset.svg"), "stale")
     await writeFile(join(directory, "02-top-center.svg"), "stale")
     await writeFile(join(directory, "11-left-center.svg"), "unselected")
+    await writeFile(join(directory, "trace-turn-density.svg"), "stale")
     const child = Bun.spawn(
       [
         "bash",
@@ -54,6 +55,38 @@ test("benchmark shell entrypoint writes complete ordered JSON and Markdown repor
       if (row.status === "solved")
         expect(await snapshot.text()).toContain("<svg")
       expect(row).not.toHaveProperty("svg")
+      expect(row).not.toHaveProperty("turnDensitySamples")
+      if (row.status === "solved") {
+        expect(row.turnDensity?.traceCount).toBe(row.routed)
+      } else {
+        expect(row.turnDensity).toBeUndefined()
+      }
+    }
+    const turnDensity = await Bun.file(
+      join(directory, "trace-turn-density.json"),
+    ).json()
+    expect(turnDensity.metric).toBe("5mm 90 degree turns")
+    expect(turnDensity.spanMm).toBe(5)
+    expect(turnDensity.coverage.selectedSamples).toBe(2)
+    expect(turnDensity.coverage.pendingSamples).toBe(0)
+    const solvedRows = report.rows.filter((row) => row.status === "solved")
+    expect(turnDensity.coverage.solvedSamples).toBe(solvedRows.length)
+    expect(turnDensity.coverage.excludedSamples).toBe(2 - solvedRows.length)
+    const measuredTraceCount = solvedRows.reduce(
+      (sum, row) => sum + row.routed,
+      0,
+    )
+    expect(turnDensity.summary.traceCount).toBe(measuredTraceCount)
+    expect(turnDensity.traces).toHaveLength(measuredTraceCount)
+    const qualitySvg = await readFile(
+      join(directory, "trace-turn-density.svg"),
+      "utf8",
+    )
+    expect(qualitySvg).toContain("<svg")
+    expect(qualitySvg).toContain("5mm 90 degree turns")
+    if (solvedRows.length === 0) {
+      expect(turnDensity.summary.median).toBeNull()
+      expect(qualitySvg).toContain("No complete validated routes yet")
     }
     expect(await readFile(join(directory, "11-left-center.svg"), "utf8")).toBe(
       "unselected",
@@ -69,6 +102,9 @@ test("benchmark shell entrypoint writes complete ordered JSON and Markdown repor
       "135 for AM62L; 162 for RK3308; 171 for K230; 102 for i.MX6ULL; 128 for T113-S3; 322 for AM3352",
     )
     expect(markdown).not.toMatch(/SRJ19|SRJ29|dataset0[1-8]/)
+    expect(markdown).toContain(
+      "[trace-turn-density.svg](trace-turn-density.svg)",
+    )
     for (const [sampleId, connections] of [
       ["13-rk3308-top-left-offset", 162],
       ["25-k230-top-left-offset", 171],
