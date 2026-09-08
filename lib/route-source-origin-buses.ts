@@ -345,7 +345,30 @@ export function* routeSourceOriginBusesSteps(
   }
 }
 
-/** Dense fields with a wide, fixed-layer bus need joint first-via ordering. */
+/** Several smaller buses can impose the same constrained-layer ordering. */
+export function hasSplitFixedWideLayer(buses: readonly PreparedBus[]): boolean {
+  const wide = buses.filter(
+    (bus) =>
+      bus.termination.type === "boundary" &&
+      bus.connections.length >= 8 &&
+      bus.allowedLayers?.length === 1 &&
+      bus.allowedLayers[0] !== "top",
+  )
+  // Preserve the existing joint-source policy for a single wide bus.
+  if (wide.some((bus) => bus.connections.length >= 16)) return false
+  return wide.some((first, index) =>
+    wide
+      .slice(index + 1)
+      .some(
+        (second) =>
+          second.componentId === first.componentId &&
+          second.exitEdge === first.exitEdge &&
+          second.allowedLayers![0] === first.allowedLayers![0],
+      ),
+  )
+}
+
+/** Dense fields with a wide, fixed-layer group need joint first-via ordering. */
 export function shouldUseSourceOriginRouting(
   buses: readonly PreparedBus[],
   allowBlindAndBuriedVias: boolean,
@@ -367,11 +390,13 @@ export function shouldUseSourceOriginRouting(
   if (
     !edge ||
     wide.some((bus) => bus.exitEdge !== edge) ||
-    !wide.some(
-      (bus) =>
-        bus.connections.length >= 16 &&
-        bus.allowedLayers?.length === 1 &&
-        bus.allowedLayers[0] !== "top",
+    !(
+      wide.some(
+        (bus) =>
+          bus.connections.length >= 16 &&
+          bus.allowedLayers?.length === 1 &&
+          bus.allowedLayers[0] !== "top",
+      ) || hasSplitFixedWideLayer(wide)
     )
   )
     return false

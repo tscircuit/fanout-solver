@@ -44,7 +44,7 @@ export class LayerRoutingAttempts {
             transitLayers: options.transitLayers,
           },
     ]
-    if (options.preferAlternateOrder && options.wideSingleLayer) {
+    if (options.preferAlternateOrder) {
       this.originalOrder = this.pending[0]!
       this.preferredOrder = { ...this.originalOrder, shuffleSeed: 2 }
       this.pending[0] = this.preferredOrder

@@ -11,6 +11,7 @@ import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
 import { hasCompressedExitConvergence } from "./compressed-exit-convergence"
 import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
 import {
+  hasSplitFixedWideLayer,
   prepareSourceOriginReservations,
   routeSourceOriginBusesSteps,
 } from "./route-source-origin-buses"
@@ -168,6 +169,20 @@ export function getLayerReservedBusTargets(params: LayerReservedBusesParams) {
 export function* routeLayerReservedBusesSteps(
   params: LayerReservedBusesParams,
 ): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
+  if (params.sourceOriginRouting && hasSplitFixedWideLayer(params.buses)) {
+    // Keep every ordinary successful route intact. If the fixed-source
+    // strategy fails, jointly free the shared constrained buses' first vias
+    // before retrying around a fresh set of source reservations.
+    const fixed = yield* routeLayerReservedAttemptSteps(
+      { ...params, sourceOriginRouting: false },
+      {
+        reserveFutureApproaches: true,
+        failedNarrowGroup: false,
+        failedWideMatching: false,
+      },
+    )
+    if (fixed) return fixed
+  }
   return yield* retryLayerReservedRoutingSteps(
     params.sourceOriginRouting ?? false,
     (state) => routeLayerReservedAttemptSteps(params, state),
@@ -222,6 +237,8 @@ function* routeLayerReservedAttemptSteps(
     fixedViaPointsByConnectionIndex,
     clearance: params.clearance,
   })
+  const splitFixedWideLayer =
+    params.sourceOriginRouting && hasSplitFixedWideLayer(buses)
   let committedOpposedPairSources = false
   for (const [layer, group] of ordered) {
     const maximumBusSize = Math.max(
@@ -280,18 +297,23 @@ function* routeLayerReservedAttemptSteps(
       retrySourceOriginFreshReservations:
         useSourceOrigin && attemptState.reserveFutureApproaches,
       preferAlternateOrder:
-        !params.sourceOriginRouting &&
-        shortenFirst &&
-        layer === ordered[0]![0] &&
-        opposedSourceGroups.some((opposed) =>
-          group.every((bus) =>
-            opposed.every(
-              (pair) =>
-                pair.componentId === bus.componentId &&
-                pair.exitEdge === bus.exitEdge,
+        (!params.sourceOriginRouting &&
+          shortenFirst &&
+          layer === ordered[0]![0] &&
+          opposedSourceGroups.some((opposed) =>
+            group.every((bus) =>
+              opposed.every(
+                (pair) =>
+                  pair.componentId === bus.componentId &&
+                  pair.exitEdge === bus.exitEdge,
+              ),
             ),
-          ),
-        ),
+          )) ||
+        (splitFixedWideLayer &&
+          !shortenFirst &&
+          maximumBusSize > 2 &&
+          transitLayers.length > 0 &&
+          layer === ordered.at(-1)![0]),
       firstRipCost: maximumBusSize <= 2 ? 256 : 64,
       transitLayers,
       allTransitLayers,
@@ -299,6 +321,9 @@ function* routeLayerReservedAttemptSteps(
       sourceTransitRipCost: preferMappedSourceTransit ? 64 : 8,
       preferSourceOrigin:
         opposedPairs ||
+        (splitFixedWideLayer &&
+          maximumBusSize <= 2 &&
+          previousAccepted.length > 0) ||
         preferMappedSourceOrigin ||
         hasCompressedExitConvergence({
           ...params,
@@ -555,6 +580,21 @@ function* routeLayerReservedAttemptSteps(
             ? 1_000
             : undefined,
         )
+      }
+      if (
+        !matched.plans &&
+        repairConstrainedSourcePairs &&
+        splitFixedWideLayer &&
+        attempt.routeFromSourcePads
+      ) {
+        // Joint first-via placement can leave enough clear source copper to
+        // tune a complete pair without moving either first via. Try that
+        // bounded tuning window before rerouting the pair's source escapes.
+        const originalPrefixMatching = allowSourcePrefixMatching
+        allowSourcePrefixMatching = true
+        const sourcePrefixMatched = matchCompletePlans(1_000)
+        if (sourcePrefixMatched.plans) matched = sourcePrefixMatched
+        else allowSourcePrefixMatching = originalPrefixMatching
       }
       if (
         !matched.plans &&

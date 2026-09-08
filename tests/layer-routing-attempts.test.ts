@@ -221,4 +221,26 @@ test("layer retries preserve the first successful choice and distinguish topolog
     transitLayers: [],
   })
   expect(firstPreferredSuccess.next()).toBeUndefined()
+  for (const failure of ["routing", "lengths"] as const) {
+    const flexible = new LayerRoutingAttempts({
+      ...options,
+      transitLayers: ["inner5"],
+      allTransitLayers: ["inner5"],
+      preferAlternateOrder: true,
+    })
+    const preferred = flexible.next()!
+    expect(preferred).toEqual({
+      ripCost: 64,
+      shuffleSeed: 2,
+      transitLayers: ["inner5"],
+    })
+    flexible.failed(preferred, failure)
+    const original = flexible.next()!
+    expect(original).toEqual({ ...preferred, shuffleSeed: 1 })
+    flexible.failed(original, "routing")
+    const cost = flexible.next()!
+    expect(cost).toEqual({ ...original, ripCost: 256 })
+    flexible.failed(cost, "routing")
+    expect(flexible.next()).toBeUndefined()
+  }
 })
