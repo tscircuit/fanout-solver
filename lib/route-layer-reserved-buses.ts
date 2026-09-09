@@ -31,6 +31,7 @@ import { routeReservedViaBusesSteps } from "./route-reserved-via-buses"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import { mergeLayeredBoundaryTargets } from "./merge-layered-boundary-targets"
 import { hasAlignedOppositeApproach } from "./aligned-opposite-approach"
+import { hasOppositeWideExitOverSourceField } from "./opposite-wide-exit-over-source-field"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
 import { rerouteOverlongBusLanesSteps } from "./reroute-overlong-bus-lanes"
 import { repairBusLengthsWithTransitSteps } from "./repair-bus-lengths-with-transit"
@@ -198,11 +199,14 @@ export function* routeLayerReservedBusesSteps(
     )
   let deferFreshSourceTrial = false
   if (params.sourceOriginRouting && hasSplitFixedWideLayer(params.buses)) {
+    const targets = getLayerReservedBusTargets(params)
     // Keep the initial fixed-source attempt first. Once its topology fails,
-    // an opposed field can benefit from jointly choosing new first vias
-    // before another route order around the same source reservations.
+    // an exit across the source field can benefit from choosing new first
+    // vias. Exterior approaches retain the original fixed-source retries.
     const retryPause: FixedRoutingRetryPause = {
-      requested: hasOppositeFixedWideBus(params.buses),
+      requested:
+        !!targets &&
+        hasOppositeWideExitOverSourceField(params.buses, targets.exits),
       reached: false,
     }
     const fixedSteps = routeLayerReservedAttemptSteps(
@@ -228,7 +232,6 @@ export function* routeLayerReservedBusesSteps(
       // source-placement strategies below cannot finish the full circuit.
       deferredFixedRouting = fixedSteps
     }
-    const targets = getLayerReservedBusTargets(params)
     if (hasOppositeFixedWideBus(params.buses)) {
       deferFreshSourceTrial =
         !!targets && hasAlignedOppositeApproach(params.buses, targets.exits)
