@@ -33,7 +33,7 @@ export interface FinalFanoutPlanNormalizationParams
   preparedBuses: readonly PreparedBus[]
   viaDiameter: number
   viaHoleDiameter: number
-  /** Repair legacy plane-only source paths before preserving their via joins. */
+  /** Repair source-only plane drops with no separate endpoint copper. */
   repairPlaneSourceCorners?: boolean
 }
 const EPSILON = 1e-7
@@ -376,6 +376,9 @@ function normalizePlaneSourcePath(
     plan.termination.type !== "plane" ||
     !plan.via ||
     plan.additionalVias?.length ||
+    plan.planeEndpointTrace ||
+    plan.planeEndpointSegments?.length ||
+    plan.planeEndpointVia ||
     plan.segments.length !== (plan.sourceEscapeSegmentCount ?? 1)
   )
     return null
@@ -503,10 +506,7 @@ function normalizePlaneSourcePath(
     trace,
     segments,
     sourceEscapeSegmentCount: segments.length,
-    length: [...segments, ...(plan.planeEndpointSegments ?? [])].reduce(
-      (total, s) => total + distance(s.start, s.end),
-      0,
-    ),
+    length: segments.reduce((total, s) => total + distance(s.start, s.end), 0),
   }
 }
 

@@ -176,6 +176,76 @@ test("normalizes plane source corners without moving pads, physical vias, or nei
     checkedViaCount: 2,
     issues: [],
   })
+  // A separate endpoint leg is a different copper partition. Source-only
+  // repair must reject it instead of reclassifying any of that copper.
+  const endpointStart = { x: 0.75, y: -0.75 }
+  const endpointEnd = { x: 1.25, y: -0.75 }
+  const endpointPlan = {
+    ...plans[0]!,
+    length: plans[0]!.length + 0.5,
+    planeEndpointSegments: [
+      {
+        start: endpointStart,
+        end: endpointEnd,
+        width: rules.traceWidth,
+        layer: "top",
+      },
+    ],
+    planeEndpointVia: {
+      center: endpointStart,
+      diameter: rules.viaDiameter,
+      holeDiameter: rules.viaHoleDiameter,
+      fromLayer: "inner1",
+      toLayer: "top",
+      spanLayers: layerNames,
+    },
+    planeEndpointTrace: {
+      type: "pcb_trace" as const,
+      pcb_trace_id: "separate-plane-endpoint",
+      connection_name: plans[0]!.connectionName,
+      route: [
+        {
+          route_type: "wire" as const,
+          ...endpointStart,
+          layer: "inner1",
+          width: rules.traceWidth,
+        },
+        {
+          route_type: "via" as const,
+          ...endpointStart,
+          from_layer: "inner1",
+          to_layer: "top",
+          via_diameter: rules.viaDiameter,
+          via_hole_diameter: rules.viaHoleDiameter,
+        },
+        {
+          route_type: "wire" as const,
+          ...endpointStart,
+          layer: "top",
+          width: rules.traceWidth,
+        },
+        {
+          route_type: "wire" as const,
+          ...endpointEnd,
+          layer: "top",
+          width: rules.traceWidth,
+        },
+      ],
+    },
+  }
+  const separateEndpointPlans = [endpointPlan, plans[1]!]
+  const endpointBefore = JSON.stringify(separateEndpointPlans)
+  expect(
+    normalizeFanoutPlanCorners({
+      ...rules,
+      inputSrj,
+      preparedBuses,
+      plans: separateEndpointPlans,
+      layerNames,
+      repairPlaneSourceCorners: true,
+    }),
+  ).toBeNull()
+  expect(JSON.stringify(separateEndpointPlans)).toBe(endpointBefore)
   const blockedInput = {
     ...inputSrj,
     obstacles: [
