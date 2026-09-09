@@ -11,14 +11,10 @@ test("outward plane escape in a routed RC supply filter", async () => {
       termination: { type: "plane", layer: "inner2" },
     })),
   )
-  expect(result.phases[0].failed).toBe(true)
-  expect(result.phases[0].error).toBe(
-    "FanoutSolver: best layer assignment routed 3/4 connections",
-  )
-  expect(
-    result.errors.filter((error) => error.type === "pcb_autorouting_error"),
-  ).toEqual([expect.objectContaining({ message: result.phases[0].error })])
-  // Core commits a group's copper only after every phase has succeeded.
-  expect(result.traceCount).toBe(0)
+  expect(result.phases[0].solved).toBe(true)
+  expect(result.phases[0].failed).toBe(false)
+  expect(result.phases[0].error).toBeNull()
+  expect(result.errors).toEqual([])
+  expect(result.traceCount).toBe(9)
   await expect(result.svg).toMatchSvgSnapshot(import.meta.path)
 }, 60_000)
