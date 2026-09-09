@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { getSvgFromGraphicsObject } from "graphics-debug"
+import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
 import fixture from "./fixtures/dataset31-k230-right-center.json"
 import { FanoutSolver } from "../lib/fanout-solver"
 import { getLayerReservedBusTargets } from "../lib/route-layer-reserved-buses"
@@ -89,7 +90,8 @@ test("routes coupled control buses and tunes their complete source-routed pairs"
     }
   }
   expect(JSON.stringify(input)).toBe(before)
-  await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
+  await expectSvgSnapshotWithActual(
+    getSvgFromGraphicsObject(solver.visualize()),
     import.meta.path,
   )
   // The benchmark independently preserves its 120-second routing deadline.
