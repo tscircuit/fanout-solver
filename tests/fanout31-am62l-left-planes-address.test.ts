@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
+import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
 import { getSvgFromGraphicsObject } from "graphics-debug"
+import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
+import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import { createAm62lRamLeftSubset } from "../datasets/dataset08"
 import { FanoutSolver } from "../lib/fanout-solver"
 
@@ -17,6 +20,15 @@ test("routes the RAM-left address/control bus with all 102 plane drops", async (
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
+  expectStraightOr45Fanout(output.fanoutTraces)
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: simpleRouteJson,
+      routedSrj: { ...output.simpleRouteJson, traces: output.fanoutTraces },
+      clearance: solver.config.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, checkedTraceCount: 110, issues: [] })
   expect(output.validation).toEqual({
     valid: true,
     checkedConnectionCount: 110,
@@ -24,7 +36,8 @@ test("routes the RAM-left address/control bus with all 102 plane drops", async (
     issues: [],
   })
   expect(output.planeTerminations).toHaveLength(102)
-  await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
+  await expectSvgSnapshotWithActual(
+    getSvgFromGraphicsObject(solver.visualize()),
     import.meta.path,
   )
 }, 120_000)

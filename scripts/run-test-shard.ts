@@ -42,10 +42,15 @@ console.log(
 )
 for (const testFile of selectedTestFiles) console.log(`- ${testFile}`)
 
-const testProcess = Bun.spawn(["bun", "test", ...selectedTestFiles], {
-  stdin: "inherit",
-  stdout: "inherit",
-  stderr: "inherit",
-})
+// Allow cold SVG renderer startup on macOS runners. Explicit test timeouts
+// still take precedence; benchmark worker deadlines are configured separately.
+const testProcess = Bun.spawn(
+  ["bun", "test", "--timeout", "15000", ...selectedTestFiles],
+  {
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  },
+)
 
 process.exit(await testProcess.exited)

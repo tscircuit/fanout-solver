@@ -17,10 +17,16 @@ test("routes corner-guided narrow buses before sweeping the center sources", asy
     structuredClone(fixture.simpleRouteJson),
     structuredClone(fixture.solverOptions),
   )
-  while (!solver.layerAssignments.length) solver.step()
-  const { routingSrj } = solver as unknown as {
+  const prepared = solver as unknown as {
     routingSrj: typeof fixture.simpleRouteJson
+    initializeRoutingSteps(): Generator<unknown, void, unknown>
   }
+  // Prepare the helper inputs through the production initializer. Calling
+  // step() can complete an unrelated staged fanout before exposing assignments.
+  const initialization = prepared.initializeRoutingSteps()
+  let initialized = initialization.next()
+  while (!initialized.done) initialized = initialization.next()
+  const { routingSrj } = prepared
   const bus = solver.preparedBuses.find(
     (owner) => owner.busId === "DDR_ADDR_CTRL",
   )!

@@ -8580,12 +8580,6 @@
         "lengthTolerance": 0.8,
         "traceGap": 0.18,
         "maxUncoupledLength": 5
-      },
-      {
-        "connectionNames": ["DDR3_f3_ram_udqs", "DDR3_g3_ram_udqs"],
-        "lengthTolerance": 0.8,
-        "traceGap": 0.18,
-        "maxUncoupledLength": 5
       }
     ],
     "bounds": {

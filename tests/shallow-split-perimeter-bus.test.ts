@@ -79,9 +79,16 @@ test("shortens a lower perimeter while preserving all pending source escapes", a
   })
   expect(addressValidation.brokenOutConnectionCount).toBe(24)
   // This focused stage intentionally leaves the other buses at their first via.
-  expect(addressValidation.issues).toHaveLength(138)
+  expect(
+    addressValidation.issues.filter((issue) => issue.code === "missing-plan"),
+  ).toHaveLength(138)
+  expect(
+    addressValidation.issues.filter(
+      (issue) => issue.code === "invalid-differential-pair",
+    ),
+  ).toHaveLength(3)
   expect(new Set(addressValidation.issues.map((issue) => issue.code))).toEqual(
-    new Set(["missing-plan"]),
+    new Set(["missing-plan", "invalid-differential-pair"]),
   )
   const pendingTraces: SimplifiedPcbTrace[] = result.sourceEscapes
     .filter((source) => !names.has(source.connectionName))

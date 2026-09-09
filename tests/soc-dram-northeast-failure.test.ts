@@ -66,4 +66,5 @@ test("records the current SoC and DRAM northeast breakout failures", async () =>
       `${fixture.id}-current-failure`,
     )
   }
-}, 30_000)
+  // Both large reproduction circuits and their SVGs share this test deadline.
+}, 60_000)

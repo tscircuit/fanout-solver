@@ -11,10 +11,10 @@ on:
 jobs:
   test-shard:
     name: test shard ${{ matrix.shard }}/8
-    # Keep visual routing snapshots on the ARM architecture used to generate
-    # the repository baselines; floating-point ties can select a different,
-    # still-valid route on x64.
-    runs-on: blacksmith-8vcpu-ubuntu-2404-arm
+    # Match the macOS ARM environment used to generate routing snapshots.
+    # OS math functions can differ by one ULP even on the same architecture,
+    # changing the native router's priority-queue ties and bounded search.
+    runs-on: macos-15
     timeout-minutes: 30
 
     strategy:
@@ -45,7 +45,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-snapshots-${{ matrix.shard }}
-          path: tests/**/__snapshots__/*.diff.png
+          path: |
+            tests/**/__snapshots__/*.diff.png
+            tests/**/__snapshots__/*.actual.svg
           if-no-files-found: ignore
 
   test:

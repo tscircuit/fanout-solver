@@ -1,3 +1,4 @@
+import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
 import type {
   Obstacle,
   SimpleRouteJson,
@@ -61,6 +62,8 @@ export interface RouteBusParams {
   rejectedViaMinimalCandidates?: FanoutRoutePlan[][]
   stopAfterFirstRejectedViaMinimalCandidate?: boolean
   fixedViaPointsByConnectionIndex?: ReadonlyMap<number, Point2D>
+  /** Complete boundary tracks for this bus, keyed by stable connection identity. */
+  fixedBoundaryTracksByConnectionIndex?: ReadonlyMap<number, number>
   /** Actual copper before the first via for previously reserved source escapes. */
   sourceEscapePaths?: ReadonlyMap<number, readonly Point2D[]>
   /** Exact winding spacing for staged narrow-channel routing. */
@@ -85,6 +88,10 @@ export interface RouteBusParams {
   planeCandidateSkipCount?: number
   /** Dense corner-band phase that preserves existing lane centers when leading lanes are prepended. */
   cornerBandTargetTrackOffset?: number
+  /** Fixed first corner slot, independent of the order in which buses route. */
+  cornerExitLaneOffset?: number
+  /** Optional search weighting for winding; does not change route validation. */
+  windingHeuristicWeight?: number
 }
 
 export interface RouteBusAlternativesProgress {
@@ -372,7 +379,6 @@ function getDistributedBoundaryTargetTracks(params: {
         getPointLayer(connection.targetPoint),
     ),
   )
-  if (layers.size < 2) return undefined
   const minimum = isHorizontal(boundaryDirection)
     ? bus.sharedBoundary.minY
     : bus.sharedBoundary.minX
@@ -395,7 +401,7 @@ function getDistributedBoundaryTargetTracks(params: {
     .toSorted((a, b) => a - b)
   const pitch = traceWidth + clearance
   if (
-    !params.allowLayerInterleaving &&
+    (layers.size < 2 || !params.allowLayerInterleaving) &&
     tracks.every(
       (track, index) =>
         index === 0 || track - tracks[index - 1]! >= pitch - 1e-9,
@@ -441,7 +447,13 @@ export function getBoundaryTargetTrack(params: {
   targetLayer?: string
   windingOrderIndex?: number
   allowLayerInterleaving?: boolean
+  fixedBoundaryTracksByConnectionIndex?: ReadonlyMap<number, number>
 }): number {
+  const fixedTrack = params.fixedBoundaryTracksByConnectionIndex?.get(
+    params.connection.connectionIndex,
+  )
+  if (fixedTrack !== undefined) return fixedTrack
+
   const requestedTrack = getPerpendicularAxis(
     params.connection.exitTargetPoint ?? params.connection.targetPoint,
     params.boundaryDirection,
@@ -482,7 +494,13 @@ export function getCornerTargetTrack(params: {
   targetLayer: string
   windingOrderIndex?: number
   cornerBandTargetTrackOffset?: number
+  fixedBoundaryTracksByConnectionIndex?: ReadonlyMap<number, number>
 }): number {
+  const fixedTrack = params.fixedBoundaryTracksByConnectionIndex?.get(
+    params.connection.connectionIndex,
+  )
+  if (fixedTrack !== undefined) return fixedTrack
+
   const {
     bus,
     connection,
@@ -1133,12 +1151,13 @@ function buildPlan(params: {
   initialViaPoint?: Point2D
   sourceEscapePath?: readonly Point2D[]
   cornerBandTargetTrackOffset?: number
+  fixedBoundaryTracksByConnectionIndex?: ReadonlyMap<number, number>
 }): FanoutRoutePlan {
   const {
     preparedConnection,
     bus,
     targetLayer,
-    track,
+    track: requestedTrack,
     exitAxis,
     layerNames,
     traceWidth,
@@ -1156,7 +1175,21 @@ function buildPlan(params: {
     initialViaPoint,
     sourceEscapePath,
     cornerBandTargetTrackOffset,
+    fixedBoundaryTracksByConnectionIndex,
   } = params
+  const fixedBoundaryTrack = fixedBoundaryTracksByConnectionIndex?.get(
+    preparedConnection.connectionIndex,
+  )
+  const cornerSide = getCornerSide(bus)
+  const boundaryDirection = bus.exitEdge
+    ? getDirectionForExitEdge(bus.exitEdge)
+    : bus.direction
+  const track =
+    fixedBoundaryTrack !== undefined &&
+    !cornerSide &&
+    bus.direction === boundaryDirection
+      ? fixedBoundaryTrack
+      : requestedTrack
   const sourcePoint = {
     x: preparedConnection.sourcePoint.x,
     y: preparedConnection.sourcePoint.y,
@@ -1220,14 +1253,11 @@ function buildPlan(params: {
     ? getAxis(spreadPoint, bus.direction)
     : viaAxis + sign * Math.abs(track - viaPerpendicularAxis)
   const doglegPoint = makePoint(targetLayerDoglegAxis, track, bus.direction)
-  const cornerSide = getCornerSide(bus)
-  const boundaryDirection = bus.exitEdge
-    ? getDirectionForExitEdge(bus.exitEdge)
-    : bus.direction
   const boundarySign = directionSign(boundaryDirection)
   const boundaryExitAxis = getExitAxis(bus, boundaryDirection)
   const boundaryTargetTrack =
-    cornerSide && bus.exitEdge
+    fixedBoundaryTrack ??
+    (cornerSide && bus.exitEdge
       ? getCornerTargetTrack({
           bus,
           connection: preparedConnection,
@@ -1249,7 +1279,7 @@ function buildPlan(params: {
             layerNames,
             targetLayer,
           })
-        : track
+        : track)
   const connectionRank = getConnectionRank(bus, preparedConnection)
   const localCornerSide = getLocalCornerSide(bus)
   const localChannelLaneIndex =
@@ -1298,7 +1328,9 @@ function buildPlan(params: {
       : makePoint(boundaryChannelAxis, track, boundaryDirection)
   const exitPoint = terminateAtVia
     ? viaPoint
-    : cornerSide || usesLayeredWindingChannel
+    : cornerSide ||
+        usesLayeredWindingChannel ||
+        fixedBoundaryTrack !== undefined
       ? makePoint(boundaryExitAxis, boundaryTargetTrack, boundaryDirection)
       : makePoint(exitAxis, track, bus.direction)
   const segments: RoutedSegment[] = []
@@ -1782,7 +1814,9 @@ function segmentIsClearOfObstacles(params: {
 }
 
 function getPlanSegments(plan: FanoutRoutePlan): RoutedSegment[] {
-  return [...plan.segments, ...(plan.planeEndpointSegments ?? [])]
+  return plan.planeEndpointSegments?.length
+    ? [...plan.segments, ...plan.planeEndpointSegments]
+    : plan.segments
 }
 
 function getPlanVias(plan: FanoutRoutePlan) {
@@ -1807,7 +1841,19 @@ function viaFitsInsidePlanSourcePad(
   )
 }
 
+interface StaticPlanSegmentCache {
+  obstaclesByLayer: Map<string, Obstacle[]>
+  byConnection: Map<
+    string,
+    WeakMap<
+      Obstacle,
+      [WeakMap<RoutedSegment, boolean>, WeakMap<RoutedSegment, boolean>]
+    >
+  >
+}
+
 function planIsStaticallyClear(params: {
+  segmentCache?: StaticPlanSegmentCache
   plan: FanoutRoutePlan
   srj: SimpleRouteJson
   sharedBoundary: Bounds
@@ -1835,20 +1881,45 @@ function planIsStaticallyClear(params: {
     return false
   }
   const segments = getPlanSegments(plan)
+  let segmentResults:
+    | [WeakMap<RoutedSegment, boolean>, WeakMap<RoutedSegment, boolean>]
+    | undefined
+  if (params.segmentCache) {
+    let contexts = params.segmentCache.byConnection.get(plan.connectionName)
+    if (!contexts) {
+      contexts = new WeakMap()
+      params.segmentCache.byConnection.set(plan.connectionName, contexts)
+    }
+    segmentResults = contexts.get(plan.sourceObstacle)
+    if (!segmentResults) {
+      segmentResults = [new WeakMap(), new WeakMap()]
+      contexts.set(plan.sourceObstacle, segmentResults)
+    }
+  }
   for (let index = 0; index < segments.length; index++) {
-    if (
-      !segmentIsClearOfObstacles({
-        segment: segments[index]!,
+    const segment = segments[index]!
+    const segmentIndex = index < plan.segments.length ? index : -1
+    const sourceExemption =
+      segmentIndex >= 0 &&
+      segmentIndex < (plan.sourceEscapeSegmentCount ?? 1) &&
+      segment.layer === plan.sourceLayer
+    const results = segmentResults?.[sourceExemption ? 1 : 0]
+    let clear = results?.get(segment)
+    if (clear === undefined) {
+      clear = segmentIsClearOfObstacles({
+        segment,
         plan,
-        segmentIndex: index < plan.segments.length ? index : -1,
+        segmentIndex,
         srj,
         allowSameNetMerges,
-        obstacles: srj.obstacles,
+        obstacles: params.segmentCache
+          ? (params.segmentCache.obstaclesByLayer.get(segment.layer) ?? [])
+          : srj.obstacles,
         clearance,
       })
-    ) {
-      return false
+      results?.set(segment, clear)
     }
+    if (!clear) return false
   }
   for (const via of getPlanVias(plan)) {
     for (const obstacle of srj.obstacles) {
@@ -1949,6 +2020,7 @@ function planIsClearOfPlans(params: {
   srj: SimpleRouteJson
   allowSameNetMerges: boolean
   clearance: number
+  segmentIndexes?: WeakMap<FanoutRoutePlan, RouteSegmentSpatialIndex>
   blockingBusCounts?: Map<string, number>
 }): boolean {
   const {
@@ -1958,6 +2030,7 @@ function planIsClearOfPlans(params: {
     allowSameNetMerges,
     clearance,
     blockingBusCounts,
+    segmentIndexes,
   } = params
   const planSegments = getPlanSegments(plan)
   const planVias = getPlanVias(plan)
@@ -1987,8 +2060,16 @@ function planIsClearOfPlans(params: {
     }
     const otherSegments = getPlanSegments(otherPlan)
     const otherVias = getPlanVias(otherPlan)
+    let segmentIndex = segmentIndexes?.get(otherPlan)
+    if (segmentIndexes && !segmentIndex) {
+      segmentIndex = new RouteSegmentSpatialIndex(otherSegments)
+      segmentIndexes.set(otherPlan, segmentIndex)
+    }
     for (const segment of planSegments) {
-      for (const otherSegment of otherSegments) {
+      for (const otherSegment of segmentIndex?.querySegment(
+        segment,
+        clearance,
+      ) ?? otherSegments) {
         if (!segmentsAreClear(segment, otherSegment, clearance)) {
           recordBlocker()
           return false
@@ -2006,7 +2087,8 @@ function planIsClearOfPlans(params: {
       }
     }
     for (const planVia of planVias) {
-      for (const otherSegment of otherSegments) {
+      for (const otherSegment of segmentIndex?.queryVia(planVia, clearance) ??
+        otherSegments) {
         if (
           planVia.spanLayers.includes(otherSegment.layer) &&
           distancePointToSegment(
@@ -2116,6 +2198,8 @@ export function fanoutPlansAreClear(params: {
   clearance: number
   allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
+  /** Share copper between declared plane drops without merging signal branches. */
+  allowSameNetPlaneMerges?: boolean
 }): boolean {
   const {
     plans,
@@ -2124,6 +2208,7 @@ export function fanoutPlansAreClear(params: {
     clearance,
     allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
+    allowSameNetPlaneMerges = false,
   } = params
   for (let index = 0; index < plans.length; index++) {
     const plan = plans[index]!
@@ -2134,12 +2219,27 @@ export function fanoutPlansAreClear(params: {
         sharedBoundary,
         clearance,
         allowBlindAndBuriedVias,
-        allowSameNetMerges,
+        allowSameNetMerges:
+          allowSameNetMerges ||
+          (allowSameNetPlaneMerges && plan.termination.type === "plane"),
       })
     ) {
       return false
     }
-    const otherPlans = plans.filter((_, otherIndex) => otherIndex !== index)
+    const otherPlans = plans.filter(
+      (other, otherIndex) =>
+        otherIndex !== index &&
+        !(
+          allowSameNetPlaneMerges &&
+          plan.termination.type === "plane" &&
+          other.termination.type === "plane" &&
+          connectionsShareElectricalNet(
+            srj,
+            plan.connectionName,
+            other.connectionName,
+          )
+        ),
+    )
     if (
       !planIsClearOfPlans({
         plan,
@@ -2153,6 +2253,148 @@ export function fanoutPlansAreClear(params: {
     }
   }
   return true
+}
+
+/** Reuse clearance results while a caller replaces immutable route plans.
+ * Keep one validator per fixed SRJ, boundary and rule set. A replacement plan
+ * is checked against every other plan; no changed copper inherits cached checks.
+ */
+export function createFanoutPlanClearanceValidator(
+  params: Omit<Parameters<typeof fanoutPlansAreClear>[0], "plans">,
+): ((plans: readonly FanoutRoutePlan[]) => boolean) & {
+  mutuallyClear(plans: readonly FanoutRoutePlan[]): boolean
+} {
+  const {
+    srj,
+    sharedBoundary,
+    clearance,
+    allowBlindAndBuriedVias = true,
+    allowSameNetMerges = false,
+    allowSameNetPlaneMerges = false,
+  } = params
+  const segmentCache: StaticPlanSegmentCache = {
+    obstaclesByLayer: new Map(),
+    byConnection: new Map(),
+  }
+  for (const obstacle of srj.obstacles)
+    for (const layer of obstacle.layers) {
+      const obstacles = segmentCache.obstaclesByLayer.get(layer) ?? []
+      obstacles.push(obstacle)
+      segmentCache.obstaclesByLayer.set(layer, obstacles)
+    }
+  // The same retained segment can appear in a plane or signal candidate.
+  // Its static result must not cross those different merge permissions.
+  const planeSegmentCache: StaticPlanSegmentCache =
+    allowSameNetPlaneMerges && !allowSameNetMerges
+      ? {
+          obstaclesByLayer: segmentCache.obstaclesByLayer,
+          byConnection: new Map(),
+        }
+      : segmentCache
+  const segmentIndexes = new WeakMap<
+    FanoutRoutePlan,
+    RouteSegmentSpatialIndex
+  >()
+  const staticResults = new WeakMap<FanoutRoutePlan, boolean>()
+  const mutualResults = new WeakMap<
+    FanoutRoutePlan,
+    WeakMap<FanoutRoutePlan, boolean>
+  >()
+  let lastClearPlans = new Set<FanoutRoutePlan>()
+  const staticallyClear = (plan: FanoutRoutePlan): boolean => {
+    let clear = staticResults.get(plan)
+    if (clear === undefined) {
+      clear = planIsStaticallyClear({
+        segmentCache:
+          plan.termination.type === "plane" ? planeSegmentCache : segmentCache,
+        plan,
+        srj,
+        sharedBoundary,
+        clearance,
+        allowBlindAndBuriedVias,
+        allowSameNetMerges:
+          allowSameNetMerges ||
+          (allowSameNetPlaneMerges && plan.termination.type === "plane"),
+      })
+      staticResults.set(plan, clear)
+    }
+    return clear
+  }
+  const clearOf = (plan: FanoutRoutePlan, other: FanoutRoutePlan): boolean => {
+    let pairs = mutualResults.get(plan)
+    if (!pairs) {
+      pairs = new WeakMap()
+      mutualResults.set(plan, pairs)
+    }
+    let clear = pairs.get(other)
+    if (clear === undefined) {
+      // Mutual copper clearance is symmetric, including both segment/via
+      // directions. Query the smaller route against the larger route's index
+      // instead of scanning every long meander beside a short source escape.
+      // This path does not collect directional blockingBusCounts.
+      const reverse =
+        getPlanSegments(plan).length > getPlanSegments(other).length
+      clear = planIsClearOfPlans({
+        plan: reverse ? other : plan,
+        otherPlans: [reverse ? plan : other],
+        segmentIndexes,
+        srj,
+        clearance,
+        allowSameNetMerges:
+          allowSameNetMerges ||
+          (allowSameNetPlaneMerges &&
+            plan.termination.type === "plane" &&
+            other.termination.type === "plane"),
+      })
+      pairs.set(other, clear)
+      let opposite = mutualResults.get(other)
+      if (!opposite) {
+        opposite = new WeakMap()
+        mutualResults.set(other, opposite)
+      }
+      opposite.set(plan, clear)
+    }
+    return clear
+  }
+  const validate = (plans: readonly FanoutRoutePlan[]): boolean => {
+    const currentPlans = new Set(plans)
+    if (currentPlans.size === plans.length) {
+      // Retained immutable plans already form a clear set. Check each new
+      // plan against the whole candidate in both directions; a failed
+      // candidate never becomes the basis for a later validation.
+      const changed = plans.filter((plan) => !lastClearPlans.has(plan))
+      for (const plan of plans) {
+        const retained = lastClearPlans.has(plan)
+        if (!retained && !staticallyClear(plan)) return false
+        // Keep the complete validator's directional check order. The order
+        // matters for quickly rejecting a candidate beside dense copper.
+        for (const other of retained ? changed : plans) {
+          if (plan === other) continue
+          if (!clearOf(plan, other)) return false
+        }
+      }
+    } else {
+      // Duplicate entries retain the original index-based self-checks.
+      for (const [index, plan] of plans.entries()) {
+        if (!staticallyClear(plan)) return false
+        for (const [otherIndex, other] of plans.entries()) {
+          if (otherIndex !== index && !clearOf(plan, other)) return false
+        }
+      }
+    }
+    lastClearPlans = currentPlans
+    return true
+  }
+  return Object.assign(validate, {
+    // Blocker discovery shares the exact route-pair checks and spatial indexes.
+    // A mutual-only query cannot establish a statically clear baseline.
+    mutuallyClear: (plans: readonly FanoutRoutePlan[]): boolean =>
+      plans.every((plan, index) =>
+        plans.every((other, otherIndex) =>
+          otherIndex === index ? true : clearOf(plan, other),
+        ),
+      ),
+  })
 }
 
 function routePlaneTerminatedBus(
@@ -2365,7 +2607,18 @@ function routePlaneTerminatedBus(
       (direction) => direction !== bus.direction,
     ),
   ]
-  for (const direction of candidateDirections) {
+  // Try existing candidates first, then centered escapes away from the component.
+  const candidateDirectionPasses = [
+    ...candidateDirections.map((direction) => ({
+      direction,
+      centeredOutward: false,
+    })),
+    ...candidateDirections.map((direction) => ({
+      direction,
+      centeredOutward: true,
+    })),
+  ]
+  for (const { direction, centeredOutward } of candidateDirectionPasses) {
     const directionalBus =
       direction === bus.direction ? bus : { ...bus, direction }
     const directionalPadSize = isHorizontal(direction)
@@ -2374,9 +2627,13 @@ function routePlaneTerminatedBus(
     const pairChannelFitsVia =
       getDirectionalPitch(directionalBus) / 2 - directionalPadSize / 2 >=
       viaDiameter / 2 + clearance - 1e-9
-    const viaHandednesses: readonly ViaHandedness[] = pairChannelFitsVia
-      ? [0]
-      : [1, -1]
+    const viaHandednesses: readonly ViaHandedness[] = centeredOutward
+      ? !pairChannelFitsVia && busIsOnOutwardComponentEdge(directionalBus)
+        ? [0]
+        : []
+      : pairChannelFitsVia
+        ? [0]
+        : [1, -1]
 
     for (const viaHandedness of viaHandednesses) {
       for (const connectionOrder of getConnectionOrders(directionalBus)) {
@@ -2614,6 +2871,7 @@ export function* routeBusAlternativesSteps(
     rejectedViaMinimalCandidates,
     stopAfterFirstRejectedViaMinimalCandidate = false,
     fixedViaPointsByConnectionIndex,
+    fixedBoundaryTracksByConnectionIndex,
     reservedVias = [],
     softReservedVias = [],
     viaMinimalOnly = false,
@@ -2624,10 +2882,19 @@ export function* routeBusAlternativesSteps(
     fixedViaFallbackRouteOrderAttempts = 24,
     allowFixedViaReservedExitFallback = false,
     cornerBandTargetTrackOffset,
+    cornerExitLaneOffset,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
     throw new Error(
       `FanoutSolver: maxAlternatives must be a positive integer, received ${maxAlternatives}`,
+    )
+  }
+  if (
+    cornerExitLaneOffset !== undefined &&
+    (!Number.isSafeInteger(cornerExitLaneOffset) || cornerExitLaneOffset < 0)
+  ) {
+    throw new Error(
+      `FanoutSolver: cornerExitLaneOffset must be a non-negative safe integer, received ${cornerExitLaneOffset}`,
     )
   }
   if (
@@ -2667,6 +2934,29 @@ export function* routeBusAlternativesSteps(
       alternatives.push(plan)
     }
     return alternatives
+  }
+  if (fixedBoundaryTracksByConnectionIndex) {
+    if (!bus.exitEdge)
+      throw new Error(
+        "FanoutSolver: fixed boundary tracks require an exit edge",
+      )
+    const vertical = bus.exitEdge === "left" || bus.exitEdge === "right"
+    const minimum = vertical ? bus.sharedBoundary.minY : bus.sharedBoundary.minX
+    const maximum = vertical ? bus.sharedBoundary.maxY : bus.sharedBoundary.maxX
+    for (const connection of bus.connections) {
+      const track = fixedBoundaryTracksByConnectionIndex.get(
+        connection.connectionIndex,
+      )
+      if (
+        track === undefined ||
+        !Number.isFinite(track) ||
+        track < minimum - 1e-9 ||
+        track > maximum + 1e-9
+      )
+        throw new Error(
+          `FanoutSolver: invalid fixed boundary track for ${connection.connection.name}`,
+        )
+    }
   }
   const exitAxis = getExitAxis(bus)
   const sourceObstacle = bus.connections[0]?.sourceObstacle
@@ -2727,8 +3017,25 @@ export function* routeBusAlternativesSteps(
   const alternatives: FanoutRoutePlan[][] = []
   const seenAlternativeKeys = new Set<string>()
   const cornerLaneOffsets = getCornerLaneOffsets(bus, acceptedPlans)
+  if (cornerExitLaneOffset !== undefined) {
+    cornerLaneOffsets.exit = cornerExitLaneOffset
+  }
 
   const addAlternative = (plans: FanoutRoutePlan[]): void => {
+    if (
+      fixedBoundaryTracksByConnectionIndex &&
+      plans.some((plan) => {
+        const track = fixedBoundaryTracksByConnectionIndex.get(
+          plan.connectionIndex,
+        )!
+        const actual =
+          bus.exitEdge === "left" || bus.exitEdge === "right"
+            ? plan.exitPoint.y
+            : plan.exitPoint.x
+        return Math.abs(actual - track) > 1e-9
+      })
+    )
+      return
     const key = plans
       .map(
         (plan) =>
@@ -2738,6 +3045,94 @@ export function* routeBusAlternativesSteps(
     if (seenAlternativeKeys.has(key)) return
     seenAlternativeKeys.add(key)
     alternatives.push(plans)
+  }
+
+  // A fixed source escape is also useful for an ordinary singleton whose
+  // boundary endpoint came directly from the SRJ, rather than layered guidance.
+  // Keep that endpoint and the original metadata; no winding order is needed.
+  if (
+    !busUsesCoordinatedWindingChannel(bus) &&
+    bus.exitEdge &&
+    bus.connections.length === 1 &&
+    layerNames.includes(targetLayer) &&
+    (bus.allowedLayers === undefined ||
+      bus.allowedLayers.includes(targetLayer)) &&
+    (bus.routableEscapeLayers === undefined ||
+      bus.routableEscapeLayers.includes(targetLayer)) &&
+    bus.connections[0]!.sourceLayer !== targetLayer &&
+    fixedViaPointsByConnectionIndex &&
+    params.sourceEscapePaths?.has(bus.connections[0]!.connectionIndex)
+  ) {
+    const connection = bus.connections[0]!
+    const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
+    const singletonSteps = routeViaMinimalWindingAlternativesSteps(
+      {
+        srj,
+        bus,
+        targetLayer,
+        terminals: [
+          {
+            connection,
+            viaPoint: fixedViaPointsByConnectionIndex.get(
+              connection.connectionIndex,
+            )!,
+            exitPoint: makePoint(
+              getExitAxis(bus, boundaryDirection),
+              getBoundaryTargetTrack({
+                fixedBoundaryTracksByConnectionIndex,
+                bus,
+                connection,
+                boundaryDirection,
+              }),
+              boundaryDirection,
+            ),
+          },
+        ],
+        acceptedPlans,
+        layerNames,
+        traceWidth,
+        viaDiameter,
+        viaHoleDiameter,
+        clearance,
+        allowBlindAndBuriedVias,
+        allowSameNetMerges,
+        maximumRouteOrderAttempts: 3,
+        reservedVias,
+        softReservedVias,
+        gridStepDivisor: 2,
+        gridStep: params.windingGridStep,
+        alignGridToPads: alignWindingGridToPads,
+        sourceEscapePaths: params.sourceEscapePaths,
+        heuristicWeight: params.windingHeuristicWeight,
+      },
+      maxAlternatives,
+      includeVisualization,
+    )
+    let singletonResult = singletonSteps.next()
+    while (!singletonResult.done) {
+      yield {
+        phase: "via-minimal-winding",
+        busId: bus.busId,
+        targetLayer,
+        winding: singletonResult.value,
+      }
+      singletonResult = singletonSteps.next()
+    }
+    for (const singletonPlans of singletonResult.value) {
+      if (
+        !fanoutPlansAreClear({
+          plans: [...acceptedPlans, ...singletonPlans],
+          srj,
+          sharedBoundary: bus.sharedBoundary,
+          clearance,
+          allowBlindAndBuriedVias,
+          allowSameNetMerges,
+        })
+      )
+        continue
+      addAlternative(singletonPlans)
+      if (alternatives.length >= maxAlternatives) return alternatives
+    }
   }
 
   if (busUsesCoordinatedWindingChannel(bus) && bus.exitEdge) {
@@ -3101,7 +3496,11 @@ export function* routeBusAlternativesSteps(
         }
       }
     }
-    if (alignWindingGridToPads && cornerSide) {
+    if (
+      alignWindingGridToPads &&
+      cornerSide &&
+      cornerExitLaneOffset === undefined
+    ) {
       const layerLocalExitOffset = getCornerLaneOffsets(
         bus,
         acceptedPlans.filter((plan) => plan.targetLayer === targetLayer),
@@ -3125,6 +3524,7 @@ export function* routeBusAlternativesSteps(
           terminalPattern.getViaHandedness(preparedConnection)
         const boundaryTrack = cornerSide
           ? getCornerTargetTrack({
+              fixedBoundaryTracksByConnectionIndex,
               bus,
               connection: preparedConnection,
               cornerExitLaneOffset:
@@ -3138,6 +3538,7 @@ export function* routeBusAlternativesSteps(
               cornerBandTargetTrackOffset,
             })
           : getBoundaryTargetTrack({
+              fixedBoundaryTracksByConnectionIndex,
               allowLayerInterleaving: terminalPattern.allowLayerInterleaving,
               bus,
               connection: preparedConnection,
@@ -3231,6 +3632,7 @@ export function* routeBusAlternativesSteps(
       seenTerminalSignatures.add(terminalSignature)
       const windingSteps = routeViaMinimalWindingAlternativesSteps(
         {
+          heuristicWeight: params.windingHeuristicWeight,
           srj,
           bus,
           targetLayer,
@@ -3330,6 +3732,7 @@ export function* routeBusAlternativesSteps(
     const finalTracks = bus.connections.map((preparedConnection) =>
       preferCornerBoundaryVia && getCornerSide(bus)
         ? getCornerTargetTrack({
+            fixedBoundaryTracksByConnectionIndex,
             bus,
             connection: preparedConnection,
             cornerExitLaneOffset: cornerLaneOffsets.exit,
@@ -3341,6 +3744,7 @@ export function* routeBusAlternativesSteps(
             cornerBandTargetTrackOffset,
           })
         : getBoundaryTargetTrack({
+            fixedBoundaryTracksByConnectionIndex,
             bus,
             connection: preparedConnection,
             boundaryDirection,
@@ -3556,6 +3960,7 @@ export function* routeBusAlternativesSteps(
         continue
       const sourceLayerSteps = routeViaMinimalWindingAlternativesSteps(
         {
+          heuristicWeight: params.windingHeuristicWeight,
           srj: sourceLayerSrj,
           bus,
           targetLayer: sourceLayer,
@@ -3605,6 +4010,7 @@ export function* routeBusAlternativesSteps(
       if (!boundarySide) {
         const targetSteps = routeViaMinimalWindingAlternativesSteps(
           {
+            heuristicWeight: params.windingHeuristicWeight,
             srj,
             bus,
             targetLayer,
@@ -3768,7 +4174,16 @@ export function* routeBusAlternativesSteps(
     }
   }
 
-  if (viaMinimalOnly) return alternatives
+  // The analytic fallback chooses its own dogbone and checks accepted copper
+  // only. It cannot replace an explicit source prefix or occupy a future hard
+  // reservation after the reservation-aware winding alternatives have failed.
+  if (
+    viaMinimalOnly ||
+    fixedViaPointsByConnectionIndex ||
+    params.sourceEscapePaths ||
+    reservedVias.length > 0
+  )
+    return alternatives
 
   const searchConnectionOrder = (
     connectionOrder: PreparedConnection[],
@@ -3850,6 +4265,7 @@ export function* routeBusAlternativesSteps(
         terminateAtVia: false,
         allowBlindAndBuriedVias,
         cornerBandTargetTrackOffset,
+        fixedBoundaryTracksByConnectionIndex,
       })
       if (
         !planIsClear({
@@ -3857,7 +4273,7 @@ export function* routeBusAlternativesSteps(
           otherPlans: [...acceptedPlans, ...candidatePlans],
           staticClearanceCache,
           blockingBusCounts,
-          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}`,
+          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
           srj,
           sharedBoundary: bus.sharedBoundary,
           clearance,

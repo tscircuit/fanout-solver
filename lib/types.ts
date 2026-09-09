@@ -270,6 +270,7 @@ export interface FanoutValidationIssue {
     | "unknown-plan"
     | "connection-mismatch"
     | "source-mismatch"
+    | "source-pad-reentry"
     | "termination-mismatch"
     | "not-broken-out"
     | "outside-routing-bounds"
@@ -286,7 +287,10 @@ export interface FanoutValidationIssue {
     | "different-net-trace-via-clearance"
     | "different-net-via-clearance"
     | "plan-length-mismatch"
+    | "fanout-normalization"
     | "bus-length-skew"
+    | "invalid-differential-pair"
+    | "differential-pair-length-skew"
   message: string
   connectionName?: string
   otherConnectionName?: string
