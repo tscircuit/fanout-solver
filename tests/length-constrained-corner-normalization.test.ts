@@ -1,11 +1,16 @@
 import { expect, test } from "bun:test"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import { getSvgFromGraphicsObject } from "graphics-debug"
+import { buildOutputSimpleRouteJson } from "lib/build-output"
+import { matchBusPlanLengths } from "lib/match-bus-lengths"
 import { normalizeFanoutPlanCorners } from "lib/normalize-fanout-plan-corners"
 import { prepareFanoutBuses } from "lib/prepare-buses"
 import { buildViaMinimalWindingPlan } from "lib/route-via-minimal-winding"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
+import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
+import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 
-test("a corner chamfer preserves the remaining length margin of a matched bus", () => {
+test("corner cleanup preserves matched lengths or physically retunes their lost margin", async () => {
   const bounds = { minX: -2, maxX: 3, minY: -2, maxY: 2 }
   const rules = {
     traceWidth: 0.08128,
@@ -115,4 +120,63 @@ test("a corner chamfer preserves the remaining length margin of a matched bus", 
     checkedViaCount: 2,
     issues: [],
   })
+
+  // Two chamfers together exceed the remaining matching margin even at the
+  // minimum trim. Keep real corner geometry and recover the lost length.
+  const tightBus = { ...bus, maxLengthSkew: oldSkew + 0.000001 }
+  const tightParams = {
+    ...rules,
+    inputSrj,
+    plans,
+    preparedBuses: [tightBus],
+    layerNames,
+  }
+  expect(normalizeFanoutPlanCorners(tightParams)).toBeNull()
+  const rematched = normalizeFanoutPlanCorners({
+    ...tightParams,
+    rematchRepairedLengths: (repaired) =>
+      matchBusPlanLengths({
+        inputSrj,
+        plans: repaired,
+        preparedBuses: [tightBus],
+        sharedBoundary: bounds,
+        clearance: rules.clearance,
+        maximumWorkUnits: 1000,
+        allowMatchingInsideDenseBounds: true,
+      }).plans,
+  })
+  expect(rematched).not.toBeNull()
+  expectStraightOr45Fanout(rematched!.map((p) => p.trace))
+  expect(
+    Math.abs(rematched![0]!.length - rematched![1]!.length),
+  ).toBeLessThanOrEqual(tightBus.maxLengthSkew + 1e-7)
+  for (let i = 0; i < 2; i++) {
+    expect(rematched![i]!.via).toBe(plans[i]!.via)
+    expect(rematched![i]!.sourcePoint).toBe(plans[i]!.sourcePoint)
+    expect(rematched![i]!.exitPoint).toBe(plans[i]!.exitPoint)
+  }
+  expect(JSON.stringify({ inputSrj, plans, buses })).toBe(before)
+  const output = buildOutputSimpleRouteJson({
+    inputSrj,
+    plans: rematched!,
+    layerNames,
+  })
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj,
+      routedSrj: output,
+      clearance: rules.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({
+    valid: true,
+    checkedTraceCount: 2,
+    checkedViaCount: 2,
+    issues: [],
+  })
+  await expect(
+    getSvgFromGraphicsObject(
+      visualizeSimpleRouteJson({ ...output, connections: [] }),
+    ),
+  ).toMatchSvgSnapshot(import.meta.path)
 })

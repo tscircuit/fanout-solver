@@ -38,8 +38,8 @@ export interface FinalFanoutPlanNormalizationParams
   repairPlaneSourceCorners?: boolean
   /** Repair signal source prefixes while retaining every via and target segment. */
   repairSignalSourceCorners?: boolean
-  /** Restore original bus/pair limits after moving an early boundary contact. */
-  rematchRepairedBoundaryLengths?: (
+  /** Restore original bus/pair limits after boundary or corner cleanup. */
+  rematchRepairedLengths?: (
     plans: readonly FanoutRoutePlan[],
   ) => FanoutRoutePlan[] | null
 }
@@ -546,7 +546,7 @@ function normalizePlaneSourcePath(
 
 /**
  * Final geometric gate after all tuning. Source prefixes are preserved unless
- * plane source repair is explicitly requested. Every physical via and exact
+ * source repair is explicitly requested. Every physical via and exact
  * exit is retained, and original length limits and full copper DRC still apply.
  */
 export function normalizeFanoutPlanCorners(
@@ -619,8 +619,8 @@ export function normalizeFanoutPlanCorners(
     // Removing an early boundary run can shorten one lane enough to invalidate
     // an already matched bus. Restore its length before selecting chamfers;
     // final geometry, physical-via, and measured-skew checks still apply below.
-    if (params.rematchRepairedBoundaryLengths) {
-      const rematched = params.rematchRepairedBoundaryLengths(plans)
+    if (params.rematchRepairedLengths) {
+      const rematched = params.rematchRepairedLengths(plans)
       if (!rematched) return null
       plans = rematched
     }
@@ -634,6 +634,7 @@ export function normalizeFanoutPlanCorners(
       continue
     const bus = owners.get(plan.busId)!
     let normalized: FanoutRoutePlan | null = null
+    let clearCandidate: FanoutRoutePlan | null = null
     // Try progressively smaller chamfers to preserve an already matched bus.
     // Sub-grid stubs can have less remaining length slack than the trace width.
     for (
@@ -650,6 +651,7 @@ export function normalizeFanoutPlanCorners(
         chamfer,
       )
       if (candidate) {
+        clearCandidate ??= candidate
         const own = plans
           .filter((p) => p.busId === bus.busId)
           .map((p) => (p === plan ? candidate.length : p.length))
@@ -678,6 +680,23 @@ export function normalizeFanoutPlanCorners(
         }
       }
       if (chamfer === 1e-6) break
+    }
+    // Several corners can consume even the smallest remaining matched-length
+    // margin. Use a clear normal-sized chamfer and physically retune the bus,
+    // rather than accepting excess skew or sub-tolerance corner geometry.
+    if (!normalized && clearCandidate && params.rematchRepairedLengths) {
+      const rematched = params.rematchRepairedLengths(
+        plans.map((p, candidateIndex) =>
+          candidateIndex === index ? clearCandidate! : p,
+        ),
+      )
+      const repaired = rematched?.find(
+        (p) => p.connectionIndex === plan.connectionIndex,
+      )
+      if (rematched && repaired && hasValidTurns(repaired.segments)) {
+        plans = rematched
+        normalized = repaired
+      }
     }
     if (!normalized) return null
     plans[index] = normalized

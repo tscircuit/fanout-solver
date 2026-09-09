@@ -1738,7 +1738,7 @@ export class FanoutSolver extends BaseSolver {
       plans,
       repairPlaneSourceCorners: true,
       repairSignalSourceCorners: true,
-      rematchRepairedBoundaryLengths: (repaired) =>
+      rematchRepairedLengths: (repaired) =>
         this.matchCompletePlanLengths(repaired, {
           maximumWorkUnits: 10_000,
           allowMatchingInsideDenseBounds: true,
