@@ -1,7 +1,6 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { distance } from "./geometry"
 import { matchBusPlanLengths } from "./match-bus-lengths"
-import { relocateShortLaneFirstVia } from "./relocate-short-lane-first-via"
 import {
   routeReservedViaBusesSteps,
   type ReservedViaBusesProgress,
@@ -21,8 +20,6 @@ interface RepairWideSourceLengthsParams {
   clearance: number
   viaDiameter: number
   viaHoleDiameter: number
-  /** Enable the extra via search only for the protected source-policy retry. */
-  allowFirstViaRelocation?: boolean
 }
 
 type WideSourceGeometry = Pick<
@@ -95,26 +92,6 @@ export function* repairWideSourceLengthsSteps(
       )
   }
   assertOriginals(params.plans)
-  const validateCompletePlans = (candidate: FanoutRoutePlan[]) => {
-    assertOriginals(candidate)
-    return validateRoutedCopperDrc({
-      inputSrj,
-      routedSrj: {
-        ...inputSrj,
-        traces: [
-          ...(inputSrj.traces ?? []),
-          ...candidate.flatMap((plan) => [
-            plan.trace,
-            ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
-          ]),
-        ],
-      },
-      clearance: params.clearance,
-      allowBlindAndBuriedVias: false,
-    }).valid
-      ? candidate
-      : null
-  }
   const completedIds = new Set(completedBuses.map((bus) => bus.busId))
   const unroutedSourceBuses = preparedBuses.filter(
     (bus) =>
@@ -168,17 +145,6 @@ export function* repairWideSourceLengthsSteps(
     // This bounded repair only frees one lane. Leave a group with several
     // untuned lanes to the ordinary joint routing retries.
     if (deficient.length !== 1 || plans.some((plan) => !plan.via)) return null
-    if (params.allowFirstViaRelocation) {
-      const beforeRelocation = plans
-      const relocated = relocateShortLaneFirstVia({ ...params, plans, bus })
-      if (relocated) {
-        plans = relocated
-        const relocatedMatch = match()
-        if (relocatedMatch.plans)
-          return validateCompletePlans(relocatedMatch.plans)
-        plans = beforeRelocation
-      }
-    }
     const shortest = deficient[0]!
     const connection = byIndex.get(shortest.connectionIndex)!
     const replacements = yield* routeReservedViaBusesSteps({
@@ -222,17 +188,24 @@ export function* repairWideSourceLengthsSteps(
     if (!replacements || replacements.length !== 1) return null
     plans = plans.map((plan) => (plan === shortest ? replacements[0]! : plan))
     matched = match()
-    // The one-lane native reroute can expose a different target-layer span for
-    // a first-via move. Reconsider that new topology after matching, while the
-    // complete group and its source reservations are still provisional.
-    if (!matched.plans && params.allowFirstViaRelocation) {
-      const relocated = relocateShortLaneFirstVia({ ...params, plans, bus })
-      if (relocated) {
-        plans = relocated
-        matched = match()
-      }
-    }
   }
   if (!matched.plans) return null
-  return validateCompletePlans(matched.plans)
+  assertOriginals(matched.plans)
+  return validateRoutedCopperDrc({
+    inputSrj,
+    routedSrj: {
+      ...inputSrj,
+      traces: [
+        ...(inputSrj.traces ?? []),
+        ...matched.plans.flatMap((plan) => [
+          plan.trace,
+          ...(plan.planeEndpointTrace ? [plan.planeEndpointTrace] : []),
+        ]),
+      ],
+    },
+    clearance: params.clearance,
+    allowBlindAndBuriedVias: false,
+  }).valid
+    ? matched.plans
+    : null
 }

@@ -382,31 +382,6 @@ function* routeLayerReservedAttemptSteps(
       wideSingleLayer: shortenFirst,
       retrySourceOriginPhysicalGridPhase:
         useSourceOrigin && !initialSourcePolicy,
-      // Retry an untunable outward-facing source group while preserving the
-      // approach corridors for later buses. Its original successful attempt
-      // keeps the usual source cost and never pays for this extra search.
-      retrySourceOriginProtectedReservations:
-        useSourceOrigin &&
-        !initialSourcePolicy &&
-        attemptState.reserveFutureApproaches &&
-        group.some((bus) => {
-          if (bus.connections.length < 16 || bus.maxLengthSkew === undefined)
-            return false
-          const axis =
-            bus.exitEdge === "left" || bus.exitEdge === "right" ? "x" : "y"
-          const sign =
-            bus.exitEdge === "left" || bus.exitEdge === "bottom" ? -1 : 1
-          const center =
-            axis === "x"
-              ? (bus.componentBounds.minX + bus.componentBounds.maxX) / 2
-              : (bus.componentBounds.minY + bus.componentBounds.maxY) / 2
-          const sourceCenter =
-            bus.connections.reduce(
-              (sum, connection) => sum + connection.sourcePoint[axis],
-              0,
-            ) / bus.connections.length
-          return sign * (sourceCenter - center) > 1e-7
-        }),
       retrySourceOriginFreshReservations:
         useSourceOrigin &&
         !initialSourcePolicy &&
@@ -974,19 +949,11 @@ function* routeLayerReservedAttemptSteps(
             // across source-cost, grid and shared-reservation retries. Repeating
             // a failed repair can otherwise starve an existing successful retry.
             const selectedBusIds = new Set(group.map((bus) => bus.busId))
-            // The single protected-source retry chooses new first vias. Give
-            // that distinct topology one cleanup without repeating repairs on
-            // subsequent cost/grid retries of the same provisional sources.
-            const protectedSourceRepair =
-              attempt.sourceLayerTravelCost === 3 &&
-              attempt.reserveFutureApproaches === true
-            const repairKey = (busId: string) =>
-              JSON.stringify([busId, protectedSourceRepair])
             const canRepairSources =
               params.sourceOriginRouting &&
               shortenFirst &&
               group.every(
-                (bus) => !attemptedWideSourceRepairs.has(repairKey(bus.busId)),
+                (bus) => !attemptedWideSourceRepairs.has(bus.busId),
               ) &&
               hasOverlongWideSourcePrefix({
                 plans: completePlans,
@@ -994,8 +961,7 @@ function* routeLayerReservedAttemptSteps(
                 selectedBusIds,
               })
             if (canRepairSources)
-              for (const bus of group)
-                attemptedWideSourceRepairs.add(repairKey(bus.busId))
+              for (const bus of group) attemptedWideSourceRepairs.add(bus.busId)
             const sourceRepair = canRepairSources
               ? repairWideSourceLengthsSteps({
                   ...params,
@@ -1004,7 +970,6 @@ function* routeLayerReservedAttemptSteps(
                   preparedBuses: buses,
                   completedBuses,
                   selectedBusIds,
-                  allowFirstViaRelocation: protectedSourceRepair,
                 })
               : undefined
             let repaired = sourceRepair?.next()
