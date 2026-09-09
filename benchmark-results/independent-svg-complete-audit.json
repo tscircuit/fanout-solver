@@ -154,6 +154,15 @@
   },
   {
     "declaredPairs": 3,
+    "sample": "21-rk3308-bottom-left-offset",
+    "connections": 162,
+    "segments": 4038,
+    "corners": 3817,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
     "sample": "22-rk3308-left-bottom-offset",
     "connections": 162,
     "segments": 1012,
@@ -390,8 +399,8 @@
     "declaredPairs": 3,
     "sample": "50-t113s3-top-center",
     "connections": 128,
-    "segments": 2278,
-    "corners": 2025,
+    "segments": 2235,
+    "corners": 1982,
     "orderIssues": [],
     "issues": []
   },
@@ -399,8 +408,8 @@
     "declaredPairs": 3,
     "sample": "53-t113s3-right-center",
     "connections": 128,
-    "segments": 2352,
-    "corners": 2086,
+    "segments": 2307,
+    "corners": 2041,
     "orderIssues": [],
     "issues": []
   },
@@ -408,8 +417,8 @@
     "declaredPairs": 3,
     "sample": "56-t113s3-bottom-center",
     "connections": 128,
-    "segments": 2939,
-    "corners": 2676,
+    "segments": 2808,
+    "corners": 2545,
     "orderIssues": [],
     "issues": []
   },
@@ -417,8 +426,8 @@
     "declaredPairs": 3,
     "sample": "59-t113s3-left-center",
     "connections": 128,
-    "segments": 2573,
-    "corners": 2310,
+    "segments": 2552,
+    "corners": 2289,
     "orderIssues": [],
     "issues": []
   }
