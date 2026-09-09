@@ -27,6 +27,7 @@ const fixture = ${JSON.stringify(fixture)}
 const snapshots = ${JSON.stringify(join(directory, "__snapshots__"))}
 const expected = ${JSON.stringify(expected)}
 const received = ${JSON.stringify(received)}
+console.log('SVG matcher initialized')
 mkdirSync(snapshots)
 for (const name of [undefined, "named"]) {
   const stem = snapshots + '/fixture' + (name ? '-' + name : '')
@@ -41,6 +42,7 @@ for (const name of [undefined, "named"]) {
   assert.equal(readFileSync(stem + '.actual.svg', 'utf8'), received)
   assert.equal(readFileSync(stem + '.snap.svg', 'utf8'), expected)
   assert.equal(existsSync(stem + '.diff.png'), true)
+  console.log('verified snapshot ' + (name ?? 'unnamed'))
 }
 const originalError = new Error('original matcher failure')
 matcherExpect.extend({ toMatchSvgSnapshot() { throw originalError } })
@@ -57,14 +59,30 @@ console.log('passing, named, failed, original error, and exact artifact checks p
       stdout: "pipe",
       stderr: "pipe",
     })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-    ])
-    expect({ code, stderr }).toEqual({ code: 0, stderr: "" })
-    expect(stdout).toContain("exact artifact checks passed")
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      child.kill("SIGKILL")
+    }, 30_000)
+    try {
+      const [code, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ])
+      expect({ code, stderr, timedOut, stdout }).toMatchObject({
+        code: 0,
+        stderr: "",
+        timedOut: false,
+      })
+      expect(stdout).toContain("exact artifact checks passed")
+    } finally {
+      clearTimeout(timeout)
+      if (child.exitCode === null) child.kill("SIGKILL")
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
-})
+  // This starts a fresh renderer process and performs six real SVG comparisons.
+  // Allow CI startup variance, with a shorter child deadline for useful errors.
+}, 45_000)
