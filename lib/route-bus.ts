@@ -299,13 +299,14 @@ function getWindingTargetOrders(params: {
         return
       }
       for (let layer = 0; layer < layerSequences.length; layer++) {
-        const next = layerSequences[layer]![offsets[layer]!]
+        const offset = offsets[layer]!
+        const next = layerSequences[layer]![offset]
         if (!next) continue
-        offsets[layer]++
+        offsets[layer] = offset + 1
         current.push(next)
         append()
         current.pop()
-        offsets[layer]--
+        offsets[layer] = offset
       }
     }
     append()
