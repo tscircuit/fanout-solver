@@ -24,6 +24,7 @@ import {
   getViaSpanLayers,
 } from "./layer-names"
 import { matchBusPlanLengths } from "./match-bus-lengths"
+import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
 import {
   getComponentDogboneViaSiteCandidates,
   getSingleDogboneViaSiteRepairs,
@@ -1716,6 +1717,21 @@ export class FanoutSolver extends BaseSolver {
       clearance: this.config.clearance,
       allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
       allowSameNetMerges: this.config.allowSameNetMerges,
+    })
+  }
+
+  private normalizeCompletePlanCorners(
+    plans: readonly FanoutRoutePlan[],
+  ): FanoutRoutePlan[] | null {
+    // The legacy assignment and beam strategies need the same final gate as
+    // through-via dense routing, including corners introduced by length tuning.
+    if (this.config.allowBlindAndBuriedVias) return [...plans]
+    return normalizeFanoutPlanCorners({
+      ...this.config,
+      inputSrj: this.inputSrj,
+      preparedBuses: this.preparedBuses,
+      plans,
+      repairPlaneSourceCorners: true,
     })
   }
 
@@ -5702,6 +5718,23 @@ export class FanoutSolver extends BaseSolver {
         blockingBusCounts.clear()
       }
     }
+    if (plans.length === this.inputSrj.connections.length) {
+      const normalized = this.normalizeCompletePlanCorners(plans)
+      if (normalized) {
+        plans = normalized
+      } else {
+        validationIssues = [
+          {
+            code: "fanout-normalization",
+            message:
+              "Completed fanout could not normalize every corner while preserving its original clearance and length constraints",
+          },
+        ]
+        plans = []
+        failedBusIds = this.preparedBuses.map((bus) => bus.busId)
+        blockingBusCounts.clear()
+      }
+    }
     let outputSrj = buildOutputSimpleRouteJson({
       inputSrj: this.inputSrj,
       plans,
@@ -6056,7 +6089,13 @@ export class FanoutSolver extends BaseSolver {
         yield
         continue
       }
-      const lengthMatchedPlans = lengthMatching.plans
+      const lengthMatchedPlans = this.normalizeCompletePlanCorners(
+        lengthMatching.plans,
+      )
+      if (!lengthMatchedPlans) {
+        yield
+        continue
+      }
       const candidateOutput = buildOutputSimpleRouteJson({
         inputSrj: this.inputSrj,
         plans: lengthMatchedPlans,

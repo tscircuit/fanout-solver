@@ -1,3 +1,4 @@
+import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import { expect, test } from "bun:test"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import capturedSample from "./fixtures/dataset31-top-left-offset.json"
@@ -24,6 +25,7 @@ test("routes a centered layered bus beside a constrained corner band", async () 
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
+  expectStraightOr45Fanout(output.fanoutTraces)
   expect(output.validation).toEqual({
     valid: true,
     checkedConnectionCount: 135,

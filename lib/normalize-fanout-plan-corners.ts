@@ -2,18 +2,24 @@ import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import {
   distance,
   distancePointToSegment,
+  distancePointToObstacle,
   distanceSegmentToObstacle,
   segmentsAreClear,
+  pointIsInsideObstacle,
 } from "./geometry"
 import {
   getAllRoutedTraceCopper,
   getRoutedTraceCopper,
 } from "./get-routed-trace-copper"
+import { getDeclaredDifferentialPairs } from "./get-declared-differential-pairs"
 import { normalizeLayeredPath } from "./normalize-layered-path"
 import { repairBoundaryRouteTails } from "./repair-boundary-route-tails"
 import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
 import type { FanoutRoutePlan, PreparedBus, RoutedSegment } from "./types"
-import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
+import {
+  segmentIsLegalTerminalBodyEscape,
+  validateRoutedCopperDrc,
+} from "./validate-routed-copper-drc"
 
 export interface FanoutPlanCornerNormalizationParams {
   inputSrj: SimpleRouteJson
@@ -27,6 +33,8 @@ export interface FinalFanoutPlanNormalizationParams
   preparedBuses: readonly PreparedBus[]
   viaDiameter: number
   viaHoleDiameter: number
+  /** Repair legacy plane-only source paths before preserving their via joins. */
+  repairPlaneSourceCorners?: boolean
 }
 const EPSILON = 1e-7
 
@@ -177,6 +185,7 @@ export function normalizeFanoutPlanTargetPath(
   others: readonly FanoutRoutePlan[],
   bus: PreparedBus,
   removeReversingCorners = false,
+  chamfer = params.traceWidth / 4,
 ): FanoutRoutePlan | null {
   const { inputSrj, layerNames, traceWidth, clearance } = params
   const firstVia = plan.trace.route.findIndex((p) => p.route_type === "via")
@@ -221,7 +230,7 @@ export function normalizeFanoutPlanTargetPath(
   ]
   const normalized = normalizeLayeredPath({
     points,
-    chamfer: traceWidth / 4,
+    chamfer,
     segmentIsClear: (a, b) => {
       const segment = {
         start: a,
@@ -356,10 +365,155 @@ function respectsBoundary(plan: FanoutRoutePlan, bus: PreparedBus): boolean {
   )
 }
 
+/** A plane-only escape can be repaired without moving any physical terminal. */
+function normalizePlaneSourcePath(
+  params: FinalFanoutPlanNormalizationParams,
+  plan: FanoutRoutePlan,
+  others: readonly FanoutRoutePlan[],
+  bus: PreparedBus,
+): FanoutRoutePlan | null {
+  if (
+    plan.termination.type !== "plane" ||
+    !plan.via ||
+    plan.additionalVias?.length ||
+    plan.segments.length !== (plan.sourceEscapeSegmentCount ?? 1)
+  )
+    return null
+  const source = bus.connections.find(
+    (c) => c.connectionIndex === plan.connectionIndex,
+  )
+  if (!source?.sourceObstacle) return null
+  const firstVia = plan.trace.route.findIndex((p) => p.route_type === "via")
+  if (firstVia < 1) return null
+  const { inputSrj, traceWidth, clearance, layerNames } = params
+  const supplied = getAllRoutedTraceCopper(inputSrj, false)
+  const index = new RouteSegmentSpatialIndex([
+    ...others.flatMap((p) => [
+      ...p.segments,
+      ...(p.planeEndpointSegments ?? []),
+    ]),
+    ...supplied.flatMap((p) => p.segments),
+  ])
+  const vias = [
+    ...others.flatMap((p) =>
+      [p.via, ...(p.additionalVias ?? []), p.planeEndpointVia].filter(
+        (v) => !!v,
+      ),
+    ),
+    ...supplied.flatMap((p) => p.vias),
+  ]
+  const normalized = normalizeLayeredPath({
+    points: [plan.sourcePoint, ...plan.segments.map((s) => s.end)].map((p) => ({
+      ...p,
+      z: layerNames.indexOf(plan.sourceLayer),
+    })),
+    chamfer: traceWidth / 4,
+    segmentIsClear: (a, b) => {
+      const segment = {
+        start: a,
+        end: b,
+        layer: plan.sourceLayer,
+        width: traceWidth,
+      }
+      const boundary = bus.sharedBoundary
+      if (
+        [a, b].some(
+          (p) =>
+            p.x < boundary.minX ||
+            p.x > boundary.maxX ||
+            p.y < boundary.minY ||
+            p.y > boundary.maxY,
+        )
+      )
+        return false
+      return (
+        inputSrj.obstacles.every((obstacle) => {
+          if (!obstacle.layers.includes(plan.sourceLayer)) return true
+          if (
+            distanceSegmentToObstacle(segment, obstacle) >=
+            traceWidth / 2 + clearance - 1e-9
+          )
+            return true
+          // Permit only the connected, outward-moving lead from the original pad.
+          // Later source-layer copper receives no renewed source-pad exemption.
+          if (
+            obstacle === source.sourceObstacle &&
+            pointIsInsideObstacle(a, obstacle, traceWidth / 2 + clearance) &&
+            (a.x - source.sourcePoint.x) * (b.x - a.x) +
+              (a.y - source.sourcePoint.y) * (b.y - a.y) >=
+              -EPSILON
+          )
+            return true
+          return segmentIsLegalTerminalBodyEscape({
+            inputSrj,
+            segment,
+            bodyObstacle: obstacle,
+            connectionName: plan.connectionName,
+          })
+        }) &&
+        index
+          .querySegment(segment, clearance)
+          .every((other) => segmentsAreClear(segment, other, clearance)) &&
+        vias.every(
+          (via) =>
+            !via.spanLayers.includes(segment.layer) ||
+            distancePointToSegment(via.center, a, b) >=
+              (traceWidth + via.diameter) / 2 + clearance - 1e-9,
+        )
+      )
+    },
+  })
+  if (!normalized) return null
+  const trace = {
+    ...plan.trace,
+    route: [
+      plan.trace.route[0]!,
+      ...normalized.slice(1).map((p) => ({
+        route_type: "wire" as const,
+        x: p.x,
+        y: p.y,
+        layer: plan.sourceLayer,
+        width: traceWidth,
+      })),
+      ...plan.trace.route.slice(firstVia),
+    ],
+  }
+  const segments = getRoutedTraceCopper(inputSrj, trace, false).segments
+  let leftSourcePad = false
+  for (const segment of segments) {
+    const clearanceToPad = distanceSegmentToObstacle(
+      segment,
+      source.sourceObstacle,
+    )
+    if (leftSourcePad && clearanceToPad < traceWidth / 2 + clearance - 1e-9)
+      return null
+    if (
+      distancePointToObstacle(segment.end, source.sourceObstacle) >=
+      traceWidth / 2 + clearance - 1e-9
+    )
+      leftSourcePad = true
+  }
+  if (
+    !hasValidTurns(segments) ||
+    !changedFanoutCopperIsSelfClear(plan, segments, clearance)
+  )
+    return null
+  return {
+    ...plan,
+    trace,
+    segments,
+    sourceEscapeSegmentCount: segments.length,
+    length: [...segments, ...(plan.planeEndpointSegments ?? [])].reduce(
+      (total, s) => total + distance(s.start, s.end),
+      0,
+    ),
+  }
+}
+
 /**
- * Final geometric gate after all tuning. Repair only target-side corners/tails;
- * malformed source prefixes fail closed. Every physical via and exact exit is
- * preserved, and the final original bus skews and full copper DRC still apply.
+ * Final geometric gate after all tuning. Source prefixes are preserved unless
+ * plane source repair is explicitly requested. Every physical via and exact
+ * exit is retained, and original length limits and full copper DRC still apply.
  */
 export function normalizeFanoutPlanCorners(
   params: FinalFanoutPlanNormalizationParams,
@@ -371,6 +525,29 @@ export function normalizeFanoutPlanCorners(
   )
     return null
   let plans = [...params.plans]
+  if (params.repairPlaneSourceCorners) {
+    for (let index = 0; index < plans.length; index++) {
+      const plan = plans[index]!
+      if (
+        hasValidTurns(
+          plan.segments.slice(0, plan.sourceEscapeSegmentCount ?? 1),
+        )
+      )
+        continue
+      const owner = owners.get(plan.busId)
+      if (!owner) return null
+      const normalized = normalizePlaneSourcePath(
+        params,
+        plan,
+        plans.filter((_, other) => other !== index),
+        owner,
+      )
+      if (!normalized) return null
+      plans[index] = normalized
+    }
+  }
+  const sourceNormalizedPlans = [...plans]
+  const pairs = getDeclaredDifferentialPairs(params.inputSrj)
   for (const plan of plans) {
     if (!owners.has(plan.busId))
       throw new Error("Final normalization requires each original prepared bus")
@@ -392,6 +569,7 @@ export function normalizeFanoutPlanCorners(
   if (plans.some((plan) => !respectsBoundary(plan, owners.get(plan.busId)!))) {
     const repaired = repairBoundaryRouteTails({
       ...params,
+      plans,
       allowBlindAndBuriedVias: false,
       allowSameNetMerges: false,
     })
@@ -405,18 +583,59 @@ export function normalizeFanoutPlanCorners(
       respectsBoundary(plan, owners.get(plan.busId)!)
     )
       continue
-    const normalized = normalizeFanoutPlanTargetPath(
-      params,
-      plan,
-      plans.filter((_, other) => other !== index),
-      owners.get(plan.busId)!,
-    )
+    const bus = owners.get(plan.busId)!
+    let normalized: FanoutRoutePlan | null = null
+    // Try progressively smaller chamfers to preserve an already matched bus.
+    // Sub-grid stubs can have less remaining length slack than the trace width.
+    for (
+      let chamfer = params.traceWidth / 4;
+      chamfer >= 1e-6;
+      chamfer = Math.max(1e-6, chamfer / 4)
+    ) {
+      const candidate = normalizeFanoutPlanTargetPath(
+        params,
+        plan,
+        plans.filter((_, other) => other !== index),
+        bus,
+        false,
+        chamfer,
+      )
+      if (candidate) {
+        const own = plans
+          .filter((p) => p.busId === bus.busId)
+          .map((p) => (p === plan ? candidate.length : p.length))
+        const pairsAreMatched = pairs.every((pair) => {
+          if (!pair.connectionIndices.includes(plan.connectionIndex))
+            return true
+          const pairPlans = pair.connectionIndices.map((connectionIndex) =>
+            plans.find((p) => p.connectionIndex === connectionIndex),
+          )
+          if (pairPlans.some((p) => !p)) return true
+          const lengths = pairPlans.map((p) =>
+            p === plan ? candidate.length : p!.length,
+          )
+          return (
+            Math.abs(lengths[0]! - lengths[1]!) <=
+            pair.lengthTolerance + EPSILON
+          )
+        })
+        if (
+          pairsAreMatched &&
+          (bus.maxLengthSkew === undefined ||
+            Math.max(...own) - Math.min(...own) <= bus.maxLengthSkew + EPSILON)
+        ) {
+          normalized = candidate
+          break
+        }
+      }
+      if (chamfer === 1e-6) break
+    }
     if (!normalized) return null
     plans[index] = normalized
   }
   for (let index = 0; index < plans.length; index++) {
     const plan = plans[index]!
-    const original = params.plans.find(
+    const original = sourceNormalizedPlans.find(
       (p) => p.connectionIndex === plan.connectionIndex,
     )!
     if (

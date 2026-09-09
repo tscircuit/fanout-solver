@@ -72,7 +72,8 @@ export function normalizeLayeredPath(params: {
         vx = (c.x - b.x) / outgoing,
         vy = (c.y - b.y) / outgoing,
         dot = ux * vx + uy * vy
-      if (Math.abs(dot) > epsilon) {
+      const reversingDiagonal = Math.abs(dot + Math.SQRT1_2) < epsilon
+      if (Math.abs(dot) > epsilon && !reversingDiagonal) {
         result.push(b)
         continue
       }
@@ -81,8 +82,26 @@ export function normalizeLayeredPath(params: {
       while (trim >= 1e-6) {
         const before = { x: b.x - ux * trim, y: b.y - uy * trim, z: b.z },
           after = { x: b.x + vx * trim, y: b.y + vy * trim, z: b.z }
-        if (segmentIsClear(before, after)) {
-          result.push(before, after)
+        // A 135-degree corner needs two intermediate headings, each 45 degrees
+        // from its neighbors. Equal legs of trim * (sqrt(2) - 1) join the cuts.
+        const turnSign = Math.sign(ux * vy - uy * vx)
+        const middle = reversingDiagonal
+          ? {
+              x:
+                before.x +
+                (ux - turnSign * uy) * Math.SQRT1_2 * trim * (Math.SQRT2 - 1),
+              y:
+                before.y +
+                (uy + turnSign * ux) * Math.SQRT1_2 * trim * (Math.SQRT2 - 1),
+              z: b.z,
+            }
+          : undefined
+        if (
+          middle
+            ? segmentIsClear(before, middle) && segmentIsClear(middle, after)
+            : segmentIsClear(before, after)
+        ) {
+          result.push(before, ...(middle ? [middle] : []), after)
           beveled = true
           break
         }
