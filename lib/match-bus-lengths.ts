@@ -17,10 +17,7 @@ import { getCopperLayerNames } from "./layer-names"
 import { getMultiSegmentTuningWindows } from "./multi-segment-tuning-windows"
 import { changedFanoutCopperIsSelfClear } from "./normalize-fanout-plan-corners"
 import { rematchUnroutedSourceDogbones } from "./rematch-unrouted-source-dogbones"
-import {
-  createFanoutPlanClearanceValidator,
-  fanoutPlansAreMutuallyClear,
-} from "./route-bus"
+import { createFanoutPlanClearanceValidator } from "./route-bus"
 import { routeViaMinimalWinding } from "./route-via-minimal-winding"
 import type {
   Bounds,
@@ -1979,12 +1976,7 @@ function matchBusPlanLengthsWithBudget(
             const blockers = matchedPlans.filter(
               (plan) =>
                 plan !== shortest &&
-                !fanoutPlansAreMutuallyClear({
-                  plans: [candidate, plan],
-                  srj: inputSrj,
-                  clearance,
-                  allowSameNetMerges,
-                }),
+                !validatePlans.mutuallyClear([candidate, plan]),
             )
             if (blockers.length !== 1) continue
             const blocker = blockers[0]!
@@ -2079,12 +2071,7 @@ function matchBusPlanLengthsWithBudget(
             const blockers = matchedPlans.filter(
               (plan) =>
                 plan !== shortest &&
-                !fanoutPlansAreMutuallyClear({
-                  plans: [candidate, plan],
-                  srj: inputSrj,
-                  clearance,
-                  allowSameNetMerges,
-                }),
+                !validatePlans.mutuallyClear([candidate, plan]),
             )
             if (
               blockers.length !== 1 ||

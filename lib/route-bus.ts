@@ -2243,7 +2243,9 @@ export function fanoutPlansAreClear(params: {
  */
 export function createFanoutPlanClearanceValidator(
   params: Omit<Parameters<typeof fanoutPlansAreClear>[0], "plans">,
-): (plans: readonly FanoutRoutePlan[]) => boolean {
+): ((plans: readonly FanoutRoutePlan[]) => boolean) & {
+  mutuallyClear(plans: readonly FanoutRoutePlan[]): boolean
+} {
   const {
     srj,
     sharedBoundary,
@@ -2295,19 +2297,31 @@ export function createFanoutPlanClearanceValidator(
     }
     let clear = pairs.get(other)
     if (clear === undefined) {
+      // Mutual copper clearance is symmetric, including both segment/via
+      // directions. Query the smaller route against the larger route's index
+      // instead of scanning every long meander beside a short source escape.
+      // This path does not collect directional blockingBusCounts.
+      const reverse =
+        getPlanSegments(plan).length > getPlanSegments(other).length
       clear = planIsClearOfPlans({
-        plan,
-        otherPlans: [other],
+        plan: reverse ? other : plan,
+        otherPlans: [reverse ? plan : other],
         segmentIndexes,
         srj,
         clearance,
         allowSameNetMerges,
       })
       pairs.set(other, clear)
+      let opposite = mutualResults.get(other)
+      if (!opposite) {
+        opposite = new WeakMap()
+        mutualResults.set(other, opposite)
+      }
+      opposite.set(plan, clear)
     }
     return clear
   }
-  return (plans) => {
+  const validate = (plans: readonly FanoutRoutePlan[]): boolean => {
     const currentPlans = new Set(plans)
     if (currentPlans.size === plans.length) {
       // Retained immutable plans already form a clear set. Check each new
@@ -2336,6 +2350,16 @@ export function createFanoutPlanClearanceValidator(
     lastClearPlans = currentPlans
     return true
   }
+  return Object.assign(validate, {
+    // Blocker discovery shares the exact route-pair checks and spatial indexes.
+    // A mutual-only query cannot establish a statically clear baseline.
+    mutuallyClear: (plans: readonly FanoutRoutePlan[]): boolean =>
+      plans.every((plan, index) =>
+        plans.every((other, otherIndex) =>
+          otherIndex === index ? true : clearOf(plan, other),
+        ),
+      ),
+  })
 }
 
 function routePlaneTerminatedBus(

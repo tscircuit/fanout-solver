@@ -4,6 +4,7 @@ import { getSvgFromGraphicsObject } from "graphics-debug"
 import {
   createFanoutPlanClearanceValidator,
   fanoutPlansAreClear,
+  fanoutPlansAreMutuallyClear,
 } from "lib/route-bus"
 import type { FanoutRoutePlan, Point2D } from "lib/types"
 import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
@@ -117,6 +118,9 @@ test("cached clearance rechecks replacement traces and vias during length tuning
       [replacement, b],
       [b, replacement],
     ]) {
+      expect(cached.mutuallyClear(plans)).toBe(
+        fanoutPlansAreMutuallyClear({ ...rules, plans }),
+      )
       expect(cached(plans)).toBe(expected)
       expect(cached(plans)).toBe(fanoutPlansAreClear({ ...rules, plans }))
     }
@@ -145,6 +149,21 @@ test("cached clearance rechecks replacement traces and vias during length tuning
   ]) {
     expect(cached(plans)).toBe(fanoutPlansAreClear({ ...rules, plans }))
   }
+  for (const plans of [
+    [outside, b],
+    [a, a],
+    [b, blockedVia],
+    [tuned, tunedB],
+  ]) {
+    expect(cached.mutuallyClear(plans)).toBe(
+      fanoutPlansAreMutuallyClear({ ...rules, plans }),
+    )
+    expect(cached(plans)).toBe(fanoutPlansAreClear({ ...rules, plans }))
+  }
+  // Copper can be mutually clear while outside the original boundary. Such a
+  // query must never seed the retained-plan shortcut in complete validation.
+  expect(cached.mutuallyClear([outside, b])).toBe(true)
+  expect(cached([outside, b])).toBe(false)
   expect(cached([a, a])).toBe(fanoutPlansAreClear({ ...rules, plans: [a, a] }))
   expect(
     createFanoutPlanClearanceValidator({ ...rules, clearance: 1 })([a, b]),
@@ -171,6 +190,45 @@ test("cached clearance rechecks replacement traces and vias during length tuning
     expect(sourceCached([replacement, b])).toBe(
       fanoutPlansAreClear({ ...sourceRules, plans: [replacement, b] }),
     )
+  }
+  const segmented = makePlan(0, [a.sourcePoint, { x: 0, y: -0.5 }, a.exitPoint])
+  const replacementTail = makePlan(0, [
+    a.sourcePoint,
+    { x: 0, y: -0.5 },
+    { x: 1, y: 0.5 },
+    { x: 2, y: -0.5 },
+    a.exitPoint,
+  ])
+  replacementTail.segments[0] = segmented.segments[0]!
+  expect(cached([segmented, b])).toBe(true)
+  expect(cached([replacementTail, b])).toBe(false)
+  // Reused copper cannot inherit an exemption from a different owner.
+  const sharedSource = {
+    ...replacementTail,
+    sourcePoint: { ...replacementTail.sourcePoint, pcb_port_id: "shared" },
+  }
+  const exemptNeighbor = {
+    ...b,
+    sourcePoint: { ...b.sourcePoint, pcb_port_id: "shared" },
+  }
+  expect(cached.mutuallyClear([sharedSource, exemptNeighbor])).toBe(true)
+  expect(cached.mutuallyClear([replacementTail, exemptNeighbor])).toBe(false)
+  expect(cached([segmented, b])).toBe(true)
+  // Every barrel and plane-end segment participates in the symmetric check.
+  for (const replacement of [
+    { ...a, additionalVias: [blockedVia.via!] },
+    { ...a, planeEndpointVia: blockedVia.via },
+    { ...a, planeEndpointSegments: [b.segments[0]!] },
+  ]) {
+    for (const plans of [
+      [replacement, b],
+      [b, replacement],
+    ]) {
+      expect(cached.mutuallyClear(plans)).toBe(false)
+      expect(cached.mutuallyClear(plans)).toBe(
+        fanoutPlansAreMutuallyClear({ ...rules, plans }),
+      )
+    }
   }
   const unexempted = { ...a, sourceEscapeSegmentCount: 0 }
   expect(cached([unexempted, b])).toBe(true)
