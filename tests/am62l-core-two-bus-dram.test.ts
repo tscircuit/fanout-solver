@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { FanoutSolver } from "../lib/fanout-solver"
 import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
 import captured from "./fixtures/am62l-core-two-bus-dram.json"
+import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import { getPcbSvgFromSrj } from "./fixtures/getPcbSvgFromSrj"
 
 test("keeps one via per connection when automatic dogbone matching cannot route a byte bus", async () => {
@@ -23,6 +24,7 @@ test("keeps one via per connection when automatic dogbone matching cannot route 
     issues: [],
   })
   expect(output.fanoutTraces).toHaveLength(16)
+  expectStraightOr45Fanout(output.fanoutTraces)
   for (const trace of output.fanoutTraces) {
     expect(
       trace.route.filter((point) => point.route_type === "via"),

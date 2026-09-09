@@ -1708,6 +1708,10 @@ export class FanoutSolver extends BaseSolver {
 
   private matchCompletePlanLengths(
     plans: readonly FanoutRoutePlan[],
+    matchingOptions: Pick<
+      Parameters<typeof matchBusPlanLengths>[0],
+      "maximumWorkUnits" | "allowMatchingInsideDenseBounds"
+    > = {},
   ): ReturnType<typeof matchBusPlanLengths> {
     return matchBusPlanLengths({
       plans,
@@ -1717,6 +1721,7 @@ export class FanoutSolver extends BaseSolver {
       clearance: this.config.clearance,
       allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
       allowSameNetMerges: this.config.allowSameNetMerges,
+      ...matchingOptions,
     })
   }
 
@@ -1732,6 +1737,12 @@ export class FanoutSolver extends BaseSolver {
       preparedBuses: this.preparedBuses,
       plans,
       repairPlaneSourceCorners: true,
+      repairSignalSourceCorners: true,
+      rematchRepairedBoundaryLengths: (repaired) =>
+        this.matchCompletePlanLengths(repaired, {
+          maximumWorkUnits: 10_000,
+          allowMatchingInsideDenseBounds: true,
+        }).plans,
     })
   }
 
