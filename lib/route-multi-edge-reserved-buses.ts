@@ -150,7 +150,10 @@ export function* routeMultiEdgeReservedBusesSteps(
         ...plans.filter((plan) => !selected.has(plan.connectionIndex)),
         ...routed.value,
       ]
-      const match = (allowDistributedMatching = false) => {
+      const match = (
+        allowDistributedMatching = false,
+        allowMultiSegmentTuningWindows = false,
+      ) => {
         // A failed later bus must not discard useful earlier tuning. Keep it
         // only in this attempt's scratch plans until the entire group passes.
         for (const bus of group) {
@@ -160,11 +163,17 @@ export function* routeMultiEdgeReservedBusesSteps(
             plans: candidate,
             preparedBuses: [bus],
             sharedBoundary: bus.sharedBoundary,
-            maximumWorkUnits: allowDistributedMatching ? 100_000 : 1000,
+            maximumWorkUnits: allowMultiSegmentTuningWindows
+              ? 30_000
+              : allowDistributedMatching
+                ? 100_000
+                : 1000,
             allowMatchingInsideDenseBounds: true,
-            allowSourcePrefixMatching: true,
+            allowSourcePrefixMatching: !allowMultiSegmentTuningWindows,
             allowDistributedMatching,
-            allowTransitLayerMatching: allowDistributedMatching,
+            allowTransitLayerMatching:
+              allowDistributedMatching || allowMultiSegmentTuningWindows,
+            allowMultiSegmentTuningWindows,
           })
           if (!result.plans) return result
           candidate = result.plans
@@ -207,6 +216,9 @@ export function* routeMultiEdgeReservedBusesSteps(
         routedConnectionCount: completedCount(),
       }
       let matched = match()
+      // A clear exterior window can finish the existing topology without
+      // replacing source reservations. Bound this before rerouting a bus.
+      if (!matched.plans) matched = match(false, true)
       for (
         let repairAttempt = 0;
         !matched.plans && matched.failedBus && repairAttempt < 11;

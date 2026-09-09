@@ -14,6 +14,8 @@ import {
   getDeclaredDifferentialPairs,
 } from "./get-declared-differential-pairs"
 import { getCopperLayerNames } from "./layer-names"
+import { getMultiSegmentTuningWindows } from "./multi-segment-tuning-windows"
+import { changedFanoutCopperIsSelfClear } from "./normalize-fanout-plan-corners"
 import { rematchUnroutedSourceDogbones } from "./rematch-unrouted-source-dogbones"
 import {
   createFanoutPlanClearanceValidator,
@@ -688,6 +690,8 @@ function createMeanderPoints(params: {
   pitch: number
   placementFraction: number
   normalSign: -1 | 1
+  plateauLength?: number
+  chamferLimit?: number
 }): Point2D[] | null {
   const {
     segment,
@@ -712,8 +716,9 @@ function createMeanderPoints(params: {
   const chamfer = Math.min(
     pitch / 2,
     targetAddedLength / (8 * toothCount * (Math.SQRT2 - 1)),
+    params.chamferLimit ?? Number.POSITIVE_INFINITY,
   )
-  const plateau = pitch
+  const plateau = params.plateauLength ?? pitch
   const toothSpan = chamfer * 4 + plateau
   const toothGap = pitch
   const occupiedLength =
@@ -782,6 +787,9 @@ function* createTunedPlanCandidates(params: {
   allowTransitLayerMatching?: boolean
   denseBoundarySplitApplied?: boolean
   workBudget?: MatchingWorkBudget
+  plateauLength?: number
+  chamferLimit?: number
+  placementFractions?: readonly number[]
 }): Generator<FanoutRoutePlan> {
   const {
     plan,
@@ -829,10 +837,22 @@ function* createTunedPlanCandidates(params: {
     const segmentLength = distance(segment.start, segment.end)
     const maximumToothCount = Math.min(
       12,
-      Math.max(0, Math.floor((segmentLength / pitch + 0.5) / 4)),
+      Math.max(
+        0,
+        params.chamferLimit === undefined
+          ? Math.floor((segmentLength / pitch + 0.5) / 4)
+          : Math.floor(
+              (segmentLength + pitch / 2) /
+                (4 * params.chamferLimit +
+                  (params.plateauLength ?? pitch) +
+                  pitch),
+            ),
+      ),
     )
     for (let toothCount = 1; toothCount <= maximumToothCount; toothCount++) {
-      for (const placementFraction of [0.5, 0, 1, 0.25, 0.75]) {
+      for (const placementFraction of params.placementFractions ?? [
+        0.5, 0, 1, 0.25, 0.75,
+      ]) {
         for (const normalSign of [1, -1] as const) {
           consumeMatchingWork(params.workBudget)
           const points = createMeanderPoints({
@@ -842,6 +862,8 @@ function* createTunedPlanCandidates(params: {
             pitch,
             placementFraction,
             normalSign,
+            plateauLength: params.plateauLength,
+            chamferLimit: params.chamferLimit,
           })
           if (!points) continue
           if (
@@ -1179,6 +1201,13 @@ export interface MatchBusPlanLengthsParams {
   allowDistributedMatching?: boolean
   /** Add clear through vias to open a tuning window on another permitted signal layer. */
   allowAdditionalMatchingVias?: boolean
+  /**
+   * Try exterior windows spanning multiple target segments, with two new
+   * through-vias. This includes a permitted source-layer return after internal
+   * travel and preserves the complete original source prefix and first via.
+   * Callers may enable this after ordinary matching has exhausted its options.
+   */
+  allowMultiSegmentTuningWindows?: boolean
   /** Allow a differential pair's longer lane to move aside before tuning its mate. */
   allowPairLaneSpreading?: boolean
   /** Allow one unconstrained boundary lane to move around a tuning meander. */
@@ -1544,6 +1573,163 @@ function matchBusPlanLengthsWithBudget(
         }
         return nextPlans
       }
+      if (params.allowMultiSegmentTuningWindows) {
+        const targetLength = Math.max(
+          shortest.length + minimumRequiredAddition,
+          ...getDeclaredDifferentialPairs(inputSrj)
+            .filter((pair) =>
+              pair.connectionIndices.includes(shortest.connectionIndex),
+            )
+            .flatMap((pair) =>
+              pair.connectionIndices
+                .filter((index) => index !== shortest.connectionIndex)
+                .flatMap((index) => {
+                  const mate = matchedPlans.find(
+                    (plan) => plan.connectionIndex === index,
+                  )
+                  return mate
+                    ? [mate.length - pair.lengthTolerance + EPSILON]
+                    : []
+                }),
+            ),
+        )
+        for (const window of getMultiSegmentTuningWindows({
+          plan: shortest,
+          bus,
+          inputSrj,
+          plans: matchedPlans,
+          layerNames: getCopperLayerNames(inputSrj.layerCount),
+          clearance,
+          consumeWork: () => consumeMatchingWork(workBudget),
+        })) {
+          const base = {
+            ...shortest,
+            additionalVias: [
+              ...(shortest.additionalVias ?? []),
+              ...window.addedVias,
+            ],
+          }
+          const assemble = (segments: RoutedSegment[]) =>
+            createPlanWithSegments(base, [
+              ...window.before,
+              ...segments,
+              ...window.after,
+            ])
+          const windowIsClear = (
+            candidate: FanoutRoutePlan,
+            changed: RoutedSegment[],
+          ) => {
+            const bounds = bus.sharedBoundary
+            for (const [index, segment] of changed.entries()) {
+              const dx = segment.end.x - segment.start.x,
+                dy = segment.end.y - segment.start.y
+              if (
+                Math.min(
+                  Math.abs(dx),
+                  Math.abs(dy),
+                  Math.abs(Math.abs(dx) - Math.abs(dy)),
+                ) > 1e-7
+              )
+                return false
+              if (
+                [segment.start, segment.end].some(
+                  (p) =>
+                    p.x <= bounds.minX + 1e-7 ||
+                    p.x >= bounds.maxX - 1e-7 ||
+                    p.y <= bounds.minY + 1e-7 ||
+                    p.y >= bounds.maxY - 1e-7,
+                )
+              )
+                return false
+              const next = changed[index + 1]
+              if (next) {
+                const nx = next.end.x - next.start.x,
+                  ny = next.end.y - next.start.y
+                if (
+                  (dx * nx + dy * ny) /
+                    (Math.hypot(dx, dy) * Math.hypot(nx, ny)) <
+                  Math.SQRT1_2 - 1e-7
+                )
+                  return false
+              }
+              if (
+                inputSrj.obstacles.some(
+                  (o) =>
+                    o.layers.includes(segment.layer) &&
+                    distanceSegmentToObstacle(segment, o) <
+                      segment.width / 2 + clearance - 1e-9,
+                )
+              )
+                return false
+            }
+            const indices = new Set(
+              changed.map((_, index) => window.before.length + index),
+            )
+            return (
+              addedTuningViasAreSelfClear(
+                candidate,
+                window.addedVias,
+                clearance,
+              ) &&
+              changedFanoutCopperIsSelfClear(
+                candidate,
+                candidate.segments,
+                clearance,
+                indices,
+              )
+            )
+          }
+          const opened = assemble(window.window)
+          if (
+            !opened ||
+            !windowIsClear(opened, window.window) ||
+            !plansAreClear(
+              matchedPlans.map((p) => (p === shortest ? opened : p)),
+            )
+          )
+            continue
+          // Tune only the isolated new window. Its temporary target layer must
+          // never make the retained source prefix eligible for a meander.
+          const local = {
+            ...opened,
+            targetLayer: window.tuningLayer,
+            segments: window.window,
+          }
+          const targetAddedLength = targetLength - opened.length
+          const options = {
+            plan: local,
+            bus,
+            targetAddedLength,
+            clearance,
+            sharedBoundary: bus.sharedBoundary,
+            allowInsideDenseBounds: allowMatchingInsideDenseBounds,
+            workBudget,
+          }
+          const pitch = window.window[0]!.width + clearance
+          const searches = [
+            createExtendedFoldCandidates(options),
+            ...[1, 2, 4, 8].map((scale) =>
+              createTunedPlanCandidates({
+                ...options,
+                plateauLength: pitch * scale,
+                chamferLimit: pitch / 4,
+                placementFractions: [0.5, 0, 1, 0.25, 0.75, 0.1, 0.9],
+              }),
+            ),
+          ]
+          for (const search of searches) {
+            for (const tuned of search) {
+              const candidate = assemble(tuned.segments)
+              if (!candidate || !windowIsClear(candidate, tuned.segments))
+                continue
+              acceptedPlans = acceptCandidate(candidate)
+              if (acceptedPlans) break
+            }
+            if (acceptedPlans) break
+          }
+          if (acceptedPlans) break
+        }
+      }
       const findMultiSpanCandidate = (
         targetAddedLength: number,
       ): FanoutRoutePlan[] | null => {
@@ -1608,6 +1794,7 @@ function matchBusPlanLengthsWithBudget(
         return null
       }
       for (const targetAddedLength of targetAddedLengths) {
+        if (acceptedPlans) break
         if (params.allowDistributedMatching) {
           for (const candidate of createExtendedFoldCandidates({
             plan: shortest,
