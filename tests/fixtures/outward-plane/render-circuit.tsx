@@ -22,7 +22,7 @@ await circuit.renderUntilSettled()
 const circuitJson = circuit.getCircuitJson()
 console.log(
   JSON.stringify({
-    svg: convertCircuitJsonToPcbSvg(circuitJson),
+    svg: convertCircuitJsonToPcbSvg(circuitJson, { layer: "top" }),
     errors: circuitJson.filter((element) => element.type.includes("error")),
     componentNames: circuitJson
       .filter((element) => element.type === "source_component")

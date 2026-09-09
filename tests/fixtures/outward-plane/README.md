@@ -19,7 +19,7 @@ The test verifies that the checkout receives four GND plane-terminated buses.
 The baseline routes only three of the four ground escapes. Core commits a
 group's copper only when all phases succeed, so the baseline PCB SVG shows
 components but no committed traces. The snapshot is directly
-`convertCircuitJsonToPcbSvg(circuit.getCircuitJson())`; it has no reconstructed
+`convertCircuitJsonToPcbSvg(circuit.getCircuitJson(), { layer: "top" })`; it has no reconstructed
 copper, custom annotations, or SVG postprocessing.
 
 This is a reduced reproduction of the missing centered outward escape candidate
