@@ -91,7 +91,10 @@ and treats each bus-layer decision atomically.
   pads, traces, and vias must retain clearance on every layer they occupy.
 - `allowSameNetMerges` lets grouped branches such as VCC or GND reuse connected
   copper instead of reserving artificial clearance from one another. It is
-  opt-in; different electrical nets remain hard obstacles.
+  opt-in for ordinary branches; different electrical nets remain hard
+  obstacles. When dense plane escapes are staged around pre-existing all-layer
+  copper on their declared plane net, those plane branches are already
+  electrically joined and are matched as same-net copper.
 - `allowBlindAndBuriedVias` describes the host board's manufacturing rule. It
   defaults to `true` for standalone compatibility; hosts that manufacture
   through-all vias should pass `false`, which reserves every copper layer in

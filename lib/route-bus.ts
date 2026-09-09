@@ -2572,7 +2572,18 @@ function routePlaneTerminatedBus(
       (direction) => direction !== bus.direction,
     ),
   ]
-  for (const direction of candidateDirections) {
+  // Try existing candidates first, then centered escapes away from the component.
+  const candidateDirectionPasses = [
+    ...candidateDirections.map((direction) => ({
+      direction,
+      centeredOutward: false,
+    })),
+    ...candidateDirections.map((direction) => ({
+      direction,
+      centeredOutward: true,
+    })),
+  ]
+  for (const { direction, centeredOutward } of candidateDirectionPasses) {
     const directionalBus =
       direction === bus.direction ? bus : { ...bus, direction }
     const directionalPadSize = isHorizontal(direction)
@@ -2581,9 +2592,13 @@ function routePlaneTerminatedBus(
     const pairChannelFitsVia =
       getDirectionalPitch(directionalBus) / 2 - directionalPadSize / 2 >=
       viaDiameter / 2 + clearance - 1e-9
-    const viaHandednesses: readonly ViaHandedness[] = pairChannelFitsVia
-      ? [0]
-      : [1, -1]
+    const viaHandednesses: readonly ViaHandedness[] = centeredOutward
+      ? !pairChannelFitsVia && busIsOnOutwardComponentEdge(directionalBus)
+        ? [0]
+        : []
+      : pairChannelFitsVia
+        ? [0]
+        : [1, -1]
 
     for (const viaHandedness of viaHandednesses) {
       for (const connectionOrder of getConnectionOrders(directionalBus)) {
