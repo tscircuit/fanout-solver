@@ -691,6 +691,27 @@ export function normalizeFanoutPlanCorners(
     )
       return null
   }
+  const plansByConnection = new Map(
+    plans.map((plan) => [plan.connectionIndex, plan]),
+  )
+  for (const pair of pairs) {
+    const pairPlans = pair.connectionIndices.map((index) =>
+      plansByConnection.get(index),
+    )
+    // This helper also normalizes complete bus subsets before the rest route.
+    if (pairPlans.some((plan) => !plan)) continue
+    const lengths = pairPlans.map((plan) =>
+      [...plan!.segments, ...(plan!.planeEndpointSegments ?? [])].reduce(
+        (total, segment) => total + distance(segment.start, segment.end),
+        0,
+      ),
+    )
+    if (
+      lengths.some((length) => !Number.isFinite(length)) ||
+      Math.abs(lengths[0]! - lengths[1]!) > pair.lengthTolerance + EPSILON
+    )
+      return null
+  }
   const validation = validateRoutedCopperDrc({
     inputSrj: params.inputSrj,
     routedSrj: {

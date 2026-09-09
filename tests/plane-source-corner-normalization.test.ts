@@ -176,6 +176,46 @@ test("normalizes plane source corners without moving pads, physical vias, or nei
     checkedViaCount: 2,
     issues: [],
   })
+  // Source-only repairs never enter target-path tuning, but their final copper
+  // must still satisfy every declared pair that is present in this plan set.
+  const pairedInput: SimpleRouteJson = {
+    ...inputSrj,
+    differentialPairs: [
+      { connectionNames: ["P0", "P1"], lengthTolerance: 0.25 },
+    ],
+  }
+  const pairParams = {
+    ...rules,
+    inputSrj: pairedInput,
+    preparedBuses,
+    plans,
+    layerNames,
+    repairPlaneSourceCorners: true,
+  }
+  expect(
+    Math.abs(normalized![0]!.length - normalized![1]!.length),
+  ).toBeGreaterThan(0.25)
+  expect(normalizeFanoutPlanCorners(pairParams)).toBeNull()
+  expect(
+    normalizeFanoutPlanCorners({
+      ...pairParams,
+      inputSrj: {
+        ...pairedInput,
+        differentialPairs: [
+          { connectionNames: ["P0", "P1"], lengthTolerance: 0.5 },
+        ],
+      },
+    }),
+  ).toEqual(normalized)
+  // Partial-bus callers may normalize one member before the other is routed.
+  expect(
+    normalizeFanoutPlanCorners({
+      ...pairParams,
+      preparedBuses: [preparedBuses[0]!],
+      plans: [plans[0]!],
+    }),
+  ).toEqual([normalized![0]!])
+  expect(JSON.stringify({ inputSrj, preparedBuses, plans })).toBe(before)
   // A separate endpoint leg is a different copper partition. Source-only
   // repair must reject it instead of reclassifying any of that copper.
   const endpointStart = { x: 0.75, y: -0.75 }
