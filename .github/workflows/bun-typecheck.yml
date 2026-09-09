@@ -23,4 +23,4 @@ jobs:
         run: bun i
 
       - name: Run type check
-        run: bunx tsc --noEmit
+        run: bun run typecheck

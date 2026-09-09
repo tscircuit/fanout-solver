@@ -1,0 +1,17 @@
+{
+  "name": "outward-plane-circuit-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "tscircuit": "0.0.2468",
+    "@tscircuit/core": "0.0.1871",
+    "@tscircuit/props": "0.0.646",
+    "@tscircuit/capacity-autorouter": "0.0.890",
+    "@tscircuit/circuit-json-util": "0.0.106",
+    "@tscircuit/footprinter": "0.0.426",
+    "circuit-json": "0.0.484",
+    "circuit-json-to-connectivity-map": "0.0.30",
+    "schematic-symbols": "0.0.244",
+    "circuit-to-svg": "0.0.413"
+  }
+}
