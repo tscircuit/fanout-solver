@@ -1,4 +1,4 @@
-import type { AutorouterProp } from "@tscircuit/props"
+import type {} from "@tscircuit/core"
 import { Fragment } from "react"
 
 // The actual Linux board's 0402 land pattern for these two manufacturer parts.
@@ -24,7 +24,7 @@ const footprint0402 = (
   </footprint>
 )
 
-export function PowerFilter({ autorouter }: { autorouter: AutorouterProp }) {
+export default function OutwardPlaneEscape() {
   return (
     <board
       width={12}
@@ -111,7 +111,7 @@ export function PowerFilter({ autorouter }: { autorouter: AutorouterProp }) {
       <autoroutingphase
         name="GND_PLANE_FANOUT"
         phaseIndex={3}
-        autorouter={autorouter}
+        autorouter="fanout"
         fanoutRoutingLayers={["top", "bottom"]}
         fanoutPourNetMap={{ inner2: "GND" }}
       />

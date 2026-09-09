@@ -8,8 +8,7 @@
     "lib"
   ],
   "workspaces": [
-    "scripts/generate-repro",
-    "tests/fixtures/outward-plane"
+    "scripts/generate-repro"
   ],
   "license": "MIT",
   "repository": {
@@ -29,7 +28,7 @@
     "start": "cosmos",
     "build:site": "cosmos-export",
     "build": "bunx tsc --noEmit",
-    "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tests/fixtures/outward-plane",
+    "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
     "benchmark": "bun benchmarks/run-benchmark.ts",
     "generate:repro04": "bun scripts/generate-repro/generate-repro04.tsx",
