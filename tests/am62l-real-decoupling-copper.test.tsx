@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test"
 import { getSvgFromGraphicsObject, mergeGraphics } from "graphics-debug"
 import { FanoutSolver } from "../lib/fanout-solver"
+import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
 import { createAm62lRealDecouplingInput } from "./fixtures/create-am62l-real-decoupling-input"
 
-test("reproduces the AM62L fanout failure with real decoupling copper", async () => {
+test("routes the AM62L fanout with real decoupling copper", async () => {
   const { inputSrj, options } = createAm62lRealDecouplingInput()
   const padObstacles = inputSrj.obstacles.filter(
     (obstacle) =>
@@ -27,13 +28,33 @@ test("reproduces the AM62L fanout failure with real decoupling copper", async ()
   })
   solver.solve()
 
-  const bestRoutedConnectionCount = Math.max(
-    0,
-    ...solver.attempts.map((attempt) => attempt.routedConnectionCount),
-  )
-  expect(solver.solved).toBe(false)
-  expect(solver.failed).toBe(true)
-  expect(bestRoutedConnectionCount).toBeLessThan(135)
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  const output = solver.getOutput()
+  expect(output.fanoutTraces).toHaveLength(135)
+  expect(output.planeTerminations).toHaveLength(102)
+  expect(output.validation).toEqual({
+    valid: true,
+    checkedConnectionCount: 135,
+    brokenOutConnectionCount: 135,
+    issues: [],
+  })
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj,
+      routedSrj: {
+        ...output.simpleRouteJson,
+        traces: output.fanoutTraces,
+      },
+      clearance: inputSrj.minViaEdgeToPadEdgeClearance!,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({
+    valid: true,
+    checkedTraceCount: 135,
+    checkedViaCount: 135,
+    issues: [],
+  })
 
   const visualization = mergeGraphics(solver.visualize(), {
     texts: [
@@ -48,8 +69,8 @@ test("reproduces the AM62L fanout failure with real decoupling copper", async ()
       {
         x: inputSrj.bounds.minX,
         y: inputSrj.bounds.maxY + 1,
-        text: `Best routed ${bestRoutedConnectionCount}/135 · solved=${solver.solved} · failed=${solver.failed}`,
-        color: "#b91c1c",
+        text: "Routed 135/135 · solved=true · DRC valid",
+        color: "#166534",
         fontSize: 0.6,
         anchorSide: "bottom_left",
       },
