@@ -1305,8 +1305,10 @@ export class FanoutSolver extends BaseSolver {
       yield
       next = steps.next()
     }
-    const plans = next.value
-    if (!plans || plans.length !== this.inputSrj.connections.length) return null
+    if (!next.value || next.value.length !== this.inputSrj.connections.length)
+      return null
+    const plans = this.normalizeCompletePlanCorners(next.value)
+    if (!plans) return null
     const outputSrj = buildOutputSimpleRouteJson({
       inputSrj: this.inputSrj,
       plans,
@@ -1877,7 +1879,8 @@ export class FanoutSolver extends BaseSolver {
       repairResult = repairSteps.next()
     }
     if (!repairResult.value) return null
-    const plans = repairResult.value
+    const plans = this.normalizeCompletePlanCorners(repairResult.value)
+    if (!plans) return null
     const output = buildOutputSimpleRouteJson({
       inputSrj: this.inputSrj,
       plans,
