@@ -35,6 +35,7 @@ export function changedFanoutCopperIsSelfClear(
   plan: FanoutRoutePlan,
   segments: readonly RoutedSegment[],
   clearance: number,
+  changedSegmentIndices?: ReadonlySet<number>,
 ): boolean {
   const lengths = new Float64Array(segments.length + 1)
   const groups = new Int32Array(segments.length)
@@ -78,8 +79,10 @@ export function changedFanoutCopperIsSelfClear(
     return true
   }
   for (const [index, segment] of segments.entries()) {
+    if (changedSegmentIndices && !changedSegmentIndices.has(index)) continue
     // Splitting or trimming an original straight run introduces no copper.
     if (
+      !changedSegmentIndices &&
       plan.segments.some(
         (old) =>
           old.layer === segment.layer &&

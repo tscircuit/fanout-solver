@@ -203,6 +203,43 @@ test("finishes one missing source-origin lane without exposing a partial bus or 
       }
     }
   }
+  // The initial topology cannot cross the wall on its active layers. The
+  // recursive missing-lane repair must retain each exact terminal splice when
+  // it adds a legal inner-layer leg and validates the combined two-lane bus.
+  const terminalRepair = routeReservedViaBusesSteps({
+    ...params,
+    transitLayers: [],
+    terminalApproachLength: rules.traceWidth + rules.clearance,
+    maximumSourceOriginRepairAttempts: 1,
+    terminals: params.terminals.toReversed(),
+  })
+  let terminalResult = terminalRepair.next()
+  while (!terminalResult.done) terminalResult = terminalRepair.next()
+  expect(terminalResult.value).toHaveLength(2)
+  for (const plan of terminalResult.value!) {
+    const tail = plan.segments.at(-1)!
+    expect(tail.layer).toBe("bottom")
+    expect(tail.start.y).toBeCloseTo(plan.exitPoint.y, 8)
+    expect(tail.end).toEqual(plan.exitPoint)
+    expect(tail.start.x).toBeLessThanOrEqual(
+      3 - rules.traceWidth - rules.clearance,
+    )
+  }
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: srj,
+      routedSrj: buildOutputSimpleRouteJson({
+        inputSrj: srj,
+        plans: [
+          ...terminalResult.value!,
+          ...source.sourcePlans.filter((p) => p.termination.type === "plane"),
+        ],
+        layerNames,
+      }),
+      clearance: rules.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, issues: [] })
   const plans = [
     ...signals,
     ...source.sourcePlans.filter((plan) => plan.termination.type === "plane"),

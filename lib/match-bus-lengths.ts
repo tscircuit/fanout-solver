@@ -134,7 +134,7 @@ function rebuildTraceRoute(
   return route
 }
 
-function createPlanWithSegments(
+export function createPlanWithSegments(
   plan: FanoutRoutePlan,
   segments: RoutedSegment[],
   updateSourceEscapeCount = false,

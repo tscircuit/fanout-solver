@@ -7,8 +7,9 @@ import {
   BoundaryTerminalCopper,
   createBoundaryTerminalConnector,
   getBoundaryTerminalEntry,
+  repairBoundaryTerminalEntries,
   type BoundaryTerminalConnector,
-  type TerminalConnectorRegion,
+  type BoundaryTerminalSplice,
 } from "./boundary-terminal-connectors"
 import {
   PortfolioSingleIntraNodeSolver,
@@ -438,8 +439,15 @@ function convertRoutes(
 }
 
 /** Negotiated fixed-via routing; only fully validated, complete buses are returned. */
-export function* routeReservedViaBusesSteps(
+export function routeReservedViaBusesSteps(
   params: RouteReservedViaBusesParams,
+): Generator<ReservedViaBusesProgress, FanoutRoutePlan[] | null, unknown> {
+  return routeReservedViaBusesWorker(params, new WeakMap())
+}
+
+function* routeReservedViaBusesWorker(
+  params: RouteReservedViaBusesParams,
+  validatedTerminalSplices: WeakMap<FanoutRoutePlan, BoundaryTerminalSplice>,
 ): Generator<ReservedViaBusesProgress, FanoutRoutePlan[] | null, unknown> {
   const {
     buses,
@@ -901,8 +909,8 @@ export function* routeReservedViaBusesSteps(
   let requiresTopTransit: boolean[] = []
   let extendedTerminalEdges: ReadonlySet<string> = new Set()
   let terminalCopper: BoundaryTerminalCopper | undefined
-  let terminalRegions: readonly TerminalConnectorRegion[] = []
-  const retainedTerminalPrefixes = new Map<string, RoutedSegment[]>()
+  const terminalSplices = new Map<string, BoundaryTerminalSplice>()
+  const emittedTerminalSplices = new WeakMap<HdRoute, BoundaryTerminalSplice>()
   const viaCells = new Map<number, boolean>()
   // Each immutable edge is clear, blocked, or permitted only to one owner.
   // Dynamic congestion and rip decisions still run in the native router.
@@ -990,7 +998,6 @@ export function* routeReservedViaBusesSteps(
       router.neighborIds = extended.neighborIds
       router.neighborCosts = extended.neighborCosts
       extendedTerminalEdges = extended.extendedEdges
-      terminalRegions = extended.regions
       const cells = new Map(
         terminals.map(({ connector, cellId }) => [
           connector.connectionName,
@@ -1000,35 +1007,43 @@ export function* routeReservedViaBusesSteps(
       const output = router.getOutput.bind(router)
       router.getOutput = () =>
         output().map((route) => {
-          const retained: RoutedSegment[] = []
-          for (let i = 1; i < route.route.length - 1; i++) {
-            const a = route.route[i - 1]!,
-              b = route.route[i]!
-            if (a.z === b.z)
-              retained.push({
-                start: a,
-                end: b,
-                width: traceWidth,
-                layer: layerNames[a.z]!,
-              })
-          }
+          const emitted = appendBoundaryTerminalApproach(
+            route,
+            terminalConnectors.get(route.connectionName)!,
+            pointAt(cells.get(route.connectionName)!),
+          )
+          const rawSegments: RoutedSegment[] = []
           if (!sourceOrigin) {
             const connection = sourceOwners.get(route.connectionName)!
             const prefix = paths.get(connection.connectionIndex)!
             for (let i = 1; i < prefix.length; i++)
-              retained.push({
+              rawSegments.push({
                 start: prefix[i - 1]!,
                 end: prefix[i]!,
                 width: traceWidth,
                 layer: connection.sourceLayer,
               })
           }
-          retainedTerminalPrefixes.set(route.connectionName, retained)
-          return appendBoundaryTerminalApproach(
-            route,
-            terminalConnectors.get(route.connectionName)!,
-            pointAt(cells.get(route.connectionName)!),
-          )
+          const hasEndVia = route.route.at(-2)!.z !== route.route.at(-1)!.z
+          const firstEntryPoint = route.route.length - (hasEndVia ? 1 : 2)
+          let firstEntrySegmentIndex = -1
+          for (let i = 1; i < emitted.route.length; i++) {
+            const a = emitted.route[i - 1]!,
+              b = emitted.route[i]!
+            if (a.z !== b.z) continue
+            if (i - 1 === firstEntryPoint)
+              firstEntrySegmentIndex = rawSegments.length
+            rawSegments.push({
+              start: a,
+              end: b,
+              width: traceWidth,
+              layer: layerNames[a.z]!,
+            })
+          }
+          const splice = { rawSegments, firstEntrySegmentIndex }
+          terminalSplices.set(route.connectionName, splice)
+          emittedTerminalSplices.set(emitted, splice)
+          return emitted
         })
       terminalCopper = new BoundaryTerminalCopper({
         regions: extended.regions,
@@ -1483,9 +1498,12 @@ export function* routeReservedViaBusesSteps(
               1e-7 &&
             boundaryTerminalPlanIsSelfClear({
               plan,
-              retainedSegments:
-                retainedTerminalPrefixes.get(plan.connectionName) ?? [],
-              regions: terminalRegions,
+              splice: validatedTerminalSplices.get(plan) ??
+                terminalSplices.get(plan.connectionName) ?? {
+                  rawSegments: [],
+                  firstEntrySegmentIndex: -1,
+                },
+              maximumJoinLength: traceWidth / 4,
               clearance,
             })
           )
@@ -1561,10 +1579,54 @@ export function* routeReservedViaBusesSteps(
       })
     )
   }
+  // Each captured topology owns its splice. Later getOutput calls and local
+  // retries must not substitute another topology's raw path under its name.
+  const restoreTerminalSplices = (routes: readonly HdRoute[]): boolean => {
+    terminalSplices.clear()
+    if (terminalConnectors.size === 0) return true
+    for (const route of routes) {
+      const splice = emittedTerminalSplices.get(route)
+      if (!splice) return false
+      terminalSplices.set(route.connectionName, splice)
+    }
+    return true
+  }
+  const validatedPlans = (
+    plans: FanoutRoutePlan[] | null,
+    deferredSources: ReadonlySet<number> = new Set(),
+  ): FanoutRoutePlan[] | null => {
+    if (!plans || !fullPlansAreValid(plans, deferredSources)) return null
+    for (const plan of plans) {
+      const splice = terminalSplices.get(plan.connectionName)
+      if (splice && !validatedTerminalSplices.has(plan))
+        validatedTerminalSplices.set(plan, splice)
+    }
+    return plans
+  }
+  const repairTerminalEntries = (
+    plans: FanoutRoutePlan[],
+  ): FanoutRoutePlan[] | null => {
+    if (terminalConnectors.size === 0) return plans
+    const result = repairBoundaryTerminalEntries({
+      plans,
+      splices: terminalSplices,
+      connectors: terminalConnectors,
+      clearance,
+      segmentIsClear: (segment, name) =>
+        withinBounds(segment.start) &&
+        withinBounds(segment.end) &&
+        segmentIsClear(segment.start, segment.end, segment.layer, name),
+    })
+    if (!result) return null
+    for (const [name, splice] of result.splices)
+      terminalSplices.set(name, splice)
+    return result.plans
+  }
   const finalizeSourceOriginRoutes = (
     inputRoutes: HdRoute[],
     deferredSources: ReadonlySet<number> = new Set(),
   ): FanoutRoutePlan[] | null => {
+    if (!restoreTerminalSplices(inputRoutes)) return null
     const rawPaths = new Map(paths)
     const rawTerminals: ViaMinimalWindingTerminal[] = []
     const targetRoutes: HdRoute[] = []
@@ -1603,10 +1665,12 @@ export function* routeReservedViaBusesSteps(
       rawPaths,
     )
     if (!rawPlans) return null
+    const terminalPlans = repairTerminalEntries(rawPlans)
+    if (!terminalPlans) return null
     const repaired = repairBoundaryRouteTails({
       ...params,
       inputSrj: srj,
-      plans: rawPlans,
+      plans: terminalPlans,
       preparedBuses: buses,
       reservedPlans: [...params.acceptedPlans, ...makePrefixes(expected)],
       allowBlindAndBuriedVias: false,
@@ -1709,9 +1773,10 @@ export function* routeReservedViaBusesSteps(
       normalizedTargets,
       paths,
     )
-    return plans && fullPlansAreValid(plans, deferredSources) ? plans : null
+    return validatedPlans(plans, deferredSources)
   }
   const finalizeRoutes = (inputRoutes: HdRoute[]): FanoutRoutePlan[] | null => {
+    if (!restoreTerminalSplices(inputRoutes)) return null
     let routes = inputRoutes
     const normalizationIndex = index.clone()
     const alreadyRouted = new Set([
@@ -1727,10 +1792,12 @@ export function* routeReservedViaBusesSteps(
     const prefixes = makePrefixes(alreadyRouted)
     const rawPlans = convertRoutes(params, routes, paths)
     if (!rawPlans) return null
+    const terminalPlans = repairTerminalEntries(rawPlans)
+    if (!terminalPlans) return null
     const repairedPlans = repairBoundaryRouteTails({
       ...params,
       inputSrj: srj,
-      plans: rawPlans,
+      plans: terminalPlans,
       preparedBuses: buses,
       reservedPlans: [...params.acceptedPlans, ...prefixes],
       allowBlindAndBuriedVias: false,
@@ -1813,7 +1880,7 @@ export function* routeReservedViaBusesSteps(
       addRouteCopper(route)
     }
     const plans = convertRoutes(params, routes, paths)
-    return plans && fullPlansAreValid(plans) ? plans : null
+    return validatedPlans(plans)
   }
   if (router.solved && !router.failed) {
     const routes = router.getOutput()
@@ -1848,7 +1915,11 @@ export function* routeReservedViaBusesSteps(
       for (const [connectionIndex, points] of previousPaths)
         paths.set(connectionIndex, points)
       if (!partial) continue
-      const repair = completeSourceOriginBusSteps(params, partial)
+      const repair = completeSourceOriginBusWorker(
+        params,
+        partial,
+        validatedTerminalSplices,
+      )
       let result = repair.next()
       while (!result.done) {
         yield {
@@ -1999,16 +2070,19 @@ export function* routeReservedViaBusesSteps(
                 !selected.has(plan.connectionIndex),
             ),
           ],
-          repair = routeReservedViaBusesSteps({
-            ...params,
-            buses: localBuses,
-            terminals: params.terminals.filter((terminal) =>
-              selected.has(terminal.connection.connectionIndex),
-            ),
-            acceptedPlans: accepted,
-            maximumLocalRepairAttempts: 0,
-            maximumIterations: Math.min(maximumIterations, 2_000_000),
-          })
+          repair = routeReservedViaBusesWorker(
+            {
+              ...params,
+              buses: localBuses,
+              terminals: params.terminals.filter((terminal) =>
+                selected.has(terminal.connection.connectionIndex),
+              ),
+              acceptedPlans: accepted,
+              maximumLocalRepairAttempts: 0,
+              maximumIterations: Math.min(maximumIterations, 2_000_000),
+            },
+            validatedTerminalSplices,
+          )
         let result = repair.next()
         while (!result.done) {
           yield {
@@ -2042,9 +2116,17 @@ export function* routeReservedViaBusesSteps(
  * The sole missing source may choose its first via and permitted transit layers.
  * Returns the entire group after original copper validation, never a partial bus.
  */
-export function* completeSourceOriginBusSteps(
+export function completeSourceOriginBusSteps(
   params: RouteReservedViaBusesParams,
   partial: readonly FanoutRoutePlan[],
+): Generator<ReservedViaBusesProgress, FanoutRoutePlan[] | null, unknown> {
+  return completeSourceOriginBusWorker(params, partial, new WeakMap())
+}
+
+function* completeSourceOriginBusWorker(
+  params: RouteReservedViaBusesParams,
+  partial: readonly FanoutRoutePlan[],
+  validatedTerminalSplices: WeakMap<FanoutRoutePlan, BoundaryTerminalSplice>,
 ): Generator<ReservedViaBusesProgress, FanoutRoutePlan[] | null, unknown> {
   const { buses, layerNames } = params
   if (!params.routeFromSourcePads) return null
@@ -2115,25 +2197,28 @@ export function* completeSourceOriginBusSteps(
           bus.connections.every((c) => c.sourceLayer !== layer),
       ),
   )
-  const repair = routeReservedViaBusesSteps({
-    ...params,
-    buses: localBuses,
-    targetLayer,
-    terminals: missing,
-    transitLayers,
-    fixedViaPointsByConnectionIndex: sites,
-    sourceEscapePaths: sourcePaths,
-    acceptedPlans: [...params.acceptedPlans, ...partial],
-    includeDiagonalNeighbors: true,
-    ripCost: 256,
-    maximumIterations: Math.min(
-      params.maximumIterations ?? 5_000_000,
-      5_000_000,
-    ),
-    maximumRipEvents: Math.min(params.maximumRipEvents ?? 400, 400),
-    maximumLocalRepairAttempts: 0,
-    maximumSourceOriginRepairAttempts: 0,
-  })
+  const repair = routeReservedViaBusesWorker(
+    {
+      ...params,
+      buses: localBuses,
+      targetLayer,
+      terminals: missing,
+      transitLayers,
+      fixedViaPointsByConnectionIndex: sites,
+      sourceEscapePaths: sourcePaths,
+      acceptedPlans: [...params.acceptedPlans, ...partial],
+      includeDiagonalNeighbors: true,
+      ripCost: 256,
+      maximumIterations: Math.min(
+        params.maximumIterations ?? 5_000_000,
+        5_000_000,
+      ),
+      maximumRipEvents: Math.min(params.maximumRipEvents ?? 400, 400),
+      maximumLocalRepairAttempts: 0,
+      maximumSourceOriginRepairAttempts: 0,
+    },
+    validatedTerminalSplices,
+  )
   let result = repair.next()
   while (!result.done) {
     yield {

@@ -4,8 +4,10 @@ import {
   appendBoundaryTerminalApproach,
   boundaryTerminalPlanIsSelfClear,
   createBoundaryTerminalConnector,
+  repairBoundaryTerminalEntries,
 } from "lib/boundary-terminal-connectors"
 import { distance, distanceSegmentToSegment } from "lib/geometry"
+import { changedFanoutCopperIsSelfClear } from "lib/normalize-fanout-plan-corners"
 import { normalizeLayeredPath } from "lib/normalize-layered-path"
 import type {
   FanoutRoutePlan,
@@ -132,8 +134,11 @@ test("terminal elbows reject retained same-net arms before and after corner norm
   expect(normalized).not.toBeNull()
   const normalizedPlan = makePlan(normalized)
   const params = {
-    retainedSegments: makePlan(retained).segments,
-    regions: [{ minX: 1.5, maxX: 5, minY: 0.5, maxY: 3.5 }],
+    splice: {
+      rawSegments: rawPlan.segments,
+      firstEntrySegmentIndex: makePlan(retained).segments.length,
+    },
+    maximumJoinLength: 0.02,
     clearance,
   }
   // The native straight final link misses this earlier arm. Its emitted elbow
@@ -183,8 +188,118 @@ test("terminal elbows reject retained same-net arms before and after corner norm
   expect(
     boundaryTerminalPlanIsSelfClear({
       ...params,
-      retainedSegments: makePlan(clearPrefix).segments,
+      splice: {
+        rawSegments: makePlan(clear.route).segments,
+        firstEntrySegmentIndex: makePlan(clearPrefix).segments.length,
+      },
       plan: clearPlan,
+    }),
+  ).toBe(true)
+
+  const repaired = repairBoundaryTerminalEntries({
+    plans: [rawPlan],
+    splices: new Map([["lane", params.splice]]),
+    connectors: new Map([["lane", connector]]),
+    clearance,
+    segmentIsClear: () => true,
+  })
+  expect(repaired).not.toBeNull()
+  const foreign = {
+    ...clearPlan,
+    connectionName: "foreign",
+    connectionIndex: 1,
+    via: undefined,
+    segments: [
+      {
+        start: { x: 2.7, y: 0.8 },
+        end: { x: 2.7, y: 1.2 },
+        layer: "bottom",
+        width,
+      },
+    ],
+  }
+  for (const obstacle of [
+    foreign,
+    {
+      ...foreign,
+      segments: [],
+      via: { ...rawPlan.via!, center: { x: 2.7, y: 1 } },
+    },
+  ]) {
+    expect(
+      repairBoundaryTerminalEntries({
+        plans: [rawPlan, obstacle],
+        splices: new Map([["lane", params.splice]]),
+        connectors: new Map([["lane", connector]]),
+        clearance,
+        segmentIsClear: () => true,
+      }),
+    ).toBeNull()
+  }
+
+  // Native grid steps can be shorter than the final join chamfer. The cut
+  // must use the complete incoming run after the converter merges those steps.
+  const splitIncoming = [
+    viaPoint,
+    { x: 1, y: 3 },
+    { x: 1, y: 2 },
+    { x: 3.99, y: 2 },
+    { x: 4, y: 2 },
+    { x: 4, y: 1 },
+  ]
+  const splitRaw = makePlan(splitIncoming)
+  const mergedNormalized = normalizeLayeredPath({
+    points: splitIncoming
+      .filter((p) => p.x !== 3.99)
+      .map((p) => ({ ...p, z: 1 })),
+    chamfer: 0.02,
+    segmentIsClear: () => true,
+  })!
+  expect(mergedNormalized).not.toBeNull()
+  expect(
+    boundaryTerminalPlanIsSelfClear({
+      ...params,
+      plan: makePlan(mergedNormalized),
+      splice: {
+        rawSegments: splitRaw.segments,
+        firstEntrySegmentIndex: splitRaw.segments.length - 1,
+      },
+    }),
+  ).toBe(true)
+
+  // A merged long run contains old copper far from the entry. Split the audit
+  // at its ordered splice rather than treating that whole retained run as new.
+  const tightPrefix = [
+    viaPoint,
+    { x: 1, y: 3 },
+    { x: 1, y: 2.15 },
+    { x: 3, y: 2.15 },
+    { x: 3, y: 2.3 },
+    { x: 1.5, y: 2.3 },
+    { x: 1.5, y: 2 },
+    { x: 4, y: 2 },
+    { x: 5, y: 2 },
+  ]
+  const tightRaw = makePlan(tightPrefix)
+  const tightMerged = makePlan(
+    tightPrefix.filter((p) => !(p.x === 4 && p.y === 2)),
+  )
+  expect(
+    changedFanoutCopperIsSelfClear(
+      tightMerged,
+      tightMerged.segments,
+      clearance,
+      new Set([tightMerged.segments.length - 1]),
+    ),
+  ).toBe(false)
+  expect(
+    boundaryTerminalPlanIsSelfClear({
+      ...params,
+      plan: tightMerged,
+      splice: {
+        rawSegments: tightRaw.segments,
+        firstEntrySegmentIndex: tightRaw.segments.length - 1,
+      },
     }),
   ).toBe(true)
 
@@ -261,7 +376,14 @@ test("terminal elbows reject retained same-net arms before and after corner norm
     boundaryTerminalPlanIsSelfClear({
       ...params,
       plan: transitClear,
-      retainedSegments: [],
+      splice: {
+        rawSegments: transitClear.segments,
+        firstEntrySegmentIndex: transitClear.segments.findIndex(
+          (s) =>
+            distance(s.start, clearPrefix.at(-1)!) < 1e-8 &&
+            s.layer === "bottom",
+        ),
+      },
     }),
   ).toBe(true)
   const barrelShortcut = makeTransitPlan([
@@ -277,7 +399,14 @@ test("terminal elbows reject retained same-net arms before and after corner norm
     boundaryTerminalPlanIsSelfClear({
       ...params,
       plan: barrelShortcut,
-      retainedSegments: [],
+      splice: {
+        rawSegments: barrelShortcut.segments,
+        firstEntrySegmentIndex: barrelShortcut.segments.findIndex(
+          (s) =>
+            distance(s.start, clearPrefix.at(-1)!) < 1e-8 &&
+            s.layer === "bottom",
+        ),
+      },
     }),
   ).toBe(false)
 
@@ -285,6 +414,7 @@ test("terminal elbows reject retained same-net arms before and after corner norm
   for (const [plan, offset, label] of [
     [clearPlan, 0, "Accepted: clear terminal entry"],
     [normalizedPlan, 6, "Rejected: entry touches an earlier arm"],
+    [repaired!.plans[0]!, 12, "Accepted: alternate entry clears the arm"],
   ] as const) {
     graphics.texts!.push({
       x: 0.7 + offset,
@@ -299,7 +429,7 @@ test("terminal elbows reject retained same-net arms before and after corner norm
           x: p.x + offset,
           y: p.y,
         })),
-        strokeColor: offset ? "#dc2626" : "#2563eb",
+        strokeColor: offset === 6 ? "#dc2626" : "#2563eb",
         strokeWidth: width,
       })
   }

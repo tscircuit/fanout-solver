@@ -2,8 +2,12 @@ import {
   distance,
   distancePointToSegment,
   distanceSegmentToSegment,
+  segmentsAreClear,
 } from "./geometry"
-import { addedTuningViasAreSelfClear } from "./match-bus-lengths"
+import {
+  addedTuningViasAreSelfClear,
+  createPlanWithSegments,
+} from "./match-bus-lengths"
 import { changedFanoutCopperIsSelfClear } from "./normalize-fanout-plan-corners"
 import type {
   Bounds,
@@ -137,32 +141,258 @@ const intersectsRegion = (
       Math.min(a.y, b.y) <= region.maxY,
   )
 
-/** Check the new entry against its own retained path and every physical hole. */
+/** The actual emitted path and the first appended entry segment, in path order. */
+export interface BoundaryTerminalSplice {
+  rawSegments: readonly RoutedSegment[]
+  firstEntrySegmentIndex: number
+}
+
+/** Split only the audit view, retaining the complete path as hard own copper. */
+function terminalSuffixAt(
+  segments: readonly RoutedSegment[],
+  point: Point2D,
+  layer: string,
+): { segments: RoutedSegment[]; changed: ReadonlySet<number> } | null {
+  const positions: { index: number; offset: number }[] = []
+  let length = 0
+  for (const [index, segment] of segments.entries()) {
+    if (
+      segment.layer === layer &&
+      distancePointToSegment(point, segment.start, segment.end) < 1e-8
+    ) {
+      const offset = length + distance(segment.start, point)
+      if (!positions.some((p) => Math.abs(p.offset - offset) < 1e-8))
+        positions.push({ index, offset })
+    }
+    length += distance(segment.start, segment.end)
+  }
+  // A self-crossing at the cut must not hide the earlier part of the entry.
+  if (positions.length !== 1) return null
+  let index = positions[0]!.index
+  const original = segments[index]!
+  const result = [...segments]
+  if (distance(point, original.end) < 1e-8) index++
+  else if (distance(point, original.start) > 1e-8) {
+    result.splice(
+      index,
+      1,
+      { ...original, end: point },
+      { ...original, start: point },
+    )
+    index++
+  }
+  if (index >= result.length) return null
+  return {
+    segments: result,
+    changed: new Set(result.slice(index).map((_, i) => index + i)),
+  }
+}
+
+/** Check only actual entry copper, against every retained arm and physical hole. */
 export function boundaryTerminalPlanIsSelfClear(params: {
   plan: FanoutRoutePlan
-  retainedSegments: readonly RoutedSegment[]
-  regions: readonly TerminalConnectorRegion[]
+  splice: BoundaryTerminalSplice
+  maximumJoinLength: number
   clearance: number
 }): boolean {
-  const terminalVias = [params.plan.via, ...(params.plan.additionalVias ?? [])]
-    .filter((via) => !!via)
-    .filter((via) => intersectsRegion(params.regions, via.center))
-  if (!addedTuningViasAreSelfClear(params.plan, terminalVias, params.clearance))
-    return false
-  return changedFanoutCopperIsSelfClear(
-    {
-      ...params.plan,
-      // An entry that retraces a nonadjacent old arm is still a physical short.
-      // Force the whole connector region through the connected-body checks,
-      // even if a new segment happens to overlap an old straight segment.
-      segments: params.retainedSegments.filter(
-        (segment) =>
-          !intersectsRegion(params.regions, segment.start, segment.end),
-      ),
-    },
-    params.plan.segments,
-    params.clearance,
+  const { plan, splice, clearance, maximumJoinLength } = params
+  const { rawSegments, firstEntrySegmentIndex: first } = splice
+  if (
+    !Number.isInteger(first) ||
+    first < 0 ||
+    first >= rawSegments.length ||
+    !Number.isFinite(maximumJoinLength) ||
+    maximumJoinLength < 0
   )
+    return false
+  const audit = (
+    segments: readonly RoutedSegment[],
+    changed: ReadonlySet<number>,
+    physicalSegments: readonly RoutedSegment[] = segments,
+  ): boolean => {
+    const candidate = { ...plan, segments: [...segments] }
+    const vias = [
+      plan.via,
+      ...(plan.additionalVias ?? []),
+      plan.planeEndpointVia,
+    ]
+      .filter((via) => !!via)
+      .filter((via) =>
+        [...changed].some((index) => {
+          const segment = segments[index]!
+          return (
+            via.spanLayers.includes(segment.layer) &&
+            distancePointToSegment(via.center, segment.start, segment.end) <
+              (via.diameter + segment.width) / 2 + clearance + 1e-7
+          )
+        }),
+      )
+    return (
+      addedTuningViasAreSelfClear(
+        { ...candidate, segments: [...physicalSegments] },
+        vias,
+        clearance,
+      ) &&
+      changedFanoutCopperIsSelfClear(candidate, segments, clearance, changed)
+    )
+  }
+  if (
+    !audit(
+      rawSegments,
+      new Set(rawSegments.slice(first).map((_, i) => first + i)),
+    )
+  )
+    return false
+  const start = rawSegments[first]!
+  const incoming = rawSegments[first - 1]
+  let cut = start.start
+  if (incoming?.layer === start.layer && distance(incoming.end, cut) < 1e-8) {
+    // The route converter merges collinear grid steps before normalization.
+    // Measure that full incoming run: a short last grid step can disappear
+    // entirely inside the join chamfer of the merged run.
+    let runStart = incoming.start
+    for (let index = first - 2; index >= 0; index--) {
+      const previous = rawSegments[index]!
+      if (
+        previous.layer !== incoming.layer ||
+        distance(previous.end, runStart) > 1e-8
+      )
+        break
+      const ux = runStart.x - previous.start.x,
+        uy = runStart.y - previous.start.y,
+        vx = cut.x - runStart.x,
+        vy = cut.y - runStart.y
+      if (Math.abs(ux * vy - uy * vx) >= 1e-10 || ux * vx + uy * vy < 0) break
+      runStart = previous.start
+    }
+    const length = distance(runStart, cut)
+    if (length < 1e-10) return false
+    // The far end can consume at most another third of the incoming run.
+    // This cut therefore remains on unchanged copper in the final path.
+    const trim = Math.min(maximumJoinLength, length / 3)
+    cut = {
+      x: cut.x + ((runStart.x - cut.x) * trim) / length,
+      y: cut.y + ((runStart.y - cut.y) * trim) / length,
+    }
+  }
+  const suffix = terminalSuffixAt(plan.segments, cut, start.layer)
+  return !!suffix && audit(suffix.segments, suffix.changed, plan.segments)
+}
+
+/**
+ * Try the other axis/45 ordering only after the emitted entry fails its own
+ * clearance. Search occupancy stays unchanged; every replacement is checked
+ * against all routed copper before the caller normalizes and validates it.
+ */
+export function repairBoundaryTerminalEntries(params: {
+  plans: readonly FanoutRoutePlan[]
+  splices: ReadonlyMap<string, BoundaryTerminalSplice>
+  connectors: ReadonlyMap<string, BoundaryTerminalConnector>
+  clearance: number
+  segmentIsClear: (segment: RoutedSegment, connectionName: string) => boolean
+}): {
+  plans: FanoutRoutePlan[]
+  splices: Map<string, BoundaryTerminalSplice>
+} | null {
+  const plans = [...params.plans],
+    splices = new Map(params.splices)
+  for (const [index, plan] of plans.entries()) {
+    const connector = params.connectors.get(plan.connectionName)
+    if (!connector) continue
+    const splice = splices.get(plan.connectionName)
+    if (!splice) return null
+    if (
+      boundaryTerminalPlanIsSelfClear({
+        plan,
+        splice,
+        maximumJoinLength: 0,
+        clearance: params.clearance,
+      })
+    )
+      continue
+    const first = splice.rawSegments[splice.firstEntrySegmentIndex]
+    if (!first || first.layer !== connector.layer) return null
+    const start = first.start,
+      { goal, exit, edge } = connector
+    const horizontal = edge === "left" || edge === "right"
+    const sign = edge === "left" || edge === "bottom" ? -1 : 1
+    const normal = sign * (horizontal ? goal.x - start.x : goal.y - start.y)
+    const transverse = Math.abs(
+      horizontal ? goal.y - start.y : goal.x - start.x,
+    )
+    if (normal < transverse - 1e-9) return null
+    const bend = horizontal
+      ? { x: goal.x - sign * transverse, y: start.y }
+      : { x: start.x, y: goal.y - sign * transverse }
+    const entry = [start, bend, goal, exit].filter(
+      (p, i, a) => !i || distance(p, a[i - 1]!) > 1e-10,
+    )
+    const replacement = entry
+      .slice(1)
+      .map((end, i): RoutedSegment => ({ ...first, start: entry[i]!, end }))
+    const current = terminalSuffixAt(plan.segments, start, first.layer)
+    if (!current) return null
+    const firstChanged = Math.min(...current.changed)
+    const segments = [
+      ...current.segments.slice(0, firstChanged),
+      ...replacement,
+    ]
+    const candidate = createPlanWithSegments(plan, segments)
+    if (!candidate) return null
+    const nextSplice = {
+      rawSegments: [
+        ...splice.rawSegments.slice(0, splice.firstEntrySegmentIndex),
+        ...replacement,
+      ],
+      firstEntrySegmentIndex: splice.firstEntrySegmentIndex,
+    }
+    if (
+      !boundaryTerminalPlanIsSelfClear({
+        plan: candidate,
+        splice: nextSplice,
+        maximumJoinLength: 0,
+        clearance: params.clearance,
+      })
+    )
+      return null
+    const foreign = plans.filter(
+      (other) => other.connectionIndex !== plan.connectionIndex,
+    )
+    if (
+      replacement.some(
+        (segment) =>
+          !params.segmentIsClear(segment, plan.connectionName) ||
+          foreign.some(
+            (other) =>
+              [...other.segments, ...(other.planeEndpointSegments ?? [])].some(
+                (s) => !segmentsAreClear(segment, s, params.clearance),
+              ) ||
+              [
+                other.via,
+                ...(other.additionalVias ?? []),
+                other.planeEndpointVia,
+              ]
+                .filter((v) => !!v)
+                .some(
+                  (v) =>
+                    v.spanLayers.includes(segment.layer) &&
+                    distancePointToSegment(
+                      v.center,
+                      segment.start,
+                      segment.end,
+                    ) <
+                      (v.diameter + segment.width) / 2 +
+                        params.clearance -
+                        1e-9,
+                ),
+          ),
+      )
+    )
+      return null
+    plans[index] = candidate
+    splices.set(plan.connectionName, nextSplice)
+  }
+  return { plans, splices }
 }
 
 /**
