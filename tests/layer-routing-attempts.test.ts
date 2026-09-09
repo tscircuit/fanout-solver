@@ -243,4 +243,40 @@ test("layer retries preserve the first successful choice and distinguish topolog
     flexible.failed(cost, "routing")
     expect(flexible.next()).toBeUndefined()
   }
+  for (const failure of ["routing", "lengths"] as const) {
+    const protectedQueue = new LayerRoutingAttempts({
+      ...options,
+      wideSingleLayer: true,
+      allTransitLayers: [],
+      retrySourceOriginProtectedReservations: true,
+      retrySourceOriginFreshReservations: true,
+      retrySourceOriginPhysicalGridPhase: true,
+    })
+    const first = protectedQueue.next()!
+    expect(first.sourceLayerTravelCost).toBeUndefined()
+    expect(protectedQueue.next()).toBeUndefined()
+    protectedQueue.failed(first, "lengths")
+    const protectedRetry = protectedQueue.next()!
+    expect(protectedRetry).toEqual({
+      ...first,
+      sourceLayerTravelCost: 3,
+      maximumSourceIterations: 50_000_000,
+      reserveFutureApproaches: true,
+    })
+    protectedQueue.failed(protectedRetry, failure)
+    const freshRetry = protectedQueue.next()!
+    expect(freshRetry).toEqual({
+      ...protectedRetry,
+      maximumSourceIterations: 20_000_000,
+      reserveFutureApproaches: false,
+    })
+    const subsequent: unknown[] = []
+    protectedQueue.failed(freshRetry, failure)
+    for (let next = protectedQueue.next(); next; next = protectedQueue.next()) {
+      subsequent.push(next)
+      expect(next).not.toEqual(protectedRetry)
+      expect(subsequent.length).toBeLessThan(8)
+      protectedQueue.failed(next, failure)
+    }
+  }
 })

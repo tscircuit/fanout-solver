@@ -28,6 +28,7 @@ export class LayerRoutingAttempts {
       sourceTransitRipCost?: number
       retrySourceOriginPhysicalGridPhase?: boolean
       retrySourceOriginFreshReservations?: boolean
+      retrySourceOriginProtectedReservations?: boolean
       preferAlternateOrder?: boolean
     },
   ) {
@@ -139,7 +140,19 @@ export class LayerRoutingAttempts {
           shuffleSeed: 1,
           sourceOriginPhysicalGridPhase: true,
         }
+        // Protected corridors constrain first-via placement more tightly than
+        // the fresh trial. Retain the initial search's finite iteration budget.
+        const protectedSource = {
+          ...fresh,
+          maximumSourceIterations: 50_000_000,
+          reserveFutureApproaches: true,
+        }
         if (
+          this.options.retrySourceOriginProtectedReservations &&
+          !this.attempted.has(JSON.stringify(protectedSource))
+        )
+          enqueue(protectedSource)
+        else if (
           this.options.retrySourceOriginFreshReservations &&
           !this.attempted.has(JSON.stringify(fresh))
         )
