@@ -18,7 +18,7 @@ import type {
   FanoutSolverOptions,
 } from "../../lib/types"
 
-type DdrBusName =
+export type DdrBusName =
   | "DDR_BYTE0"
   | "DDR_BYTE1"
   | "DDR_ADDR_CTRL"
@@ -29,7 +29,7 @@ type DdrBusName =
   | "DDR_DMI0"
   | "DDR_DMI1"
 
-interface DdrConnection {
+export interface DdrConnection {
   busName: DdrBusName
   memorySignal: string
   socSignal: string
@@ -54,7 +54,7 @@ const byteConnections: DdrConnection[] = [
   }),
 ]
 
-const ddrConnections: DdrConnection[] = [
+export const ddrConnections: DdrConnection[] = [
   ...byteConnections,
   ...[
     ["CA0", "DDR0_A0"],
@@ -127,9 +127,15 @@ const ddrConnections: DdrConnection[] = [
   },
 ]
 
-const signalLayers = ["top", "inner4", "inner5", "inner6", "bottom"] as const
+export const signalLayers = [
+  "top",
+  "inner4",
+  "inner5",
+  "inner6",
+  "bottom",
+] as const
 
-const fanoutBuses = [
+export const fanoutBuses = [
   {
     name: "DDR_BYTE0",
     preferredLayers: ["top", "inner4"],
@@ -177,7 +183,7 @@ const fanoutBuses = [
   },
 ] as const
 
-const socBusDirections: Record<DdrBusName, FanoutExitPosition> = {
+export const socBusDirections: Record<DdrBusName, FanoutExitPosition> = {
   DDR_BYTE0: "topside_left",
   DDR_BYTE1: "topside_right",
   DDR_ADDR_CTRL: "topside_center",
@@ -189,7 +195,7 @@ const socBusDirections: Record<DdrBusName, FanoutExitPosition> = {
   DDR_DMI1: "topside_right",
 }
 
-const dramBusDirections: Record<DdrBusName, FanoutExitPosition> = {
+export const dramBusDirections: Record<DdrBusName, FanoutExitPosition> = {
   DDR_BYTE0: "bottomside_left",
   DDR_BYTE1: "bottomside_center",
   DDR_ADDR_CTRL: "bottomside_center",
@@ -281,7 +287,7 @@ const lpddrSignals = [
   ["DNU", "DNU", "VSS", "VDD2", "VSS", "VSS", "VDD2", "VSS", "DNU", "DNU"],
 ] as const
 
-const lpddrBallMap = lpddrRows.flatMap((row, rowIndex) =>
+export const lpddrBallMap = lpddrRows.flatMap((row, rowIndex) =>
   lpddrColumns.map((column, columnIndex) => ({
     ball: `${row}${column}`,
     signal: lpddrSignals[rowIndex]![columnIndex]!,
@@ -299,7 +305,7 @@ const uniqueLpddrSignals = new Set(
     ),
 )
 
-const lpddrPinLabels = Object.fromEntries(
+export const lpddrPinLabels = Object.fromEntries(
   lpddrBallMap.map(({ ball, signal }, index) => [
     `pin${index + 1}`,
     uniqueLpddrSignals.has(signal)
@@ -308,7 +314,7 @@ const lpddrPinLabels = Object.fromEntries(
   ]),
 ) as Record<`pin${number}`, readonly string[]>
 
-const lpddrFootprint = (
+export const lpddrFootprint = (
   <footprint>
     {lpddrBallMap.map(({ ball, x, y }, index) => (
       <Fragment key={ball}>
@@ -324,7 +330,7 @@ const lpddrFootprint = (
   </footprint>
 )
 
-const socGroundBalls = `
+export const socGroundBalls = `
   A1 A2 A4 A10 A13 A16 A19 A22 A23 B1 B5 B17 B20 B23 C12 C18 D1
   E2 E6 E8 E9 E10 E14 E15 F5 F6 F18 G7 G8 G9 G12 G15 G16 G17
   H1 H7 H14 H17 K8 K9 K15 L7 L9 L13 L16 L18 M1 M12 N7 N9 N11
@@ -335,9 +341,9 @@ const socGroundBalls = `
   .trim()
   .split(/\s+/)
 
-const socDdrPowerBalls = ["L8", "M7", "M8", "N8", "P8"]
+export const socDdrPowerBalls = ["L8", "M7", "M8", "N8", "P8"]
 
-const densePlaneReservationBusIds = [
+export const densePlaneReservationBusIds = [
   "A1",
   "A2",
   "A4",
@@ -360,7 +366,7 @@ const densePlaneReservationBusIds = [
 ].map((ball) => `U1_VSS_${ball}_DROP`)
 densePlaneReservationBusIds.push("U1_VDDS_DDR_M7_DROP")
 
-const denseUnrestrictedPlaneRoutingBusIds = [
+export const denseUnrestrictedPlaneRoutingBusIds = [
   "U1_VSS_U7_DROP",
   "U1_VSS_R8_DROP",
   "U1_VSS_P9_DROP",
@@ -368,7 +374,7 @@ const denseUnrestrictedPlaneRoutingBusIds = [
   "U1_VSS_N11_DROP",
 ]
 
-const ddrDecouplingCapacitors = [
+export const ddrDecouplingCapacitors = [
   {
     name: "C_SOC_DDR_HS_L8",
     capacitance: "1uF",
@@ -427,7 +433,7 @@ const ddrDecouplingCapacitors = [
   },
 ] as const
 
-const createCompletedAutorouter = (
+export const createCompletedAutorouter = (
   input: SimpleRouteJson,
 ): GenericLocalAutorouter => {
   const handlers = {
@@ -534,7 +540,7 @@ const inferPlaneBusDirection = (
   return "right"
 }
 
-const createFanoutOptions = (
+export const createFanoutOptions = (
   input: SimpleRouteJson,
   busDirections: Record<DdrBusName, FanoutExitPosition>,
 ): FanoutSolverOptions => {
