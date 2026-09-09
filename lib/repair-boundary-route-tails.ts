@@ -1,6 +1,9 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { distance, distanceSegmentToSegment } from "./geometry"
-import { fanoutPlansAreClear } from "./route-bus"
+import {
+  createFanoutPlanClearanceValidator,
+  fanoutPlansAreClear,
+} from "./route-bus"
 import { routeViaMinimalWindingAlternativesSteps } from "./route-via-minimal-winding"
 import type {
   Bounds,
@@ -656,12 +659,30 @@ export function repairBoundaryRouteTails(
       ] = plan
   }
   const combined = [...plans, ...reservedPlans]
+  // Earlier routing phases can supply copper whose connection names are no
+  // longer in this input. Retain its physical clearance without treating it as
+  // newly emitted copper that must belong to a current connection.
+  if (inputSrj.traces?.length && combined.length) {
+    const bounds = preparedBuses.map((bus) => bus.sharedBoundary)
+    const clear = createFanoutPlanClearanceValidator({
+      srj: inputSrj,
+      sharedBoundary: {
+        minX: Math.min(...bounds.map((b) => b.minX)),
+        maxX: Math.max(...bounds.map((b) => b.maxX)),
+        minY: Math.min(...bounds.map((b) => b.minY)),
+        maxY: Math.max(...bounds.map((b) => b.maxY)),
+      },
+      clearance,
+      allowBlindAndBuriedVias: params.allowBlindAndBuriedVias,
+      allowSameNetMerges: params.allowSameNetMerges,
+    })
+    if (!clear(combined)) return null
+  }
   const validation = validateRoutedCopperDrc({
     inputSrj,
     routedSrj: {
       ...inputSrj,
       traces: [
-        ...(inputSrj.traces ?? []),
         ...combined.flatMap((p) => [
           p.trace,
           ...(p.planeEndpointTrace ? [p.planeEndpointTrace] : []),
