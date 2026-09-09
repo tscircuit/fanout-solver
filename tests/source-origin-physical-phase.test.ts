@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
+import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import { prepareFanoutBuses } from "lib/prepare-buses"
 import { getLayerReservedBusTargets } from "lib/route-layer-reserved-buses"
 import {
@@ -286,6 +287,7 @@ test("physical source phase ignores discarded provisional vias and preserves all
     plans,
     layerNames,
   })
+  expectStraightOr45Fanout(plans.map((plan) => plan.trace))
   expect(
     validateFanoutSolution({
       inputSrj: srj,

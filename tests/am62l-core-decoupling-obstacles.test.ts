@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import type { Obstacle } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject, mergeGraphics } from "graphics-debug"
 import { FanoutSolver } from "../lib/fanout-solver"
@@ -156,6 +157,7 @@ test("routes core's AM62L fanout around its future decoupling vias", async () =>
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
+  expectStraightOr45Fanout(output.fanoutTraces)
   expect(output.fanoutTraces).toHaveLength(135)
   expect(output.validation).toEqual({
     valid: true,

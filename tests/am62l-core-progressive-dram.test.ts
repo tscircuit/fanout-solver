@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import { getSvgFromGraphicsObject, mergeGraphics } from "graphics-debug"
 import { FanoutSolver } from "../lib/fanout-solver"
 import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
@@ -20,6 +21,7 @@ test("routes every connection in core's complete AM62L progressive DRAM input", 
   expect(solver.attempts).toHaveLength(1)
   expect(bestRoutedConnectionCount).toBe(143)
   const output = solver.getOutput()
+  expectStraightOr45Fanout(output.fanoutTraces)
   expect(output.fanoutTraces).toHaveLength(143)
   expect(
     new Set(output.fanoutTraces.map((trace) => trace.connection_name)),

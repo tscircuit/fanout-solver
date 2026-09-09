@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
+import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
+import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import { FanoutSolver } from "lib/fanout-solver"
 import type { FanoutBusSpec, FanoutSolverOptions } from "lib/types"
 import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
@@ -126,6 +128,15 @@ test("a reserved group retries permitted source-layer transit when its target la
   expect(solver.error).toBeNull()
   expect(solver.solved).toBe(true)
   const output = solver.getOutput()
+  expectStraightOr45Fanout(output.fanoutTraces)
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: srj,
+      routedSrj: { ...output.simpleRouteJson, traces: output.fanoutTraces },
+      clearance: solver.config.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, checkedTraceCount: 36, issues: [] })
   expect(output.validation).toMatchObject({ valid: true, issues: [] })
   expect(output.fanoutTraces).toHaveLength(36)
   expect(output.planeTerminations).toHaveLength(18)
