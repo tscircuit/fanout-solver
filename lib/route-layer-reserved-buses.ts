@@ -977,12 +977,11 @@ function* routeLayerReservedAttemptSteps(
             // The single protected-source retry chooses new first vias. Give
             // that distinct topology one cleanup without repeating repairs on
             // subsequent cost/grid retries of the same provisional sources.
+            const protectedSourceRepair =
+              attempt.sourceLayerTravelCost === 3 &&
+              attempt.reserveFutureApproaches === true
             const repairKey = (busId: string) =>
-              JSON.stringify([
-                busId,
-                attempt.sourceLayerTravelCost === 3 &&
-                  attempt.reserveFutureApproaches === true,
-              ])
+              JSON.stringify([busId, protectedSourceRepair])
             const canRepairSources =
               params.sourceOriginRouting &&
               shortenFirst &&
@@ -1005,6 +1004,7 @@ function* routeLayerReservedAttemptSteps(
                   preparedBuses: buses,
                   completedBuses,
                   selectedBusIds,
+                  allowFirstViaRelocation: protectedSourceRepair,
                 })
               : undefined
             let repaired = sourceRepair?.next()

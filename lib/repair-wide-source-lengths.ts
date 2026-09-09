@@ -21,6 +21,8 @@ interface RepairWideSourceLengthsParams {
   clearance: number
   viaDiameter: number
   viaHoleDiameter: number
+  /** Enable the extra via search only for the protected source-policy retry. */
+  allowFirstViaRelocation?: boolean
 }
 
 type WideSourceGeometry = Pick<
@@ -166,14 +168,16 @@ export function* repairWideSourceLengthsSteps(
     // This bounded repair only frees one lane. Leave a group with several
     // untuned lanes to the ordinary joint routing retries.
     if (deficient.length !== 1 || plans.some((plan) => !plan.via)) return null
-    const beforeRelocation = plans
-    const relocated = relocateShortLaneFirstVia({ ...params, plans, bus })
-    if (relocated) {
-      plans = relocated
-      const relocatedMatch = match()
-      if (relocatedMatch.plans)
-        return validateCompletePlans(relocatedMatch.plans)
-      plans = beforeRelocation
+    if (params.allowFirstViaRelocation) {
+      const beforeRelocation = plans
+      const relocated = relocateShortLaneFirstVia({ ...params, plans, bus })
+      if (relocated) {
+        plans = relocated
+        const relocatedMatch = match()
+        if (relocatedMatch.plans)
+          return validateCompletePlans(relocatedMatch.plans)
+        plans = beforeRelocation
+      }
     }
     const shortest = deficient[0]!
     const connection = byIndex.get(shortest.connectionIndex)!
@@ -221,7 +225,7 @@ export function* repairWideSourceLengthsSteps(
     // The one-lane native reroute can expose a different target-layer span for
     // a first-via move. Reconsider that new topology after matching, while the
     // complete group and its source reservations are still provisional.
-    if (!matched.plans) {
+    if (!matched.plans && params.allowFirstViaRelocation) {
       const relocated = relocateShortLaneFirstVia({ ...params, plans, bus })
       if (relocated) {
         plans = relocated
