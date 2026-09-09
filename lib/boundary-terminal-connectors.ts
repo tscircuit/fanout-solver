@@ -279,10 +279,75 @@ export function boundaryTerminalPlanIsSelfClear(params: {
   return !!suffix && audit(suffix.segments, suffix.changed, plan.segments)
 }
 
+/** Only replace a short, contiguous tail on its existing terminal layer. */
+function* terminalEntryRepairs(params: {
+  splice: BoundaryTerminalSplice
+  connector: BoundaryTerminalConnector
+  clearance: number
+}): Generator<{
+  replacement: RoutedSegment[]
+  firstEntrySegmentIndex: number
+}> {
+  const { splice, connector, clearance } = params
+  const originalFirst = splice.firstEntrySegmentIndex
+  const first = splice.rawSegments[originalFirst]
+  if (!first || first.layer !== connector.layer) return
+  const maximumTailLength = 4 * (first.width + clearance)
+  let tailLength = 0
+  for (let cut = originalFirst; cut >= Math.max(0, originalFirst - 16); cut--) {
+    const segment = splice.rawSegments[cut]!
+    // Preserve all layer transitions and their original physical barrels.
+    if (
+      segment.layer !== connector.layer ||
+      (cut < originalFirst &&
+        distance(segment.end, splice.rawSegments[cut + 1]!.start) > 1e-7)
+    )
+      break
+    if (cut < originalFirst) tailLength += distance(segment.start, segment.end)
+    if (tailLength > maximumTailLength + 1e-7) break
+    const start = segment.start,
+      { goal, exit, edge } = connector
+    const horizontal = edge === "left" || edge === "right"
+    const sign = edge === "left" || edge === "bottom" ? -1 : 1
+    const normal = sign * (horizontal ? goal.x - start.x : goal.y - start.y)
+    const transverse = Math.abs(
+      horizontal ? goal.y - start.y : goal.x - start.x,
+    )
+    // The original emitted ordering already failed. Earlier cuts can remove
+    // a short returning arm and make that ordering clear without changing vias.
+    const entries: Point2D[][] = []
+    if (cut < originalFirst) {
+      const entry = getBoundaryTerminalEntry(start, connector)
+      if (entry) entries.push(entry)
+    }
+    if (normal >= transverse - 1e-9) {
+      const bend = horizontal
+        ? { x: goal.x - sign * transverse, y: start.y }
+        : { x: start.x, y: goal.y - sign * transverse }
+      entries.push([start, bend, goal])
+    }
+    for (const entry of entries) {
+      const points = [...entry, exit].filter(
+        (point, index, all) =>
+          index === 0 || distance(point, all[index - 1]!) > 1e-10,
+      )
+      yield {
+        replacement: points.slice(1).map((end, index) => ({
+          ...segment,
+          start: points[index]!,
+          end,
+        })),
+        firstEntrySegmentIndex: cut,
+      }
+    }
+  }
+}
+
 /**
- * Try the other axis/45 ordering only after the emitted entry fails its own
- * clearance. Search occupancy stays unchanged; every replacement is checked
- * against all routed copper before the caller normalizes and validates it.
+ * Repair the emitted entry's own clearance with the other axis/45 ordering or
+ * by replacing at most four pitches of its final grid walk. Search occupancy
+ * stays unchanged; check every replacement against all retained copper before
+ * the caller normalizes and validates the complete bus.
  */
 export function repairBoundaryTerminalEntries(params: {
   plans: readonly FanoutRoutePlan[]
@@ -310,87 +375,81 @@ export function repairBoundaryTerminalEntries(params: {
       })
     )
       continue
-    const first = splice.rawSegments[splice.firstEntrySegmentIndex]
-    if (!first || first.layer !== connector.layer) return null
-    const start = first.start,
-      { goal, exit, edge } = connector
-    const horizontal = edge === "left" || edge === "right"
-    const sign = edge === "left" || edge === "bottom" ? -1 : 1
-    const normal = sign * (horizontal ? goal.x - start.x : goal.y - start.y)
-    const transverse = Math.abs(
-      horizontal ? goal.y - start.y : goal.x - start.x,
-    )
-    if (normal < transverse - 1e-9) return null
-    const bend = horizontal
-      ? { x: goal.x - sign * transverse, y: start.y }
-      : { x: start.x, y: goal.y - sign * transverse }
-    const entry = [start, bend, goal, exit].filter(
-      (p, i, a) => !i || distance(p, a[i - 1]!) > 1e-10,
-    )
-    const replacement = entry
-      .slice(1)
-      .map((end, i): RoutedSegment => ({ ...first, start: entry[i]!, end }))
-    const current = terminalSuffixAt(plan.segments, start, first.layer)
-    if (!current) return null
-    const firstChanged = Math.min(...current.changed)
-    const segments = [
-      ...current.segments.slice(0, firstChanged),
-      ...replacement,
-    ]
-    const candidate = createPlanWithSegments(plan, segments)
-    if (!candidate) return null
-    const nextSplice = {
-      rawSegments: [
-        ...splice.rawSegments.slice(0, splice.firstEntrySegmentIndex),
-        ...replacement,
-      ],
-      firstEntrySegmentIndex: splice.firstEntrySegmentIndex,
-    }
-    if (
-      !boundaryTerminalPlanIsSelfClear({
-        plan: candidate,
-        splice: nextSplice,
-        maximumJoinLength: 0,
-        clearance: params.clearance,
-      })
-    )
-      return null
     const foreign = plans.filter(
       (other) => other.connectionIndex !== plan.connectionIndex,
     )
-    if (
-      replacement.some(
-        (segment) =>
-          !params.segmentIsClear(segment, plan.connectionName) ||
-          foreign.some(
-            (other) =>
-              [...other.segments, ...(other.planeEndpointSegments ?? [])].some(
-                (s) => !segmentsAreClear(segment, s, params.clearance),
-              ) ||
-              [
-                other.via,
-                ...(other.additionalVias ?? []),
-                other.planeEndpointVia,
-              ]
-                .filter((v) => !!v)
-                .some(
-                  (v) =>
-                    v.spanLayers.includes(segment.layer) &&
-                    distancePointToSegment(
-                      v.center,
-                      segment.start,
-                      segment.end,
-                    ) <
-                      (v.diameter + segment.width) / 2 +
-                        params.clearance -
-                        1e-9,
-                ),
-          ),
+    let repaired = false
+    for (const { replacement, firstEntrySegmentIndex } of terminalEntryRepairs({
+      splice,
+      connector,
+      clearance: params.clearance,
+    })) {
+      const first = replacement[0]!
+      const current = terminalSuffixAt(plan.segments, first.start, first.layer)
+      if (!current) continue
+      const firstChanged = Math.min(...current.changed)
+      const segments = [
+        ...current.segments.slice(0, firstChanged),
+        ...replacement,
+      ]
+      const candidate = createPlanWithSegments(plan, segments)
+      if (!candidate) continue
+      const nextSplice = {
+        rawSegments: [
+          ...splice.rawSegments.slice(0, firstEntrySegmentIndex),
+          ...replacement,
+        ],
+        firstEntrySegmentIndex,
+      }
+      if (
+        !boundaryTerminalPlanIsSelfClear({
+          plan: candidate,
+          splice: nextSplice,
+          maximumJoinLength: 0,
+          clearance: params.clearance,
+        })
       )
-    )
-      return null
-    plans[index] = candidate
-    splices.set(plan.connectionName, nextSplice)
+        continue
+      if (
+        replacement.some(
+          (segment) =>
+            !params.segmentIsClear(segment, plan.connectionName) ||
+            foreign.some(
+              (other) =>
+                [
+                  ...other.segments,
+                  ...(other.planeEndpointSegments ?? []),
+                ].some(
+                  (s) => !segmentsAreClear(segment, s, params.clearance),
+                ) ||
+                [
+                  other.via,
+                  ...(other.additionalVias ?? []),
+                  other.planeEndpointVia,
+                ]
+                  .filter((v) => !!v)
+                  .some(
+                    (v) =>
+                      v.spanLayers.includes(segment.layer) &&
+                      distancePointToSegment(
+                        v.center,
+                        segment.start,
+                        segment.end,
+                      ) <
+                        (v.diameter + segment.width) / 2 +
+                          params.clearance -
+                          1e-9,
+                  ),
+            ),
+        )
+      )
+        continue
+      plans[index] = candidate
+      splices.set(plan.connectionName, nextSplice)
+      repaired = true
+      break
+    }
+    if (!repaired) return null
   }
   return { plans, splices }
 }
