@@ -210,7 +210,24 @@ test("directed TOP cache preserves outward pad ownership and exact terminal clea
     x: ((index % 18) - 4) * traceWidth,
     y: (Math.floor(index / 18) - 4) * traceWidth,
   }))
-  const cache = new StaticEdgeClearanceCache(points.length, 2)
+  const neighborOffset = new Int32Array(points.length + 1)
+  const neighborIds: number[] = []
+  for (const [index, start] of points.entries()) {
+    neighborOffset[index] = neighborIds.length
+    for (const delta of [1, -1, 18, -18, 19, -19, 17, -17]) {
+      const target = index + delta,
+        end = points[target]
+      if (end && distance(start, end) <= traceWidth * 1.5)
+        neighborIds.push(target)
+    }
+  }
+  neighborOffset[points.length] = neighborIds.length
+  const cache = new StaticEdgeClearanceCache(
+    points.length,
+    2,
+    neighborOffset,
+    Int32Array.from(neighborIds),
+  )
   for (const [z, layer] of ["top", "bottom"].entries())
     for (const [index, start] of points.entries())
       for (const delta of [1, -1, 18, -18, 19, -19, 17, -17]) {

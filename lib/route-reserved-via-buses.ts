@@ -1067,6 +1067,8 @@ function* routeReservedViaBusesWorker(
     edgeClearance = new StaticEdgeClearanceCache(
       router.planeSize,
       routingLayers.length,
+      router.neighborOffset,
+      router.neighborIds,
     )
     layersByRouterZ = Array.from(
       { length: routingLayers.length },
