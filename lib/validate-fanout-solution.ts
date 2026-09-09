@@ -13,6 +13,7 @@ import {
   segmentsAreClear,
 } from "./geometry"
 import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
+import { getSourcePadReentries } from "./source-pad-reentry"
 import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
@@ -688,6 +689,17 @@ function validateClearances(params: {
 }): void {
   const { plans, inputSrj, clearance, allowBlindAndBuriedVias, issues } = params
   for (const plan of plans) {
+    if (
+      getSourcePadReentries(plan, clearance).some(
+        (issue) => issue.kind !== "clearance",
+      )
+    )
+      addIssue(
+        issues,
+        "source-pad-reentry",
+        `Trace ${plan.connectionName} returns into its source pad after leaving it`,
+        plan,
+      )
     const segments = getPlanSegments(plan)
     for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
       const segment = segments[segmentIndex]!

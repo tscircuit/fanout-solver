@@ -270,6 +270,7 @@ export interface FanoutValidationIssue {
     | "unknown-plan"
     | "connection-mismatch"
     | "source-mismatch"
+    | "source-pad-reentry"
     | "termination-mismatch"
     | "not-broken-out"
     | "outside-routing-bounds"

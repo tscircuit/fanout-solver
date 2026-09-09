@@ -25,6 +25,8 @@ import {
 } from "./layer-names"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
+import { repairSourcePadReentries } from "./repair-source-pad-reentries"
+import { getSourcePadReentries } from "./source-pad-reentry"
 import {
   getComponentDogboneViaSiteCandidates,
   getSingleDogboneViaSiteRepairs,
@@ -1731,7 +1733,7 @@ export class FanoutSolver extends BaseSolver {
     // The legacy assignment and beam strategies need the same final gate as
     // through-via dense routing, including corners introduced by length tuning.
     if (this.config.allowBlindAndBuriedVias) return [...plans]
-    return normalizeFanoutPlanCorners({
+    const normalized = normalizeFanoutPlanCorners({
       ...this.config,
       inputSrj: this.inputSrj,
       preparedBuses: this.preparedBuses,
@@ -1743,6 +1745,24 @@ export class FanoutSolver extends BaseSolver {
           maximumWorkUnits: 10_000,
           allowMatchingInsideDenseBounds: true,
         }).plans,
+    })
+    if (
+      !normalized ||
+      normalized.every((plan) =>
+        getSourcePadReentries(plan, this.config.clearance).every(
+          (issue) => issue.kind === "clearance",
+        ),
+      )
+    )
+      return normalized
+    // The source pad exemption ends when copper leaves the pad. Repair only
+    // selected final plans so intermediate routing keeps its original choices.
+    // The following complete-solution validation rechecks all length limits.
+    return repairSourcePadReentries({
+      ...this.config,
+      inputSrj: this.inputSrj,
+      preparedBuses: this.preparedBuses,
+      plans: normalized,
     })
   }
 
