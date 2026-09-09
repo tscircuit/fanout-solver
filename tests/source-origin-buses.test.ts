@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
@@ -347,11 +348,12 @@ test("a whole bus can choose first vias beyond a blocked target layer without mo
     checkedViaCount: 16,
     issues: [],
   })
-  await expect(
+  await expectSvgSnapshotWithActual(
     getSvgFromGraphicsObject(
       visualizeSimpleRouteJson({ ...output, connections: [] }),
     ),
-  ).toMatchSvgSnapshot(import.meta.path)
+    import.meta.path,
+  )
   // This compound regression runs several routers, native DRC, and SVG rendering.
   // Allow ARM CI runtime variance without changing the benchmark deadline.
 }, 30_000)

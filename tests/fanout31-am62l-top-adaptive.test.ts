@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
 import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import capturedSample from "../datasets/fixtures/fanout31-am62l-top-center.json"
@@ -47,7 +48,8 @@ test("adaptively routes the raw dataset31 AM62L top-center sample", async () => 
     checkedViaCount: 135,
     issues: [],
   })
-  await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
+  await expectSvgSnapshotWithActual(
+    getSvgFromGraphicsObject(solver.visualize()),
     import.meta.path,
   )
   // The dataset31 benchmark independently enforces its 120-second score

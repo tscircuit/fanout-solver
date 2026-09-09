@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import fixture from "./fixtures/dataset31-imx6ull-left-bottom-offset.json"
 import { FanoutSolver } from "../lib/fanout-solver"
@@ -62,7 +63,8 @@ test("retries shared source reservations when a wide bus cannot length-match", a
     }
   }
   expect(JSON.stringify(input)).toBe(before)
-  await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
+  await expectSvgSnapshotWithActual(
+    getSvgFromGraphicsObject(solver.visualize()),
     import.meta.path,
   )
   // The benchmark independently preserves its 120-second routing deadline.

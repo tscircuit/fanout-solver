@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
 import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import type { Obstacle } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject, mergeGraphics } from "graphics-debug"
@@ -202,7 +203,8 @@ test("routes core's AM62L fanout around its future decoupling vias", async () =>
       },
     ],
   })
-  await expect(getSvgFromGraphicsObject(visualization)).toMatchSvgSnapshot(
+  await expectSvgSnapshotWithActual(
+    getSvgFromGraphicsObject(visualization),
     import.meta.path,
   )
 }, 600_000)

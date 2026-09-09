@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
 import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
@@ -35,7 +36,8 @@ test("routes the RAM-left address/control bus with all 102 plane drops", async (
     issues: [],
   })
   expect(output.planeTerminations).toHaveLength(102)
-  await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
+  await expectSvgSnapshotWithActual(
+    getSvgFromGraphicsObject(solver.visualize()),
     import.meta.path,
   )
 }, 120_000)

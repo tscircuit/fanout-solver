@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
@@ -212,12 +213,13 @@ test("a reserved group retries permitted source-layer transit when its target la
       })
     }
   }
-  await expect(
+  await expectSvgSnapshotWithActual(
     getSvgFromGraphicsObject(
       visualizeSimpleRouteJson({
         ...output.simpleRouteJson,
         connections: [],
       }),
     ),
-  ).toMatchSvgSnapshot(import.meta.path)
+    import.meta.path,
+  )
 }, 30_000)

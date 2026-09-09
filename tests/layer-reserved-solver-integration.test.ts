@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
@@ -227,12 +228,13 @@ test("dense competing bus layers run the reserved strategy before layer probes a
   )
   expect(declined.solved).toBe(false)
   expect(declined.attempts).toHaveLength(0)
-  await expect(
+  await expectSvgSnapshotWithActual(
     getSvgFromGraphicsObject(
       visualizeSimpleRouteJson({
         ...output.simpleRouteJson,
         connections: [],
       }),
     ),
-  ).toMatchSvgSnapshot(import.meta.path)
+    import.meta.path,
+  )
 }, 30_000)
