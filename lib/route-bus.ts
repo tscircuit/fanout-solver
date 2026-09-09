@@ -2198,6 +2198,8 @@ export function fanoutPlansAreClear(params: {
   clearance: number
   allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
+  /** Share copper between declared plane drops without merging signal branches. */
+  allowSameNetPlaneMerges?: boolean
 }): boolean {
   const {
     plans,
@@ -2206,6 +2208,7 @@ export function fanoutPlansAreClear(params: {
     clearance,
     allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
+    allowSameNetPlaneMerges = false,
   } = params
   for (let index = 0; index < plans.length; index++) {
     const plan = plans[index]!
@@ -2216,12 +2219,27 @@ export function fanoutPlansAreClear(params: {
         sharedBoundary,
         clearance,
         allowBlindAndBuriedVias,
-        allowSameNetMerges,
+        allowSameNetMerges:
+          allowSameNetMerges ||
+          (allowSameNetPlaneMerges && plan.termination.type === "plane"),
       })
     ) {
       return false
     }
-    const otherPlans = plans.filter((_, otherIndex) => otherIndex !== index)
+    const otherPlans = plans.filter(
+      (other, otherIndex) =>
+        otherIndex !== index &&
+        !(
+          allowSameNetPlaneMerges &&
+          plan.termination.type === "plane" &&
+          other.termination.type === "plane" &&
+          connectionsShareElectricalNet(
+            srj,
+            plan.connectionName,
+            other.connectionName,
+          )
+        ),
+    )
     if (
       !planIsClearOfPlans({
         plan,
@@ -2252,6 +2270,7 @@ export function createFanoutPlanClearanceValidator(
     clearance,
     allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
+    allowSameNetPlaneMerges = false,
   } = params
   const segmentCache: StaticPlanSegmentCache = {
     obstaclesByLayer: new Map(),
@@ -2263,6 +2282,15 @@ export function createFanoutPlanClearanceValidator(
       obstacles.push(obstacle)
       segmentCache.obstaclesByLayer.set(layer, obstacles)
     }
+  // The same retained segment can appear in a plane or signal candidate.
+  // Its static result must not cross those different merge permissions.
+  const planeSegmentCache: StaticPlanSegmentCache =
+    allowSameNetPlaneMerges && !allowSameNetMerges
+      ? {
+          obstaclesByLayer: segmentCache.obstaclesByLayer,
+          byConnection: new Map(),
+        }
+      : segmentCache
   const segmentIndexes = new WeakMap<
     FanoutRoutePlan,
     RouteSegmentSpatialIndex
@@ -2277,13 +2305,16 @@ export function createFanoutPlanClearanceValidator(
     let clear = staticResults.get(plan)
     if (clear === undefined) {
       clear = planIsStaticallyClear({
-        segmentCache,
+        segmentCache:
+          plan.termination.type === "plane" ? planeSegmentCache : segmentCache,
         plan,
         srj,
         sharedBoundary,
         clearance,
         allowBlindAndBuriedVias,
-        allowSameNetMerges,
+        allowSameNetMerges:
+          allowSameNetMerges ||
+          (allowSameNetPlaneMerges && plan.termination.type === "plane"),
       })
       staticResults.set(plan, clear)
     }
@@ -2309,7 +2340,11 @@ export function createFanoutPlanClearanceValidator(
         segmentIndexes,
         srj,
         clearance,
-        allowSameNetMerges,
+        allowSameNetMerges:
+          allowSameNetMerges ||
+          (allowSameNetPlaneMerges &&
+            plan.termination.type === "plane" &&
+            other.termination.type === "plane"),
       })
       pairs.set(other, clear)
       let opposite = mutualResults.get(other)

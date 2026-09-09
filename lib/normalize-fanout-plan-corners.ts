@@ -12,6 +12,10 @@ import {
   getRoutedTraceCopper,
 } from "./get-routed-trace-copper"
 import { getDeclaredDifferentialPairs } from "./get-declared-differential-pairs"
+import {
+  connectionsShareElectricalNet,
+  obstacleSharesElectricalNet,
+} from "./net-identity"
 import { normalizeLayeredPath } from "./normalize-layered-path"
 import { repairBoundaryRouteTails } from "./repair-boundary-route-tails"
 import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
@@ -407,10 +411,23 @@ function normalizePlaneSourcePath(
   const firstVia = plan.trace.route.findIndex((p) => p.route_type === "via")
   if (firstVia < 1) return null
   const { inputSrj, traceWidth, clearance, layerNames } = params
-  const supplied = getAllRoutedTraceCopper(inputSrj, false)
+  // Plane drops are already joined by their declared plane. Preserve the
+  // routing stage's permission to reuse that net's existing copper, while
+  // keeping signal branches and the plan's own returning arms separate.
+  const sharesPlaneNet = (connectionName: string): boolean =>
+    plan.termination.type === "plane" &&
+    connectionsShareElectricalNet(inputSrj, plan.connectionName, connectionName)
+  const blockingPlans = others.filter(
+    (other) =>
+      other.termination.type !== "plane" ||
+      !sharesPlaneNet(other.connectionName),
+  )
+  const supplied = getAllRoutedTraceCopper(inputSrj, false).filter(
+    (copper) => !sharesPlaneNet(copper.connectionName),
+  )
   const index = new RouteSegmentSpatialIndex([
     ...plan.segments.slice(sourceCount),
-    ...others.flatMap((p) => [
+    ...blockingPlans.flatMap((p) => [
       ...p.segments,
       ...(p.planeEndpointSegments ?? []),
     ]),
@@ -418,7 +435,7 @@ function normalizePlaneSourcePath(
   ])
   const vias = [
     ...(plan.additionalVias ?? []),
-    ...others.flatMap((p) =>
+    ...blockingPlans.flatMap((p) =>
       [p.via, ...(p.additionalVias ?? []), p.planeEndpointVia].filter(
         (v) => !!v,
       ),
@@ -468,6 +485,12 @@ function normalizePlaneSourcePath(
             (a.x - source.sourcePoint.x) * (b.x - a.x) +
               (a.y - source.sourcePoint.y) * (b.y - a.y) >=
               -EPSILON
+          )
+            return true
+          if (
+            obstacle !== source.sourceObstacle &&
+            plan.termination.type === "plane" &&
+            obstacleSharesElectricalNet(inputSrj, obstacle, plan.connectionName)
           )
             return true
           return segmentIsLegalTerminalBodyEscape({
@@ -783,8 +806,8 @@ export function normalizeFanoutPlanCorners(
       return null
   }
   // Supplied traces may belong to a completed earlier routing phase whose
-  // connection names are absent from this input. Keep all supplied copper hard
-  // without treating it as newly emitted copper from the current connections.
+  // connection names are absent from this input. Keep unrelated or unknown
+  // copper hard; only declared plane nets may reuse their existing copper.
   if (params.inputSrj.traces?.length && plans.length) {
     const bounds = params.preparedBuses.map((bus) => bus.sharedBoundary)
     const clear = createFanoutPlanClearanceValidator({
@@ -797,6 +820,7 @@ export function normalizeFanoutPlanCorners(
       },
       clearance: params.clearance,
       allowBlindAndBuriedVias: false,
+      allowSameNetPlaneMerges: true,
     })
     if (!clear(plans)) return null
   }

@@ -28,6 +28,7 @@ test("routes the AM62L fanout with real decoupling copper", async () => {
   })
   solver.solve()
 
+  expect(solver.error).toBeNull()
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
