@@ -1,0 +1,434 @@
+[
+  {
+    "declaredPairs": 3,
+    "sample": "01-top-left-offset",
+    "connections": 135,
+    "segments": 517,
+    "corners": 349,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "02-top-center",
+    "connections": 135,
+    "segments": 469,
+    "corners": 301,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "03-top-right-offset",
+    "connections": 135,
+    "segments": 517,
+    "corners": 349,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "04-right-top-offset",
+    "connections": 135,
+    "segments": 527,
+    "corners": 359,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "05-right-center",
+    "connections": 135,
+    "segments": 460,
+    "corners": 292,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "06-right-bottom-offset",
+    "connections": 135,
+    "segments": 590,
+    "corners": 422,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "07-bottom-right-offset",
+    "connections": 135,
+    "segments": 526,
+    "corners": 358,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "08-bottom-center",
+    "connections": 135,
+    "segments": 486,
+    "corners": 318,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "09-bottom-left-offset",
+    "connections": 135,
+    "segments": 491,
+    "corners": 323,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "10-left-bottom-offset",
+    "connections": 135,
+    "segments": 585,
+    "corners": 417,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "11-left-center",
+    "connections": 135,
+    "segments": 547,
+    "corners": 379,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "12-left-top-offset",
+    "connections": 135,
+    "segments": 531,
+    "corners": 363,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "16-rk3308-right-top-offset",
+    "connections": 162,
+    "segments": 833,
+    "corners": 590,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "17-rk3308-right-center",
+    "connections": 162,
+    "segments": 5029,
+    "corners": 4790,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "18-rk3308-right-bottom-offset",
+    "connections": 162,
+    "segments": 875,
+    "corners": 632,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "19-rk3308-bottom-right-offset",
+    "connections": 162,
+    "segments": 8185,
+    "corners": 7960,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "20-rk3308-bottom-center",
+    "connections": 162,
+    "segments": 7017,
+    "corners": 6794,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "21-rk3308-bottom-left-offset",
+    "connections": 162,
+    "segments": 4038,
+    "corners": 3817,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "22-rk3308-left-bottom-offset",
+    "connections": 162,
+    "segments": 1012,
+    "corners": 769,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "23-rk3308-left-center",
+    "connections": 162,
+    "segments": 3738,
+    "corners": 3515,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "24-rk3308-left-top-offset",
+    "connections": 162,
+    "segments": 3214,
+    "corners": 2995,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "25-k230-top-left-offset",
+    "connections": 171,
+    "segments": 15390,
+    "corners": 15126,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "26-k230-top-center",
+    "connections": 171,
+    "segments": 8080,
+    "corners": 7812,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "27-k230-top-right-offset",
+    "connections": 171,
+    "segments": 9343,
+    "corners": 9083,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "28-k230-right-top-offset",
+    "connections": 171,
+    "segments": 9321,
+    "corners": 9075,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "29-k230-right-center",
+    "connections": 171,
+    "segments": 14454,
+    "corners": 14196,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "30-k230-right-bottom-offset",
+    "connections": 171,
+    "segments": 8925,
+    "corners": 8665,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "31-k230-bottom-right-offset",
+    "connections": 171,
+    "segments": 5681,
+    "corners": 5445,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "32-k230-bottom-center",
+    "connections": 171,
+    "segments": 7936,
+    "corners": 7678,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "33-k230-bottom-left-offset",
+    "connections": 171,
+    "segments": 11556,
+    "corners": 11242,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "34-k230-left-bottom-offset",
+    "connections": 171,
+    "segments": 8427,
+    "corners": 8179,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "35-k230-left-center",
+    "connections": 171,
+    "segments": 15113,
+    "corners": 14845,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 6,
+    "sample": "36-k230-left-top-offset",
+    "connections": 171,
+    "segments": 13453,
+    "corners": 13181,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "37-imx6ull-top-left-offset",
+    "connections": 102,
+    "segments": 4411,
+    "corners": 4254,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "38-imx6ull-top-center",
+    "connections": 102,
+    "segments": 7627,
+    "corners": 7470,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "39-imx6ull-top-right-offset",
+    "connections": 102,
+    "segments": 7439,
+    "corners": 7282,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "40-imx6ull-right-top-offset",
+    "connections": 102,
+    "segments": 7923,
+    "corners": 7758,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "41-imx6ull-right-center",
+    "connections": 102,
+    "segments": 6589,
+    "corners": 6418,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "42-imx6ull-right-bottom-offset",
+    "connections": 102,
+    "segments": 4235,
+    "corners": 4080,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "43-imx6ull-bottom-right-offset",
+    "connections": 102,
+    "segments": 5503,
+    "corners": 5340,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "45-imx6ull-bottom-left-offset",
+    "connections": 102,
+    "segments": 4125,
+    "corners": 3972,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "46-imx6ull-left-bottom-offset",
+    "connections": 102,
+    "segments": 3070,
+    "corners": 2907,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "47-imx6ull-left-center",
+    "connections": 102,
+    "segments": 3845,
+    "corners": 3678,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "48-imx6ull-left-top-offset",
+    "connections": 102,
+    "segments": 4802,
+    "corners": 4631,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "50-t113s3-top-center",
+    "connections": 128,
+    "segments": 2235,
+    "corners": 1982,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "53-t113s3-right-center",
+    "connections": 128,
+    "segments": 2307,
+    "corners": 2041,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "56-t113s3-bottom-center",
+    "connections": 128,
+    "segments": 2808,
+    "corners": 2545,
+    "orderIssues": [],
+    "issues": []
+  },
+  {
+    "declaredPairs": 3,
+    "sample": "59-t113s3-left-center",
+    "connections": 128,
+    "segments": 2552,
+    "corners": 2289,
+    "orderIssues": [],
+    "issues": []
+  }
+]

@@ -1,3 +1,6 @@
+import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
+import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
+import { routePeripheralBusesSteps } from "./route-peripheral-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { selectCompatibleCandidates } from "./select-compatible-candidates"
@@ -21,6 +24,9 @@ import {
   getViaSpanLayers,
 } from "./layer-names"
 import { matchBusPlanLengths } from "./match-bus-lengths"
+import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
+import { repairSourcePadReentries } from "./repair-source-pad-reentries"
+import { getSourcePadReentries } from "./source-pad-reentry"
 import {
   getComponentDogboneViaSiteCandidates,
   getSingleDogboneViaSiteRepairs,
@@ -45,6 +51,7 @@ import {
 import { routePeripheralSourceEscapesSteps } from "./route-peripheral-source-escapes"
 import { routeStagedPerimeterBusSteps } from "./route-staged-perimeter-bus"
 import { routeReservedSourceBusesSteps } from "./route-reserved-source-buses"
+import { routeLayerReservedBusesSteps } from "./route-layer-reserved-buses"
 import { repairPeripheralBusLengthsSteps } from "./repair-peripheral-bus-lengths"
 import { routeSplitPerimeterSourceEscapesSteps } from "./route-split-perimeter-source-escapes"
 import { routeSplitPerimeterBusSteps } from "./route-split-perimeter-bus"
@@ -1098,6 +1105,7 @@ export class FanoutSolver extends BaseSolver {
       blockingBusCounts: Map<string, number>
     }
   >()
+  private layerReservedRoutingEvaluated = false
   private groupedBeamEvaluated = false
   private routingInitialized = false
   private nextCandidateLayerBusIndex = 0
@@ -1205,6 +1213,140 @@ export class FanoutSolver extends BaseSolver {
 
   override getSolverName(): string {
     return "FanoutSolver"
+  }
+
+  /** Competing constrained buses need a shared source and layer reservation. */
+  private shouldTryLayerReservedRouting(): boolean {
+    if (this.config.allowBlindAndBuriedVias || this.boundaryBuses.length < 4)
+      return false
+    // Compact/even tracks are fallback choices: explicit layered endpoint
+    // guidance retains its spacing, as in the ordinary boundary router.
+    // Unguided singletons have no internal spacing to preserve or compact.
+    if (
+      (this.config.compactBusTracks ||
+        this.config.borderDistribution === "even") &&
+      this.boundaryBuses.some(
+        (bus) =>
+          bus.connections.length > 1 &&
+          bus.connections.some(
+            (connection) => !connection.hasExplicitLayeredExitTarget,
+          ),
+      )
+    )
+      return false
+    const first = this.preparedBuses[0]!
+    const signalCount = this.boundaryBuses.reduce(
+      (count, bus) => count + bus.connections.length,
+      0,
+    )
+    const planeCount = this.inputSrj.connections.length - signalCount
+    if (
+      planeCount < signalCount ||
+      this.preparedBuses.some(
+        (bus) =>
+          bus.componentId !== first.componentId ||
+          bus.connections.some(
+            (connection) => connection.sourceLayer !== "top",
+          ),
+      ) ||
+      this.boundaryBuses.some(
+        (bus) =>
+          !bus.exitEdge ||
+          bus.exitEdge !== this.boundaryBuses[0]!.exitEdge ||
+          bus.connections.length > 8 ||
+          !bus.allowedLayers?.length ||
+          bus.allowedLayers.some(
+            (layer) => !this.config.escapeLayers.includes(layer),
+          ),
+      )
+    )
+      return false
+    const competingWideBuses = new Map<string, number>()
+    let hasFlexibleBus = false
+    for (const bus of this.boundaryBuses) {
+      const layers = bus.allowedLayers!.filter((layer) => layer !== "top")
+      if (!layers.length) return false
+      if (layers.length > 1) hasFlexibleBus = true
+      if (layers.length === 1 && bus.connections.length > 2) {
+        const layer = layers[0]!
+        competingWideBuses.set(layer, (competingWideBuses.get(layer) ?? 0) + 1)
+      }
+    }
+    // Leave one-channel fields and wide peripheral buses on their established
+    // paths. This strategy addresses multiple intact buses competing for the
+    // same constrained layer while flexible buses can use the remaining layers.
+    return (
+      hasFlexibleBus &&
+      [...competingWideBuses.values()].some((count) => count > 1)
+    )
+  }
+
+  private *evaluateLayerReservedRoutingSteps(
+    sourceOriginRouting = false,
+    peripheralRouting = false,
+  ): Generator<FanoutWorkYield, EvaluatedAssignment | null, unknown> {
+    const params = {
+      ...this.config,
+      sourceOriginRouting,
+      srj: this.routingSrj,
+      buses: this.preparedBuses,
+    }
+    const steps = peripheralRouting
+      ? routePeripheralBusesSteps(params)
+      : routeLayerReservedBusesSteps(params)
+    let next = steps.next()
+    while (!next.done) {
+      this.stats = {
+        ...this.stats,
+        phase: `layer-reserved-${next.value.phase}`,
+        targetLayer: next.value.layer,
+        workUnit: next.value.routedConnectionCount,
+        workUnitCount: this.inputSrj.connections.length,
+        routedConnections: `${next.value.routedConnectionCount}/${this.inputSrj.connections.length}`,
+        routingIterations: next.value.iterations,
+      }
+      yield
+      next = steps.next()
+    }
+    if (!next.value || next.value.length !== this.inputSrj.connections.length)
+      return null
+    const plans = this.normalizeCompletePlanCorners(next.value)
+    if (!plans) return null
+    const outputSrj = buildOutputSimpleRouteJson({
+      inputSrj: this.inputSrj,
+      plans,
+      layerNames: this.config.layerNames,
+    })
+    // Staged source prefixes are never a successful partial fanout. Apply the
+    // same full geometry, bus order, layer and length checks as every strategy.
+    if (!this.validateCompletePlans(plans, outputSrj).valid) return null
+    const busLayerAssignments = Object.fromEntries(
+      plans.map((plan) => [plan.busId, plan.targetLayer]),
+    )
+    const score =
+      plans.reduce((sum, plan) => sum + plan.length, 0) +
+      getPlanViaCount(plans) * 0.1 +
+      assignmentLoadPenalty(
+        busLayerAssignments,
+        this.preparedBuses,
+        this.config.balanceLayerLoadByConnectionCount,
+      ) *
+        getLayerLoadPenaltyWeight(this.config)
+    this.inProgressPlans = [...plans]
+    return {
+      plans,
+      outputSrj,
+      stopAfterCompleteValidation: true,
+      blockingBusIds: [],
+      summary: {
+        assignmentIndex: 0,
+        busLayerAssignments,
+        routedBusCount: this.preparedBuses.length,
+        routedConnectionCount: plans.length,
+        failedBusIds: [],
+        score,
+      },
+    }
   }
 
   private stepRoutingInitialization(): void {
@@ -1573,6 +1715,10 @@ export class FanoutSolver extends BaseSolver {
 
   private matchCompletePlanLengths(
     plans: readonly FanoutRoutePlan[],
+    matchingOptions: Pick<
+      Parameters<typeof matchBusPlanLengths>[0],
+      "maximumWorkUnits" | "allowMatchingInsideDenseBounds"
+    > = {},
   ): ReturnType<typeof matchBusPlanLengths> {
     return matchBusPlanLengths({
       plans,
@@ -1582,6 +1728,46 @@ export class FanoutSolver extends BaseSolver {
       clearance: this.config.clearance,
       allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
       allowSameNetMerges: this.config.allowSameNetMerges,
+      ...matchingOptions,
+    })
+  }
+
+  private normalizeCompletePlanCorners(
+    plans: readonly FanoutRoutePlan[],
+  ): FanoutRoutePlan[] | null {
+    // The legacy assignment and beam strategies need the same final gate as
+    // through-via dense routing, including corners introduced by length tuning.
+    if (this.config.allowBlindAndBuriedVias) return [...plans]
+    const normalized = normalizeFanoutPlanCorners({
+      ...this.config,
+      inputSrj: this.inputSrj,
+      preparedBuses: this.preparedBuses,
+      plans,
+      repairPlaneSourceCorners: true,
+      repairSignalSourceCorners: true,
+      rematchRepairedLengths: (repaired) =>
+        this.matchCompletePlanLengths(repaired, {
+          maximumWorkUnits: 10_000,
+          allowMatchingInsideDenseBounds: true,
+        }).plans,
+    })
+    if (
+      !normalized ||
+      normalized.every((plan) =>
+        getSourcePadReentries(plan, this.config.clearance).every(
+          (issue) => issue.kind === "clearance",
+        ),
+      )
+    )
+      return normalized
+    // The source pad exemption ends when copper leaves the pad. Repair only
+    // selected final plans so intermediate routing keeps its original choices.
+    // The following complete-solution validation rechecks all length limits.
+    return repairSourcePadReentries({
+      ...this.config,
+      inputSrj: this.inputSrj,
+      preparedBuses: this.preparedBuses,
+      plans: normalized,
     })
   }
 
@@ -1696,7 +1882,8 @@ export class FanoutSolver extends BaseSolver {
       repairResult = repairSteps.next()
     }
     if (!repairResult.value) return null
-    const plans = repairResult.value
+    const plans = this.normalizeCompletePlanCorners(repairResult.value)
+    if (!plans) return null
     const output = buildOutputSimpleRouteJson({
       inputSrj: this.inputSrj,
       plans,
@@ -5626,6 +5813,23 @@ export class FanoutSolver extends BaseSolver {
         blockingBusCounts.clear()
       }
     }
+    if (plans.length === this.inputSrj.connections.length) {
+      const normalized = this.normalizeCompletePlanCorners(plans)
+      if (normalized) {
+        plans = normalized
+      } else {
+        validationIssues = [
+          {
+            code: "fanout-normalization",
+            message:
+              "Completed fanout could not normalize every corner while preserving its original clearance and length constraints",
+          },
+        ]
+        plans = []
+        failedBusIds = this.preparedBuses.map((bus) => bus.busId)
+        blockingBusCounts.clear()
+      }
+    }
     let outputSrj = buildOutputSimpleRouteJson({
       inputSrj: this.inputSrj,
       plans,
@@ -5980,7 +6184,13 @@ export class FanoutSolver extends BaseSolver {
         yield
         continue
       }
-      const lengthMatchedPlans = lengthMatching.plans
+      const lengthMatchedPlans = this.normalizeCompletePlanCorners(
+        lengthMatching.plans,
+      )
+      if (!lengthMatchedPlans) {
+        yield
+        continue
+      }
       const candidateOutput = buildOutputSimpleRouteJson({
         inputSrj: this.inputSrj,
         plans: lengthMatchedPlans,
@@ -6351,6 +6561,50 @@ export class FanoutSolver extends BaseSolver {
       return
     }
 
+    if (!this.layerReservedRoutingEvaluated) {
+      this.layerReservedRoutingEvaluated = true
+      const sourceOriginRouting = shouldUseSourceOriginRouting(
+        this.preparedBuses,
+        this.config.allowBlindAndBuriedVias,
+      )
+      const peripheralRouting =
+        !sourceOriginRouting &&
+        preparePeripheralSourceReservations({
+          ...this.config,
+          srj: this.routingSrj,
+          buses: this.preparedBuses,
+        }) !== null
+      if (
+        peripheralRouting ||
+        sourceOriginRouting ||
+        this.shouldTryLayerReservedRouting()
+      ) {
+        this.startOperation({
+          name: "FanoutLayerReservedSolver",
+          generator: this.evaluateLayerReservedRoutingSteps(
+            sourceOriginRouting,
+            peripheralRouting,
+          ),
+          onSolved: (attempt) => {
+            if (!attempt) {
+              this.inProgressPlans = []
+              this.stats = { phase: "layer-reserved-fallback" }
+              return
+            }
+            const assignment = attempt.summary.busLayerAssignments
+            this.layerAssignments.push(assignment)
+            this.routingInitialized = true
+            this.commitAssignmentAttempt(assignment, attempt)
+          },
+          getProgress: () =>
+            Number(this.stats.workUnit ?? 0) /
+            Math.max(1, this.inputSrj.connections.length),
+        })
+        this.stats = { phase: "prepare-layer-reserved-routing" }
+        return
+      }
+    }
+
     if (!this.routingInitialized) {
       this.startOperation({
         name: "FanoutCandidateLayerSolver",
@@ -6429,6 +6683,13 @@ export class FanoutSolver extends BaseSolver {
 
   computeProgress(): number {
     if (this.solved || this.failed) return 1
+    if (this.activeSubSolver?.getSolverName() === "FanoutLayerReservedSolver") {
+      return Math.min(
+        0.99,
+        Number(this.stats.workUnit ?? 0) /
+          Math.max(1, this.inputSrj.connections.length),
+      )
+    }
     if (!this.routingInitialized) {
       return (
         0.05 *

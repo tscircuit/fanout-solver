@@ -28,7 +28,7 @@ import type {
 } from "./types"
 
 const EPSILON = 1e-7
-const MAX_GRID_NODE_COUNT = 120_000
+const MAX_GRID_NODE_COUNT = 160_000
 const MAX_EXPANDED_STATE_COUNT = 240_000
 const EXPANDED_STATES_PER_STEP = 5_000
 const MAX_CONNECTOR_COUNT = 24
@@ -61,6 +61,8 @@ export interface RouteViaMinimalWindingParams {
   allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
   maximumRouteOrderAttempts?: number
+  /** Per-terminal directed-state budget; the default search budget is unchanged. */
+  maximumSearchStates?: number
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
   /** Cost hints for provisional sites that the caller must rematch before commit. */
   softReservedVias?: readonly ViaMinimalWindingReservedVia[]
@@ -68,6 +70,10 @@ export interface RouteViaMinimalWindingParams {
   gridStepDivisor?: 1 | 2
   /** Exact grid spacing for staged routing through narrow via channels. */
   gridStep?: number
+  /** Optional lattice origin for staged paths whose retained cuts lie on a grid. */
+  gridOrigin?: Point2D
+  /** Search priority weight; values above one return the first valid goal. */
+  heuristicWeight?: number
   /** Deterministic terminal order for a caller that has ordered escape ports. */
   routeOrder?: readonly number[]
   /** Side preference for a caller-supplied terminal order. */
@@ -76,6 +82,8 @@ export interface RouteViaMinimalWindingParams {
   sourceEscapePaths?: ReadonlyMap<number, readonly Point2D[]>
   /** Bias bounded fixed-site searches toward the remote target band. */
   preferTargetDirectedLaneBias?: boolean
+  /** Keep the selected exit edge untouched until the exact terminal point. */
+  forbidEarlyExitBoundaryContact?: boolean
   /** Internal path-only mode used before a boundary-side via is appended. */
   allowSourceLayerRouting?: boolean
   /** Promote a blocked terminal while staying within maximumRouteOrderAttempts. */
@@ -116,6 +124,96 @@ interface ConnectorCandidate {
 interface BlockingSegment {
   connectionName: string
   segment: RoutedSegment
+}
+
+interface IndexedBlockingSegment extends BlockingSegment {
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+}
+
+/** Conservative broad phase; exact segment clearance remains the final check. */
+class SegmentSpatialIndex {
+  private readonly cells: Array<IndexedBlockingSegment[] | undefined>
+  private readonly columnCount: number
+  private readonly rowCount: number
+  private readonly seen = new Map<IndexedBlockingSegment, number>()
+  private queryCount = 0
+
+  constructor(
+    segments: readonly BlockingSegment[],
+    private readonly minX: number,
+    private readonly minY: number,
+    maxX: number,
+    maxY: number,
+    private readonly cellSize: number,
+    traceWidth: number,
+    clearance: number,
+  ) {
+    this.columnCount = Math.max(1, Math.ceil((maxX - minX) / cellSize))
+    this.rowCount = Math.max(1, Math.ceil((maxY - minY) / cellSize))
+    this.cells = new Array(this.columnCount * this.rowCount)
+    for (const blocker of segments) {
+      const indexed: IndexedBlockingSegment = {
+        ...blocker,
+        minX: Math.min(blocker.segment.start.x, blocker.segment.end.x),
+        maxX: Math.max(blocker.segment.start.x, blocker.segment.end.x),
+        minY: Math.min(blocker.segment.start.y, blocker.segment.end.y),
+        maxY: Math.max(blocker.segment.start.y, blocker.segment.end.y),
+      }
+      const margin = (blocker.segment.width + traceWidth) / 2 + clearance
+      const firstColumn = this.column(indexed.minX - margin)
+      const lastColumn = this.column(indexed.maxX + margin)
+      const firstRow = this.row(indexed.minY - margin)
+      const lastRow = this.row(indexed.maxY + margin)
+      for (let row = firstRow; row <= lastRow; row++) {
+        for (let column = firstColumn; column <= lastColumn; column++) {
+          const index = row * this.columnCount + column
+          ;(this.cells[index] ??= []).push(indexed)
+        }
+      }
+    }
+  }
+
+  private column(x: number): number {
+    return Math.max(
+      0,
+      Math.min(
+        this.columnCount - 1,
+        Math.floor((x - this.minX) / this.cellSize),
+      ),
+    )
+  }
+
+  private row(y: number): number {
+    return Math.max(
+      0,
+      Math.min(this.rowCount - 1, Math.floor((y - this.minY) / this.cellSize)),
+    )
+  }
+
+  querySegment(segment: RoutedSegment): readonly IndexedBlockingSegment[] {
+    const firstColumn = this.column(Math.min(segment.start.x, segment.end.x))
+    const lastColumn = this.column(Math.max(segment.start.x, segment.end.x))
+    const firstRow = this.row(Math.min(segment.start.y, segment.end.y))
+    const lastRow = this.row(Math.max(segment.start.y, segment.end.y))
+    if (firstColumn === lastColumn && firstRow === lastRow)
+      return this.cells[firstRow * this.columnCount + firstColumn] ?? []
+    const candidates: IndexedBlockingSegment[] = []
+    const query = ++this.queryCount
+    for (let row = firstRow; row <= lastRow; row++) {
+      for (let column = firstColumn; column <= lastColumn; column++) {
+        for (const blocker of this.cells[row * this.columnCount + column] ??
+          []) {
+          if (this.seen.get(blocker) === query) continue
+          this.seen.set(blocker, query)
+          candidates.push(blocker)
+        }
+      }
+    }
+    return candidates
+  }
 }
 
 interface BlockingVia {
@@ -664,15 +762,18 @@ export function* routeViaMinimalWindingAlternativesSteps(
     allowBlindAndBuriedVias = true,
     allowSameNetMerges = false,
     maximumRouteOrderAttempts,
+    maximumSearchStates = MAX_EXPANDED_STATE_COUNT,
     reservedVias = [],
     softReservedVias = [],
     gridStepDivisor = 1,
+    heuristicWeight = 1,
     preferTargetDirectedLaneBias = false,
     allowSourceLayerRouting = false,
     adaptiveRouteOrder = false,
     alignGridToPads = false,
     includeReverseTargetRotation = false,
     reserveTerminalExitPoints = false,
+    forbidEarlyExitBoundaryContact = false,
   } = params
   if (
     maximumRouteOrderAttempts !== undefined &&
@@ -684,6 +785,16 @@ export function* routeViaMinimalWindingAlternativesSteps(
     )
   }
 
+  if (!Number.isSafeInteger(maximumSearchStates) || maximumSearchStates < 1) {
+    throw new Error(
+      `FanoutSolver: maximumSearchStates must be a positive safe integer, received ${maximumSearchStates}`,
+    )
+  }
+  if (!Number.isFinite(heuristicWeight) || heuristicWeight <= 0) {
+    throw new Error(
+      `FanoutSolver: heuristicWeight must be a positive finite number, received ${heuristicWeight}`,
+    )
+  }
   if (gridStepDivisor !== 1 && gridStepDivisor !== 2) {
     throw new Error(
       `FanoutSolver: gridStepDivisor must be 1 or 2, received ${gridStepDivisor}`,
@@ -711,8 +822,18 @@ export function* routeViaMinimalWindingAlternativesSteps(
       : baseGridStep)
   if (!Number.isFinite(gridStep) || gridStep <= 0) return []
   const { minX, maxX, minY, maxY } = bus.sharedBoundary
-  const originX = bus.xCoordinates[0] ?? minX
-  const originY = bus.yCoordinates[0] ?? minY
+  const exitAxis =
+    bus.exitEdge === "left" || bus.exitEdge === "right" ? "x" : "y"
+  const exitCoordinate =
+    bus.exitEdge === "left"
+      ? minX
+      : bus.exitEdge === "right"
+        ? maxX
+        : bus.exitEdge === "top"
+          ? maxY
+          : minY
+  const originX = params.gridOrigin?.x ?? bus.xCoordinates[0] ?? minX
+  const originY = params.gridOrigin?.y ?? bus.yCoordinates[0] ?? minY
   const gridMinX = alignGridToPitch
     ? originX + Math.ceil((minX - originX) / gridStep) * gridStep
     : minX
@@ -833,30 +954,39 @@ export function* routeViaMinimalWindingAlternativesSteps(
       )
     }),
   )
-  const terminalVias: BlockingVia[] = terminals.map((terminal) => ({
-    connectionName: terminal.connection.connection.name,
-    via: {
-      center: terminal.viaPoint,
-      diameter: viaDiameter,
-      spanLayers: getViaSpanLayers({
-        fromLayer: terminal.connection.sourceLayer,
-        toLayer: targetLayer,
-        layerNames,
-        allowBlindAndBuriedVias,
-      }),
-    },
-  }))
+  // A retained same-layer path cut is not a physical via. Actual barrels
+  // remain in acceptedPlans/reservedVias, including the route's original via.
+  const terminalVias: BlockingVia[] = terminals
+    .filter((terminal) => terminal.connection.sourceLayer !== targetLayer)
+    .map((terminal) => ({
+      connectionName: terminal.connection.connection.name,
+      via: {
+        center: terminal.viaPoint,
+        diameter: viaDiameter,
+        spanLayers: getViaSpanLayers({
+          fromLayer: terminal.connection.sourceLayer,
+          toLayer: targetLayer,
+          layerNames,
+          allowBlindAndBuriedVias,
+        }),
+      },
+    }))
   const boundaryDirection = getDirectionForExitEdge(bus.exitEdge)
   const sharesNet = (first: string, second: string): boolean =>
     first === second ||
     (allowSameNetMerges && connectionsShareElectricalNet(srj, first, second))
-  const boundedBlockingSegments = blockingSegments.map((blocker) => ({
-    ...blocker,
-    minX: Math.min(blocker.segment.start.x, blocker.segment.end.x),
-    maxX: Math.max(blocker.segment.start.x, blocker.segment.end.x),
-    minY: Math.min(blocker.segment.start.y, blocker.segment.end.y),
-    maxY: Math.max(blocker.segment.start.y, blocker.segment.end.y),
-  }))
+  const createSegmentIndex = (segments: readonly BlockingSegment[]) =>
+    new SegmentSpatialIndex(
+      segments,
+      minX,
+      minY,
+      maxX,
+      maxY,
+      gridStep * 8,
+      traceWidth,
+      clearance,
+    )
+  const blockingSegmentIndex = createSegmentIndex(blockingSegments)
   const allBlockingVias = [...blockingVias, ...terminalVias]
   const maximumViaToTraceDistance = allBlockingVias.reduce(
     (maximum, { via }) =>
@@ -879,9 +1009,17 @@ export function* routeViaMinimalWindingAlternativesSteps(
   const segmentIsClear = (params: {
     segment: RoutedSegment
     terminal: ViaMinimalWindingTerminal
-    acceptedAttemptSegments: BlockingSegment[]
+    acceptedAttemptSegmentIndex: SegmentSpatialIndex
   }): boolean => {
-    const { segment, terminal, acceptedAttemptSegments } = params
+    const { segment, terminal, acceptedAttemptSegmentIndex } = params
+    if (forbidEarlyExitBoundaryContact) {
+      for (const point of [segment.start, segment.end])
+        if (
+          Math.abs(point[exitAxis] - exitCoordinate) < EPSILON &&
+          distance(point, terminal.exitPoint) > EPSILON
+        )
+          return false
+    }
     const connectionName = terminal.connection.connection.name
     const segmentMinX = Math.min(segment.start.x, segment.end.x)
     const segmentMaxX = Math.max(segment.start.x, segment.end.x)
@@ -906,7 +1044,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
         return false
       }
     }
-    for (const blocker of boundedBlockingSegments) {
+    for (const blocker of blockingSegmentIndex.querySegment(segment)) {
       if (sharesNet(connectionName, blocker.connectionName)) continue
       const margin = (segment.width + blocker.segment.width) / 2 + clearance
       // Keep the full clearance margin in the broad phase; the exact check
@@ -931,18 +1069,14 @@ export function* routeViaMinimalWindingAlternativesSteps(
         return false
       }
     }
-    for (const blocker of acceptedAttemptSegments) {
+    for (const blocker of acceptedAttemptSegmentIndex.querySegment(segment)) {
       if (sharesNet(connectionName, blocker.connectionName)) continue
       const margin = (segment.width + blocker.segment.width) / 2 + clearance
       if (
-        segmentMaxX + margin <
-          Math.min(blocker.segment.start.x, blocker.segment.end.x) ||
-        segmentMinX - margin >
-          Math.max(blocker.segment.start.x, blocker.segment.end.x) ||
-        segmentMaxY + margin <
-          Math.min(blocker.segment.start.y, blocker.segment.end.y) ||
-        segmentMinY - margin >
-          Math.max(blocker.segment.start.y, blocker.segment.end.y)
+        segmentMaxX + margin < blocker.minX ||
+        segmentMinX - margin > blocker.maxX ||
+        segmentMaxY + margin < blocker.minY ||
+        segmentMinY - margin > blocker.maxY
       )
         continue
       if (
@@ -1000,36 +1134,59 @@ export function* routeViaMinimalWindingAlternativesSteps(
   const connectorCandidates = (params: {
     terminal: ViaMinimalWindingTerminal
     endpoint: Point2D
-    acceptedAttemptSegments: BlockingSegment[]
+    acceptedAttemptSegmentIndex: SegmentSpatialIndex
   }): ConnectorCandidate[] => {
-    const { terminal, endpoint, acceptedAttemptSegments } = params
+    const { terminal, endpoint, acceptedAttemptSegmentIndex } = params
     const candidates: ConnectorCandidate[] = []
-    for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
-      const node = nodes[nodeIndex]!
-      const connectorDistance = distance(endpoint, node.point)
-      if (connectorDistance > gridStep * CONNECTOR_RADIUS_IN_STEPS) continue
-      for (const points of getConnectorVariants(endpoint, node.point)) {
-        const segments = getSegments(points, traceWidth, targetLayer)
-        if (
-          !segments.every((segment) =>
-            segmentIsClear({
-              segment,
-              terminal,
-              acceptedAttemptSegments,
-            }),
-          )
-        ) {
-          continue
+    // Only nearby nodes can produce connectors. Keep one extra cell around
+    // the radius for floating-point boundary rounding, then use the original
+    // exact distance filter and ascending node order.
+    const radius = gridStep * CONNECTOR_RADIUS_IN_STEPS
+    const minimumColumn = Math.max(
+      0,
+      Math.ceil((endpoint.x - radius - gridMinX) / gridStep) - 1,
+    )
+    const maximumColumn = Math.min(
+      columnCount - 1,
+      Math.floor((endpoint.x + radius - gridMinX) / gridStep) + 1,
+    )
+    const minimumRow = Math.max(
+      0,
+      Math.ceil((endpoint.y - radius - gridMinY) / gridStep) - 1,
+    )
+    const maximumRow = Math.min(
+      rowCount - 1,
+      Math.floor((endpoint.y + radius - gridMinY) / gridStep) + 1,
+    )
+    for (let row = minimumRow; row <= maximumRow; row++) {
+      for (let column = minimumColumn; column <= maximumColumn; column++) {
+        const nodeIndex = row * columnCount + column
+        const node = nodes[nodeIndex]!
+        const connectorDistance = distance(endpoint, node.point)
+        if (connectorDistance > gridStep * CONNECTOR_RADIUS_IN_STEPS) continue
+        for (const points of getConnectorVariants(endpoint, node.point)) {
+          const segments = getSegments(points, traceWidth, targetLayer)
+          if (
+            !segments.every((segment) =>
+              segmentIsClear({
+                segment,
+                terminal,
+                acceptedAttemptSegmentIndex,
+              }),
+            )
+          ) {
+            continue
+          }
+          candidates.push({
+            nodeIndex,
+            points,
+            radialDistance: connectorDistance,
+            length: segments.reduce(
+              (total, segment) => total + distance(segment.start, segment.end),
+              0,
+            ),
+          })
         }
-        candidates.push({
-          nodeIndex,
-          points,
-          radialDistance: connectorDistance,
-          length: segments.reduce(
-            (total, segment) => total + distance(segment.start, segment.end),
-            0,
-          ),
-        })
       }
     }
     return candidates
@@ -1166,15 +1323,18 @@ export function* routeViaMinimalWindingAlternativesSteps(
     void
   > {
     const { terminal, acceptedAttemptSegments, laneBias } = params
+    const acceptedAttemptSegmentIndex = createSegmentIndex(
+      acceptedAttemptSegments,
+    )
     const starts = connectorCandidates({
       terminal,
       endpoint: terminal.viaPoint,
-      acceptedAttemptSegments,
+      acceptedAttemptSegmentIndex,
     })
     const ends = connectorCandidates({
       terminal,
       endpoint: terminal.exitPoint,
-      acceptedAttemptSegments,
+      acceptedAttemptSegmentIndex,
     })
     if (starts.length === 0 || ends.length === 0) {
       return { points: null, expandedStateCount: 0 }
@@ -1190,6 +1350,11 @@ export function* routeViaMinimalWindingAlternativesSteps(
     // change while routing this terminal, so check each edge only once. Keep
     // this cache local: later terminals and route-order attempts add blockers.
     const edgeClearance = new Uint8Array(nodeCount * 8)
+    // Weighted search prioritizes the first legal route, so do not reopen
+    // settled directed states while pursuing a shorter path to the same node.
+    // The default admissible search retains its existing relaxation behavior.
+    const closedStates =
+      heuristicWeight > 1 ? new Uint8Array(stateCount) : undefined
     const distances = new Float64Array(stateCount).fill(
       Number.POSITIVE_INFINITY,
     )
@@ -1225,7 +1390,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
       heap.push({
         node: start.nodeIndex,
         direction: 8,
-        score: start.length + remaining,
+        score: start.length + heuristicWeight * remaining,
       })
     }
     const directions = [
@@ -1260,16 +1425,20 @@ export function* routeViaMinimalWindingAlternativesSteps(
     let expandedStatesSinceYield = 0
     let searchBatch = 0
     let expandedBatchPoints: Point2D[] = []
-    while (heap.size > 0 && expandedStateCount < MAX_EXPANDED_STATE_COUNT) {
+    while (heap.size > 0 && expandedStateCount < maximumSearchStates) {
       const current = heap.pop()!
       if (current.score >= bestGoalCost - EPSILON) break
       const state = current.node * 9 + current.direction
+      if (closedStates?.[state]) continue
       const currentDistance = distances[state]!
       if (
         current.score >
-        currentDistance + remainingDistances[current.node]! + EPSILON
+        currentDistance +
+          heuristicWeight * remainingDistances[current.node]! +
+          EPSILON
       )
         continue
+      if (closedStates) closedStates[state] = 1
       expandedStateCount++
       expandedStatesSinceYield++
       if (includeVisualization && expandedStatesSinceYield % 50 === 0) {
@@ -1314,7 +1483,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
                 segmentIsClear({
                   segment,
                   terminal,
-                  acceptedAttemptSegments,
+                  acceptedAttemptSegmentIndex,
                 }),
               )
             ) {
@@ -1324,6 +1493,12 @@ export function* routeViaMinimalWindingAlternativesSteps(
             bestGoalPoints = points
           }
         }
+      }
+      // A weighted heuristic is not an admissible distance bound. Its purpose
+      // is to find a legal path quickly, so accept this fully checked goal
+      // without claiming that later frontier priorities prove it shortest.
+      if (heuristicWeight > 1 && bestGoalPoints) {
+        return { points: bestGoalPoints, expandedStateCount }
       }
       const node = nodes[current.node]!
       for (const directionIndex of nextDirectionsByIncoming[
@@ -1349,6 +1524,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
           lanePenalty +
           (softViaCosts?.[nextNode] ?? 0)
         const nextState = nextNode * 9 + directionIndex
+        if (closedStates?.[nextState]) continue
         if (nextDistance >= distances[nextState]! - EPSILON) continue
         const edgeIndex = current.node * 8 + directionIndex
         if (edgeClearance[edgeIndex] === 0) {
@@ -1360,7 +1536,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
               layer: targetLayer,
             },
             terminal,
-            acceptedAttemptSegments,
+            acceptedAttemptSegmentIndex,
           })
           edgeClearance[edgeIndex] = clear ? 1 : 2
           edgeClearance[nextNode * 8 + ((directionIndex + 4) % 8)] = clear
@@ -1374,7 +1550,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
         heap.push({
           node: nextNode,
           direction: directionIndex,
-          score: nextDistance + remaining,
+          score: nextDistance + heuristicWeight * remaining,
         })
       }
       if (expandedStatesSinceYield >= EXPANDED_STATES_PER_STEP) {

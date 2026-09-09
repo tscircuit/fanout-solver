@@ -6,7 +6,7 @@ import type {
 
 interface ElectricalNetIdentity {
   connectionNetKeys: Map<string, string>
-  tokenNetKeys: Map<string, Set<string>>
+  tokenNetKeys: Map<string, string>
 }
 
 const identityCache = new WeakMap<SimpleRouteJson, ElectricalNetIdentity>()
@@ -124,14 +124,15 @@ function createElectricalNetIdentity(
   for (const [connectionName, netKey] of connectionNetKeys) {
     connectionNetKeys.set(connectionName, findRoot(netKey))
   }
+  // Every net associated with a token was unioned above. Store its one
+  // canonical key directly instead of repeatedly querying a singleton Set.
+  const resolvedTokenNetKeys = new Map<string, string>()
   for (const [token, netKeys] of tokenNetKeys) {
-    tokenNetKeys.set(
-      token,
-      new Set([...netKeys].map((netKey) => findRoot(netKey))),
-    )
+    const first = netKeys.values().next().value
+    if (first !== undefined) resolvedTokenNetKeys.set(token, findRoot(first))
   }
 
-  return { connectionNetKeys, tokenNetKeys }
+  return { connectionNetKeys, tokenNetKeys: resolvedTokenNetKeys }
 }
 
 function getElectricalNetIdentity(srj: SimpleRouteJson): ElectricalNetIdentity {
@@ -161,7 +162,7 @@ export function obstacleSharesElectricalNet(
   const identity = getElectricalNetIdentity(srj)
   const connectionNet = identity.connectionNetKeys.get(connectionName)
   if (!connectionNet) return false
-  return obstacle.connectedTo.some((token) =>
-    identity.tokenNetKeys.get(token)?.has(connectionNet),
-  )
+  for (const token of obstacle.connectedTo)
+    if (identity.tokenNetKeys.get(token) === connectionNet) return true
+  return false
 }

@@ -11,6 +11,7 @@ import type {
 } from "lib/types"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import capturedFixture from "./fixtures/am62l-lpddr4-six-bus-through-all-dram.json"
+import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import { getPcbSvgFromSrj } from "./fixtures/getPcbSvgFromSrj"
 
 type CapturedInput = Omit<SimpleRouteJson, "connections"> & {
@@ -498,6 +499,7 @@ test("routes the AM62L nine-bus DRAM fanout with DMI1", async () => {
     issues: [],
   })
   expect(output.fanoutTraces).toHaveLength(143)
+  expectStraightOr45Fanout(output.fanoutTraces)
   expect(output.planeTerminations).toHaveLength(110)
   expect(output.simpleRouteJson.fanoutPlaneConnectivity).toHaveLength(110)
   expect(output.simpleRouteJson.differentialPairs).toEqual(
