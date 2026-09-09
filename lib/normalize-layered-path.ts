@@ -9,6 +9,8 @@ export interface LayeredPathPoint extends Point2D {
 export function normalizeLayeredPath(params: {
   points: readonly LayeredPathPoint[]
   chamfer: number
+  /** Repair selected final paths without admitting new intermediate candidates. */
+  repairReversingDiagonalCorners?: boolean
   segmentIsClear: (start: LayeredPathPoint, end: LayeredPathPoint) => boolean
 }): LayeredPathPoint[] | null {
   const { points, chamfer, segmentIsClear } = params
@@ -72,7 +74,9 @@ export function normalizeLayeredPath(params: {
         vx = (c.x - b.x) / outgoing,
         vy = (c.y - b.y) / outgoing,
         dot = ux * vx + uy * vy
-      const reversingDiagonal = Math.abs(dot + Math.SQRT1_2) < epsilon
+      const reversingDiagonal =
+        params.repairReversingDiagonalCorners === true &&
+        Math.abs(dot + Math.SQRT1_2) < epsilon
       if (Math.abs(dot) > epsilon && !reversingDiagonal) {
         result.push(b)
         continue

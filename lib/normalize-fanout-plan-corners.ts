@@ -238,6 +238,7 @@ export function normalizeFanoutPlanTargetPath(
   const normalized = normalizeLayeredPath({
     points,
     chamfer,
+    repairReversingDiagonalCorners: true,
     segmentIsClear: (a, b) => {
       const segment = {
         start: a,
@@ -432,6 +433,7 @@ function normalizePlaneSourcePath(
       }),
     ),
     chamfer: traceWidth / 4,
+    repairReversingDiagonalCorners: true,
     segmentIsClear: (a, b) => {
       const segment = {
         start: a,

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="330" viewBox="0 0 840 330">
+    <rect width="840" height="330" fill="white"/>
+    <g font-family="sans-serif" fill="#0f172a">
+      <g transform="translate(0,0)">
+      <text x="15" y="30" font-size="16" font-weight="600">Intermediate: rejected</text>
+      <text x="15" y="53" font-size="12" fill="#475569">Candidate rejected; no copper emitted</text>
+
+      <path d="M 45 275 L 130 275" stroke="#64748b" stroke-width="5.1" stroke-dasharray="5 4"/><path d="M 130 275 L 215 275" stroke="#64748b" stroke-width="5.1" stroke-dasharray="5 4"/><path d="M 215 275 L 130 190" stroke="#64748b" stroke-width="5.1" stroke-dasharray="5 4"/><path d="M 130 190 L 130 105" stroke="#64748b" stroke-width="5.1" stroke-dasharray="5 4"/><circle cx="130" cy="275" r="7" fill="white" stroke="#0f172a" stroke-width="2"/><circle cx="130" cy="190" r="7" fill="white" stroke="#0f172a" stroke-width="2"/>
+      <circle cx="45" cy="275" r="5" fill="#0f172a"/><circle cx="130" cy="105" r="5" fill="#0f172a"/>
+      <text x="25" y="305" font-size="12">Source</text><text x="143" y="105" font-size="12">Destination</text>
+    </g>
+      <g transform="translate(280,0)">
+      <text x="15" y="30" font-size="16" font-weight="600">Final repair: accepted</text>
+      <text x="15" y="53" font-size="12" fill="#475569">45° turns; terminals and vias retained</text>
+
+      <path d="M 45 275 L 130 275" stroke="#b45309" stroke-width="5.1" /><path d="M 130 275 L 194.6 275" stroke="#2563eb" stroke-width="5.1" /><path d="M 194.6 275 L 200.57502166379442 269.02497833620555" stroke="#2563eb" stroke-width="5.1" /><path d="M 200.57502166379442 269.02497833620555 L 200.57502166379442 260.5750216637944" stroke="#2563eb" stroke-width="5.1" /><path d="M 200.57502166379442 260.5750216637944 L 130 190" stroke="#2563eb" stroke-width="5.1" /><path d="M 130 190 L 130 105" stroke="#15803d" stroke-width="5.1" /><circle cx="130" cy="275" r="7" fill="white" stroke="#0f172a" stroke-width="2"/><circle cx="130" cy="190" r="7" fill="white" stroke="#0f172a" stroke-width="2"/>
+      <circle cx="45" cy="275" r="5" fill="#0f172a"/><circle cx="130" cy="105" r="5" fill="#0f172a"/>
+      <text x="25" y="305" font-size="12">Source</text><text x="143" y="105" font-size="12">Destination</text>
+    </g>
+      <g transform="translate(560,0)">
+      <text x="15" y="30" font-size="16" font-weight="600">Blocked repair: rejected</text>
+      <text x="15" y="53" font-size="12" fill="#475569">Candidate rejected; no copper emitted</text>
+      <circle cx="215" cy="275" r="27.2" fill="#fee2e2"/><circle cx="215" cy="275" r="21.25" fill="#fca5a5" stroke="#b91c1c"/>
+      <path d="M 45 275 L 130 275" stroke="#64748b" stroke-width="5.1" stroke-dasharray="5 4"/><path d="M 130 275 L 215 275" stroke="#64748b" stroke-width="5.1" stroke-dasharray="5 4"/><path d="M 215 275 L 130 190" stroke="#64748b" stroke-width="5.1" stroke-dasharray="5 4"/><path d="M 130 190 L 130 105" stroke="#64748b" stroke-width="5.1" stroke-dasharray="5 4"/><circle cx="130" cy="275" r="7" fill="white" stroke="#0f172a" stroke-width="2"/><circle cx="130" cy="190" r="7" fill="white" stroke="#0f172a" stroke-width="2"/>
+      <circle cx="45" cy="275" r="5" fill="#0f172a"/><circle cx="130" cy="105" r="5" fill="#0f172a"/>
+      <text x="25" y="305" font-size="12">Source</text><text x="143" y="105" font-size="12">Destination</text>
+    </g>
+    </g>
+  </svg>
