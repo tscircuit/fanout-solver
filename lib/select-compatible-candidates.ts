@@ -128,8 +128,8 @@ export function selectCompatibleCandidates<T>(params: {
               compatible(selection[first]!, selection[second]!)
             )
               continue
-            conflictCounts[first]++
-            conflictCounts[second]++
+            conflictCounts[first] = conflictCounts[first]! + 1
+            conflictCounts[second] = conflictCounts[second]! + 1
           }
         }
         const maximumConflictCount = Math.max(...conflictCounts)

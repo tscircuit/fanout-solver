@@ -28,7 +28,7 @@
     "start": "cosmos",
     "build:site": "cosmos-export",
     "build": "bunx tsc --noEmit",
-    "typecheck": "bunx tsc --noEmit",
+    "typecheck": "bunx tsc --noEmit && bunx tsc --project tsconfig.lib.json",
     "test": "bun test",
     "benchmark": "bun benchmarks/run-benchmark.ts",
     "generate:repro04": "bun scripts/generate-repro/generate-repro04.tsx",
