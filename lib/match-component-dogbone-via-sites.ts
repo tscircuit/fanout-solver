@@ -682,16 +682,73 @@ function matchComponent(params: {
     )
   }
 
-  const getViableCandidates = (
-    entry: ConnectionCandidates,
-  ): ViaSiteCandidate[] =>
-    entry.candidates.filter((candidate) =>
-      [...assignedCandidates.values()].every((assignedCandidate) =>
-        candidatesAreCompatible(candidate, assignedCandidate),
-      ),
+  const initialViableCandidates = new Map(
+    [...remaining].map((connectionIndex) => {
+      const entry = entryByConnectionIndex.get(connectionIndex)!
+      return [
+        connectionIndex,
+        entry.candidates.filter((candidate) =>
+          [...assignedCandidates.values()].every((assignedCandidate) =>
+            candidatesAreCompatible(candidate, assignedCandidate),
+          ),
+        ),
+      ] as const
+    }),
+  )
+  const enforceArcConsistency = (
+    candidatesByConnectionIndex: ReadonlyMap<number, ViaSiteCandidate[]>,
+    changedConnectionIndices: readonly number[],
+  ): Map<number, ViaSiteCandidate[]> | null => {
+    const reducedCandidates = new Map(
+      [...candidatesByConnectionIndex].map(([connectionIndex, candidates]) => [
+        connectionIndex,
+        [...candidates],
+      ]),
     )
+    const connectionIndices = [...reducedCandidates.keys()]
+    const pendingArcs = changedConnectionIndices.flatMap(
+      (changedConnectionIndex) =>
+        connectionIndices.flatMap((connectionIndex) =>
+          connectionIndex === changedConnectionIndex
+            ? []
+            : [[connectionIndex, changedConnectionIndex] as const],
+        ),
+    )
+    for (let arcIndex = 0; arcIndex < pendingArcs.length; arcIndex++) {
+      const [connectionIndex, supportConnectionIndex] = pendingArcs[arcIndex]!
+      const candidates = reducedCandidates.get(connectionIndex)!
+      const supportCandidates = reducedCandidates.get(supportConnectionIndex)!
+      const supportedCandidates = candidates.filter((candidate) =>
+        supportCandidates.some((supportCandidate) =>
+          candidatesAreCompatible(candidate, supportCandidate),
+        ),
+      )
+      if (supportedCandidates.length === candidates.length) continue
+      if (supportedCandidates.length === 0) return null
+      reducedCandidates.set(connectionIndex, supportedCandidates)
+      for (const otherConnectionIndex of connectionIndices) {
+        if (
+          otherConnectionIndex === connectionIndex ||
+          otherConnectionIndex === supportConnectionIndex
+        )
+          continue
+        pendingArcs.push([otherConnectionIndex, connectionIndex])
+      }
+    }
+    return reducedCandidates
+  }
+  const initiallyConsistentCandidates = enforceArcConsistency(
+    initialViableCandidates,
+    [...initialViableCandidates.keys()],
+  )
+  if (!initiallyConsistentCandidates) return null
 
-  const augmentMatching = (): boolean => {
+  const augmentMatching = (
+    viableCandidatesByConnectionIndex: ReadonlyMap<
+      number,
+      ViaSiteCandidate[]
+    >,
+  ): boolean => {
     if (!consumeSearchState()) return false
     if (remaining.size === 0) return true
 
@@ -701,7 +758,8 @@ function matchComponent(params: {
       (first, second) => first - second,
     )) {
       const entry = entryByConnectionIndex.get(connectionIndex)!
-      const viableCandidates = getViableCandidates(entry)
+      const viableCandidates =
+        viableCandidatesByConnectionIndex.get(connectionIndex)!
       if (viableCandidates.length === 0) return false
       if (
         !selectedEntry ||
@@ -720,14 +778,39 @@ function matchComponent(params: {
     remaining.delete(connectionIndex)
     for (const candidate of selectedCandidates) {
       assignedCandidates.set(connectionIndex, candidate)
-      if (augmentMatching()) return true
+      const nextViableCandidates = new Map<number, ViaSiteCandidate[]>()
+      const changedConnectionIndices: number[] = []
+      for (const remainingConnectionIndex of remaining) {
+        const previousCandidates = viableCandidatesByConnectionIndex.get(
+          remainingConnectionIndex,
+        )!
+        const nextCandidates = previousCandidates.filter((otherCandidate) =>
+          candidatesAreCompatible(candidate, otherCandidate),
+        )
+        if (nextCandidates.length === 0) {
+          changedConnectionIndices.length = 0
+          break
+        }
+        nextViableCandidates.set(remainingConnectionIndex, nextCandidates)
+        if (nextCandidates.length < previousCandidates.length)
+          changedConnectionIndices.push(remainingConnectionIndex)
+      }
+      const consistentCandidates =
+        nextViableCandidates.size === remaining.size
+          ? enforceArcConsistency(
+              nextViableCandidates,
+              changedConnectionIndices,
+            )
+          : null
+      if (consistentCandidates && augmentMatching(consistentCandidates))
+        return true
       assignedCandidates.delete(connectionIndex)
     }
     remaining.add(connectionIndex)
     return false
   }
 
-  if (!augmentMatching()) return null
+  if (!augmentMatching(initiallyConsistentCandidates)) return null
   return new Map(
     [...assignedCandidates.entries()]
       .toSorted(([first], [second]) => first - second)

@@ -4237,19 +4237,10 @@ export function* routeBusAlternativesSteps(
   )
     return alternatives
 
-  const searchConnectionOrder = (
-    connectionOrder: PreparedConnection[],
+  const getAnalyticCandidatePlans = (
+    preparedConnection: PreparedConnection,
     viaHandedness: ViaHandedness,
-    connectionIndex: number,
-    candidatePlans: FanoutRoutePlan[],
-  ): void => {
-    if (alternatives.length >= maxAlternatives) return
-    if (connectionIndex >= connectionOrder.length) {
-      addAlternative(candidatePlans)
-      return
-    }
-
-    const preparedConnection = connectionOrder[connectionIndex]!
+  ): FanoutRoutePlan[] => {
     const connectionRank = getConnectionRank(bus, preparedConnection)
     const preferredTracks = [
       getPreferredTrack({
@@ -4288,12 +4279,7 @@ export function* routeBusAlternativesSteps(
             (candidate) => Math.abs(candidate.value - track.value) < 1e-9,
           ) === index,
       )
-    for (
-      let trackIndex = 0;
-      trackIndex < trackCandidates.length;
-      trackIndex++
-    ) {
-      const track = trackCandidates[trackIndex]!
+    return trackCandidates.flatMap((track, trackIndex) => {
       const plan = buildPlan({
         preparedConnection,
         bus,
@@ -4320,38 +4306,151 @@ export function* routeBusAlternativesSteps(
         cornerBandTargetTrackOffset,
         fixedBoundaryTracksByConnectionIndex,
       })
-      if (
-        !planIsClear({
-          plan,
-          otherPlans: [...acceptedPlans, ...candidatePlans],
-          staticClearanceCache,
-          blockingBusCounts,
-          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
-          srj,
-          sharedBoundary: bus.sharedBoundary,
-          clearance,
-          allowBlindAndBuriedVias,
-          allowSameNetMerges,
-        })
-      ) {
-        continue
-      }
-      searchConnectionOrder(
-        connectionOrder,
-        viaHandedness,
-        connectionIndex + 1,
-        [...candidatePlans, plan],
+      return planIsClear({
+        plan,
+        otherPlans: acceptedPlans,
+        staticClearanceCache,
+        blockingBusCounts,
+        cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
+        srj,
+        sharedBoundary: bus.sharedBoundary,
+        clearance,
+        allowBlindAndBuriedVias,
+        allowSameNetMerges,
+      })
+        ? [plan]
+        : []
+    })
+  }
+
+  const analyticCompatibilityCache = new Map<
+    FanoutRoutePlan,
+    Map<FanoutRoutePlan, boolean>
+  >()
+  const analyticPlansAreCompatible = (
+    first: FanoutRoutePlan,
+    second: FanoutRoutePlan,
+  ): boolean => {
+    const cached = analyticCompatibilityCache.get(first)?.get(second)
+    if (cached !== undefined) return cached
+    const compatible = planIsClearOfPlans({
+      plan: first,
+      otherPlans: [second],
+      srj,
+      allowSameNetMerges,
+      clearance,
+    })
+    const firstCache = analyticCompatibilityCache.get(first) ?? new Map()
+    firstCache.set(second, compatible)
+    analyticCompatibilityCache.set(first, firstCache)
+    const secondCache = analyticCompatibilityCache.get(second) ?? new Map()
+    secondCache.set(first, compatible)
+    analyticCompatibilityCache.set(second, secondCache)
+    return compatible
+  }
+  const enforceAnalyticArcConsistency = (
+    candidateDomains: ReadonlyMap<PreparedConnection, FanoutRoutePlan[]>,
+    changedConnections: readonly PreparedConnection[],
+  ): Map<PreparedConnection, FanoutRoutePlan[]> | null => {
+    const reducedDomains = new Map(
+      [...candidateDomains].map(([connection, plans]) => [
+        connection,
+        [...plans],
+      ]),
+    )
+    const connections = [...reducedDomains.keys()]
+    const pendingArcs = changedConnections.flatMap((changedConnection) =>
+      connections.flatMap((connection) =>
+        connection === changedConnection
+          ? []
+          : [[connection, changedConnection] as const],
+      ),
+    )
+    for (let arcIndex = 0; arcIndex < pendingArcs.length; arcIndex++) {
+      const [connection, supportConnection] = pendingArcs[arcIndex]!
+      const plans = reducedDomains.get(connection)!
+      const supportPlans = reducedDomains.get(supportConnection)!
+      const supportedPlans = plans.filter((plan) =>
+        supportPlans.some((supportPlan) =>
+          analyticPlansAreCompatible(plan, supportPlan),
+        ),
       )
+      if (supportedPlans.length === plans.length) continue
+      if (supportedPlans.length === 0) return null
+      reducedDomains.set(connection, supportedPlans)
+      for (const otherConnection of connections) {
+        if (
+          otherConnection === connection ||
+          otherConnection === supportConnection
+        )
+          continue
+        pendingArcs.push([otherConnection, connection])
+      }
+    }
+    return reducedDomains
+  }
+  const searchCandidateDomains = (
+    candidateDomains: ReadonlyMap<PreparedConnection, FanoutRoutePlan[]>,
+    candidatePlans: FanoutRoutePlan[],
+  ): void => {
+    if (alternatives.length >= maxAlternatives) return
+    if (candidateDomains.size === 0) {
+      addAlternative(
+        candidatePlans.toSorted(
+          (first, second) => first.connectionIndex - second.connectionIndex,
+        ),
+      )
+      return
+    }
+
+    const [selectedConnection, selectedPlans] = [...candidateDomains].reduce(
+      (best, candidate) =>
+        candidate[1].length < best[1].length ? candidate : best,
+    )
+    for (const plan of selectedPlans) {
+      const nextDomains = new Map<PreparedConnection, FanoutRoutePlan[]>()
+      const changedConnections: PreparedConnection[] = []
+      for (const [connection, plans] of candidateDomains) {
+        if (connection === selectedConnection) continue
+        const compatiblePlans = plans.filter((candidatePlan) =>
+          analyticPlansAreCompatible(plan, candidatePlan),
+        )
+        if (compatiblePlans.length === 0) {
+          nextDomains.clear()
+          break
+        }
+        nextDomains.set(connection, compatiblePlans)
+        if (compatiblePlans.length < plans.length)
+          changedConnections.push(connection)
+      }
+      if (nextDomains.size !== candidateDomains.size - 1) continue
+      const consistentDomains = enforceAnalyticArcConsistency(
+        nextDomains,
+        changedConnections,
+      )
+      if (!consistentDomains) continue
+      searchCandidateDomains(consistentDomains, [...candidatePlans, plan])
       if (alternatives.length >= maxAlternatives) return
-      if (maxAlternatives === 1) return
     }
   }
 
   for (const viaHandedness of viaHandednesses) {
-    for (const connectionOrder of getConnectionOrders(bus)) {
-      searchConnectionOrder(connectionOrder, viaHandedness, 0, [])
-      if (alternatives.length >= maxAlternatives) return alternatives
-    }
+    const connectionOrder = getConnectionOrders(bus)[0]!
+    const initialDomains = new Map(
+      connectionOrder.map((connection) => [
+        connection,
+        getAnalyticCandidatePlans(connection, viaHandedness),
+      ]),
+    )
+    if ([...initialDomains.values()].some((plans) => plans.length === 0))
+      continue
+    const consistentDomains = enforceAnalyticArcConsistency(
+      initialDomains,
+      connectionOrder,
+    )
+    if (!consistentDomains) continue
+    searchCandidateDomains(consistentDomains, [])
+    if (alternatives.length >= maxAlternatives) return alternatives
   }
 
   return alternatives
