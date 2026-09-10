@@ -8,7 +8,7 @@ import {
   shouldUseJointBoundaryViaReservation,
 } from "../lib/fanout-solver"
 
-test("uses joint boundary via reservation for bounded dense groups through nine buses", () => {
+test("uses joint boundary via reservation for bounded dense groups", () => {
   expect(shouldUseJointBoundaryViaReservation([8])).toBe(false)
   expect(shouldUseJointBoundaryViaReservation([8, 8])).toBe(false)
   expect(shouldUseJointBoundaryViaReservation([8, 8, 8])).toBe(false)
@@ -26,7 +26,10 @@ test("uses joint boundary via reservation for bounded dense groups through nine 
   ).toBe(true)
   expect(
     shouldUseJointBoundaryViaReservation([8, 8, 8, 2, 2, 2, 1, 1, 1, 1]),
-  ).toBe(false)
+  ).toBe(true)
+  expect(shouldUseJointBoundaryViaReservation(Array(40).fill(1))).toBe(true)
+  expect(shouldUseJointBoundaryViaReservation(Array(41).fill(1))).toBe(false)
+  expect(shouldUseJointBoundaryViaReservation(Array(10).fill(7))).toBe(false)
 })
 
 test("defers bounded singleton dogbones without changing the five- through seven-bus policy", () => {

@@ -127,6 +127,8 @@ interface FanoutSubsolverRequest {
 
 type FanoutWorkYield = undefined | FanoutSubsolverRequest
 
+const MAX_FANOUT_WORK_ITERATIONS = 1_000_000
+
 class FanoutWorkSolver<T> extends BaseSolver {
   private output: T | undefined
   private hasOutput = false
@@ -140,7 +142,7 @@ class FanoutWorkSolver<T> extends BaseSolver {
     private readonly getProgress: () => number,
   ) {
     super()
-    this.MAX_ITERATIONS = 1_000_000
+    this.MAX_ITERATIONS = MAX_FANOUT_WORK_ITERATIONS
   }
 
   override getSolverName(): string {
@@ -777,14 +779,16 @@ function busUsesCoordinatedWinding(bus: PreparedBus): boolean {
 export function shouldUseJointBoundaryViaReservation(
   boundaryBusConnectionCounts: readonly number[],
 ): boolean {
+  const boundaryBusCount = boundaryBusConnectionCounts.length
+  const boundaryConnectionCount = boundaryBusConnectionCounts.reduce(
+    (sum, count) => sum + count,
+    0,
+  )
   return (
-    boundaryBusConnectionCounts.length === 5 ||
-    boundaryBusConnectionCounts.length === 6 ||
-    boundaryBusConnectionCounts.length === 7 ||
-    boundaryBusConnectionCounts.length === 8 ||
-    boundaryBusConnectionCounts.length === 9 ||
-    (boundaryBusConnectionCounts.length === 4 &&
-      new Set(boundaryBusConnectionCounts).size > 1)
+    (boundaryBusCount >= 5 &&
+      boundaryBusCount <= 40 &&
+      boundaryConnectionCount <= 64) ||
+    (boundaryBusCount === 4 && new Set(boundaryBusConnectionCounts).size > 1)
   )
 }
 
@@ -1208,14 +1212,13 @@ export class FanoutSolver extends BaseSolver {
           : [],
       ),
     )
-    const workUnitsPerAssignment = this.preparedBuses.length * 3 + 8
-    const estimatedWorkUnitCount =
-      this.boundaryBuses.length +
-      1 +
-      this.config.maxLayerCombinations * workUnitsPerAssignment +
-      this.preparedBuses.length * 2 +
-      20
-    this.MAX_ITERATIONS = Math.max(10_000, estimatedWorkUnitCount)
+    // The parent advances one bounded work solver per step. Its limit must
+    // cover those child steps instead of only counting conceptual work units.
+    const maximumWorkOperationCount = this.config.maxLayerCombinations + 2
+    const parentControlIterationCount = maximumWorkOperationCount * 2 + 20
+    this.MAX_ITERATIONS =
+      maximumWorkOperationCount * MAX_FANOUT_WORK_ITERATIONS +
+      parentControlIterationCount
   }
 
   override getSolverName(): string {
@@ -1922,6 +1925,13 @@ export class FanoutSolver extends BaseSolver {
       preferOutward: boolean
       perpendicularSide: -1 | 1
     }
+    leadingBoundaryBusIds?: readonly string[]
+    collisionPrecedenceConstraints?: readonly {
+      beforeBusId: string
+      afterBusId: string
+      collisionCount: number
+    }[]
+    denseCollisionPriorityRetryCount?: number
   }): Generator<FanoutWorkYield, MixedTerminationState | null, unknown> {
     if (this.config.allowBlindAndBuriedVias) return null
     // An outside-package singleton escape can depend on the completed signal
@@ -2389,6 +2399,16 @@ export class FanoutSolver extends BaseSolver {
     const unroutablePlaneBusIds = new Set<string>()
     let failedBoundaryBus: PreparedBus | undefined
     let failedWideBoundaryBus: PreparedBus | undefined
+    const useLargeBoundaryOnlyDenseRouting =
+      boundaryBuses.length >= 10 &&
+      boundaryBuses.length <= 40 &&
+      planeBuses.length === 0 &&
+      boundaryBuses.reduce(
+        (connectionCount, bus) => connectionCount + bus.connections.length,
+        0,
+      ) <= 64
+    const useEstablishedMixedDenseRouting =
+      boundaryBuses.length <= 9 && planeBuses.length >= 8
     debugDense(
       "start",
       boundaryBuses.map((bus) => `${bus.busId}:${bus.connections.length}`),
@@ -2397,8 +2417,7 @@ export class FanoutSolver extends BaseSolver {
     )
     if (
       boundaryBuses.length === 0 ||
-      boundaryBuses.length > 9 ||
-      planeBuses.length < 8 ||
+      (!useEstablishedMixedDenseRouting && !useLargeBoundaryOnlyDenseRouting) ||
       boundaryBuses.some((bus) => !busUsesCoordinatedWinding(bus)) ||
       planeBuses.some((bus) => bus.connections.length !== 1) ||
       boundaryBuses.length + planeBuses.length !==
@@ -2894,6 +2913,161 @@ export class FanoutSolver extends BaseSolver {
             bus,
           ]),
       ]
+      if (
+        useLargeBoundaryOnlyDenseRouting &&
+        denseBoundaryBusesInRoutingOrder
+          .filter((bus) => bus.connections.length === 1)
+          .every((bus) => bus.direction === "right")
+      ) {
+        const nonSingletonBuses = denseBoundaryBusesInRoutingOrder.filter(
+          (bus) => bus.connections.length !== 1,
+        )
+        const singletonBusesByLayer = new Map<string, PreparedBus[]>()
+        for (const bus of denseBoundaryBusesInRoutingOrder.filter(
+          (candidate) => candidate.connections.length === 1,
+        )) {
+          const targetLayer = params.busLayerAssignments[bus.busId]!
+          const layerBuses = singletonBusesByLayer.get(targetLayer) ?? []
+          layerBuses.push(bus)
+          singletonBusesByLayer.set(targetLayer, layerBuses)
+        }
+        const singletonBuses = [...singletonBusesByLayer.values()].flatMap(
+          (layerBuses) => {
+            const inversionCountByBusId = new Map(
+              layerBuses.map((bus) => [bus.busId, 0]),
+            )
+            for (
+              let firstIndex = 0;
+              firstIndex < layerBuses.length;
+              firstIndex++
+            ) {
+              const first = layerBuses[firstIndex]!
+              const firstConnection = first.connections[0]!
+              const firstSource =
+                seedViaPoints.get(firstConnection.connectionIndex) ??
+                firstConnection.sourcePoint
+              const firstTarget =
+                firstConnection.exitTargetPoint ?? firstConnection.targetPoint
+              for (
+                let secondIndex = firstIndex + 1;
+                secondIndex < layerBuses.length;
+                secondIndex++
+              ) {
+                const second = layerBuses[secondIndex]!
+                const secondConnection = second.connections[0]!
+                const secondSource =
+                  seedViaPoints.get(secondConnection.connectionIndex) ??
+                  secondConnection.sourcePoint
+                const secondTarget =
+                  secondConnection.exitTargetPoint ??
+                  secondConnection.targetPoint
+                if (
+                  (firstSource.y - secondSource.y) *
+                    (firstTarget.y - secondTarget.y) >=
+                  0
+                ) {
+                  continue
+                }
+                inversionCountByBusId.set(
+                  first.busId,
+                  inversionCountByBusId.get(first.busId)! + 1,
+                )
+                inversionCountByBusId.set(
+                  second.busId,
+                  inversionCountByBusId.get(second.busId)! + 1,
+                )
+              }
+            }
+            return layerBuses.toSorted((first, second) => {
+              const firstConnection = first.connections[0]!
+              const secondConnection = second.connections[0]!
+              const firstTarget =
+                firstConnection.exitTargetPoint ?? firstConnection.targetPoint
+              const secondTarget =
+                secondConnection.exitTargetPoint ?? secondConnection.targetPoint
+              return (
+                inversionCountByBusId.get(second.busId)! -
+                  inversionCountByBusId.get(first.busId)! ||
+                secondTarget.y - firstTarget.y ||
+                firstConnection.connectionIndex -
+                  secondConnection.connectionIndex
+              )
+            })
+          },
+        )
+        denseBoundaryBusesInRoutingOrder.splice(
+          0,
+          denseBoundaryBusesInRoutingOrder.length,
+          ...nonSingletonBuses,
+          ...singletonBuses,
+        )
+      }
+      const leadingBoundaryBusPriority = new Map(
+        (params.leadingBoundaryBusIds ?? []).map((busId, index) => [
+          busId,
+          index,
+        ]),
+      )
+      denseBoundaryBusesInRoutingOrder.sort((first, second) => {
+        const firstPriority = leadingBoundaryBusPriority.get(first.busId)
+        const secondPriority = leadingBoundaryBusPriority.get(second.busId)
+        if (firstPriority !== undefined && secondPriority !== undefined) {
+          return firstPriority - secondPriority
+        }
+        if (firstPriority !== undefined) return -1
+        if (secondPriority !== undefined) return 1
+        return 0
+      })
+      if ((params.collisionPrecedenceConstraints?.length ?? 0) > 0) {
+        const busById = new Map(
+          denseBoundaryBusesInRoutingOrder.map((bus) => [bus.busId, bus]),
+        )
+        const prerequisitesByBusId = new Map<
+          string,
+          typeof params.collisionPrecedenceConstraints
+        >()
+        for (const constraint of params.collisionPrecedenceConstraints!.filter(
+          ({ beforeBusId, afterBusId }) =>
+            beforeBusId !== afterBusId &&
+            busById.has(beforeBusId) &&
+            busById.has(afterBusId),
+        )) {
+          const prerequisites =
+            prerequisitesByBusId.get(constraint.afterBusId) ?? []
+          prerequisitesByBusId.set(constraint.afterBusId, [
+            ...prerequisites,
+            constraint,
+          ])
+        }
+        const reorderedBuses: PreparedBus[] = []
+        const emittedBusIds = new Set<string>()
+        const visitingBusIds = new Set<string>()
+        const emitBusAndPrerequisites = (bus: PreparedBus): void => {
+          if (emittedBusIds.has(bus.busId) || visitingBusIds.has(bus.busId)) {
+            return
+          }
+          visitingBusIds.add(bus.busId)
+          for (const { beforeBusId } of (
+            prerequisitesByBusId.get(bus.busId) ?? []
+          ).toSorted(
+            (first, second) => second.collisionCount - first.collisionCount,
+          )) {
+            const prerequisite = busById.get(beforeBusId)
+            if (prerequisite) emitBusAndPrerequisites(prerequisite)
+          }
+          visitingBusIds.delete(bus.busId)
+          emittedBusIds.add(bus.busId)
+          reorderedBuses.push(bus)
+        }
+        for (const bus of denseBoundaryBusesInRoutingOrder) {
+          emitBusAndPrerequisites(bus)
+        }
+        denseBoundaryBusesInRoutingOrder.splice(
+          0,
+          denseBoundaryBusesInRoutingOrder.length,
+          ...reorderedBuses,
+        )
+      }
       for (const [bus] of adjacentCenteredFieldByTurningBus) {
         const axis =
           bus.direction === "up" || bus.direction === "down" ? "y" : "x"
@@ -3061,6 +3235,17 @@ export class FanoutSolver extends BaseSolver {
       > = seedViaPoints
       let matchedPlans: FanoutRoutePlan[] = []
       let matchedRoutingSucceeded = true
+      let failedLengthBus: PreparedBus | undefined
+      const failedBoundaryBusCollisionCountByBusId = new Map<string, number>()
+      const failedBoundaryBusBlockerCountsByBusId = new Map<
+        string,
+        Map<string, number>
+      >()
+      let deepestFailedBoundaryRoutePlanCount = -1
+      const deepestFailedBoundaryBusBlockerCountsByBusId = new Map<
+        string,
+        Map<string, number>
+      >()
       const getReservedVias = (bus: PreparedBus) => {
         const currentConnectionNames = new Set(
           bus.connections.map((connection) => connection.connection.name),
@@ -3106,6 +3291,7 @@ export class FanoutSolver extends BaseSolver {
       const routeMatchedBoundaryBusSteps = function* (
         this: FanoutSolver,
         bus: PreparedBus,
+        routeAlternativeIndex = 0,
       ): Generator<FanoutWorkYield, boolean, unknown> {
         debugDense("route:start", bus.busId, matchedPlans.length)
         if (process.env.FANOUT_DEBUG_DENSE_POINTS === "1") {
@@ -3132,6 +3318,7 @@ export class FanoutSolver extends BaseSolver {
           wideBoundaryBuses.some((candidate) =>
             getCornerBandSide(candidate.exitEdge, candidate.preferredExit),
           )
+        const blockingBusCounts = new Map<string, number>()
         const routeParams = {
           srj: this.routingSrj,
           bus,
@@ -3148,10 +3335,13 @@ export class FanoutSolver extends BaseSolver {
           staticClearanceCache: this.routeStaticClearanceCache,
           fixedViaPointsByConnectionIndex,
           reservedVias: getReservedVias(bus),
-          viaMinimalOnly: process.env.FANOUT_DEBUG_ALLOW_EXTRA_VIAS !== "1",
+          viaMinimalOnly:
+            !useLargeBoundaryOnlyDenseRouting &&
+            process.env.FANOUT_DEBUG_ALLOW_EXTRA_VIAS !== "1",
           allowBoundarySideViaFallback: bus.connections.length === 1,
           preferCornerBoundaryVia: useConfiguredDensePlaneRouting,
           adaptiveWindingRouteOrder,
+          blockingBusCounts,
           allowFixedViaReservedExitFallback: useBoundaryRecovery,
           // Retain pad-aligned channels even when plane sites are reserved
           // adaptively; the boundary grid can fence off a turning wide bus.
@@ -3208,8 +3398,8 @@ export class FanoutSolver extends BaseSolver {
           preferSingleLayerWinding
             ? { ...routeParams, bus: singleLayerBus }
             : routeParams,
-          1,
-        ))[0]
+          routeAlternativeIndex + 1,
+        ))[routeAlternativeIndex]
         if (!busPlans && preferSingleLayerWinding) {
           busPlans = (yield* routeAlternatives(routeParams, 1))[0]
         }
@@ -3423,7 +3613,8 @@ export class FanoutSolver extends BaseSolver {
         if (
           !busPlans &&
           bus.connections.length >= 8 &&
-          (adjacentCenteredFieldByTurningBus.has(bus) ||
+          (useLargeBoundaryOnlyDenseRouting ||
+            adjacentCenteredFieldByTurningBus.has(bus) ||
             boundaryBuses.some(
               (candidate) =>
                 candidate.connections.length >= 8 &&
@@ -3437,6 +3628,7 @@ export class FanoutSolver extends BaseSolver {
             this.preparedBuses
               .filter(
                 (candidate) =>
+                  useLargeBoundaryOnlyDenseRouting ||
                   candidate.termination.type === "plane" ||
                   candidate === adjacentCenteredFieldByTurningBus.get(bus),
               )
@@ -3447,7 +3639,7 @@ export class FanoutSolver extends BaseSolver {
               )
               .filter((name) => !committedNames.has(name)),
           )
-          const freePlans = (yield* routeAlternatives(
+          const freeAlternatives = yield* routeAlternatives(
             {
               ...routeParams,
               fixedViaPointsByConnectionIndex: undefined,
@@ -3459,8 +3651,17 @@ export class FanoutSolver extends BaseSolver {
                 provisionalReservationNames.has(reserved.connectionName),
               ),
             },
-            1,
-          ))[0]
+            bus.maxLengthSkew === undefined ? 1 : 3,
+          )
+          const freePlans = freeAlternatives.toSorted((first, second) => {
+            const firstLengths = first.map((plan) => plan.length)
+            const secondLengths = second.map((plan) => plan.length)
+            return (
+              Math.max(...firstLengths) -
+              Math.min(...firstLengths) -
+              (Math.max(...secondLengths) - Math.min(...secondLengths))
+            )
+          })[0]
           if (freePlans) {
             const allPlans = [...matchedPlans, ...freePlans]
             const rematchedPoints = matchComponentDogboneViaSites(
@@ -3538,9 +3739,56 @@ export class FanoutSolver extends BaseSolver {
           }
         }
         if (!busPlans) {
+          if (matchedPlans.length > deepestFailedBoundaryRoutePlanCount) {
+            deepestFailedBoundaryRoutePlanCount = matchedPlans.length
+            deepestFailedBoundaryBusBlockerCountsByBusId.clear()
+          }
+          if (matchedPlans.length === deepestFailedBoundaryRoutePlanCount) {
+            const previousCounts =
+              deepestFailedBoundaryBusBlockerCountsByBusId.get(bus.busId)
+            const collisionCount = [...blockingBusCounts.values()].reduce(
+              (sum, count) => sum + count,
+              0,
+            )
+            const previousCollisionCount = [
+              ...(previousCounts?.values() ?? []),
+            ].reduce((sum, count) => sum + count, 0)
+            if (!previousCounts || collisionCount > previousCollisionCount) {
+              deepestFailedBoundaryBusBlockerCountsByBusId.set(
+                bus.busId,
+                new Map(blockingBusCounts),
+              )
+            }
+          }
+          failedBoundaryBusCollisionCountByBusId.set(
+            bus.busId,
+            (failedBoundaryBusCollisionCountByBusId.get(bus.busId) ?? 0) +
+              [...blockingBusCounts.values()].reduce(
+                (sum, count) => sum + count,
+                0,
+              ),
+          )
+          const accumulatedBlockerCounts =
+            failedBoundaryBusBlockerCountsByBusId.get(bus.busId) ?? new Map()
+          for (const [blockingBusId, count] of blockingBusCounts) {
+            accumulatedBlockerCounts.set(
+              blockingBusId,
+              (accumulatedBlockerCounts.get(blockingBusId) ?? 0) + count,
+            )
+          }
+          failedBoundaryBusBlockerCountsByBusId.set(
+            bus.busId,
+            accumulatedBlockerCounts,
+          )
           failedBoundaryBus ??= bus
           if (bus.connections.length >= 8) failedWideBoundaryBus ??= bus
-          debugDense("route:failed", bus.busId)
+          debugDense(
+            "route:failed",
+            bus.busId,
+            [...blockingBusCounts.entries()].toSorted(
+              (first, second) => second[1] - first[1],
+            ),
+          )
           return false
         }
         matchedPlans.push(...busPlans)
@@ -3607,7 +3855,72 @@ export class FanoutSolver extends BaseSolver {
         matchedRoutingSucceeded = false
       }
       const remainingBoundaryBuses = denseBoundaryBusesInRoutingOrder.slice(1)
+      const routeBoundaryBusGroupSteps = function* (
+        this: FanoutSolver,
+        pendingBuses: readonly PreparedBus[],
+        alternativesPerBus = 1,
+        searchState: {
+          visitedStateCount: number
+          maximumStateCount: number
+          onProgress?: () => void
+        } = {
+          visitedStateCount: 0,
+          maximumStateCount: 512,
+        },
+        rootAlternativeIndex?: number,
+      ): Generator<FanoutWorkYield, boolean, unknown> {
+        if (pendingBuses.length === 0) return true
+        for (let busIndex = 0; busIndex < pendingBuses.length; busIndex++) {
+          const bus = pendingBuses[busIndex]!
+          const alternativeIndices =
+            rootAlternativeIndex === undefined
+              ? Array.from(
+                  { length: alternativesPerBus },
+                  (_, alternativeIndex) => alternativeIndex,
+                )
+              : [rootAlternativeIndex]
+          for (const alternativeIndex of alternativeIndices) {
+            if (
+              searchState.visitedStateCount >= searchState.maximumStateCount
+            ) {
+              return false
+            }
+            searchState.visitedStateCount++
+            const previousFixedViaPoints = fixedViaPointsByConnectionIndex
+            const previousPlanCount = matchedPlans.length
+            if (yield* routeMatchedBoundaryBusSteps(bus, alternativeIndex)) {
+              routedBoundaryBuses.push(bus)
+              searchState.onProgress?.()
+              if (
+                yield* routeBoundaryBusGroupSteps(
+                  pendingBuses.filter((_, index) => index !== busIndex),
+                  alternativesPerBus,
+                  searchState,
+                )
+              ) {
+                return true
+              }
+              routedBoundaryBuses.pop()
+            }
+            matchedPlans.splice(previousPlanCount)
+            fixedViaPointsByConnectionIndex = previousFixedViaPoints
+          }
+        }
+        return false
+      }.bind(this)
       while (matchedRoutingSucceeded && remainingBoundaryBuses.length > 0) {
+        if (
+          useLargeBoundaryOnlyDenseRouting &&
+          jointViaPoints &&
+          remainingBoundaryBuses.length <= 2
+        ) {
+          if (yield* routeBoundaryBusGroupSteps(remainingBoundaryBuses)) {
+            remainingBoundaryBuses.splice(0)
+            break
+          }
+          matchedRoutingSucceeded = false
+          break
+        }
         const blockingSegments = matchedPlans.flatMap((plan) =>
           plan.segments.map((segment) => ({
             connectionIndex: plan.connectionIndex,
@@ -3864,6 +4177,120 @@ export class FanoutSolver extends BaseSolver {
           break
         }
         remainingBoundaryBuses.splice(selectedBusIndex, 1)
+      }
+      if (
+        !matchedRoutingSucceeded &&
+        useLargeBoundaryOnlyDenseRouting &&
+        jointViaPoints &&
+        matchedPlans.length > 0
+      ) {
+        const matchedConnectionIndices = new Set(
+          matchedPlans.map((plan) => plan.connectionIndex),
+        )
+        const missingBoundaryBuses = boundaryBuses.filter((bus) =>
+          bus.connections.some(
+            (connection) =>
+              !matchedConnectionIndices.has(connection.connectionIndex),
+          ),
+        )
+        const routedBusIds = new Set(matchedPlans.map((plan) => plan.busId))
+        const blockingBuses = missingBoundaryBuses.flatMap((bus) => {
+          const blockingBusId = [
+            ...(failedBoundaryBusBlockerCountsByBusId.get(bus.busId) ?? []),
+          ]
+            .filter(([busId]) => routedBusIds.has(busId))
+            .toSorted((first, second) => second[1] - first[1])[0]?.[0]
+          const blockingBus = blockingBusId
+            ? boundaryBuses.find(
+                (candidate) => candidate.busId === blockingBusId,
+              )
+            : undefined
+          return blockingBus ? [blockingBus] : []
+        })
+        const repairBuses = [...missingBoundaryBuses, ...blockingBuses].filter(
+          (bus, index, buses) =>
+            buses.findIndex((candidate) => candidate.busId === bus.busId) ===
+            index,
+        )
+        if (
+          missingBoundaryBuses.length > 0 &&
+          missingBoundaryBuses.length <= 4 &&
+          repairBuses.length <= 8
+        ) {
+          const originalPlans = matchedPlans
+          const originalFixedViaPoints = fixedViaPointsByConnectionIndex
+          const originalRoutedBoundaryBuses = [...routedBoundaryBuses]
+          let bestRepairPlans = [...originalPlans]
+          let bestRepairFixedViaPoints = new Map(originalFixedViaPoints)
+          let bestRepairRoutedBoundaryBuses = [...originalRoutedBoundaryBuses]
+          const retainBestRepairState = (): void => {
+            if (matchedPlans.length <= bestRepairPlans.length) return
+            bestRepairPlans = [...matchedPlans]
+            bestRepairFixedViaPoints = new Map(fixedViaPointsByConnectionIndex)
+            bestRepairRoutedBoundaryBuses = [...routedBoundaryBuses]
+          }
+          let repaired = false
+          for (const [alternativesPerBus, maximumStateCount] of [
+            [1, 16],
+            [1, 32],
+            [2, 32],
+          ] as const) {
+            const repairBusIds = new Set(repairBuses.map((bus) => bus.busId))
+            for (
+              let firstBusIndex = 0;
+              firstBusIndex < repairBuses.length;
+              firstBusIndex++
+            ) {
+              for (
+                let rootAlternativeIndex = 0;
+                rootAlternativeIndex < alternativesPerBus;
+                rootAlternativeIndex++
+              ) {
+                matchedPlans = originalPlans.filter(
+                  (plan) => !repairBusIds.has(plan.busId),
+                )
+                fixedViaPointsByConnectionIndex = originalFixedViaPoints
+                routedBoundaryBuses.splice(
+                  0,
+                  routedBoundaryBuses.length,
+                  ...originalRoutedBoundaryBuses.filter(
+                    (bus) => !repairBusIds.has(bus.busId),
+                  ),
+                )
+                repaired = yield* routeBoundaryBusGroupSteps(
+                  [
+                    ...repairBuses.slice(firstBusIndex),
+                    ...repairBuses.slice(0, firstBusIndex),
+                  ],
+                  alternativesPerBus,
+                  {
+                    visitedStateCount: 0,
+                    maximumStateCount,
+                    onProgress: retainBestRepairState,
+                  },
+                  rootAlternativeIndex,
+                )
+                if (repaired) break
+              }
+              if (repaired) break
+            }
+            if (repaired || bestRepairPlans.length > originalPlans.length) {
+              break
+            }
+          }
+          if (repaired) {
+            matchedRoutingSucceeded = true
+            remainingBoundaryBuses.splice(0)
+          } else {
+            matchedPlans = bestRepairPlans
+            fixedViaPointsByConnectionIndex = bestRepairFixedViaPoints
+            routedBoundaryBuses.splice(
+              0,
+              routedBoundaryBuses.length,
+              ...bestRepairRoutedBoundaryBuses,
+            )
+          }
+        }
       }
       let matchedPlaneBusesInRoutingOrder: PreparedBus[] | null = null
       if (matchedRoutingSucceeded) {
@@ -4938,6 +5365,7 @@ export class FanoutSolver extends BaseSolver {
         debugDense(
           "length-match:complete",
           matchedLengthResult.plans?.length ?? "failed",
+          matchedLengthResult.failedBus?.busId,
         )
         this.setInProgressPlans({
           phase: "match-dense-boundary-lengths",
@@ -4958,6 +5386,7 @@ export class FanoutSolver extends BaseSolver {
             matchedRoutingSucceeded = false
           }
         } else {
+          failedLengthBus = matchedLengthResult.failedBus
           matchedRoutingSucceeded = false
         }
         this.setInProgressPlans({
@@ -5131,7 +5560,101 @@ export class FanoutSolver extends BaseSolver {
         densePlansAreClear,
       )
       if (densePlansAreClear) {
-        return { plans: matchedPlans, failedBusIds: [] }
+        return {
+          plans: matchedPlans,
+          failedBusIds: [],
+          ...(useLargeBoundaryOnlyDenseRouting
+            ? { stopAfterCompleteValidation: true as const }
+            : {}),
+        }
+      }
+      const matchedConnectionIndices = new Set(
+        matchedPlans.map((plan) => plan.connectionIndex),
+      )
+      const failedBoundaryBuses = boundaryBuses.filter(
+        (bus) =>
+          bus === failedLengthBus ||
+          bus.connections.some(
+            (connection) =>
+              !matchedConnectionIndices.has(connection.connectionIndex),
+          ),
+      )
+      const collisionConstrainedFailedBuses = failedBoundaryBuses
+        .filter(
+          (bus) =>
+            (failedBoundaryBusCollisionCountByBusId.get(bus.busId) ?? 0) > 0,
+        )
+        .toSorted(
+          (first, second) =>
+            Number(
+              deepestFailedBoundaryBusBlockerCountsByBusId.has(second.busId),
+            ) -
+              Number(
+                deepestFailedBoundaryBusBlockerCountsByBusId.has(first.busId),
+              ) ||
+            (failedBoundaryBusCollisionCountByBusId.get(second.busId) ?? 0) -
+              (failedBoundaryBusCollisionCountByBusId.get(first.busId) ?? 0) ||
+            first.busId.localeCompare(second.busId),
+        )
+      const siteConstrainedFailedBuses = failedBoundaryBuses.filter(
+        (bus) =>
+          !collisionConstrainedFailedBuses.some(
+            (candidate) => candidate.busId === bus.busId,
+          ),
+      )
+      // A routed bus can consume the only winding corridor of a later bus even
+      // when every jointly reserved dogbone remains legal. Convert measured
+      // copper collisions into a bounded precedence retry instead of guessing
+      // caller-specific bus names or exploring every bus permutation.
+      if (
+        matchedPlans.length > 0 &&
+        useLargeBoundaryOnlyDenseRouting &&
+        failedBoundaryBuses.length > 0 &&
+        (params.denseCollisionPriorityRetryCount ?? 0) < 6
+      ) {
+        const boundaryBusIds = new Set(boundaryBuses.map((bus) => bus.busId))
+        const constraintByBusPair = new Map(
+          (params.collisionPrecedenceConstraints ?? []).map((constraint) => [
+            `${constraint.beforeBusId}\u0000${constraint.afterBusId}`,
+            constraint,
+          ]),
+        )
+        for (const bus of collisionConstrainedFailedBuses) {
+          const blockerCounts = [
+            ...(deepestFailedBoundaryBusBlockerCountsByBusId.get(bus.busId) ??
+              failedBoundaryBusBlockerCountsByBusId.get(bus.busId) ??
+              []),
+          ]
+            .filter(([blockingBusId]) => boundaryBusIds.has(blockingBusId))
+            .toSorted((first, second) => second[1] - first[1])
+            .slice(0, 1)
+          for (const [blockingBusId, collisionCount] of blockerCounts) {
+            const key = `${bus.busId}\u0000${blockingBusId}`
+            const previousConstraint = constraintByBusPair.get(key)
+            constraintByBusPair.set(key, {
+              beforeBusId: bus.busId,
+              afterBusId: blockingBusId,
+              collisionCount: Math.max(
+                collisionCount,
+                previousConstraint?.collisionCount ?? 0,
+              ),
+            })
+          }
+        }
+        return yield* this.routeDenseThroughAllMixedTerminationSteps({
+          ...params,
+          leadingBoundaryBusIds: [
+            ...new Set([
+              ...siteConstrainedFailedBuses.map((bus) => bus.busId),
+              ...collisionConstrainedFailedBuses.map((bus) => bus.busId),
+              ...matchedPlans.map((plan) => plan.busId),
+              ...denseBoundaryBusesInRoutingOrder.map((bus) => bus.busId),
+            ]),
+          ],
+          collisionPrecedenceConstraints: [...constraintByBusPair.values()],
+          denseCollisionPriorityRetryCount:
+            (params.denseCollisionPriorityRetryCount ?? 0) + 1,
+        })
       }
     }
 
@@ -5815,7 +6338,10 @@ export class FanoutSolver extends BaseSolver {
     }
 
     let validationIssues: FanoutAttemptSummary["validationIssues"]
-    if (plans.length === this.inputSrj.connections.length) {
+    if (
+      plans.length === this.inputSrj.connections.length &&
+      !mixedTerminationState?.stopAfterCompleteValidation
+    ) {
       const lengthMatching = this.matchCompletePlanLengths(plans)
       if (lengthMatching.plans) {
         plans = lengthMatching.plans
@@ -5838,7 +6364,10 @@ export class FanoutSolver extends BaseSolver {
         blockingBusCounts.clear()
       }
     }
-    if (plans.length === this.inputSrj.connections.length) {
+    if (
+      plans.length === this.inputSrj.connections.length &&
+      !mixedTerminationState?.stopAfterCompleteValidation
+    ) {
       const normalized = this.normalizeCompletePlanCorners(plans)
       if (normalized) {
         plans = normalized

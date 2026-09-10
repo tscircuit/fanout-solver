@@ -740,11 +740,20 @@ function getConnectionRank(
   connection: PreparedConnection,
 ): number {
   const connectionRank = [...bus.connections]
-    .sort(
-      (a, b) =>
+    .sort((a, b) => {
+      const perpendicularDifference =
         getPerpendicularAxis(a.sourcePoint, bus.direction) -
-        getPerpendicularAxis(b.sourcePoint, bus.direction),
-    )
+        getPerpendicularAxis(b.sourcePoint, bus.direction)
+      if (Math.abs(perpendicularDifference) > 1e-9) {
+        return perpendicularDifference
+      }
+      if (bus.exitEdge !== "right") return 0
+      return (
+        getAxis(b.sourcePoint, bus.direction) -
+          getAxis(a.sourcePoint, bus.direction) ||
+        a.connectionIndex - b.connectionIndex
+      )
+    })
     .findIndex(
       (candidate) => candidate.connectionIndex === connection.connectionIndex,
     )
@@ -1144,6 +1153,7 @@ function buildPlan(params: {
   traceWidth: number
   viaDiameter: number
   viaHoleDiameter: number
+  holeToHoleClearance: number
   viaHandedness: ViaHandedness
   interstitialEscape: boolean
   spreadLaneIndex: number
@@ -1168,6 +1178,7 @@ function buildPlan(params: {
     traceWidth,
     viaDiameter,
     viaHoleDiameter,
+    holeToHoleClearance,
     viaHandedness,
     interstitialEscape,
     spreadLaneIndex,
@@ -1303,15 +1314,32 @@ function buildPlan(params: {
     boundarySign > 0
       ? globalBoundarySlot
       : boundaryBandConnectionCount - 1 - globalBoundarySlot
-  const channelPitch = usesLayeredWindingChannel
+  const localChannelPitch = usesLayeredWindingChannel
     ? viaDiameter / 2 + traceWidth / 2 + clearance
     : traceWidth + clearance
-  const channelInset = (laneIndex: number) =>
-    viaDiameter / 2 + traceWidth / 2 + clearance + laneIndex * channelPitch
+  const minimumViaCenterDistance = Math.max(
+    viaDiameter + clearance,
+    viaHoleDiameter + holeToHoleClearance,
+  )
+  const boundaryChannelPitch = usesLayeredWindingChannel
+    ? Math.max(
+        localChannelPitch,
+        Math.sqrt(
+          Math.max(0, minimumViaCenterDistance ** 2 - localChannelPitch ** 2),
+        ),
+      )
+    : localChannelPitch
+  const channelInset = (laneIndex: number, pitch: number) =>
+    viaDiameter / 2 + traceWidth / 2 + clearance + laneIndex * pitch
   const localChannelAxis =
-    getExitAxis(bus, bus.direction) - sign * channelInset(localChannelLaneIndex)
+    getExitAxis(bus, bus.direction) -
+    sign * channelInset(localChannelLaneIndex, localChannelPitch)
   const boundaryChannelAxis =
-    boundaryExitAxis - boundarySign * channelInset(boundaryChannelLaneIndex)
+    boundaryExitAxis -
+    boundarySign *
+      (channelInset(boundaryChannelLaneIndex, boundaryChannelPitch) -
+        (boundaryBandConnectionCount - 1) *
+          (boundaryChannelPitch - localChannelPitch))
   const localChannelSourcePoint = makePoint(
     localChannelAxis,
     track,
@@ -2481,6 +2509,7 @@ function routePlaneTerminatedBus(
         traceWidth,
         viaDiameter,
         viaHoleDiameter,
+        holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
         viaHandedness: 0,
         interstitialEscape: false,
         spreadLaneIndex: 0,
@@ -2568,6 +2597,7 @@ function routePlaneTerminatedBus(
       traceWidth,
       viaDiameter,
       viaHoleDiameter,
+      holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
       viaHandedness: 0,
       interstitialEscape: false,
       spreadLaneIndex: 0,
@@ -2802,6 +2832,7 @@ function routePlaneTerminatedBus(
               traceWidth,
               viaDiameter,
               viaHoleDiameter,
+              holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
               viaHandedness,
               interstitialEscape: !pairChannelFitsVia,
               spreadLaneIndex: 0,
@@ -4273,6 +4304,7 @@ export function* routeBusAlternativesSteps(
         traceWidth,
         viaDiameter,
         viaHoleDiameter,
+        holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
         viaHandedness,
         interstitialEscape,
         spreadLaneIndex: Math.min(
