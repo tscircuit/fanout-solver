@@ -2044,6 +2044,8 @@ export class FanoutSolver extends BaseSolver {
     const useJointBoundaryViaReservation = shouldUseJointBoundaryViaReservation(
       unsortedBoundaryBuses.map((bus) => bus.connections.length),
     )
+    const useCompleteDenseConstraintSearch =
+      useConfiguredDensePlaneRouting || useJointBoundaryViaReservation
     const twoConnectionBoundaryBuses = unsortedBoundaryBuses.filter(
       (bus) => bus.connections.length === 2,
     )
@@ -2772,6 +2774,7 @@ export class FanoutSolver extends BaseSolver {
             traceWidth: this.config.traceWidth,
             clearance: this.config.clearance,
             maximumSearchStates: 100_000,
+            useArcConsistentSearch: useCompleteDenseConstraintSearch,
             preferredViaPointsByConnectionIndex:
               params.preferredBoundaryViaPoints,
             preferredBoundaryPerpendicularSideByBusId,
@@ -2793,6 +2796,7 @@ export class FanoutSolver extends BaseSolver {
           traceWidth: this.config.traceWidth,
           clearance: this.config.clearance,
           maximumSearchStates: 20_000,
+          useArcConsistentSearch: useCompleteDenseConstraintSearch,
           preferredViaPointsByConnectionIndex:
             params.preferredBoundaryViaPoints,
           preferredBoundaryPerpendicularSideByBusId,
@@ -2854,6 +2858,7 @@ export class FanoutSolver extends BaseSolver {
             traceWidth: this.config.traceWidth,
             clearance: this.config.clearance,
             maximumSearchStates: 100_000,
+            useArcConsistentSearch: useCompleteDenseConstraintSearch,
             preferredViaPointsByConnectionIndex:
               params.preferredBoundaryViaPoints,
             preferredBoundaryPerpendicularSideByBusId,
@@ -3347,6 +3352,7 @@ export class FanoutSolver extends BaseSolver {
           // adaptively; the boundary grid can fence off a turning wide bus.
           alignWindingGridToPads:
             usePadAlignedDenseRouting && !configuredDensePlaneRouting,
+          useArcConsistentAnalyticSearch: useCompleteDenseConstraintSearch,
           fixedViaFallbackRouteOrderAttempts: adaptiveWindingRouteOrder
             ? 60
             : useConfiguredDensePlaneRouting
@@ -3432,6 +3438,7 @@ export class FanoutSolver extends BaseSolver {
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
                 maximumSearchStates: 100_000,
+                useArcConsistentSearch: useCompleteDenseConstraintSearch,
                 preferredBoundaryPerpendicularSideByBusId: new Map([
                   ...preferredBoundaryPerpendicularSideByBusId,
                   [bus.busId, side as -1 | 1],
@@ -3673,6 +3680,7 @@ export class FanoutSolver extends BaseSolver {
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
                 maximumSearchStates: 3_000_000,
+                useArcConsistentSearch: useCompleteDenseConstraintSearch,
                 preferredBoundaryPerpendicularSideByBusId,
                 preferBoundaryOutwardByBusId,
                 fixedViaPointsByConnectionIndex: new Map(
@@ -3986,6 +3994,7 @@ export class FanoutSolver extends BaseSolver {
                     traceWidth: this.config.traceWidth,
                     clearance: this.config.clearance,
                     maximumSearchStates: 100_000,
+                    useArcConsistentSearch: useCompleteDenseConstraintSearch,
                     preferredBoundaryPerpendicularSideByBusId,
                     preferBoundaryOutwardByBusId,
                     fixedViaPointsByConnectionIndex: candidateMatchingBase,
@@ -4039,6 +4048,7 @@ export class FanoutSolver extends BaseSolver {
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
                 maximumSearchStates: 100_000,
+                useArcConsistentSearch: useCompleteDenseConstraintSearch,
                 preferredBoundaryPerpendicularSideByBusId,
                 preferBoundaryOutwardByBusId,
                 fixedViaPointsByConnectionIndex: extendedViaPoints,
@@ -4126,6 +4136,7 @@ export class FanoutSolver extends BaseSolver {
                       traceWidth: this.config.traceWidth,
                       clearance: this.config.clearance,
                       maximumSearchStates: 100_000,
+                      useArcConsistentSearch: useCompleteDenseConstraintSearch,
                       preferredBoundaryPerpendicularSideByBusId,
                       preferBoundaryOutwardByBusId,
                       fixedViaPointsByConnectionIndex:
@@ -4355,6 +4366,7 @@ export class FanoutSolver extends BaseSolver {
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
                 maximumSearchStates: 1,
+                useArcConsistentSearch: useCompleteDenseConstraintSearch,
                 preferredBoundaryPerpendicularSideByBusId,
                 preferBoundaryOutwardByBusId,
                 fixedViaPointsByConnectionIndex: new Map([
@@ -4430,6 +4442,7 @@ export class FanoutSolver extends BaseSolver {
                     traceWidth: this.config.traceWidth,
                     clearance: this.config.clearance,
                     maximumSearchStates: 100_000,
+                    useArcConsistentSearch: useCompleteDenseConstraintSearch,
                     preferredBoundaryPerpendicularSideByBusId,
                     preferBoundaryOutwardByBusId,
                     fixedViaPointsByConnectionIndex: incrementalViaPoints,
@@ -5282,6 +5295,7 @@ export class FanoutSolver extends BaseSolver {
                   traceWidth: this.config.traceWidth,
                   clearance: this.config.clearance,
                   maximumSearchStates: 100_000,
+                  useArcConsistentSearch: useCompleteDenseConstraintSearch,
                   preferredBoundaryPerpendicularSideByBusId,
                   preferBoundaryOutwardByBusId,
                   fixedViaPointsByConnectionIndex: incrementalViaPoints,
@@ -5328,6 +5342,7 @@ export class FanoutSolver extends BaseSolver {
               traceWidth: this.config.traceWidth,
               clearance: this.config.clearance,
               maximumSearchStates: 100_000,
+              useArcConsistentSearch: useCompleteDenseConstraintSearch,
               preferredBoundaryPerpendicularSideByBusId,
               preferBoundaryOutwardByBusId,
               fixedViaPointsByConnectionIndex: fixedBoundaryViaPoints,

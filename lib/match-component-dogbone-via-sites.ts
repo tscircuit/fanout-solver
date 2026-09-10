@@ -28,6 +28,12 @@ export interface DogboneViaSiteGeometryRules {
   /** Bounds the deterministic backtracking search across all components. */
   maximumSearchStates?: number
   /**
+   * Propagate pairwise candidate constraints before and during backtracking.
+   * This is intended for dense coordinated fanouts; ordinary fanouts retain
+   * the lower-overhead ordered search by default.
+   */
+  useArcConsistentSearch?: boolean
+  /**
    * Optional bounded-search preference for boundary-bus dogbones. The sign
    * refers to the axis perpendicular to each bus's local escape direction.
    */
@@ -682,6 +688,69 @@ function matchComponent(params: {
     )
   }
 
+  const usesDenseLayeredExitConstraints =
+    component.connections.length >= 8 &&
+    component.connections.every(
+      (connection) =>
+        connection.preparedConnection.hasExplicitLayeredExitTarget === true,
+    )
+  if (!rules.useArcConsistentSearch && !usesDenseLayeredExitConstraints) {
+    const getViableCandidates = (
+      entry: ConnectionCandidates,
+    ): ViaSiteCandidate[] =>
+      entry.candidates.filter((candidate) =>
+        [...assignedCandidates.values()].every((assignedCandidate) =>
+          candidatesAreCompatible(candidate, assignedCandidate),
+        ),
+      )
+
+    const augmentMatching = (): boolean => {
+      if (!consumeSearchState()) return false
+      if (remaining.size === 0) return true
+
+      let selectedEntry: ConnectionCandidates | undefined
+      let selectedCandidates: ViaSiteCandidate[] = []
+      for (const connectionIndex of [...remaining].toSorted(
+        (first, second) => first - second,
+      )) {
+        const entry = entryByConnectionIndex.get(connectionIndex)!
+        const viableCandidates = getViableCandidates(entry)
+        if (viableCandidates.length === 0) return false
+        if (
+          !selectedEntry ||
+          viableCandidates.length < selectedCandidates.length ||
+          (viableCandidates.length === selectedCandidates.length &&
+            connectionIndex <
+              selectedEntry.connection.preparedConnection.connectionIndex)
+        ) {
+          selectedEntry = entry
+          selectedCandidates = viableCandidates
+        }
+      }
+
+      const connectionIndex =
+        selectedEntry!.connection.preparedConnection.connectionIndex
+      remaining.delete(connectionIndex)
+      for (const candidate of selectedCandidates) {
+        assignedCandidates.set(connectionIndex, candidate)
+        if (augmentMatching()) return true
+        assignedCandidates.delete(connectionIndex)
+      }
+      remaining.add(connectionIndex)
+      return false
+    }
+
+    if (!augmentMatching()) return null
+    return new Map(
+      [...assignedCandidates.entries()]
+        .toSorted(([first], [second]) => first - second)
+        .map(([connectionIndex, candidate]) => [
+          connectionIndex,
+          { ...candidate.point },
+        ]),
+    )
+  }
+
   const initialViableCandidates = new Map(
     [...remaining].map((connectionIndex) => {
       const entry = entryByConnectionIndex.get(connectionIndex)!
@@ -744,10 +813,7 @@ function matchComponent(params: {
   if (!initiallyConsistentCandidates) return null
 
   const augmentMatching = (
-    viableCandidatesByConnectionIndex: ReadonlyMap<
-      number,
-      ViaSiteCandidate[]
-    >,
+    viableCandidatesByConnectionIndex: ReadonlyMap<number, ViaSiteCandidate[]>,
   ): boolean => {
     if (!consumeSearchState()) return false
     if (remaining.size === 0) return true

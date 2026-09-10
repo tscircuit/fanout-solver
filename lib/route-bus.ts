@@ -84,6 +84,8 @@ export interface RouteBusParams {
   adaptiveWindingRouteOrder?: boolean
   /** Preserve pad-lattice channels in the automatic dense routing path. */
   alignWindingGridToPads?: boolean
+  /** Use complete constraint propagation for the final dense analytic fallback. */
+  useArcConsistentAnalyticSearch?: boolean
   /** Bounds the final fixed-via winding fallback after ordered attempts. */
   fixedViaFallbackRouteOrderAttempts?: number
   /** Retry caller-fixed sites while preserving future exit gaps during recovery. */
@@ -2929,6 +2931,7 @@ export function* routeBusAlternativesSteps(
     preferCornerBoundaryVia = false,
     adaptiveWindingRouteOrder = false,
     alignWindingGridToPads = false,
+    useArcConsistentAnalyticSearch = false,
     fixedViaFallbackRouteOrderAttempts = 24,
     allowFixedViaReservedExitFallback = false,
     cornerBandTargetTrackOffset,
@@ -4236,6 +4239,131 @@ export function* routeBusAlternativesSteps(
     reservedVias.length > 0
   )
     return alternatives
+
+  const usesDenseLayeredExitConstraints =
+    !allowBlindAndBuriedVias &&
+    bus.connections.length >= 8 &&
+    busUsesCoordinatedWindingChannel(bus)
+  if (!useArcConsistentAnalyticSearch && !usesDenseLayeredExitConstraints) {
+    const searchConnectionOrder = (
+      connectionOrder: PreparedConnection[],
+      viaHandedness: ViaHandedness,
+      connectionIndex: number,
+      candidatePlans: FanoutRoutePlan[],
+    ): void => {
+      if (alternatives.length >= maxAlternatives) return
+      if (connectionIndex >= connectionOrder.length) {
+        addAlternative(candidatePlans)
+        return
+      }
+
+      const preparedConnection = connectionOrder[connectionIndex]!
+      const connectionRank = getConnectionRank(bus, preparedConnection)
+      const preferredTracks = [
+        getPreferredTrack({
+          bus,
+          connection: preparedConnection,
+          traceWidth,
+        }),
+        getLegacyPreferredTrack({
+          bus,
+          connection: preparedConnection,
+          targetUsesVia,
+          interstitialEscape,
+          compactBusTracks,
+          traceWidth,
+          viaDiameter,
+          clearance,
+        }),
+      ].filter(
+        (track, index, tracks) =>
+          tracks.findIndex(
+            (candidate) => Math.abs(candidate - track) < 1e-9,
+          ) === index,
+      )
+      const trackCandidates = preferredTracks
+        .flatMap((preferredTrack) =>
+          getTrackCandidates({
+            bus,
+            connection: preparedConnection,
+            preferredTrack,
+            traceWidth,
+            clearance,
+          }),
+        )
+        .filter(
+          (track, index, tracks) =>
+            tracks.findIndex(
+              (candidate) => Math.abs(candidate.value - track.value) < 1e-9,
+            ) === index,
+        )
+      for (
+        let trackIndex = 0;
+        trackIndex < trackCandidates.length;
+        trackIndex++
+      ) {
+        const track = trackCandidates[trackIndex]!
+        const plan = buildPlan({
+          preparedConnection,
+          bus,
+          targetLayer,
+          track: track.value,
+          exitAxis,
+          layerNames,
+          traceWidth,
+          viaDiameter,
+          viaHoleDiameter,
+          holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+          viaHandedness,
+          interstitialEscape,
+          spreadLaneIndex: Math.min(
+            connectionRank,
+            bus.connections.length - connectionRank - 1,
+          ),
+          cornerExitLaneOffset: cornerLaneOffsets.exit,
+          cornerLocalChannelLaneOffset: cornerLaneOffsets.localChannel,
+          cornerBoundaryChannelLaneOffset: cornerLaneOffsets.boundaryChannel,
+          clearance,
+          terminateAtVia: false,
+          allowBlindAndBuriedVias,
+          cornerBandTargetTrackOffset,
+          fixedBoundaryTracksByConnectionIndex,
+        })
+        if (
+          !planIsClear({
+            plan,
+            otherPlans: [...acceptedPlans, ...candidatePlans],
+            staticClearanceCache,
+            blockingBusCounts,
+            cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
+            srj,
+            sharedBoundary: bus.sharedBoundary,
+            clearance,
+            allowBlindAndBuriedVias,
+            allowSameNetMerges,
+          })
+        ) {
+          continue
+        }
+        searchConnectionOrder(
+          connectionOrder,
+          viaHandedness,
+          connectionIndex + 1,
+          [...candidatePlans, plan],
+        )
+        if (alternatives.length >= maxAlternatives) return
+        if (maxAlternatives === 1) return
+      }
+    }
+
+    for (const viaHandedness of viaHandednesses) {
+      for (const connectionOrder of getConnectionOrders(bus)) {
+        searchConnectionOrder(connectionOrder, viaHandedness, 0, [])
+        if (alternatives.length >= maxAlternatives) return alternatives
+      }
+    }
+    return alternatives
+  }
 
   const getAnalyticCandidatePlans = (
     preparedConnection: PreparedConnection,
