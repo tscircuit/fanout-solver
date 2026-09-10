@@ -1588,6 +1588,12 @@ export class FanoutSolver extends BaseSolver {
       params.generator,
       params.getProgress,
     )
+    // Each work solver owns the termination budget for its generator. Keep the
+    // parent alive for that declared work plus the step that consumes its result.
+    this.MAX_ITERATIONS = Math.max(
+      this.MAX_ITERATIONS,
+      this.iterations + solver.MAX_ITERATIONS + 1,
+    )
     this.activeOperation = {
       solver,
       onSolved: params.onSolved,
@@ -2882,6 +2888,43 @@ export class FanoutSolver extends BaseSolver {
             bus,
           ]),
       ]
+      const allWideBusesExitDirectly = wideBoundaryBuses.every(
+        (bus) =>
+          bus.exitEdge &&
+          bus.direction === getDirectionForExitEdge(bus.exitEdge),
+      )
+      // During recovery, route a directly embedded singleton immediately after
+      // the wide field whose retry would otherwise close its source corridor.
+      const recoveryLeadingBuses =
+        useSameNetPlaneCopperStaging && allWideBusesExitDirectly
+          ? singletonBoundaryBuses.filter((bus) => {
+              const containingWideBus = getContainingWideSourceField(bus)
+              return Boolean(
+                containingWideBus &&
+                  bus.direction === containingWideBus.direction,
+              )
+            })
+          : []
+      if (params.boundaryRecovery && recoveryLeadingBuses.length > 0) {
+        const recoveredBusIndex = denseBoundaryBusesInRoutingOrder.findIndex(
+          (bus) => bus.busId === params.boundaryRecovery!.busId,
+        )
+        if (recoveredBusIndex >= 0) {
+          const recoveredBus =
+            denseBoundaryBusesInRoutingOrder[recoveredBusIndex]!
+          const leadingBusSet = new Set(recoveryLeadingBuses)
+          const remainingBuses = denseBoundaryBusesInRoutingOrder.filter(
+            (bus) => bus !== recoveredBus && !leadingBusSet.has(bus),
+          )
+          denseBoundaryBusesInRoutingOrder.splice(
+            0,
+            denseBoundaryBusesInRoutingOrder.length,
+            recoveredBus,
+            ...recoveryLeadingBuses,
+            ...remainingBuses,
+          )
+        }
+      }
       for (const [bus] of adjacentCenteredFieldByTurningBus) {
         const axis =
           bus.direction === "up" || bus.direction === "down" ? "y" : "x"
@@ -3120,6 +3163,19 @@ export class FanoutSolver extends BaseSolver {
           wideBoundaryBuses.some((candidate) =>
             getCornerBandSide(candidate.exitEdge, candidate.preferredExit),
           )
+        const adjacentBoundaryMargin =
+          this.config.traceWidth + this.config.clearance
+        // An exit closer than one routing pitch to an adjacent edge otherwise
+        // lets A* use that edge as an unintended shortcut to the declared edge.
+        const exitsNearAdjacentBoundary = bus.connections.some((connection) => {
+          const target = connection.exitTargetPoint ?? connection.targetPoint
+          const boundary = bus.sharedBoundary
+          return bus.exitEdge === "left" || bus.exitEdge === "right"
+            ? target.y - boundary.minY <= adjacentBoundaryMargin + 1e-9 ||
+                boundary.maxY - target.y <= adjacentBoundaryMargin + 1e-9
+            : target.x - boundary.minX <= adjacentBoundaryMargin + 1e-9 ||
+                boundary.maxX - target.x <= adjacentBoundaryMargin + 1e-9
+        })
         const routeParams = {
           srj: this.routingSrj,
           bus,
@@ -3141,6 +3197,7 @@ export class FanoutSolver extends BaseSolver {
           preferCornerBoundaryVia: useConfiguredDensePlaneRouting,
           adaptiveWindingRouteOrder,
           allowFixedViaReservedExitFallback: useBoundaryRecovery,
+          forbidEarlyExitBoundaryContact: exitsNearAdjacentBoundary,
           // Retain pad-aligned channels even when plane sites are reserved
           // adaptively; the boundary grid can fence off a turning wide bus.
           alignWindingGridToPads:
@@ -5106,7 +5163,25 @@ export class FanoutSolver extends BaseSolver {
         densePlansAreClear,
       )
       if (densePlansAreClear) {
-        return { plans: matchedPlans, failedBusIds: [] }
+        const plans = this.normalizeCompletePlanCorners(matchedPlans)
+        if (plans) {
+          const outputSrj = buildOutputSimpleRouteJson({
+            inputSrj: this.inputSrj,
+            plans,
+            layerNames: this.config.layerNames,
+          })
+          const completeValidation = this.validateCompletePlans(
+            plans,
+            outputSrj,
+          )
+          if (completeValidation.valid) {
+            return {
+              plans,
+              failedBusIds: [],
+              stopAfterCompleteValidation: true,
+            }
+          }
+        }
       }
     }
 
@@ -5790,7 +5865,13 @@ export class FanoutSolver extends BaseSolver {
     }
 
     let validationIssues: FanoutAttemptSummary["validationIssues"]
-    if (plans.length === this.inputSrj.connections.length) {
+    const stopAfterCompleteValidation =
+      mixedTerminationState?.stopAfterCompleteValidation === true &&
+      plans.length === this.inputSrj.connections.length
+    if (
+      !stopAfterCompleteValidation &&
+      plans.length === this.inputSrj.connections.length
+    ) {
       const lengthMatching = this.matchCompletePlanLengths(plans)
       if (lengthMatching.plans) {
         plans = lengthMatching.plans
@@ -5813,7 +5894,10 @@ export class FanoutSolver extends BaseSolver {
         blockingBusCounts.clear()
       }
     }
-    if (plans.length === this.inputSrj.connections.length) {
+    if (
+      !stopAfterCompleteValidation &&
+      plans.length === this.inputSrj.connections.length
+    ) {
       const normalized = this.normalizeCompletePlanCorners(plans)
       if (normalized) {
         plans = normalized

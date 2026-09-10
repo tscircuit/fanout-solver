@@ -2,11 +2,22 @@ import { expect, test } from "bun:test"
 import { getSvgFromGraphicsObject, mergeGraphics } from "graphics-debug"
 import { FanoutSolver } from "../lib/fanout-solver"
 import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
+import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import { createAm62lDirectDecouplingDramInput } from "./fixtures/create-am62l-direct-decoupling-dram-input"
 
-const REPRO_STEP_BUDGET = 2_000
+function pointIsOnBoundary(
+  point: { x: number; y: number },
+  boundary: { minX: number; maxX: number; minY: number; maxY: number },
+) {
+  return (
+    Math.abs(point.x - boundary.minX) < 1e-7 ||
+    Math.abs(point.x - boundary.maxX) < 1e-7 ||
+    Math.abs(point.y - boundary.minY) < 1e-7 ||
+    Math.abs(point.y - boundary.maxY) < 1e-7
+  )
+}
 
-test("reproduces the stalled 143-connection AM62L DRAM fanout", async () => {
+test("finalizes the real AM62L direct-decoupling DRAM fanout", async () => {
   const { inputSrj, options } = createAm62lDirectDecouplingDramInput()
   const throughViaObstacles = inputSrj.obstacles.filter(
     (obstacle) =>
@@ -25,17 +36,32 @@ test("reproduces the stalled 143-connection AM62L DRAM fanout", async () => {
   expect(throughViaObstacles).toHaveLength(120)
 
   const solver = new FanoutSolver(inputSrj, options)
-  while (
-    !solver.solved &&
-    !solver.failed &&
-    solver.iterations < REPRO_STEP_BUDGET
-  ) {
-    solver.step()
-  }
+  solver.solve()
 
-  expect(solver.solved).toBe(false)
+  expect(solver.error).toBeNull()
   expect(solver.failed).toBe(false)
-  expect(solver.iterations).toBe(REPRO_STEP_BUDGET)
+  expect(solver.solved).toBe(true)
+  expect(solver.attempts).toHaveLength(1)
+  const output = solver.getOutput()
+  expectStraightOr45Fanout(output.fanoutTraces)
+  expect(output.fanoutTraces).toHaveLength(143)
+  expect(output.planeTerminations).toHaveLength(110)
+  const boundary = options.sharedBoundary ?? inputSrj.bounds
+  for (const trace of output.fanoutTraces) {
+    const wires = trace.route.filter(
+      (point): point is Extract<typeof point, { route_type: "wire" }> =>
+        point.route_type === "wire",
+    )
+    for (const point of wires.slice(0, -1)) {
+      expect(pointIsOnBoundary(point, boundary)).toBe(false)
+    }
+  }
+  expect(output.validation).toEqual({
+    valid: true,
+    checkedConnectionCount: 143,
+    brokenOutConnectionCount: 143,
+    issues: [],
+  })
 
   const visualization = mergeGraphics(solver.visualize(), {
     texts: [
@@ -50,8 +76,8 @@ test("reproduces the stalled 143-connection AM62L DRAM fanout", async () => {
       {
         x: inputSrj.bounds.minX,
         y: inputSrj.bounds.maxY + 1,
-        text: `Unsolved after ${REPRO_STEP_BUDGET.toLocaleString()} deterministic steps`,
-        color: "#b91c1c",
+        text: "Routed 143/143 · solved=true · validation valid",
+        color: "#166534",
         fontSize: 0.6,
         anchorSide: "bottom_left",
       },
@@ -61,4 +87,4 @@ test("reproduces the stalled 143-connection AM62L DRAM fanout", async () => {
     getSvgFromGraphicsObject(visualization),
     import.meta.path,
   )
-}, 120_000)
+}, 600_000)
