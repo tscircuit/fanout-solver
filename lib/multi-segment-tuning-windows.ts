@@ -14,6 +14,10 @@ import type {
   RoutedSegment,
   RoutedVia,
 } from "./types"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 
 export interface MultiSegmentTuningWindow {
   before: RoutedSegment[]
@@ -66,6 +70,10 @@ export function* getMultiSegmentTuningWindows(params: {
     ...supplied.flatMap((p) => p.vias),
   ]
   const diameter = plan.via.diameter
+  const holeToHoleClearance = getViaHoleToHoleClearance(
+    inputSrj,
+    clearance,
+  )
   const bounds = bus.sharedBoundary
   const dense = bus.componentBounds
   const margin = diameter / 2 + clearance
@@ -115,7 +123,13 @@ export function* getMultiSegmentTuningWindows(params: {
         vias.some(
           (v) =>
             distance(point, v.center) <
-            (diameter + v.diameter) / 2 + clearance - 1e-9,
+            getViaPairMinimumCenterDistance({
+              first: plan.via!,
+              second: v,
+              copperClearance: clearance,
+              holeToHoleClearance,
+            }) -
+              1e-9,
         )
       )
         continue
@@ -137,7 +151,13 @@ export function* getMultiSegmentTuningWindows(params: {
       points.slice(i + 1).flatMap((b) => {
         if (
           a.index >= b.index ||
-          distance(a.point, b.point) < diameter + clearance
+          distance(a.point, b.point) <
+            getViaPairMinimumCenterDistance({
+              first: plan.via!,
+              second: plan.via!,
+              copperClearance: clearance,
+              holeToHoleClearance,
+            })
         )
           return []
         const middle = plan.segments.slice(a.index, b.index + 1)

@@ -6,6 +6,7 @@ import {
   segmentsAreClear,
 } from "./geometry"
 import { matchComponentDogboneViaSites } from "./match-component-dogbone-via-sites"
+import { getViaHoleToHoleClearance } from "./via-clearance"
 import type { PeripheralSourceEscape } from "./route-peripheral-source-escapes"
 import {
   routeSplitPerimeterBusSteps,
@@ -194,6 +195,10 @@ export function* routeShallowSplitPerimeterBusSteps(
     const rematch = (plans: FanoutRoutePlan[] = []) => {
       const matched = matchComponentDogboneViaSites(movableBuses, {
         ...params,
+        holeToHoleClearance: getViaHoleToHoleClearance(
+          params.srj,
+          params.clearance,
+        ),
         additionalObstacles: params.srj.obstacles,
         maximumSearchStates: 300_000,
         preferredViaPointsByConnectionIndex: viaPoints,

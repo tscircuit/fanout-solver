@@ -9,6 +9,7 @@ import type {
   Point2D,
   PreparedBus,
 } from "./types"
+import { getViaHoleToHoleClearance } from "./via-clearance"
 
 export interface PlaneReservedSourceEscapeParams {
   srj: SimpleRouteJson
@@ -128,6 +129,7 @@ export function* routePlaneReservedSourceEscapesSteps(
     clearance,
     viaDiameter,
     viaHoleDiameter,
+    holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
     maximumSearchStates: params.maximumSearchStates ?? 10_000,
     additionalObstacles: srj.obstacles,
   }

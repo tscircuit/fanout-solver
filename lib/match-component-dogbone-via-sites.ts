@@ -13,6 +13,7 @@ import type {
   PreparedConnection,
   RoutedSegment,
 } from "./types"
+import { getViaPairMinimumCenterDistance } from "./via-clearance"
 
 const EPSILON = 1e-9
 const DEFAULT_MAXIMUM_SEARCH_STATES = 100_000
@@ -556,7 +557,19 @@ function candidatesAreMutuallyClear(params: {
     : 0
   const requiredViaSeparation = canShareCopper
     ? requiredHoleSeparation
-    : Math.max(rules.viaDiameter + rules.clearance, requiredHoleSeparation)
+    : getViaPairMinimumCenterDistance({
+        first: {
+          diameter: rules.viaDiameter,
+          holeDiameter: rules.viaHoleDiameter ?? rules.viaDiameter,
+        },
+        second: {
+          diameter: rules.viaDiameter,
+          holeDiameter: rules.viaHoleDiameter ?? rules.viaDiameter,
+        },
+        copperClearance: rules.clearance,
+        holeToHoleClearance:
+          rules.holeToHoleClearance ?? rules.clearance,
+      })
   if (distance(first.point, second.point) < requiredViaSeparation - EPSILON) {
     return false
   }

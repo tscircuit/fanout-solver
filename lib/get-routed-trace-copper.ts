@@ -8,6 +8,7 @@ import type { Point2D, RoutedSegment } from "./types"
 export interface RoutedTraceVia {
   center: Point2D
   diameter: number
+  holeDiameter: number
   spanLayers: string[]
 }
 
@@ -39,6 +40,11 @@ export function getRoutedTraceCopper(
           srj.minViaPadDiameter ??
           srj.min_via_pad_diameter ??
           srj.minViaDiameter ??
+          srj.minTraceWidth,
+        holeDiameter:
+          routePoint.via_hole_diameter ??
+          srj.minViaHoleDiameter ??
+          srj.min_via_hole_diameter ??
           srj.minTraceWidth,
         spanLayers: getRouteViaSpanLayers({
           fromLayer: routePoint.from_layer,

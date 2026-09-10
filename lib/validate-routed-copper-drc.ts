@@ -17,6 +17,10 @@ import {
   obstacleSharesElectricalNet,
 } from "./net-identity"
 import type { Point2D, RoutedSegment } from "./types"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 
 const EPSILON = 1e-6
 
@@ -53,6 +57,7 @@ export interface RoutedCopperDrcReport {
 interface RoutedVia {
   center: Point2D
   diameter: number
+  holeDiameter: number
   spanLayers: string[]
 }
 
@@ -157,6 +162,11 @@ function extractTraceCopper(params: {
         center: { x: routePoint.x, y: routePoint.y },
         diameter:
           routePoint.via_diameter ?? srj.minViaPadDiameter ?? srj.minTraceWidth,
+        holeDiameter:
+          routePoint.via_hole_diameter ??
+          srj.minViaHoleDiameter ??
+          srj.min_via_hole_diameter ??
+          srj.minTraceWidth,
         spanLayers,
       })
       if (
@@ -245,12 +255,14 @@ export function validateRoutedCopperDrc(params: {
   inputSrj: SimpleRouteJson
   routedSrj: SimpleRouteJson
   clearance: number
+  holeToHoleClearance?: number
   allowBlindAndBuriedVias?: boolean
 }): RoutedCopperDrcReport {
   const {
     inputSrj,
     routedSrj,
     clearance,
+    holeToHoleClearance = getViaHoleToHoleClearance(inputSrj, clearance),
     allowBlindAndBuriedVias = true,
   } = params
   const issues: RoutedCopperDrcIssue[] = []
@@ -465,12 +477,18 @@ export function validateRoutedCopperDrc(params: {
           })
         }
         for (const secondVia of second.vias) {
+          const minimumCenterDistance = getViaPairMinimumCenterDistance({
+            first: firstVia,
+            second: secondVia,
+            copperClearance: clearance,
+            holeToHoleClearance,
+          })
           if (
             !firstVia.spanLayers.some((layer) =>
               secondVia.spanLayers.includes(layer),
             ) ||
             distance(firstVia.center, secondVia.center) >=
-              (firstVia.diameter + secondVia.diameter) / 2 + clearance - EPSILON
+              minimumCenterDistance - EPSILON
           ) {
             continue
           }

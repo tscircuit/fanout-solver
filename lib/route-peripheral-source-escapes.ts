@@ -23,6 +23,7 @@ import type {
   RoutedSegment,
   RoutedVia,
 } from "./types"
+import { getViaHoleToHoleClearance } from "./via-clearance"
 
 const EPSILON = 1e-9
 export interface PeripheralSourceEscape {
@@ -391,6 +392,7 @@ export function* routePeripheralSourceEscapesSteps(
   const rules = (): DogboneViaSiteGeometryRules => ({
     viaDiameter: d,
     viaHoleDiameter: params.viaHoleDiameter,
+    holeToHoleClearance: getViaHoleToHoleClearance(srj, c),
     traceWidth: w,
     clearance: c,
     additionalObstacles: srj.obstacles,

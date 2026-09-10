@@ -24,6 +24,7 @@ import type {
   PreparedBus,
   PreparedConnection,
 } from "./types"
+import { getViaHoleToHoleClearance } from "./via-clearance"
 
 const EPS = 1e-7
 export interface SplitPerimeterSources {
@@ -67,6 +68,7 @@ function orderedPhysicalSubset(
   const all = params.buses.flatMap((b) => b.connections)
   const candidates = getComponentDogboneViaSiteCandidates(params.buses, {
     ...params,
+    holeToHoleClearance: getViaHoleToHoleClearance(params.srj, c),
     additionalObstacles: params.srj.obstacles,
   })
   const own = new Map(paths.map((p, i) => [p.connectionIndex, i]))
@@ -333,6 +335,7 @@ export function* routeSplitPerimeterSourceEscapesSteps(
     fixed: PeripheralSourceEscape[],
   ): DogboneViaSiteGeometryRules => ({
     ...params,
+    holeToHoleClearance: getViaHoleToHoleClearance(srj, params.clearance),
     additionalObstacles: srj.obstacles,
     maximumSearchStates: 300_000,
     blockingSegments: fixed.flatMap((p) =>

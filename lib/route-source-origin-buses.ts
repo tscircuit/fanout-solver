@@ -10,6 +10,7 @@ import {
 import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
 import type { FanoutRoutePlan, Point2D, PreparedBus } from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
+import { getViaHoleToHoleClearance } from "./via-clearance"
 
 interface SourceRules {
   srj: SimpleRouteJson
@@ -67,6 +68,10 @@ export function prepareSourceOriginReservations(
     return null
   const sites = matchComponentDogboneViaSites(params.buses, {
     ...params,
+    holeToHoleClearance: getViaHoleToHoleClearance(
+      params.srj,
+      params.clearance,
+    ),
     maximumSearchStates: 10_000,
     additionalObstacles: params.srj.obstacles,
   })

@@ -29,6 +29,10 @@ import type {
   RoutedSegment,
 } from "./types"
 import { segmentIsLegalTerminalBodyEscape } from "./validate-routed-copper-drc"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 
 const EPSILON = 1e-6
 
@@ -684,10 +688,18 @@ function validateClearances(params: {
   plans: readonly FanoutRoutePlan[]
   inputSrj: SimpleRouteJson
   clearance: number
+  holeToHoleClearance: number
   allowBlindAndBuriedVias: boolean
   issues: FanoutValidationIssue[]
 }): void {
-  const { plans, inputSrj, clearance, allowBlindAndBuriedVias, issues } = params
+  const {
+    plans,
+    inputSrj,
+    clearance,
+    holeToHoleClearance,
+    allowBlindAndBuriedVias,
+    issues,
+  } = params
   for (const plan of plans) {
     if (
       getSourcePadReentries(plan, clearance).some(
@@ -827,12 +839,18 @@ function validateClearances(params: {
           }
         }
         for (const existingVia of traceCopper.vias) {
+          const minimumCenterDistance = getViaPairMinimumCenterDistance({
+            first: via,
+            second: existingVia,
+            copperClearance: clearance,
+            holeToHoleClearance,
+          })
           if (
             via.spanLayers.some((layer) =>
               existingVia.spanLayers.includes(layer),
             ) &&
             distance(via.center, existingVia.center) <
-              (via.diameter + existingVia.diameter) / 2 + clearance - 1e-9
+              minimumCenterDistance - 1e-9
           ) {
             addIssue(
               issues,
@@ -921,12 +939,18 @@ function validateClearances(params: {
           }
         }
         for (const secondVia of secondVias) {
+          const minimumCenterDistance = getViaPairMinimumCenterDistance({
+            first: firstVia,
+            second: secondVia,
+            copperClearance: clearance,
+            holeToHoleClearance,
+          })
           if (
             firstVia.spanLayers.some((layer) =>
               secondVia.spanLayers.includes(layer),
             ) &&
             distance(firstVia.center, secondVia.center) <
-              (firstVia.diameter + secondVia.diameter) / 2 + clearance - 1e-9
+              minimumCenterDistance - 1e-9
           ) {
             addIssue(
               issues,
@@ -1044,6 +1068,7 @@ export function validateFanoutSolution(params: {
   preparedBuses: readonly PreparedBus[]
   sharedBoundary: Bounds
   clearance: number
+  holeToHoleClearance?: number
   allowBlindAndBuriedVias?: boolean
 }): FanoutValidationReport {
   const {
@@ -1053,6 +1078,7 @@ export function validateFanoutSolution(params: {
     preparedBuses,
     sharedBoundary,
     clearance,
+    holeToHoleClearance = getViaHoleToHoleClearance(inputSrj, clearance),
     allowBlindAndBuriedVias = true,
   } = params
   const issues: FanoutValidationIssue[] = []
@@ -1130,6 +1156,7 @@ export function validateFanoutSolution(params: {
     plans,
     inputSrj,
     clearance,
+    holeToHoleClearance,
     allowBlindAndBuriedVias,
     issues,
   })

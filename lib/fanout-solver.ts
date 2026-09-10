@@ -74,6 +74,7 @@ import type {
 } from "./types"
 import { validateFanoutSolution } from "./validate-fanout-solution"
 import { visualizeSimpleRouteJson } from "./visualize-simple-route-json"
+import { getViaHoleToHoleClearance } from "./via-clearance"
 
 // Browser Web Workers do not expose Node's `process` global. Keep a local,
 // browser-safe adapter so the optional debug environment flags still work in
@@ -84,6 +85,7 @@ interface ResolvedFanoutConfig {
   traceWidth: number
   viaDiameter: number
   viaHoleDiameter: number
+  holeToHoleClearance: number
   clearance: number
   compactBusTracks: boolean
   allowBlindAndBuriedVias: boolean
@@ -251,6 +253,11 @@ function resolveConfig(
       srj.defaultObstacleMargin ??
       srj.minTraceWidth,
   )
+  const holeToHoleClearance = resolvePositiveNumber(
+    "holeToHoleClearance",
+    options.holeToHoleClearance ??
+      getViaHoleToHoleClearance(srj, clearance),
+  )
   const layerNames = getCopperLayerNames(srj.layerCount)
   const escapeLayers = options.escapeLayers ?? layerNames
   for (const layer of escapeLayers) {
@@ -274,6 +281,7 @@ function resolveConfig(
     traceWidth,
     viaDiameter,
     viaHoleDiameter,
+    holeToHoleClearance,
     clearance,
     compactBusTracks: options.compactBusTracks ?? false,
     allowBlindAndBuriedVias: options.allowBlindAndBuriedVias ?? true,
@@ -1709,6 +1717,7 @@ export class FanoutSolver extends BaseSolver {
       preparedBuses: this.preparedBuses,
       sharedBoundary: this.getValidationBoundary(),
       clearance: this.config.clearance,
+      holeToHoleClearance: this.config.holeToHoleClearance,
       allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
     })
   }
@@ -2051,6 +2060,7 @@ export class FanoutSolver extends BaseSolver {
         {
           viaDiameter: this.config.viaDiameter,
           viaHoleDiameter: this.config.viaHoleDiameter,
+          holeToHoleClearance: this.config.holeToHoleClearance,
           traceWidth: this.config.traceWidth,
           clearance: this.config.clearance,
           additionalObstacles: this.routingSrj.obstacles,
@@ -2740,6 +2750,7 @@ export class FanoutSolver extends BaseSolver {
           {
             viaDiameter: this.config.viaDiameter,
             viaHoleDiameter: this.config.viaHoleDiameter,
+            holeToHoleClearance: this.config.holeToHoleClearance,
             traceWidth: this.config.traceWidth,
             clearance: this.config.clearance,
             maximumSearchStates: 100_000,
@@ -2760,6 +2771,7 @@ export class FanoutSolver extends BaseSolver {
         {
           viaDiameter: this.config.viaDiameter,
           viaHoleDiameter: this.config.viaHoleDiameter,
+          holeToHoleClearance: this.config.holeToHoleClearance,
           traceWidth: this.config.traceWidth,
           clearance: this.config.clearance,
           maximumSearchStates: 20_000,
@@ -2820,6 +2832,7 @@ export class FanoutSolver extends BaseSolver {
           {
             viaDiameter: this.config.viaDiameter,
             viaHoleDiameter: this.config.viaHoleDiameter,
+            holeToHoleClearance: this.config.holeToHoleClearance,
             traceWidth: this.config.traceWidth,
             clearance: this.config.clearance,
             maximumSearchStates: 100_000,
@@ -3226,6 +3239,7 @@ export class FanoutSolver extends BaseSolver {
               {
                 viaDiameter: this.config.viaDiameter,
                 viaHoleDiameter: this.config.viaHoleDiameter,
+                holeToHoleClearance: this.config.holeToHoleClearance,
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
                 maximumSearchStates: 100_000,
@@ -3321,6 +3335,7 @@ export class FanoutSolver extends BaseSolver {
             {
               viaDiameter: this.config.viaDiameter,
               viaHoleDiameter: this.config.viaHoleDiameter,
+              holeToHoleClearance: this.config.holeToHoleClearance,
               traceWidth: this.config.traceWidth,
               clearance: this.config.clearance,
               additionalObstacles: this.routingSrj.obstacles,
@@ -3454,6 +3469,7 @@ export class FanoutSolver extends BaseSolver {
               {
                 viaDiameter: this.config.viaDiameter,
                 viaHoleDiameter: this.config.viaHoleDiameter,
+                holeToHoleClearance: this.config.holeToHoleClearance,
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
                 maximumSearchStates: 3_000_000,
@@ -3654,6 +3670,7 @@ export class FanoutSolver extends BaseSolver {
                   {
                     viaDiameter: this.config.viaDiameter,
                     viaHoleDiameter: this.config.viaHoleDiameter,
+                    holeToHoleClearance: this.config.holeToHoleClearance,
                     traceWidth: this.config.traceWidth,
                     clearance: this.config.clearance,
                     maximumSearchStates: 100_000,
@@ -3706,6 +3723,7 @@ export class FanoutSolver extends BaseSolver {
               {
                 viaDiameter: this.config.viaDiameter,
                 viaHoleDiameter: this.config.viaHoleDiameter,
+                holeToHoleClearance: this.config.holeToHoleClearance,
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
                 maximumSearchStates: 100_000,
@@ -3730,6 +3748,7 @@ export class FanoutSolver extends BaseSolver {
                 {
                   viaDiameter: this.config.viaDiameter,
                   viaHoleDiameter: this.config.viaHoleDiameter,
+                  holeToHoleClearance: this.config.holeToHoleClearance,
                   traceWidth: this.config.traceWidth,
                   clearance: this.config.clearance,
                   blockingSegments,
@@ -3791,6 +3810,7 @@ export class FanoutSolver extends BaseSolver {
                     {
                       viaDiameter: this.config.viaDiameter,
                       viaHoleDiameter: this.config.viaHoleDiameter,
+                      holeToHoleClearance: this.config.holeToHoleClearance,
                       traceWidth: this.config.traceWidth,
                       clearance: this.config.clearance,
                       maximumSearchStates: 100_000,
@@ -3905,6 +3925,7 @@ export class FanoutSolver extends BaseSolver {
             : matchComponentDogboneViaSites(planeBuses, {
                 viaDiameter: this.config.viaDiameter,
                 viaHoleDiameter: this.config.viaHoleDiameter,
+                holeToHoleClearance: this.config.holeToHoleClearance,
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
                 maximumSearchStates: 1,
@@ -3979,6 +4000,7 @@ export class FanoutSolver extends BaseSolver {
                   {
                     viaDiameter: this.config.viaDiameter,
                     viaHoleDiameter: this.config.viaHoleDiameter,
+                    holeToHoleClearance: this.config.holeToHoleClearance,
                     traceWidth: this.config.traceWidth,
                     clearance: this.config.clearance,
                     maximumSearchStates: 100_000,
@@ -4311,6 +4333,7 @@ export class FanoutSolver extends BaseSolver {
                       {
                         viaDiameter: this.config.viaDiameter,
                         viaHoleDiameter: this.config.viaHoleDiameter,
+                        holeToHoleClearance: this.config.holeToHoleClearance,
                         traceWidth: this.config.traceWidth,
                         clearance: this.config.clearance,
                         blockingSegments: acceptedPlans.flatMap((plan) =>
@@ -4685,6 +4708,7 @@ export class FanoutSolver extends BaseSolver {
                 {
                   viaDiameter: this.config.viaDiameter,
                   viaHoleDiameter: this.config.viaHoleDiameter,
+                  holeToHoleClearance: this.config.holeToHoleClearance,
                   traceWidth: this.config.traceWidth,
                   clearance: this.config.clearance,
                   blockingSegments: allBlockingSegments,
@@ -4828,6 +4852,7 @@ export class FanoutSolver extends BaseSolver {
                 {
                   viaDiameter: this.config.viaDiameter,
                   viaHoleDiameter: this.config.viaHoleDiameter,
+                  holeToHoleClearance: this.config.holeToHoleClearance,
                   traceWidth: this.config.traceWidth,
                   clearance: this.config.clearance,
                   maximumSearchStates: 100_000,
@@ -4873,6 +4898,7 @@ export class FanoutSolver extends BaseSolver {
             {
               viaDiameter: this.config.viaDiameter,
               viaHoleDiameter: this.config.viaHoleDiameter,
+              holeToHoleClearance: this.config.holeToHoleClearance,
               traceWidth: this.config.traceWidth,
               clearance: this.config.clearance,
               maximumSearchStates: 100_000,

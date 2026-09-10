@@ -11,6 +11,7 @@ import type {
   PreparedBus,
 } from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
+import { getViaHoleToHoleClearance } from "./via-clearance"
 
 export interface LayerReservedSourceEscapeParams {
   srj: SimpleRouteJson
@@ -267,6 +268,7 @@ export function* routeLayerReservedSourceEscapesSteps(
     clearance,
     viaDiameter,
     viaHoleDiameter,
+    holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
     maximumSearchStates: params.maximumSearchStates ?? 10_000,
     additionalObstacles: srj.obstacles,
   }

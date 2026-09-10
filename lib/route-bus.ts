@@ -41,6 +41,10 @@ import type {
   RoutedSegment,
 } from "./types"
 import { segmentIsLegalTerminalBodyEscape } from "./validate-routed-copper-drc"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 
 export type RouteBusStaticClearanceCache = Map<string, boolean>
 
@@ -1870,6 +1874,7 @@ function planIsStaticallyClear(params: {
     allowBlindAndBuriedVias,
     allowSameNetMerges,
   } = params
+  const holeToHoleClearance = getViaHoleToHoleClearance(srj, clearance)
   const routableBounds = getRoutableBounds(srj.bounds, sharedBoundary)
   if (
     !pointIsInsideBounds(plan.exitPoint, routableBounds) ||
@@ -1999,12 +2004,18 @@ function planIsStaticallyClear(params: {
         }
       }
       for (const existingVia of traceCopper.vias) {
+        const minimumCenterDistance = getViaPairMinimumCenterDistance({
+          first: via,
+          second: existingVia,
+          copperClearance: clearance,
+          holeToHoleClearance,
+        })
         if (
           via.spanLayers.some((layer) =>
             existingVia.spanLayers.includes(layer),
           ) &&
           distance(via.center, existingVia.center) <
-            (via.diameter + existingVia.diameter) / 2 + clearance - 1e-9
+            minimumCenterDistance - 1e-9
         ) {
           return false
         }
@@ -2035,6 +2046,7 @@ function planIsClearOfPlans(params: {
   } = params
   const planSegments = getPlanSegments(plan)
   const planVias = getPlanVias(plan)
+  const holeToHoleClearance = getViaHoleToHoleClearance(srj, clearance)
   for (const otherPlan of otherPlans) {
     if (
       allowSameNetMerges &&
@@ -2104,12 +2116,18 @@ function planIsClearOfPlans(params: {
         }
       }
       for (const otherVia of otherVias) {
+        const minimumCenterDistance = getViaPairMinimumCenterDistance({
+          first: planVia,
+          second: otherVia,
+          copperClearance: clearance,
+          holeToHoleClearance,
+        })
         if (
           planVia.spanLayers.some((layer) =>
             otherVia.spanLayers.includes(layer),
           ) &&
           distance(planVia.center, otherVia.center) <
-            (planVia.diameter + otherVia.diameter) / 2 + clearance - 1e-9
+            minimumCenterDistance - 1e-9
         ) {
           recordBlocker()
           return false
@@ -3339,6 +3357,7 @@ export function* routeBusAlternativesSteps(
         ? matchComponentDogboneViaSites([bus], {
             viaDiameter,
             viaHoleDiameter,
+            holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
             traceWidth,
             clearance,
             additionalObstacles: srj.obstacles,
@@ -3583,6 +3602,7 @@ export function* routeBusAlternativesSteps(
         !matchComponentDogboneViaSites([bus], {
           viaDiameter,
           viaHoleDiameter,
+          holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
           traceWidth,
           clearance,
           additionalObstacles: srj.obstacles,

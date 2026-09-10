@@ -187,6 +187,11 @@ export interface FanoutSolverOptions {
   traceWidth?: number
   viaDiameter?: number
   viaHoleDiameter?: number
+  /**
+   * Minimum edge-to-edge spacing between drilled via holes. Defaults to the
+   * board's `minViaHoleEdgeToViaHoleEdgeClearance`, then to `clearance`.
+   */
+  holeToHoleClearance?: number
   clearance?: number
   compactBusTracks?: boolean
   /**
