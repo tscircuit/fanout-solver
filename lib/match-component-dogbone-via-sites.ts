@@ -567,8 +567,7 @@ function candidatesAreMutuallyClear(params: {
           holeDiameter: rules.viaHoleDiameter ?? rules.viaDiameter,
         },
         copperClearance: rules.clearance,
-        holeToHoleClearance:
-          rules.holeToHoleClearance ?? rules.clearance,
+        holeToHoleClearance: rules.holeToHoleClearance ?? rules.clearance,
       })
   if (distance(first.point, second.point) < requiredViaSeparation - EPSILON) {
     return false

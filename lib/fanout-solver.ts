@@ -255,8 +255,7 @@ function resolveConfig(
   )
   const holeToHoleClearance = resolvePositiveNumber(
     "holeToHoleClearance",
-    options.holeToHoleClearance ??
-      getViaHoleToHoleClearance(srj, clearance),
+    options.holeToHoleClearance ?? getViaHoleToHoleClearance(srj, clearance),
   )
   const layerNames = getCopperLayerNames(srj.layerCount)
   const escapeLayers = options.escapeLayers ?? layerNames

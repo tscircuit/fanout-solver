@@ -259,14 +259,8 @@ function* createTransitTuningBases(params: {
   tuningLayer: string
   addedVias: RoutedVia[]
 }> {
-  const {
-    plan,
-    bus,
-    layerNames,
-    clearance,
-    holeToHoleClearance,
-    workBudget,
-  } = params
+  const { plan, bus, layerNames, clearance, holeToHoleClearance, workBudget } =
+    params
   if (!plan.via || getPlanVias(plan).length > 5) return
   const allowed = bus.allowedLayers ?? layerNames
   const layers = (bus.routableEscapeLayers ?? allowed).filter(
@@ -1906,10 +1900,7 @@ function matchBusPlanLengthsWithBudget(
           bus,
           layerNames: getCopperLayerNames(inputSrj.layerCount),
           clearance,
-          holeToHoleClearance: getViaHoleToHoleClearance(
-            inputSrj,
-            clearance,
-          ),
+          holeToHoleClearance: getViaHoleToHoleClearance(inputSrj, clearance),
           workBudget,
         })) {
           if (
