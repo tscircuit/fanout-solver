@@ -1378,34 +1378,44 @@ function matchDeclaredPairLengths(
     ),
   }))
   let plans = originalPlans
+  const resolvePairPlan = (
+    candidate: readonly FanoutRoutePlan[],
+    pair: DeclaredDifferentialPair,
+    position: 0 | 1,
+  ): FanoutRoutePlan => {
+    const index = pair.connectionIndices[position]
+    const name = pair.connectionNames[position]
+    const matches = candidate.filter((plan) => plan.connectionIndex === index)
+    const plan = matches[0]
+    if (
+      !plan ||
+      matches.length !== 1 ||
+      plan.connectionName !== name ||
+      !Number.isFinite(plan.length)
+    )
+      throw new Error(
+        `Differential-pair matching cannot resolve exactly one original plan for ${name}`,
+      )
+    const measured = [
+      ...plan.segments,
+      ...(plan.planeEndpointSegments ?? []),
+    ].reduce((sum, segment) => sum + distance(segment.start, segment.end), 0)
+    if (
+      !Number.isFinite(measured) ||
+      Math.abs(measured - plan.length) > EPSILON
+    )
+      throw new Error(
+        `Differential-pair matching found inconsistent copper length for ${plan.connectionName}`,
+      )
+    return plan
+  }
   const pairPlans = (
     candidate: readonly FanoutRoutePlan[],
     pair: DeclaredDifferentialPair,
-  ) =>
-    pair.connectionIndices.map((index, i) => {
-      const matches = candidate.filter((plan) => plan.connectionIndex === index)
-      const plan = matches[0]
-      if (
-        matches.length !== 1 ||
-        plan?.connectionName !== pair.connectionNames[i] ||
-        !Number.isFinite(plan.length)
-      )
-        throw new Error(
-          `Differential-pair matching cannot resolve exactly one original plan for ${pair.connectionNames[i]}`,
-        )
-      const measured = [
-        ...plan.segments,
-        ...(plan.planeEndpointSegments ?? []),
-      ].reduce((sum, segment) => sum + distance(segment.start, segment.end), 0)
-      if (
-        !Number.isFinite(measured) ||
-        Math.abs(measured - plan.length) > EPSILON
-      )
-        throw new Error(
-          `Differential-pair matching found inconsistent copper length for ${plan.connectionName}`,
-        )
-      return plan
-    })
+  ): [FanoutRoutePlan, FanoutRoutePlan] => [
+    resolvePairPlan(candidate, pair, 0),
+    resolvePairPlan(candidate, pair, 1),
+  ]
   const originalBusLimitsHold = (candidate: readonly FanoutRoutePlan[]) =>
     scopedBuses.every(({ bus, indices }) => {
       if (bus.maxLengthSkew === undefined) return true
@@ -1422,16 +1432,21 @@ function matchDeclaredPairLengths(
     for (const pair of activePairs) {
       const own = pairPlans(plans, pair)
       if (getBusSkew(own) <= pair.lengthTolerance + EPSILON) continue
-      const entries = pair.connectionIndices.map((index) => byIndex.get(index))
-      const owner = entries.find((entry) => entry)!.bus
+      const firstEntry = byIndex.get(pair.connectionIndices[0])
+      const secondEntry = byIndex.get(pair.connectionIndices[1])
+      const owner = (firstEntry ?? secondEntry)?.bus
+      if (!owner)
+        throw new Error(
+          `Differential-pair matching cannot resolve a bus for ${pair.connectionNames.join("/")}`,
+        )
       // A single-bus repair must never tune a mate outside its explicit scope.
-      if (entries.some((entry) => !entry))
-        return { plans: null, failedBus: owner }
-      const shortest = own[0]!.length <= own[1]!.length ? 0 : 1
-      const laneBus = entries[shortest]!.bus
+      if (!firstEntry || !secondEntry) return { plans: null, failedBus: owner }
+      const entries = [firstEntry, secondEntry] as const
+      const shortest = own[0].length <= own[1].length ? 0 : 1
+      const laneBus = entries[shortest].bus
       const constraintBus: PreparedBus = {
         ...laneBus,
-        connections: entries.map((entry) => entry!.connection),
+        connections: entries.map((entry) => entry.connection),
         maxLengthSkew: pair.lengthTolerance,
       }
       const maximum = Math.max(...own.map((plan) => plan.length))
@@ -1445,8 +1460,7 @@ function matchDeclaredPairLengths(
           unroutedSourceBuses: undefined,
           allowUnconstrainedLaneRerouting: false,
           allowPairLaneSpreading:
-            entries[0]!.bus === entries[1]!.bus &&
-            params.allowPairLaneSpreading,
+            entries[0].bus === entries[1].bus && params.allowPairLaneSpreading,
           candidatePlansAreFeasible: (candidate) =>
             originalBusLimitsHold(candidate) &&
             pairPlans(candidate, pair).every(
