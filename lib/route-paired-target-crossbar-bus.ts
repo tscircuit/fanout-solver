@@ -1,6 +1,7 @@
 import { getPeripheralSourceGeometry } from "./get-peripheral-source-geometry"
 import { getViaSpanLayers } from "./layer-names"
 import { matchComponentDogboneViaSites } from "./match-component-dogbone-via-sites"
+import { reflectFanoutY } from "./reflect-fanout-y"
 import { routeBottomCrossbarBusSteps } from "./route-bottom-crossbar-bus"
 import type { RouteBusParams } from "./route-bus"
 import type { FanoutRoutePlan, RoutedVia } from "./types"
@@ -20,6 +21,43 @@ function getPlanVias(plan: FanoutRoutePlan): RoutedVia[] {
  * permutation with one set of dogbone vias, while the crossbar can preserve
  * the paired target order without leaving the fanout boundary.
  */
+export function busHasExplicitPairedTargets(
+  bus: RouteBusParams["bus"],
+  allowBlindAndBuriedVias = true,
+): boolean {
+  return (
+    !allowBlindAndBuriedVias &&
+    bus.termination.type === "boundary" &&
+    bus.exitEdge === "right" &&
+    bus.connections.length >= 3 &&
+    bus.connections.every(
+      (connection) =>
+        connection.sourceLayer === "top" &&
+        connection.hasExplicitLayeredExitTarget,
+    )
+  )
+}
+
+export function canRoutePairedTargetCrossbarBus(
+  params: Pick<
+    RouteBusParams,
+    "bus" | "targetLayer" | "allowBlindAndBuriedVias"
+  >,
+): boolean {
+  const { bus, targetLayer, allowBlindAndBuriedVias = true } = params
+  if (
+    !busHasExplicitPairedTargets(bus, allowBlindAndBuriedVias) ||
+    bus.connections.some((connection) => connection.sourceLayer === targetLayer)
+  )
+    return false
+
+  const allowedLayers = bus.routableEscapeLayers ?? bus.allowedLayers ?? []
+  return (
+    allowedLayers.includes(targetLayer) &&
+    allowedLayers.includes(bus.connections[0]!.sourceLayer)
+  )
+}
+
 export function routePairedTargetCrossbarBus(
   params: RouteBusParams,
 ): FanoutRoutePlan[] | null {
@@ -35,22 +73,7 @@ export function routePairedTargetCrossbarBus(
     viaHoleDiameter,
     clearance,
   } = params
-  const allowedLayers = bus.routableEscapeLayers ?? bus.allowedLayers ?? []
-  if (
-    params.allowBlindAndBuriedVias ||
-    bus.termination.type !== "boundary" ||
-    bus.exitEdge !== "right" ||
-    bus.connections.length < 3 ||
-    bus.connections.some(
-      (connection) =>
-        connection.sourceLayer !== "top" ||
-        connection.sourceLayer === targetLayer ||
-        !connection.hasExplicitLayeredExitTarget,
-    ) ||
-    !allowedLayers.includes(targetLayer) ||
-    !allowedLayers.some((layer) => layer !== targetLayer)
-  )
-    return null
+  if (!canRoutePairedTargetCrossbarBus(params)) return null
 
   const geometry = getPeripheralSourceGeometry({
     bus,
@@ -59,46 +82,54 @@ export function routePairedTargetCrossbarBus(
   })
   if (!geometry) return null
 
-  const matchedViaPoints = matchComponentDogboneViaSites([bus], {
-    viaDiameter,
-    viaHoleDiameter,
-    holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
-    traceWidth,
-    clearance,
-    additionalObstacles: srj.obstacles,
-    blockingSegments: [
-      ...acceptedPlans.flatMap((plan) =>
-        plan.segments.map((segment) => ({
-          connectionIndex: plan.connectionIndex,
-          segment,
-        })),
-      ),
-      ...reservedVias.flatMap((reserved) =>
-        reserved.sourceEscapeSegment
-          ? [
-              {
-                connectionIndex: -1,
-                segment: reserved.sourceEscapeSegment,
-              },
-            ]
-          : [],
-      ),
-    ],
-    blockingVias: [
-      ...acceptedPlans.flatMap((plan) =>
-        getPlanVias(plan).map((via) => ({
-          connectionIndex: plan.connectionIndex,
-          center: via.center,
-          diameter: via.diameter,
-          spanLayers: via.spanLayers,
-        })),
-      ),
-      ...reservedVias.map((reserved) => ({
-        connectionIndex: -1,
-        ...reserved.via,
-      })),
-    ],
-  })
+  const fixedViaPoints = params.fixedViaPointsByConnectionIndex
+  const matchedViaPoints = fixedViaPoints
+    ? new Map(
+        bus.connections.flatMap((connection) => {
+          const point = fixedViaPoints.get(connection.connectionIndex)
+          return point ? [[connection.connectionIndex, point] as const] : []
+        }),
+      )
+    : matchComponentDogboneViaSites([bus], {
+        viaDiameter,
+        viaHoleDiameter,
+        holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+        traceWidth,
+        clearance,
+        additionalObstacles: srj.obstacles,
+        blockingSegments: [
+          ...acceptedPlans.flatMap((plan) =>
+            plan.segments.map((segment) => ({
+              connectionIndex: plan.connectionIndex,
+              segment,
+            })),
+          ),
+          ...reservedVias.flatMap((reserved) =>
+            reserved.sourceEscapeSegment
+              ? [
+                  {
+                    connectionIndex: -1,
+                    segment: reserved.sourceEscapeSegment,
+                  },
+                ]
+              : [],
+          ),
+        ],
+        blockingVias: [
+          ...acceptedPlans.flatMap((plan) =>
+            getPlanVias(plan).map((via) => ({
+              connectionIndex: plan.connectionIndex,
+              center: via.center,
+              diameter: via.diameter,
+              spanLayers: via.spanLayers,
+            })),
+          ),
+          ...reservedVias.map((reserved) => ({
+            connectionIndex: -1,
+            ...reserved.via,
+          })),
+        ],
+      })
   if (!matchedViaPoints || matchedViaPoints.size !== bus.connections.length)
     return null
 
@@ -135,12 +166,34 @@ export function routePairedTargetCrossbarBus(
       },
     }
   })
-  const steps = routeBottomCrossbarBusSteps({
+  const crossbarParams = {
     ...params,
     sourceEscapes,
     sourceBoundary: geometry.sourceBoundary,
-  })
+    honorExplicitLayeredExitTargets: true,
+  }
+  const routesAboveSource =
+    bus.connections.reduce(
+      (sum, connection) =>
+        sum + (connection.exitTargetPoint ?? connection.targetPoint).y,
+      0,
+    ) /
+      bus.connections.length >
+    (bus.componentBounds.minY + bus.componentBounds.maxY) / 2
+  const steps = routeBottomCrossbarBusSteps(
+    routesAboveSource ? reflectFanoutY(crossbarParams) : crossbarParams,
+  )
   let result = steps.next()
   while (!result.done) result = steps.next()
-  return result.value
+  if (!result.value || !routesAboveSource) return result.value
+  const connectionByIndex = new Map(
+    bus.connections.map((connection) => [
+      connection.connectionIndex,
+      connection,
+    ]),
+  )
+  return reflectFanoutY(result.value).map((plan) => ({
+    ...plan,
+    sourceObstacle: connectionByIndex.get(plan.connectionIndex)!.sourceObstacle,
+  }))
 }

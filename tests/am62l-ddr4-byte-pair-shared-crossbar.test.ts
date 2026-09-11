@@ -24,7 +24,7 @@ const fixture: CapturedFixture = JSON.parse(
   ),
 )
 
-test.failing("routes both exact AM62L DDR4 byte lanes through their paired breakout exits", async () => {
+test("routes both exact AM62L DDR4 byte lanes through their paired breakout exits", async () => {
   const { generatedFrom, simpleRouteJson, solverOptions } = fixture
   expect(generatedFrom).toEqual({
     repository: "https://github.com/tscircuit/core",
@@ -53,5 +53,7 @@ test.failing("routes both exact AM62L DDR4 byte lanes through their paired break
   )
   expect(solver.failed, solver.error ?? undefined).toBe(false)
   expect(solver.solved).toBe(true)
-  expect(solver.getOutput().fanoutTraces).toHaveLength(16)
+  const output = solver.getOutput()
+  expect(output.fanoutTraces).toHaveLength(16)
+  expect(output.validation).toMatchObject({ valid: true, issues: [] })
 }, 240_000)

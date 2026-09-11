@@ -59,7 +59,11 @@ import { routeSplitPerimeterBusSteps } from "./route-split-perimeter-bus"
 import { routeShallowSplitPerimeterBusSteps } from "./route-shallow-split-perimeter-bus"
 import { routeSingleLayerWithAdaptiveExitsSteps } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
-import { routePairedTargetCrossbarBus } from "./route-paired-target-crossbar-bus"
+import {
+  busHasExplicitPairedTargets,
+  canRoutePairedTargetCrossbarBus,
+  routePairedTargetCrossbarBus,
+} from "./route-paired-target-crossbar-bus"
 import { getRuntimeProcess } from "./runtime-process"
 import { shortenBusPlans } from "./shorten-bus-plans"
 import type {
@@ -6167,6 +6171,19 @@ export class FanoutSolver extends BaseSolver {
       })
       yield
     }
+    const canUsePairedTargetCrossbar = (bus: PreparedBus) => {
+      const targetLayer = busLayerAssignments[bus.busId]
+      return (
+        targetLayer !== undefined &&
+        canRoutePairedTargetCrossbarBus({
+          bus,
+          targetLayer,
+          allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
+        })
+      )
+    }
+    const hasExplicitPairedTargets = (bus: PreparedBus) =>
+      busHasExplicitPairedTargets(bus, this.config.allowBlindAndBuriedVias)
     const busesInRoutingOrder = [...this.preparedBuses].sort((a, b) => {
       const aUsesCoordinatedWinding = busUsesCoordinatedWinding(a)
       const bUsesCoordinatedWinding = busUsesCoordinatedWinding(b)
@@ -6182,6 +6199,10 @@ export class FanoutSolver extends BaseSolver {
           b,
           this.config.allowBlindAndBuriedVias,
         ) ||
+        Number(hasExplicitPairedTargets(a)) -
+          Number(hasExplicitPairedTargets(b)) ||
+        Number(canUsePairedTargetCrossbar(b)) -
+          Number(canUsePairedTargetCrossbar(a)) ||
         Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
         (aUsesCoordinatedWinding && bUsesCoordinatedWinding
           ? bLayerIndex - aLayerIndex
@@ -6200,6 +6221,70 @@ export class FanoutSolver extends BaseSolver {
               : getBusDistanceToBoundary(a) - getBusDistanceToBoundary(b)))
       )
     })
+
+    const pairedTargetBuses = busesInRoutingOrder.filter(
+      hasExplicitPairedTargets,
+    )
+    const pairedTargetBusIds = new Set(
+      pairedTargetBuses.map((bus) => bus.busId),
+    )
+    // Paired component fanouts compete for the same dogbone lattice. Match the
+    // complete source field once so one crossbar cannot consume a future bus's
+    // only legal via site.
+    const pairedTargetViaPoints =
+      routingStrategy === "default" && pairedTargetBuses.length >= 2
+        ? matchComponentDogboneViaSites(pairedTargetBuses, {
+            viaDiameter: this.config.viaDiameter,
+            viaHoleDiameter: this.config.viaHoleDiameter,
+            holeToHoleClearance: this.config.holeToHoleClearance,
+            traceWidth: this.config.traceWidth,
+            clearance: this.config.clearance,
+            maximumSearchStates: 100_000,
+            useArcConsistentSearch: true,
+            additionalObstacles: this.routingSrj.obstacles,
+          })
+        : null
+    const getPairedTargetReservedVias = (bus: PreparedBus) => {
+      if (!pairedTargetViaPoints) return undefined
+      const currentConnectionIndices = new Set(
+        bus.connections.map((connection) => connection.connectionIndex),
+      )
+      return pairedTargetBuses.flatMap((preparedBus) => {
+        const targetLayer = busLayerAssignments[preparedBus.busId]
+        if (!targetLayer) return []
+        return preparedBus.connections.flatMap((connection) => {
+          if (currentConnectionIndices.has(connection.connectionIndex))
+            return []
+          const center = pairedTargetViaPoints.get(connection.connectionIndex)
+          if (!center) return []
+          return [
+            {
+              connectionName: connection.connection.name,
+              sourceEscapeSegment: plans.some(
+                (plan) => plan.connectionIndex === connection.connectionIndex,
+              )
+                ? undefined
+                : {
+                    start: connection.sourcePoint,
+                    end: center,
+                    layer: connection.sourceLayer,
+                    width: this.config.traceWidth,
+                  },
+              via: {
+                center,
+                diameter: this.config.viaDiameter,
+                spanLayers: getViaSpanLayers({
+                  fromLayer: connection.sourceLayer,
+                  toLayer: targetLayer,
+                  layerNames: this.config.layerNames,
+                  allowBlindAndBuriedVias: false,
+                }),
+              },
+            },
+          ]
+        })
+      })
+    }
 
     let mixedTerminationState: MixedTerminationState | null = null
     if (!useSingleLayerPushAndShove && routingStrategy === "default") {
@@ -6312,8 +6397,17 @@ export class FanoutSolver extends BaseSolver {
         allowSameNetMerges: this.config.allowSameNetMerges,
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
+        ...(pairedTargetViaPoints && pairedTargetBusIds.has(bus.busId)
+          ? {
+              reservedVias: getPairedTargetReservedVias(bus),
+              fixedViaPointsByConnectionIndex: pairedTargetViaPoints,
+            }
+          : {}),
       }
-      let busPlans = routeBus(routeParams)
+      let busPlans = pairedTargetViaPoints
+        ? routePairedTargetCrossbarBus(routeParams)
+        : null
+      if (!busPlans) busPlans = routeBus(routeParams)
       if (!busPlans) {
         busPlans = routePairedTargetCrossbarBus(routeParams)
       }

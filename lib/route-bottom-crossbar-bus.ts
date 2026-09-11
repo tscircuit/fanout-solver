@@ -28,6 +28,10 @@ import type {
   RoutedSegment,
   RoutedVia,
 } from "./types"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 
 /** Use two allowed layers to permute unordered bottom exits into either side of the boundary. */
 export function* routeBottomCrossbarBusSteps(
@@ -39,6 +43,8 @@ export function* routeBottomCrossbarBusSteps(
       rowOffset: number
       compactRows: boolean
     }
+    /** Preserve caller-supplied layered exits instead of assigning a top/bottom band. */
+    honorExplicitLayeredExitTargets?: boolean
   },
 ): Generator<RouteViaMinimalWindingProgress, FanoutRoutePlan[] | null, void> {
   const {
@@ -54,11 +60,18 @@ export function* routeBottomCrossbarBusSteps(
   } = params
   const oppositeSide = bus.exitEdge === "left"
   const layout = oppositeSide ? params.oppositeLayout : undefined
+  const honorExplicitLayeredExitTargets =
+    params.honorExplicitLayeredExitTargets === true &&
+    bus.connections.every(
+      (connection) => connection.hasExplicitLayeredExitTarget,
+    )
   const allowedLayers = bus.routableEscapeLayers ?? bus.allowedLayers ?? []
   const sourceLayer = bus.connections[0]!.sourceLayer
-  const crossoverLayer = oppositeSide
+  const crossoverLayer = honorExplicitLayeredExitTargets
     ? allowedLayers.find((layer) => layer !== targetLayer)
-    : sourceLayer
+    : oppositeSide
+      ? allowedLayers.find((layer) => layer !== targetLayer)
+      : sourceLayer
   if (
     bus.termination.type !== "boundary" ||
     (bus.exitEdge !== "right" && !oppositeSide) ||
@@ -244,8 +257,21 @@ export function* routeBottomCrossbarBusSteps(
   // axis; the final physical check also verifies their diagonal via clearance.
   const crossingPitch =
     usesLowerBand || layout?.compactRows
-      ? Math.max(viaTraceDistance, (viaDiameter + clearance) / Math.SQRT2) +
-        1e-5
+      ? Math.max(
+          viaTraceDistance,
+          getViaPairMinimumCenterDistance({
+            first: {
+              diameter: viaDiameter,
+              holeDiameter: params.viaHoleDiameter,
+            },
+            second: {
+              diameter: viaDiameter,
+              holeDiameter: params.viaHoleDiameter,
+            },
+            copperClearance: clearance,
+            holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+          }) / Math.SQRT2,
+        ) + 1e-5
       : portPitch
   const lowestAcceptedCopper = Math.min(
     ...acceptedPlans
@@ -363,7 +389,7 @@ export function* routeBottomCrossbarBusSteps(
     tracks[rank] = nextTrack
     nextTrack -= viaDiameter + clearance
   }
-  if (usesLowerBand)
+  if (usesLowerBand || honorExplicitLayeredExitTargets)
     tracks.splice(0, tracks.length, ...ordered.map(targetTrack))
   const lowestTrack = tracks[0]!
   const topRow = annulusTop
@@ -374,6 +400,7 @@ export function* routeBottomCrossbarBusSteps(
       Math.max(...[...prefixes.values()].map((prefix) => prefix.exitPoint.x)) +
         viaTraceDistance ||
     (!usesLowerBand &&
+      !honorExplicitLayeredExitTargets &&
       lowestTrack <= (bus.sharedBoundary.minY + bus.sharedBoundary.maxY) / 2)
   )
     return null
