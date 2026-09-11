@@ -1,5 +1,6 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getCornerBandSide } from "./boundary-exit"
+import { getFanoutPlanSkew } from "./get-fanout-plan-effective-length"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import type { RouteBusParams } from "./route-bus"
 import {
@@ -33,9 +34,7 @@ export function* repairPeripheralBusLengthsSteps(
       allowBlindAndBuriedVias: params.allowBlindAndBuriedVias,
       allowSameNetMerges: params.allowSameNetMerges,
     })
-  const skew = (plans: readonly FanoutRoutePlan[]) =>
-    Math.max(...plans.map((plan) => plan.length)) -
-    Math.min(...plans.map((plan) => plan.length))
+  const skew = getFanoutPlanSkew
   const repaired = new Set<string>()
   let current = [...params.plans]
   while (repaired.size < 3) {

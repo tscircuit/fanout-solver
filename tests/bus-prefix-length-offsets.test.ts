@@ -50,7 +50,7 @@ function getTraceLength(trace: SimplifiedPcbTrace): number {
   return length
 }
 
-test.failing("matches complete bus lengths including existing connection prefixes", async () => {
+test("matches complete bus lengths including existing connection prefixes", async () => {
   const leftPads = createBgaObstacles("left-bga", -4)
   const rightPads = createBgaObstacles("right-bga", 4)
   const desiredExitTargets: Record<string, Point2D> = {
@@ -69,9 +69,7 @@ test.failing("matches complete bus lengths including existing connection prefixe
     connectionExitTargets: desiredExitTargets,
     connectionLengthOffsets,
     maxLengthSkew: 0.25,
-  } as FanoutBusSpec & {
-    connectionLengthOffsets: Readonly<Record<string, number>>
-  }
+  } satisfies FanoutBusSpec
   const simpleRouteJson: SimpleRouteJson = {
     layerCount: 2,
     minTraceWidth: 0.1,
@@ -103,6 +101,34 @@ test.failing("matches complete bus lengths including existing connection prefixe
       }
     }),
     buses: [bus],
+  }
+  expect(
+    () =>
+      new FanoutSolver(simpleRouteJson, {
+        buses: [
+          {
+            ...bus,
+            connectionLengthOffsets: { NOT_IN_BUS: 1 },
+          },
+        ],
+      }),
+  ).toThrow(
+    'FanoutSolver: connectionLengthOffsets contains connection "NOT_IN_BUS" outside bus "DATA_BUS"',
+  )
+  for (const invalidOffset of [-1, Number.NaN, Infinity, -Infinity]) {
+    expect(
+      () =>
+        new FanoutSolver(simpleRouteJson, {
+          buses: [
+            {
+              ...bus,
+              connectionLengthOffsets: { DATA0: invalidOffset },
+            },
+          ],
+        }),
+    ).toThrow(
+      'FanoutSolver: connectionLengthOffsets for connection "DATA0" must be a finite non-negative number',
+    )
   }
   const solver = new FanoutSolver(simpleRouteJson, {
     buses: [bus],

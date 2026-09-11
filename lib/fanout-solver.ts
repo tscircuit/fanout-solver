@@ -32,6 +32,7 @@ import {
   getSingleDogboneViaSiteRepairs,
   matchComponentDogboneViaSites,
 } from "./match-component-dogbone-via-sites"
+import { getFanoutPlanSkew } from "./get-fanout-plan-effective-length"
 import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
@@ -3661,13 +3662,7 @@ export class FanoutSolver extends BaseSolver {
             bus.maxLengthSkew === undefined ? 1 : 3,
           )
           const freePlans = freeAlternatives.toSorted((first, second) => {
-            const firstLengths = first.map((plan) => plan.length)
-            const secondLengths = second.map((plan) => plan.length)
-            return (
-              Math.max(...firstLengths) -
-              Math.min(...firstLengths) -
-              (Math.max(...secondLengths) - Math.min(...secondLengths))
-            )
+            return getFanoutPlanSkew(first) - getFanoutPlanSkew(second)
           })[0]
           if (freePlans) {
             const allPlans = [...matchedPlans, ...freePlans]
@@ -3714,8 +3709,7 @@ export class FanoutSolver extends BaseSolver {
           }
         }
         if (busPlans && bus.maxLengthSkew !== undefined) {
-          const lengths = busPlans.map((plan) => plan.length)
-          const rawSkew = Math.max(...lengths) - Math.min(...lengths)
+          const rawSkew = getFanoutPlanSkew(busPlans)
           const needsRouteDiversity =
             shouldSearchAdditionalBoundaryRouteTopologies({
               boundaryBusCount: boundaryBuses.length,
@@ -3734,15 +3728,8 @@ export class FanoutSolver extends BaseSolver {
             !usedRepairedViaSites
           ) {
             busPlans = (yield* routeAlternatives(routeParams, 3)).toSorted(
-              (first, second) => {
-                const firstLengths = first.map((plan) => plan.length)
-                const secondLengths = second.map((plan) => plan.length)
-                return (
-                  Math.max(...firstLengths) -
-                  Math.min(...firstLengths) -
-                  (Math.max(...secondLengths) - Math.min(...secondLengths))
-                )
-              },
+              (first, second) =>
+                getFanoutPlanSkew(first) - getFanoutPlanSkew(second),
             )[0]
           }
         }

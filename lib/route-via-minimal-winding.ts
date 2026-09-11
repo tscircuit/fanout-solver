@@ -731,6 +731,9 @@ export function buildViaMinimalWindingPlan(params: {
       ? { sourceEscapeSegmentCount: sourceSegments.length }
       : {}),
     via: changesLayer ? via : undefined,
+    ...(connection.lengthOffset === undefined
+      ? {}
+      : { lengthOffset: connection.lengthOffset }),
     length: segments.reduce(
       (total, segment) => total + distance(segment.start, segment.end),
       0,

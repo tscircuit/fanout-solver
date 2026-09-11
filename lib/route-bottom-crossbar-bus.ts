@@ -8,6 +8,7 @@ import {
   distancePointToSegment,
   distanceSegmentToSegment,
 } from "./geometry"
+import { getFanoutPlanSkew } from "./get-fanout-plan-effective-length"
 import {
   fanoutPlansAreClear,
   getCornerTargetTrack,
@@ -501,9 +502,7 @@ export function* routeBottomCrossbarBusSteps(
   // A compact opposite crossbar may need the caller's normal complete-bus
   // length matching. Physical clearance is still checked before returning it.
   if (bus.maxLengthSkew !== undefined && !layout?.compactRows) {
-    const lengths = plans.map((plan) => plan.length)
-    if (Math.max(...lengths) - Math.min(...lengths) > bus.maxLengthSkew + 1e-6)
-      return null
+    if (getFanoutPlanSkew(plans) > bus.maxLengthSkew + 1e-6) return null
   }
   if (
     !fanoutPlansAreClear({

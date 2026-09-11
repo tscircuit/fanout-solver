@@ -8,6 +8,10 @@ import {
   type ReservedViaBusesProgress,
 } from "./route-reserved-via-buses"
 import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
+import {
+  getFanoutPlanEffectiveLength,
+  getFanoutPlanSkew,
+} from "./get-fanout-plan-effective-length"
 import type { FanoutRoutePlan, Point2D, PreparedBus } from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
 import { getViaHoleToHoleClearance } from "./via-clearance"
@@ -189,14 +193,19 @@ export function* routeSourceOriginBusesSteps(
     const minimum = Math.min(
       ...plans
         .filter((other) => other.busId === plan.busId)
-        .map((other) => other.length),
+        .map(getFanoutPlanEffectiveLength),
     )
-    return plan.length > minimum + bus.maxLengthSkew + 1e-7
+    return (
+      getFanoutPlanEffectiveLength(plan) > minimum + bus.maxLengthSkew + 1e-7
+    )
   }
   for (let pass = 0; pass < 2; pass++) {
     const candidates = plans
       .filter(isOverlong)
-      .toSorted((a, b) => b.length - a.length)
+      .toSorted(
+        (a, b) =>
+          getFanoutPlanEffectiveLength(b) - getFanoutPlanEffectiveLength(a),
+      )
       .slice(0, 8)
     let changed = false
     for (const candidate of candidates) {
@@ -285,15 +294,11 @@ export function* routeSourceOriginBusesSteps(
       }
       if (!replacement || replacement.length >= original.length - 1e-7) continue
       const busPlans = plans.filter((plan) => plan.busId === original.busId)
-      const before = busPlans.map((plan) => plan.length)
-      const after = busPlans.map((plan) =>
-        plan === original ? replacement.length : plan.length,
+      const beforeSkew = getFanoutPlanSkew(busPlans)
+      const afterSkew = getFanoutPlanSkew(
+        busPlans.map((plan) => (plan === original ? replacement : plan)),
       )
-      if (
-        Math.max(...after) - Math.min(...after) >
-        Math.max(...before) - Math.min(...before) + 1e-7
-      )
-        continue
+      if (afterSkew > beforeSkew + 1e-7) continue
       if (
         tail &&
         !validateRoutedCopperDrc({

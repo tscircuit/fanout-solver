@@ -1,5 +1,9 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { distance } from "./geometry"
+import {
+  getFanoutPlanEffectiveLength,
+  getFanoutPlanSkew,
+} from "./get-fanout-plan-effective-length"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
 import { normalizeFanoutPlanTargetPath } from "./normalize-fanout-plan-corners"
@@ -37,9 +41,7 @@ interface ShortenedSingleton {
 }
 
 const EPSILON = 1e-7
-const getSkew = (plans: readonly FanoutRoutePlan[]) =>
-  Math.max(...plans.map((p) => p.length)) -
-  Math.min(...plans.map((p) => p.length))
+const getSkew = getFanoutPlanSkew
 
 function retainSource(
   original: FanoutRoutePlan,
@@ -276,7 +278,10 @@ function* rerouteIndividualBusesSteps(
       }
       return routeReservedViaBusesSteps(routingParams)
     }
-    const longest = own.toSorted((a, b) => b.length - a.length)[0]!
+    const longest = own.toSorted(
+      (a, b) =>
+        getFanoutPlanEffectiveLength(b) - getFanoutPlanEffectiveLength(a),
+    )[0]!
     const connection = bus.connections.find(
       (c) => c.connectionIndex === longest.connectionIndex,
     )!
@@ -752,11 +757,17 @@ export function* rerouteTwoOverlongLanesSteps(
     const own = plans.filter((plan) => plan.busId === bus.busId)
     if (own.length !== bus.connections.length) return null
     if (getSkew(own) <= bus.maxLengthSkew! + EPSILON) continue
-    const minimum = Math.min(...own.map((plan) => plan.length))
+    const minimum = Math.min(...own.map(getFanoutPlanEffectiveLength))
     const overlong = own
-      .filter((plan) => plan.length > minimum + bus.maxLengthSkew! + EPSILON)
+      .filter(
+        (plan) =>
+          getFanoutPlanEffectiveLength(plan) >
+          minimum + bus.maxLengthSkew! + EPSILON,
+      )
       .toSorted(
-        (a, b) => b.length - a.length || a.connectionIndex - b.connectionIndex,
+        (a, b) =>
+          getFanoutPlanEffectiveLength(b) - getFanoutPlanEffectiveLength(a) ||
+          a.connectionIndex - b.connectionIndex,
       )
       .slice(0, 2)
     if (overlong.length !== 2) return null

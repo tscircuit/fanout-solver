@@ -4,6 +4,7 @@ import {
   distancePointToSegment,
   distanceSegmentToSegment,
 } from "./geometry"
+import { getFanoutPlanSkew } from "./get-fanout-plan-effective-length"
 import { fanoutPlansAreClear } from "./route-bus"
 import {
   buildViaMinimalWindingPlan,
@@ -356,10 +357,9 @@ export function* routeSplitPerimeterBusSteps(
   if (tops.some((p) => !p)) return null
   const plans = [...remote, separator, inner, ...(tops as FanoutRoutePlan[])]
   if (plans.length !== bus.connections.length) return null
-  const lengths = plans.map((p) => p.length)
   if (
     bus.maxLengthSkew !== undefined &&
-    Math.max(...lengths) - Math.min(...lengths) > bus.maxLengthSkew + EPS
+    getFanoutPlanSkew(plans) > bus.maxLengthSkew + EPS
   )
     return null
   if (

@@ -1,6 +1,10 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { distance } from "./geometry"
 import {
+  getFanoutPlanEffectiveLength,
+  getFanoutPlanSkew,
+} from "./get-fanout-plan-effective-length"
+import {
   routeReservedViaBusesSteps,
   type ReservedViaBusesProgress,
 } from "./route-reserved-via-buses"
@@ -30,9 +34,7 @@ export interface TransitLengthRepairProgress extends ReservedViaBusesProgress {
 }
 
 const EPSILON = 1e-6
-const skew = (plans: readonly FanoutRoutePlan[]) =>
-  Math.max(...plans.map((plan) => plan.length)) -
-  Math.min(...plans.map((plan) => plan.length))
+const skew = getFanoutPlanSkew
 
 /**
  * Shorten overlong lanes through permitted transit layers while preserving
@@ -135,16 +137,18 @@ export function* repairBusLengthsWithTransitSteps(
       return null
     const tried = new Set<number>()
     while (skew(busPlans) > bus.maxLengthSkew! + EPSILON) {
-      const minimum = Math.min(...busPlans.map((plan) => plan.length))
+      const minimum = Math.min(...busPlans.map(getFanoutPlanEffectiveLength))
       const original = busPlans
         .filter(
           (plan) =>
             !tried.has(plan.connectionIndex) &&
-            plan.length > minimum + bus.maxLengthSkew! + EPSILON,
+            getFanoutPlanEffectiveLength(plan) >
+              minimum + bus.maxLengthSkew! + EPSILON,
         )
         .toSorted(
           (a, b) =>
-            b.length - a.length || a.connectionIndex - b.connectionIndex,
+            getFanoutPlanEffectiveLength(b) - getFanoutPlanEffectiveLength(a) ||
+            a.connectionIndex - b.connectionIndex,
         )[0]
       if (!original || attempts >= maximumConnectionAttempts) return null
       tried.add(original.connectionIndex)

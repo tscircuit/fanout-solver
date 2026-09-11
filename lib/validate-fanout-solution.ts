@@ -12,6 +12,7 @@ import {
   distanceSegmentToSegment,
   segmentsAreClear,
 } from "./geometry"
+import { getFanoutPlanEffectiveLength } from "./get-fanout-plan-effective-length"
 import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
 import { getSourcePadReentries } from "./source-pad-reentry"
 import {
@@ -1032,11 +1033,12 @@ function validateDifferentialPairs(
     }
     // Measure copper rather than trusting cached plan.length metadata. Vertical
     // via barrel lengths are not represented in the SRJ's planar length units.
-    const lengths = pairPlans.map((plan) =>
-      getPlanSegments(plan).reduce(
-        (sum, segment) => sum + distance(segment.start, segment.end),
-        0,
-      ),
+    const lengths = pairPlans.map(
+      (plan) =>
+        getPlanSegments(plan).reduce(
+          (sum, segment) => sum + distance(segment.start, segment.end),
+          0,
+        ) + (plan.lengthOffset ?? 0),
     )
     if (lengths.some((length) => !Number.isFinite(length))) {
       addIssue(
@@ -1094,7 +1096,7 @@ export function validateFanoutSolution(params: {
     if (bus.maxLengthSkew === undefined) continue
     const busPlans = plans.filter((plan) => plan.busId === bus.busId)
     if (busPlans.length < 2) continue
-    const lengths = busPlans.map((plan) => plan.length)
+    const lengths = busPlans.map(getFanoutPlanEffectiveLength)
     const skew = Math.max(...lengths) - Math.min(...lengths)
     if (skew > bus.maxLengthSkew + 1e-6) {
       addIssue(

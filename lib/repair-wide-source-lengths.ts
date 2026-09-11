@@ -1,5 +1,6 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { distance } from "./geometry"
+import { getFanoutPlanEffectiveLength } from "./get-fanout-plan-effective-length"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import {
   routeReservedViaBusesSteps,
@@ -45,7 +46,7 @@ export function hasOverlongWideSourcePrefix(
   return getConstrainedWideBuses(params).some((bus) => {
     const own = params.plans.filter((plan) => plan.busId === bus.busId)
     const allowance =
-      Math.min(...own.map((plan) => plan.length)) + bus.maxLengthSkew!
+      Math.min(...own.map(getFanoutPlanEffectiveLength)) + bus.maxLengthSkew!
     return own.some(
       (plan) =>
         plan.segments
@@ -53,7 +54,8 @@ export function hasOverlongWideSourcePrefix(
           .reduce(
             (sum, segment) => sum + distance(segment.start, segment.end),
             0,
-          ) >
+          ) +
+          (plan.lengthOffset ?? 0) >
         allowance + 1e-6,
     )
   })
@@ -138,9 +140,11 @@ export function* repairWideSourceLengthsSteps(
     if (!selected.some((candidate) => candidate.busId === bus.busId))
       return null
     const own = plans.filter((plan) => plan.busId === bus.busId)
-    const maximumLength = Math.max(...own.map((plan) => plan.length))
+    const maximumLength = Math.max(...own.map(getFanoutPlanEffectiveLength))
     const deficient = own.filter(
-      (plan) => maximumLength - plan.length > bus.maxLengthSkew! + 1e-6,
+      (plan) =>
+        maximumLength - getFanoutPlanEffectiveLength(plan) >
+        bus.maxLengthSkew! + 1e-6,
     )
     // This bounded repair only frees one lane. Leave a group with several
     // untuned lanes to the ordinary joint routing retries.

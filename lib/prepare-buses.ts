@@ -843,6 +843,7 @@ function prepareConnection(params: {
   componentGrids: ComponentGrid[]
   termination: FanoutBusTermination
   exitTargetPoint?: { x: number; y: number; layer?: string }
+  lengthOffset?: number
 }): PreparedConnection {
   const {
     connection,
@@ -851,6 +852,7 @@ function prepareConnection(params: {
     componentGrids,
     termination,
     exitTargetPoint,
+    lengthOffset,
   } = params
   for (
     let sourcePointIndex = 0;
@@ -886,6 +888,7 @@ function prepareConnection(params: {
       sourceLayer,
       sourceObstacle: sourceMatch.obstacle,
       targetPoint,
+      ...(lengthOffset === undefined ? {} : { lengthOffset }),
       exitTargetPoint: exitTargetPoint ?? {
         x: targetPoint.x,
         y: targetPoint.y,
@@ -1185,6 +1188,20 @@ export function prepareFanoutBuses(
         )
       }
     }
+    for (const [connectionName, lengthOffset] of Object.entries(
+      busSpec.connectionLengthOffsets ?? {},
+    )) {
+      if (!busSpec.connectionNames.includes(connectionName)) {
+        throw new Error(
+          `FanoutSolver: connectionLengthOffsets contains connection "${connectionName}" outside bus "${busSpec.busId}"`,
+        )
+      }
+      if (!Number.isFinite(lengthOffset) || lengthOffset < 0) {
+        throw new Error(
+          `FanoutSolver: connectionLengthOffsets for connection "${connectionName}" must be a finite non-negative number`,
+        )
+      }
+    }
     const connections = busSpec.connectionNames.map((connectionName) => {
       const connectionIndex = connectionIndexByName.get(connectionName)
       if (connectionIndex === undefined) {
@@ -1207,6 +1224,7 @@ export function prepareFanoutBuses(
         componentGrids,
         termination: busSpec.termination ?? { type: "boundary" },
         exitTargetPoint: busSpec.connectionExitTargets?.[connection.name],
+        lengthOffset: busSpec.connectionLengthOffsets?.[connection.name],
       }),
     )
     return { busSpec, sourceGrid, preparedConnections }

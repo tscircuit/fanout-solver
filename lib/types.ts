@@ -151,6 +151,12 @@ export interface FanoutBusSpec extends SimpleRouteBus {
     Record<string, Point2D & { readonly layer?: string }>
   >
   /**
+   * Routed copper length that already precedes each connection in millimeters.
+   * The solver includes these offsets when enforcing `maxLengthSkew`, while
+   * emitted fanout trace lengths continue to describe only newly routed copper.
+   */
+  connectionLengthOffsets?: Readonly<Record<string, number>>
+  /**
    * Defaults to `{ type: "boundary" }`.
    *
    * Plane-terminated connections are considered complete at their escaped via
@@ -331,6 +337,8 @@ export interface PreparedConnection {
   targetPoint: ConnectionPoint
   /** Preferred downstream point used to choose the boundary exit track. */
   exitTargetPoint?: Point2D & { readonly layer?: string }
+  /** Routed copper preceding this fanout segment in millimeters. */
+  lengthOffset?: number
   /** Whether the caller supplied the layered handoff metadata needed to coordinate winding. */
   hasExplicitLayeredExitTarget?: boolean
 }
@@ -406,6 +414,9 @@ export interface FanoutRoutePlan {
   planeEndpointTrace?: FanoutSimplifiedPcbTrace
   planeEndpointSegments?: RoutedSegment[]
   planeEndpointVia?: RoutedVia
+  /** Routed copper preceding this fanout segment in millimeters. */
+  lengthOffset?: number
+  /** Newly routed copper length; excludes `lengthOffset`. */
   length: number
 }
 

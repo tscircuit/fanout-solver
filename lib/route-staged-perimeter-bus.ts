@@ -4,6 +4,7 @@ import {
   distancePointToSegment,
   distanceSegmentToSegment,
 } from "./geometry"
+import { getFanoutPlanSkew } from "./get-fanout-plan-effective-length"
 import { fanoutPlansAreClear } from "./route-bus"
 import {
   buildViaMinimalWindingPlan,
@@ -181,10 +182,9 @@ export function* routeStagedPerimeterBusSteps(params: {
       }),
     )
   }
-  const lengths = plans.map((p) => p.length)
   if (
     bus.maxLengthSkew !== undefined &&
-    Math.max(...lengths) - Math.min(...lengths) > bus.maxLengthSkew + 1e-6
+    getFanoutPlanSkew(plans) > bus.maxLengthSkew + 1e-6
   )
     return null
   if (

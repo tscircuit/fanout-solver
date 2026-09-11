@@ -1,4 +1,5 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import { getFanoutPlanEffectiveLength } from "./get-fanout-plan-effective-length"
 import { fanoutPlansAreClear } from "./route-bus"
 import { routeViaMinimalWinding } from "./route-via-minimal-winding"
 import type { Bounds, FanoutRoutePlan, PreparedBus } from "./types"
@@ -21,12 +22,19 @@ export function shortenBusPlans(params: {
   if (bus.maxLengthSkew === undefined) return plans
   const busPlans = plans
     .filter((plan) => plan.busId === bus.busId)
-    .toSorted((first, second) => second.length - first.length)
+    .toSorted(
+      (first, second) =>
+        getFanoutPlanEffectiveLength(second) -
+        getFanoutPlanEffectiveLength(first),
+    )
   for (const plan of busPlans) {
     const minimumLength = Math.min(
-      ...plans.filter((p) => p.busId === bus.busId).map((p) => p.length),
+      ...plans
+        .filter((p) => p.busId === bus.busId)
+        .map(getFanoutPlanEffectiveLength),
     )
-    if (plan.length - minimumLength <= bus.maxLengthSkew) continue
+    if (getFanoutPlanEffectiveLength(plan) - minimumLength <= bus.maxLengthSkew)
+      continue
     // Retain the original source dogbone, through-via and boundary endpoint.
     if (
       !plan.via ||

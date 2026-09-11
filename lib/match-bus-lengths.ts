@@ -13,6 +13,10 @@ import {
   type DeclaredDifferentialPair,
   getDeclaredDifferentialPairs,
 } from "./get-declared-differential-pairs"
+import {
+  getFanoutPlanEffectiveLength,
+  getFanoutPlanSkew,
+} from "./get-fanout-plan-effective-length"
 import { getCopperLayerNames } from "./layer-names"
 import { getMultiSegmentTuningWindows } from "./multi-segment-tuning-windows"
 import { changedFanoutCopperIsSelfClear } from "./normalize-fanout-plan-corners"
@@ -1115,8 +1119,7 @@ function* createExtendedFoldCandidates(params: {
 }
 
 function getBusSkew(plans: readonly FanoutRoutePlan[]): number {
-  const lengths = plans.map((plan) => plan.length)
-  return Math.max(...lengths) - Math.min(...lengths)
+  return getFanoutPlanSkew(plans)
 }
 
 function getPlansForIndices(
@@ -1442,14 +1445,18 @@ function matchDeclaredPairLengths(
       // A single-bus repair must never tune a mate outside its explicit scope.
       if (!firstEntry || !secondEntry) return { plans: null, failedBus: owner }
       const entries = [firstEntry, secondEntry] as const
-      const shortest = own[0].length <= own[1].length ? 0 : 1
+      const shortest =
+        getFanoutPlanEffectiveLength(own[0]) <=
+        getFanoutPlanEffectiveLength(own[1])
+          ? 0
+          : 1
       const laneBus = entries[shortest].bus
       const constraintBus: PreparedBus = {
         ...laneBus,
         connections: entries.map((entry) => entry.connection),
         maxLengthSkew: pair.lengthTolerance,
       }
-      const maximum = Math.max(...own.map((plan) => plan.length))
+      const maximum = Math.max(...own.map(getFanoutPlanEffectiveLength))
       const result = matchBusPlanLengthsWithBudget(
         {
           ...params,
@@ -1464,7 +1471,7 @@ function matchDeclaredPairLengths(
           candidatePlansAreFeasible: (candidate) =>
             originalBusLimitsHold(candidate) &&
             pairPlans(candidate, pair).every(
-              (plan) => plan.length <= maximum + EPSILON,
+              (plan) => getFanoutPlanEffectiveLength(plan) <= maximum + EPSILON,
             ) &&
             (!params.candidatePlansAreFeasible ||
               params.candidatePlansAreFeasible(candidate)),
@@ -1560,16 +1567,20 @@ function matchBusPlanLengthsWithBudget(
         .filter((plan) => !deferredLanes.has(plan.connectionIndex))
         .toSorted(
           (first, second) =>
-            first.length - second.length ||
+            getFanoutPlanEffectiveLength(first) -
+              getFanoutPlanEffectiveLength(second) ||
             first.connectionName.localeCompare(second.connectionName),
         )[0]!
-      const longestLength = Math.max(...busPlans.map((plan) => plan.length))
+      const longestLength = Math.max(
+        ...busPlans.map(getFanoutPlanEffectiveLength),
+      )
+      const shortestLength = getFanoutPlanEffectiveLength(shortest)
       if (
         !shortest ||
-        longestLength - shortest.length <= maxLengthSkew + EPSILON
+        longestLength - shortestLength <= maxLengthSkew + EPSILON
       )
         return { plans: null, failedBus: bus }
-      const deficit = longestLength - shortest.length
+      const deficit = longestLength - shortestLength
       const minimumRequiredAddition = Math.max(
         EPSILON,
         deficit - maxLengthSkew + EPSILON,
@@ -1625,7 +1636,12 @@ function matchBusPlanLengthsWithBudget(
                     (plan) => plan.connectionIndex === index,
                   )
                   return mate
-                    ? [mate.length - pair.lengthTolerance + EPSILON]
+                    ? [
+                        getFanoutPlanEffectiveLength(mate) -
+                          pair.lengthTolerance +
+                          EPSILON -
+                          (shortest.lengthOffset ?? 0),
+                      ]
                     : []
                 }),
             ),

@@ -1,5 +1,9 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { distance } from "./geometry"
+import {
+  getFanoutPlanEffectiveLength,
+  getFanoutPlanSkew,
+} from "./get-fanout-plan-effective-length"
 import { getViaChannelGridPhase } from "./get-via-channel-grid-phase"
 import {
   routeViaMinimalWindingAlternativesSteps,
@@ -32,9 +36,7 @@ export interface OverlongBusLaneProgress
 }
 
 const EPSILON = 1e-6
-const skew = (plans: readonly FanoutRoutePlan[]) =>
-  Math.max(...plans.map((plan) => plan.length)) -
-  Math.min(...plans.map((plan) => plan.length))
+const skew = getFanoutPlanSkew
 
 function preserveRouteIdentity(
   original: FanoutRoutePlan,
@@ -232,13 +234,18 @@ export function* rerouteOverlongBusLanesSteps(
     if (originalSkew <= bus.maxLengthSkew! + EPSILON) continue
     const beforeBus = [...plans]
     for (let pass = 0; pass < maximumPasses; pass++) {
-      const minimum = Math.min(...busPlans.map((plan) => plan.length))
+      const minimum = Math.min(...busPlans.map(getFanoutPlanEffectiveLength))
       let passChanged = false
       const overlong = busPlans
-        .filter((plan) => plan.length > minimum + bus.maxLengthSkew! + EPSILON)
+        .filter(
+          (plan) =>
+            getFanoutPlanEffectiveLength(plan) >
+            minimum + bus.maxLengthSkew! + EPSILON,
+        )
         .toSorted(
           (a, b) =>
-            b.length - a.length || a.connectionIndex - b.connectionIndex,
+            getFanoutPlanEffectiveLength(b) - getFanoutPlanEffectiveLength(a) ||
+            a.connectionIndex - b.connectionIndex,
         )
       for (const original of overlong) {
         if (attempts >= maximumConnectionAttempts) break

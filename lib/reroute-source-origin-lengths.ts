@@ -1,6 +1,10 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { distance } from "./geometry"
 import {
+  getFanoutPlanEffectiveLength,
+  getFanoutPlanSkew,
+} from "./get-fanout-plan-effective-length"
+import {
   routeReservedViaBusesSteps,
   type ReservedViaBusesProgress,
 } from "./route-reserved-via-buses"
@@ -23,9 +27,7 @@ export interface RerouteSourceOriginLengthsParams {
 }
 
 const EPSILON = 1e-6
-const skew = (plans: readonly FanoutRoutePlan[]) =>
-  Math.max(...plans.map((plan) => plan.length)) -
-  Math.min(...plans.map((plan) => plan.length))
+const skew = getFanoutPlanSkew
 
 /**
  * Reconsider first vias for an intact mismatched pair, or at most two overlong
@@ -61,17 +63,21 @@ export function* rerouteSourceOriginLengthsSteps(
     return null
   const targetLayer = own[0]!.targetLayer
   if (own.some((plan) => plan.targetLayer !== targetLayer)) return null
-  const minimum = Math.min(...own.map((plan) => plan.length))
+  const minimum = Math.min(...own.map(getFanoutPlanEffectiveLength))
   const selected = new Set(
     (own.length === 2
       ? own
       : own
           .filter(
-            (plan) => plan.length > minimum + bus.maxLengthSkew! + EPSILON,
+            (plan) =>
+              getFanoutPlanEffectiveLength(plan) >
+              minimum + bus.maxLengthSkew! + EPSILON,
           )
           .toSorted(
             (a, b) =>
-              b.length - a.length || a.connectionIndex - b.connectionIndex,
+              getFanoutPlanEffectiveLength(b) -
+                getFanoutPlanEffectiveLength(a) ||
+              a.connectionIndex - b.connectionIndex,
           )
           .slice(0, 2)
     ).map((plan) => plan.connectionIndex),
@@ -147,8 +153,8 @@ export function* rerouteSourceOriginLengthsSteps(
     // increases. The caller must still match and validate the complete bus.
     if (
       skew(changed) >= skew(own) - EPSILON &&
-      Math.max(...changed.map((plan) => plan.length)) >=
-        Math.max(...own.map((plan) => plan.length)) - EPSILON
+      Math.max(...changed.map(getFanoutPlanEffectiveLength)) >=
+        Math.max(...own.map(getFanoutPlanEffectiveLength)) - EPSILON
     )
       continue
     const validation = validateRoutedCopperDrc({

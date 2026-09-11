@@ -10,6 +10,7 @@ import {
   getAllRoutedTraceCopper,
   getRoutedTraceCopper,
 } from "./get-routed-trace-copper"
+import { getFanoutPlanEffectiveLength } from "./get-fanout-plan-effective-length"
 import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
@@ -209,7 +210,7 @@ export function shortcutFanoutPlans(
       Math.min(
         ...params.plans
           .filter((p) => p.busId === bus.busId)
-          .map((p) => p.length),
+          .map(getFanoutPlanEffectiveLength),
       ),
     ]),
   )
@@ -217,7 +218,10 @@ export function shortcutFanoutPlans(
   let plans = [...params.plans]
   for (let pass = 0; pass < 3; pass++) {
     let changed = false
-    for (const original of plans.toSorted((a, b) => b.length - a.length)) {
+    for (const original of plans.toSorted(
+      (a, b) =>
+        getFanoutPlanEffectiveLength(b) - getFanoutPlanEffectiveLength(a),
+    )) {
       const bus = buses.get(original.busId),
         minimum = originalMinimum.get(original.busId)
       if (
@@ -226,7 +230,8 @@ export function shortcutFanoutPlans(
         !Number.isFinite(minimum) ||
         bus.maxLengthSkew === undefined ||
         original.termination.type !== "boundary" ||
-        original.length <= minimum + bus.maxLengthSkew + EPSILON
+        getFanoutPlanEffectiveLength(original) <=
+          minimum + bus.maxLengthSkew + EPSILON
       )
         continue
       if (params.selectedBusIds && !params.selectedBusIds.has(original.busId))
@@ -397,7 +402,7 @@ export function shortcutFanoutPlans(
         length: segments.reduce((sum, s) => sum + distance(s.start, s.end), 0),
       }
       if (
-        candidate.length < minimum - EPSILON ||
+        getFanoutPlanEffectiveLength(candidate) < minimum - EPSILON ||
         candidate.length >= original.length - EPSILON
       )
         continue

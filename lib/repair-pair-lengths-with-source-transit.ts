@@ -1,4 +1,5 @@
 import { distance } from "./geometry"
+import { getFanoutPlanSkew } from "./get-fanout-plan-effective-length"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
 import type { RerouteSourceOriginLengthsParams } from "./reroute-source-origin-lengths"
@@ -39,7 +40,7 @@ export function* repairPairLengthsWithSourceTransitSteps(
   const targetLayer = own[0]!.targetLayer
   if (
     own.some((p) => p.targetLayer !== targetLayer) ||
-    Math.abs(own[0]!.length - own[1]!.length) <= bus.maxLengthSkew + 1e-6
+    getFanoutPlanSkew(own) <= bus.maxLengthSkew + 1e-6
   )
     return null
   const transitLayers = (
@@ -169,8 +170,7 @@ export function* repairPairLengthsWithSourceTransitSteps(
     const changed = matched.plans.filter((p) => selected.has(p.connectionIndex))
     if (
       changed.length !== 2 ||
-      Math.abs(changed[0]!.length - changed[1]!.length) >
-        bus.maxLengthSkew + 1e-6
+      getFanoutPlanSkew(changed) > bus.maxLengthSkew + 1e-6
     )
       continue
     if (

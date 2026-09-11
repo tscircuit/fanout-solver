@@ -13,6 +13,10 @@ import {
 } from "./get-routed-trace-copper"
 import { getDeclaredDifferentialPairs } from "./get-declared-differential-pairs"
 import {
+  getFanoutPlanEffectiveLength,
+  getFanoutPlanSkew,
+} from "./get-fanout-plan-effective-length"
+import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
 } from "./net-identity"
@@ -679,7 +683,7 @@ export function normalizeFanoutPlanCorners(
         clearCandidate ??= candidate
         const own = plans
           .filter((p) => p.busId === bus.busId)
-          .map((p) => (p === plan ? candidate.length : p.length))
+          .map((p) => getFanoutPlanEffectiveLength(p === plan ? candidate : p))
         const pairsAreMatched = pairs.every((pair) => {
           if (!pair.connectionIndices.includes(plan.connectionIndex))
             return true
@@ -688,7 +692,7 @@ export function normalizeFanoutPlanCorners(
           )
           if (pairPlans.some((p) => !p)) return true
           const lengths = pairPlans.map((p) =>
-            p === plan ? candidate.length : p!.length,
+            getFanoutPlanEffectiveLength(p === plan ? candidate : p!),
           )
           return (
             Math.abs(lengths[0]! - lengths[1]!) <=
@@ -777,12 +781,7 @@ export function normalizeFanoutPlanCorners(
     )
       return null
     if (bus.maxLengthSkew === undefined) continue
-    if (
-      Math.max(...own.map((p) => p.length)) -
-        Math.min(...own.map((p) => p.length)) >
-      bus.maxLengthSkew + EPSILON
-    )
-      return null
+    if (getFanoutPlanSkew(own) > bus.maxLengthSkew + EPSILON) return null
   }
   const plansByConnection = new Map(
     plans.map((plan) => [plan.connectionIndex, plan]),
@@ -793,11 +792,12 @@ export function normalizeFanoutPlanCorners(
     )
     // This helper also normalizes complete bus subsets before the rest route.
     if (pairPlans.some((plan) => !plan)) continue
-    const lengths = pairPlans.map((plan) =>
-      [...plan!.segments, ...(plan!.planeEndpointSegments ?? [])].reduce(
-        (total, segment) => total + distance(segment.start, segment.end),
-        0,
-      ),
+    const lengths = pairPlans.map(
+      (plan) =>
+        [...plan!.segments, ...(plan!.planeEndpointSegments ?? [])].reduce(
+          (total, segment) => total + distance(segment.start, segment.end),
+          0,
+        ) + (plan!.lengthOffset ?? 0),
     )
     if (
       lengths.some((length) => !Number.isFinite(length)) ||

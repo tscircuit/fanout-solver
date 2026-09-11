@@ -1587,6 +1587,9 @@ function buildPlan(params: {
     ...(sourceEscapeSegmentCount > 1 ? { sourceEscapeSegmentCount } : {}),
     via,
     ...(additionalVias.length > 0 ? { additionalVias } : {}),
+    ...(preparedConnection.lengthOffset === undefined
+      ? {}
+      : { lengthOffset: preparedConnection.lengthOffset }),
     length: segments.reduce(
       (total, segment) => total + distance(segment.start, segment.end),
       0,
