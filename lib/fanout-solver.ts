@@ -59,6 +59,7 @@ import { routeSplitPerimeterBusSteps } from "./route-split-perimeter-bus"
 import { routeShallowSplitPerimeterBusSteps } from "./route-shallow-split-perimeter-bus"
 import { routeSingleLayerWithAdaptiveExitsSteps } from "./route-single-layer-adaptive-exits"
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
+import { routePairedTargetCrossbarBus } from "./route-paired-target-crossbar-bus"
 import { getRuntimeProcess } from "./runtime-process"
 import { shortenBusPlans } from "./shorten-bus-plans"
 import type {
@@ -6296,7 +6297,7 @@ export class FanoutSolver extends BaseSolver {
         continue
       }
       const currentBusBlockingCounts = new Map<string, number>()
-      const busPlans = routeBus({
+      const routeParams = {
         srj: this.routingSrj,
         bus,
         targetLayer,
@@ -6311,7 +6312,11 @@ export class FanoutSolver extends BaseSolver {
         allowSameNetMerges: this.config.allowSameNetMerges,
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
-      })
+      }
+      let busPlans = routeBus(routeParams)
+      if (!busPlans) {
+        busPlans = routePairedTargetCrossbarBus(routeParams)
+      }
       if (!busPlans) {
         failedBusIds.push(bus.busId)
         for (const [blockingBusId, count] of currentBusBlockingCounts) {

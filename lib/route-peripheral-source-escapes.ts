@@ -24,6 +24,7 @@ import type {
   RoutedVia,
 } from "./types"
 import { getViaHoleToHoleClearance } from "./via-clearance"
+import { getPeripheralSourceGeometry } from "./get-peripheral-source-geometry"
 
 const EPSILON = 1e-9
 export interface PeripheralSourceEscape {
@@ -145,44 +146,14 @@ export function* routePeripheralSourceEscapesSteps(
     params.targetLayer === "top"
   )
     return null
-  const sourceObstacles = bus.componentObstacles.filter((o) =>
-    o.layers.includes("top"),
-  )
-  if (!sourceObstacles.length) return null
-  const padBounds = {
-    minX: Math.min(...sourceObstacles.map((o) => o.center.x - o.width / 2)),
-    maxX: Math.max(...sourceObstacles.map((o) => o.center.x + o.width / 2)),
-    minY: Math.min(...sourceObstacles.map((o) => o.center.y - o.height / 2)),
-    maxY: Math.max(...sourceObstacles.map((o) => o.center.y + o.height / 2)),
-  }
-  const center = {
-    x: (padBounds.minX + padBounds.maxX) / 2,
-    y: (padBounds.minY + padBounds.maxY) / 2,
-  }
-  const pitch = w + c,
-    padPitch = Math.max(bus.pitchX, bus.pitchY)
-  if (!Number.isFinite(padPitch) || padPitch <= 0) return null
-  const halfWidth =
-    Math.ceil(
-      ((padBounds.maxX - padBounds.minX) / 2 + padPitch + pitch) / pitch,
-    ) * pitch
-  const halfHeight =
-    Math.ceil(
-      ((padBounds.maxY - padBounds.minY) / 2 + padPitch + pitch) / pitch,
-    ) * pitch
-  const sourceBoundary = {
-    minX: center.x - halfWidth,
-    maxX: center.x + halfWidth,
-    minY: center.y - halfHeight,
-    maxY: center.y + halfHeight,
-  }
-  if (
-    sourceBoundary.minX <= bus.sharedBoundary.minX ||
-    sourceBoundary.maxX >= bus.sharedBoundary.maxX ||
-    sourceBoundary.minY <= bus.sharedBoundary.minY ||
-    sourceBoundary.maxY >= bus.sharedBoundary.maxY
-  )
-    return null
+  const geometry = getPeripheralSourceGeometry({
+    bus,
+    traceWidth: w,
+    clearance: c,
+  })
+  if (!geometry) return null
+  const { padBounds, center, padPitch, sourceBoundary } = geometry
+  const pitch = w + c
   const singletonBuses = bus.connections.map((connection, index) => ({
     ...bus,
     busId: `${bus.busId}:source-perimeter:${index}`,
