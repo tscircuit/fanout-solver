@@ -1780,7 +1780,10 @@ function segmentIsClearOfObstacles(params: {
     if (!obstacle.layers.includes(segment.layer)) continue
     if (obstacle.connectedTo.includes(plan.connectionName)) continue
     if (
-      allowSameNetMerges &&
+      (allowSameNetMerges ||
+        (plan.termination.type === "plane" &&
+          "isCopperPour" in obstacle &&
+          obstacle.isCopperPour === true)) &&
       obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
     ) {
       continue
@@ -1935,7 +1938,10 @@ function planIsStaticallyClear(params: {
         continue
       }
       if (
-        allowSameNetMerges &&
+        (allowSameNetMerges ||
+          (plan.termination.type === "plane" &&
+            "isCopperPour" in obstacle &&
+            obstacle.isCopperPour === true)) &&
         obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
       ) {
         continue
@@ -1964,14 +1970,29 @@ function planIsStaticallyClear(params: {
     ) {
       continue
     }
+    // A plane drop may join retained copper on its declared electrical net.
+    // Unlike signal branch merging, this does not change endpoint topology.
+    // Keep via-to-via clearance below: shared copper does not make two drill
+    // sites interchangeable or permit their annuli to collide.
+    const joinsRetainedPlaneCopper =
+      plan.termination.type === "plane" &&
+      connectionsShareElectricalNet(
+        srj,
+        plan.connectionName,
+        traceCopper.connectionName,
+      )
     for (const segment of getPlanSegments(plan)) {
       for (const existingSegment of traceCopper.segments) {
-        if (!segmentsAreClear(segment, existingSegment, clearance)) {
+        if (
+          !joinsRetainedPlaneCopper &&
+          !segmentsAreClear(segment, existingSegment, clearance)
+        ) {
           return false
         }
       }
       for (const existingVia of traceCopper.vias) {
         if (
+          !joinsRetainedPlaneCopper &&
           existingVia.spanLayers.includes(segment.layer) &&
           distancePointToSegment(
             existingVia.center,
@@ -1987,6 +2008,7 @@ function planIsStaticallyClear(params: {
     for (const via of getPlanVias(plan)) {
       for (const existingSegment of traceCopper.segments) {
         if (
+          !joinsRetainedPlaneCopper &&
           via.spanLayers.includes(existingSegment.layer) &&
           distancePointToSegment(
             via.center,
