@@ -125,6 +125,8 @@ interface FanoutSubsolverRequest {
 
 type FanoutWorkYield = undefined | FanoutSubsolverRequest
 
+const MAX_FANOUT_WORK_ITERATIONS = 1_000_000
+
 class FanoutWorkSolver<T> extends BaseSolver {
   private output: T | undefined
   private hasOutput = false
@@ -138,7 +140,7 @@ class FanoutWorkSolver<T> extends BaseSolver {
     private readonly getProgress: () => number,
   ) {
     super()
-    this.MAX_ITERATIONS = 1_000_000
+    this.MAX_ITERATIONS = MAX_FANOUT_WORK_ITERATIONS
   }
 
   override getSolverName(): string {
@@ -1201,14 +1203,13 @@ export class FanoutSolver extends BaseSolver {
           : [],
       ),
     )
-    const workUnitsPerAssignment = this.preparedBuses.length * 3 + 8
-    const estimatedWorkUnitCount =
-      this.boundaryBuses.length +
-      1 +
-      this.config.maxLayerCombinations * workUnitsPerAssignment +
-      this.preparedBuses.length * 2 +
-      20
-    this.MAX_ITERATIONS = Math.max(10_000, estimatedWorkUnitCount)
+    // The parent advances one bounded work solver per step. Its limit must
+    // cover those child steps instead of only counting conceptual work units.
+    const maximumWorkOperationCount = this.config.maxLayerCombinations + 2
+    const parentControlIterationCount = maximumWorkOperationCount * 2 + 20
+    this.MAX_ITERATIONS =
+      maximumWorkOperationCount * MAX_FANOUT_WORK_ITERATIONS +
+      parentControlIterationCount
   }
 
   override getSolverName(): string {
