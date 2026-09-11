@@ -1361,7 +1361,8 @@ function matchDeclaredPairLengths(
       const plan = matches[0]
       if (
         matches.length !== 1 ||
-        plan?.connectionName !== pair.connectionNames[i] ||
+        !plan ||
+        plan.connectionName !== pair.connectionNames[i] ||
         !Number.isFinite(plan.length)
       )
         throw new Error(
