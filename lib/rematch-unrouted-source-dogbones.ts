@@ -82,7 +82,7 @@ export function rematchUnroutedSourceDogbones(params: {
     clearance,
     viaDiameter: via.diameter,
     viaHoleDiameter: via.holeDiameter,
-    holeToHoleClearance: getViaHoleToHoleClearance(inputSrj, clearance),
+    holeToHoleClearance: getViaHoleToHoleClearance(inputSrj),
     maximumSearchStates: 10_000,
     preferredViaPointsByConnectionIndex: new Map(
       plans

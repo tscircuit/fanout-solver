@@ -264,7 +264,7 @@ export function validateRoutedCopperDrc(params: {
     inputSrj,
     routedSrj,
     clearance,
-    holeToHoleClearance = getViaHoleToHoleClearance(inputSrj, clearance),
+    holeToHoleClearance = getViaHoleToHoleClearance(inputSrj),
     allowBlindAndBuriedVias = true,
   } = params
   const issues: RoutedCopperDrcIssue[] = []

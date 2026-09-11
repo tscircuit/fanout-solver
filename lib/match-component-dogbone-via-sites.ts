@@ -16,6 +16,7 @@ import type {
 import {
   getViaPairMinimumCenterDistance,
   getViaPairMinimumHoleCenterDistance,
+  viaCentersRepresentSamePhysicalHole,
 } from "./via-clearance"
 
 const EPSILON = 1e-9
@@ -458,6 +459,12 @@ function getConnectionCandidates(params: {
             preparedConnection.connectionIndex,
             blocker.connectionIndex,
           ) ?? false
+        if (
+          canShareCopper &&
+          viaCentersRepresentSamePhysicalHole(point, blocker.center, EPSILON)
+        ) {
+          return true
+        }
         const candidateVia = {
           diameter: rules.viaDiameter,
           holeDiameter: rules.viaHoleDiameter ?? rules.viaDiameter,
@@ -468,7 +475,7 @@ function getConnectionCandidates(params: {
               second: {
                 holeDiameter: blocker.holeDiameter ?? candidateVia.holeDiameter,
               },
-              holeToHoleClearance: rules.holeToHoleClearance ?? rules.clearance,
+              holeToHoleClearance: rules.holeToHoleClearance ?? 0,
             })
           : getViaPairMinimumCenterDistance({
               first: candidateVia,
@@ -477,7 +484,7 @@ function getConnectionCandidates(params: {
                 holeDiameter: blocker.holeDiameter ?? candidateVia.holeDiameter,
               },
               copperClearance: rules.clearance,
-              holeToHoleClearance: rules.holeToHoleClearance ?? rules.clearance,
+              holeToHoleClearance: rules.holeToHoleClearance ?? 0,
             })
         if (distance(point, blocker.center) < minimumCenterDistance - EPSILON) {
           return false
@@ -579,11 +586,17 @@ function candidatesAreMutuallyClear(params: {
   const canShareCopper =
     rules.canShareCopper?.(first.connectionIndex, second.connectionIndex) ??
     false
+  if (
+    canShareCopper &&
+    viaCentersRepresentSamePhysicalHole(first.point, second.point, EPSILON)
+  ) {
+    return true
+  }
   const requiredHoleSeparation = rules.viaHoleDiameter
     ? getViaPairMinimumHoleCenterDistance({
         first: { holeDiameter: rules.viaHoleDiameter },
         second: { holeDiameter: rules.viaHoleDiameter },
-        holeToHoleClearance: rules.holeToHoleClearance ?? rules.clearance,
+        holeToHoleClearance: rules.holeToHoleClearance ?? 0,
       })
     : 0
   const requiredViaSeparation = canShareCopper
@@ -598,7 +611,7 @@ function candidatesAreMutuallyClear(params: {
           holeDiameter: rules.viaHoleDiameter ?? rules.viaDiameter,
         },
         copperClearance: rules.clearance,
-        holeToHoleClearance: rules.holeToHoleClearance ?? rules.clearance,
+        holeToHoleClearance: rules.holeToHoleClearance ?? 0,
       })
   if (distance(first.point, second.point) < requiredViaSeparation - EPSILON) {
     return false

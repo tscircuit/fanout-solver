@@ -68,10 +68,7 @@ export function prepareSourceOriginReservations(
     return null
   const sites = matchComponentDogboneViaSites(params.buses, {
     ...params,
-    holeToHoleClearance: getViaHoleToHoleClearance(
-      params.srj,
-      params.clearance,
-    ),
+    holeToHoleClearance: getViaHoleToHoleClearance(params.srj),
     maximumSearchStates: 10_000,
     additionalObstacles: params.srj.obstacles,
   })

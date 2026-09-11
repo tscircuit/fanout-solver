@@ -1127,7 +1127,7 @@ export function validateFanoutSolution(params: {
     preparedBuses,
     sharedBoundary,
     clearance,
-    holeToHoleClearance = getViaHoleToHoleClearance(inputSrj, clearance),
+    holeToHoleClearance = getViaHoleToHoleClearance(inputSrj),
     allowBlindAndBuriedVias = true,
   } = params
   const issues: FanoutValidationIssue[] = []

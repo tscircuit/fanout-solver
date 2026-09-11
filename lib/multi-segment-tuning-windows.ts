@@ -70,7 +70,7 @@ export function* getMultiSegmentTuningWindows(params: {
     ...supplied.flatMap((p) => p.vias),
   ]
   const diameter = plan.via.diameter
-  const holeToHoleClearance = getViaHoleToHoleClearance(inputSrj, clearance)
+  const holeToHoleClearance = getViaHoleToHoleClearance(inputSrj)
   const bounds = bus.sharedBoundary
   const dense = bus.componentBounds
   const margin = diameter / 2 + clearance

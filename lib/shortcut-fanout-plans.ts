@@ -415,7 +415,7 @@ export function shortcutFanoutPlans(
           viaDiameter: original.via!.diameter,
           viaHoleDiameter: original.via!.holeDiameter,
           clearance,
-          holeToHoleClearance: getViaHoleToHoleClearance(inputSrj, clearance),
+          holeToHoleClearance: getViaHoleToHoleClearance(inputSrj),
         })
       )
         continue

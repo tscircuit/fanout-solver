@@ -76,7 +76,7 @@ export function* routeAdaptiveLeftCrossbarBusSteps(
         holeDiameter: params.viaHoleDiameter,
       },
       copperClearance: c,
-      holeToHoleClearance: getViaHoleToHoleClearance(params.srj, c),
+      holeToHoleClearance: getViaHoleToHoleClearance(params.srj),
     })
   const firstColumn =
     bus.sharedBoundary.minX + Math.max(padPitch / 2, params.viaDiameter / 2 + c)

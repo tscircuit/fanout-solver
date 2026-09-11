@@ -129,7 +129,7 @@ export function* routePlaneReservedSourceEscapesSteps(
     clearance,
     viaDiameter,
     viaHoleDiameter,
-    holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+    holeToHoleClearance: getViaHoleToHoleClearance(srj),
     maximumSearchStates: params.maximumSearchStates ?? 10_000,
     additionalObstacles: srj.obstacles,
   }

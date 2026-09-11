@@ -5,17 +5,23 @@ export interface ViaDimensions {
   holeDiameter: number
 }
 
-export function getViaHoleToHoleClearance(
-  srj: SimpleRouteJson,
-  copperClearance: number,
-): number {
+export function getViaHoleToHoleClearance(srj: SimpleRouteJson): number {
   return (
     (
       srj as SimpleRouteJson & {
         minViaHoleEdgeToViaHoleEdgeClearance?: number
       }
-    ).minViaHoleEdgeToViaHoleEdgeClearance ?? copperClearance
+    ).minViaHoleEdgeToViaHoleEdgeClearance ?? 0
   )
+}
+
+/** Same-net routes can serialize one physical drilled hole more than once. */
+export function viaCentersRepresentSamePhysicalHole(
+  first: { x: number; y: number },
+  second: { x: number; y: number },
+  epsilon = 1e-9,
+): boolean {
+  return Math.hypot(first.x - second.x, first.y - second.y) <= epsilon
 }
 
 export function getViaPairMinimumHoleCenterDistance(params: {

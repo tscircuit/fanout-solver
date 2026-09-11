@@ -141,7 +141,7 @@ export function* routePeripheralSourceEscapesSteps(
     first: { diameter: d, holeDiameter: params.viaHoleDiameter },
     second: { diameter: d, holeDiameter: params.viaHoleDiameter },
     copperClearance: c,
-    holeToHoleClearance: getViaHoleToHoleClearance(srj, c),
+    holeToHoleClearance: getViaHoleToHoleClearance(srj),
   })
   // This adjacent-band construction currently handles a right edge from the
   // upper source perimeter. Other orientations retain the general fallback.
@@ -404,7 +404,7 @@ export function* routePeripheralSourceEscapesSteps(
   const rules = (): DogboneViaSiteGeometryRules => ({
     viaDiameter: d,
     viaHoleDiameter: params.viaHoleDiameter,
-    holeToHoleClearance: getViaHoleToHoleClearance(srj, c),
+    holeToHoleClearance: getViaHoleToHoleClearance(srj),
     traceWidth: w,
     clearance: c,
     additionalObstacles: srj.obstacles,

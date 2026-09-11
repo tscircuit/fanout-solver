@@ -674,7 +674,7 @@ function* routeReservedViaBusesWorker(
     return null
   const paths = new Map<number, readonly Point2D[]>(),
     owners = new Map<string, PreparedBus>()
-  const holeToHoleClearance = getViaHoleToHoleClearance(srj, clearance)
+  const holeToHoleClearance = getViaHoleToHoleClearance(srj)
   const minimumViaPairDistance = getViaPairMinimumCenterDistance({
     first: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
     second: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },

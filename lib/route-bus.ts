@@ -45,6 +45,7 @@ import {
   getViaHoleToHoleClearance,
   getViaPairMinimumCenterDistance,
   getViaPairMinimumHoleCenterDistance,
+  viaCentersRepresentSamePhysicalHole,
 } from "./via-clearance"
 
 export type RouteBusStaticClearanceCache = Map<string, boolean>
@@ -1877,7 +1878,7 @@ function planIsStaticallyClear(params: {
     allowBlindAndBuriedVias,
     allowSameNetMerges,
   } = params
-  const holeToHoleClearance = getViaHoleToHoleClearance(srj, clearance)
+  const holeToHoleClearance = getViaHoleToHoleClearance(srj)
   const routableBounds = getRoutableBounds(srj.bounds, sharedBoundary)
   if (
     !pointIsInsideBounds(plan.exitPoint, routableBounds) ||
@@ -2049,7 +2050,7 @@ function planIsClearOfPlans(params: {
   } = params
   const planSegments = getPlanSegments(plan)
   const planVias = getPlanVias(plan)
-  const holeToHoleClearance = getViaHoleToHoleClearance(srj, clearance)
+  const holeToHoleClearance = getViaHoleToHoleClearance(srj)
   for (const otherPlan of otherPlans) {
     const canShareCopper =
       allowSameNetMerges &&
@@ -2076,6 +2077,11 @@ function planIsClearOfPlans(params: {
     if (canShareCopper) {
       for (const planVia of planVias) {
         for (const otherVia of otherVias) {
+          if (
+            viaCentersRepresentSamePhysicalHole(planVia.center, otherVia.center)
+          ) {
+            continue
+          }
           if (
             planVia.spanLayers.some((layer) =>
               otherVia.spanLayers.includes(layer),
@@ -3381,7 +3387,7 @@ export function* routeBusAlternativesSteps(
         ? matchComponentDogboneViaSites([bus], {
             viaDiameter,
             viaHoleDiameter,
-            holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+            holeToHoleClearance: getViaHoleToHoleClearance(srj),
             traceWidth,
             clearance,
             additionalObstacles: srj.obstacles,
@@ -3627,7 +3633,7 @@ export function* routeBusAlternativesSteps(
         !matchComponentDogboneViaSites([bus], {
           viaDiameter,
           viaHoleDiameter,
-          holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+          holeToHoleClearance: getViaHoleToHoleClearance(srj),
           traceWidth,
           clearance,
           additionalObstacles: srj.obstacles,
@@ -3895,7 +3901,7 @@ export function* routeBusAlternativesSteps(
       first: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
       second: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
       copperClearance: clearance,
-      holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+      holeToHoleClearance: getViaHoleToHoleClearance(srj),
     })
     const packageEdgeViaCandidates = [
       {
@@ -3974,7 +3980,7 @@ export function* routeBusAlternativesSteps(
         first: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
         second: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
         copperClearance: clearance,
-        holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+        holeToHoleClearance: getViaHoleToHoleClearance(srj),
       })
       const boundaryVias = bus.connections.map((connection, index) => ({
         connectionName: connection.connection.name,
@@ -4208,13 +4214,19 @@ export function* routeBusAlternativesSteps(
               reserved.connectionName,
               plan.connectionName,
             )
+          if (
+            canShareCopper &&
+            viaCentersRepresentSamePhysicalHole(via.center, reserved.via.center)
+          ) {
+            return true
+          }
           const minimumCenterDistance = canShareCopper
             ? getViaPairMinimumHoleCenterDistance({
                 first: via,
                 second: {
                   holeDiameter: reserved.via.holeDiameter ?? viaHoleDiameter,
                 },
-                holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+                holeToHoleClearance: getViaHoleToHoleClearance(srj),
               })
             : getViaPairMinimumCenterDistance({
                 first: via,
@@ -4223,7 +4235,7 @@ export function* routeBusAlternativesSteps(
                   holeDiameter: reserved.via.holeDiameter ?? viaHoleDiameter,
                 },
                 copperClearance: clearance,
-                holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+                holeToHoleClearance: getViaHoleToHoleClearance(srj),
               })
           if (
             via.spanLayers.some((layer) =>

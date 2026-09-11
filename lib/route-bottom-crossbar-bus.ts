@@ -73,7 +73,7 @@ export function* routeBottomCrossbarBusSteps(
     )
   )
     return null
-  const holeToHoleClearance = getViaHoleToHoleClearance(srj, clearance)
+  const holeToHoleClearance = getViaHoleToHoleClearance(srj)
   const usesLowerBand =
     getCornerBandSide(bus.exitEdge, bus.preferredExit) === "minimum"
   const count = bus.connections.length,

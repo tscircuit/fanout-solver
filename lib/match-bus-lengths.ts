@@ -1724,7 +1724,7 @@ function matchBusPlanLengthsWithBudget(
                 candidate,
                 window.addedVias,
                 clearance,
-                getViaHoleToHoleClearance(inputSrj, clearance),
+                getViaHoleToHoleClearance(inputSrj),
               ) &&
               changedFanoutCopperIsSelfClear(
                 candidate,
@@ -1931,7 +1931,7 @@ function matchBusPlanLengthsWithBudget(
           bus,
           layerNames: getCopperLayerNames(inputSrj.layerCount),
           clearance,
-          holeToHoleClearance: getViaHoleToHoleClearance(inputSrj, clearance),
+          holeToHoleClearance: getViaHoleToHoleClearance(inputSrj),
           workBudget,
         })) {
           if (
@@ -1961,7 +1961,7 @@ function matchBusPlanLengthsWithBudget(
                   tuned,
                   base.addedVias,
                   clearance,
-                  getViaHoleToHoleClearance(inputSrj, clearance),
+                  getViaHoleToHoleClearance(inputSrj),
                 )
               )
                 continue

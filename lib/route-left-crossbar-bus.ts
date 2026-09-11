@@ -73,7 +73,7 @@ export function* routeLeftCrossbarBusSteps(
         holeDiameter: params.viaHoleDiameter,
       },
       copperClearance: c,
-      holeToHoleClearance: getViaHoleToHoleClearance(params.srj, c),
+      holeToHoleClearance: getViaHoleToHoleClearance(params.srj),
     })
   const center = {
     x: (bus.componentBounds.minX + bus.componentBounds.maxX) / 2,

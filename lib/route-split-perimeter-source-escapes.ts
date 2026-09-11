@@ -72,12 +72,12 @@ function orderedPhysicalSubset(
     first: { diameter: d, holeDiameter: params.viaHoleDiameter },
     second: { diameter: d, holeDiameter: params.viaHoleDiameter },
     copperClearance: c,
-    holeToHoleClearance: getViaHoleToHoleClearance(params.srj, c),
+    holeToHoleClearance: getViaHoleToHoleClearance(params.srj),
   })
   const all = params.buses.flatMap((b) => b.connections)
   const candidates = getComponentDogboneViaSiteCandidates(params.buses, {
     ...params,
-    holeToHoleClearance: getViaHoleToHoleClearance(params.srj, c),
+    holeToHoleClearance: getViaHoleToHoleClearance(params.srj),
     additionalObstacles: params.srj.obstacles,
   })
   const own = new Map(paths.map((p, i) => [p.connectionIndex, i]))
@@ -165,7 +165,7 @@ export function* routeSplitPerimeterSourceEscapesSteps(
     first: { diameter: d, holeDiameter: params.viaHoleDiameter },
     second: { diameter: d, holeDiameter: params.viaHoleDiameter },
     copperClearance: c,
-    holeToHoleClearance: getViaHoleToHoleClearance(srj, c),
+    holeToHoleClearance: getViaHoleToHoleClearance(srj),
   })
   if (
     bus.termination.type !== "boundary" ||
@@ -350,7 +350,7 @@ export function* routeSplitPerimeterSourceEscapesSteps(
     fixed: PeripheralSourceEscape[],
   ): DogboneViaSiteGeometryRules => ({
     ...params,
-    holeToHoleClearance: getViaHoleToHoleClearance(srj, params.clearance),
+    holeToHoleClearance: getViaHoleToHoleClearance(srj),
     additionalObstacles: srj.obstacles,
     maximumSearchStates: 300_000,
     blockingSegments: fixed.flatMap((p) =>

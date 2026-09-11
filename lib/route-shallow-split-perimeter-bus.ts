@@ -37,10 +37,7 @@ function sourcesAreClear(
       .map((connection) => [connection.connectionIndex, connection]),
   )
   const boundary = params.bus.sharedBoundary
-  const holeToHoleClearance = getViaHoleToHoleClearance(
-    params.srj,
-    params.clearance,
-  )
+  const holeToHoleClearance = getViaHoleToHoleClearance(params.srj)
   for (const source of sources) {
     const own = connections.get(source.connectionIndex)!
     const radius = source.via.diameter / 2
@@ -208,10 +205,7 @@ export function* routeShallowSplitPerimeterBusSteps(
     const rematch = (plans: FanoutRoutePlan[] = []) => {
       const matched = matchComponentDogboneViaSites(movableBuses, {
         ...params,
-        holeToHoleClearance: getViaHoleToHoleClearance(
-          params.srj,
-          params.clearance,
-        ),
+        holeToHoleClearance: getViaHoleToHoleClearance(params.srj),
         additionalObstacles: params.srj.obstacles,
         maximumSearchStates: 300_000,
         preferredViaPointsByConnectionIndex: viaPoints,
