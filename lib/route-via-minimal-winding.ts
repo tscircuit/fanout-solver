@@ -82,7 +82,7 @@ export interface RouteViaMinimalWindingParams {
   sourceEscapePaths?: ReadonlyMap<number, readonly Point2D[]>
   /** Bias bounded fixed-site searches toward the remote target band. */
   preferTargetDirectedLaneBias?: boolean
-  /** Keep the selected exit edge untouched until the exact terminal point. */
+  /** Keep the shared boundary untouched until the exact terminal point. */
   forbidEarlyExitBoundaryContact?: boolean
   /** Internal path-only mode used before a boundary-side via is appended. */
   allowSourceLayerRouting?: boolean
@@ -822,16 +822,6 @@ export function* routeViaMinimalWindingAlternativesSteps(
       : baseGridStep)
   if (!Number.isFinite(gridStep) || gridStep <= 0) return []
   const { minX, maxX, minY, maxY } = bus.sharedBoundary
-  const exitAxis =
-    bus.exitEdge === "left" || bus.exitEdge === "right" ? "x" : "y"
-  const exitCoordinate =
-    bus.exitEdge === "left"
-      ? minX
-      : bus.exitEdge === "right"
-        ? maxX
-        : bus.exitEdge === "top"
-          ? maxY
-          : minY
   const originX = params.gridOrigin?.x ?? bus.xCoordinates[0] ?? minX
   const originY = params.gridOrigin?.y ?? bus.yCoordinates[0] ?? minY
   const gridMinX = alignGridToPitch
@@ -1013,9 +1003,13 @@ export function* routeViaMinimalWindingAlternativesSteps(
   }): boolean => {
     const { segment, terminal, acceptedAttemptSegmentIndex } = params
     if (forbidEarlyExitBoundaryContact) {
+      const boundary = bus.sharedBoundary
       for (const point of [segment.start, segment.end])
         if (
-          Math.abs(point[exitAxis] - exitCoordinate) < EPSILON &&
+          (Math.abs(point.x - boundary.minX) < EPSILON ||
+            Math.abs(point.x - boundary.maxX) < EPSILON ||
+            Math.abs(point.y - boundary.minY) < EPSILON ||
+            Math.abs(point.y - boundary.maxY) < EPSILON) &&
           distance(point, terminal.exitPoint) > EPSILON
         )
           return false

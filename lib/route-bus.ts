@@ -92,6 +92,8 @@ export interface RouteBusParams {
   cornerExitLaneOffset?: number
   /** Optional search weighting for winding; does not change route validation. */
   windingHeuristicWeight?: number
+  /** Permit contact with the shared boundary only at the declared exit. */
+  forbidEarlyExitBoundaryContact?: boolean
 }
 
 export interface RouteBusAlternativesProgress {
@@ -2884,6 +2886,7 @@ export function* routeBusAlternativesSteps(
     allowFixedViaReservedExitFallback = false,
     cornerBandTargetTrackOffset,
     cornerExitLaneOffset,
+    forbidEarlyExitBoundaryContact = false,
   } = params
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
     throw new Error(
@@ -3105,6 +3108,7 @@ export function* routeBusAlternativesSteps(
         alignGridToPads: alignWindingGridToPads,
         sourceEscapePaths: params.sourceEscapePaths,
         heuristicWeight: params.windingHeuristicWeight,
+        forbidEarlyExitBoundaryContact,
       },
       maxAlternatives,
       includeVisualization,
@@ -3658,6 +3662,7 @@ export function* routeBusAlternativesSteps(
           sourceEscapePaths: params.sourceEscapePaths,
           preferTargetDirectedLaneBias:
             terminalPattern.preferTargetDirectedLaneBias,
+          forbidEarlyExitBoundaryContact,
         },
         fixedViaPointsByConnectionIndex && viaMinimalOnly
           ? Math.min(2, Math.max(1, maxAlternatives - alternatives.length))
@@ -3987,6 +3992,7 @@ export function* routeBusAlternativesSteps(
           gridStepDivisor: 2,
           allowSourceLayerRouting: true,
           alignGridToPads: true,
+          forbidEarlyExitBoundaryContact,
         },
         1,
         includeVisualization,
@@ -4033,6 +4039,7 @@ export function* routeBusAlternativesSteps(
             softReservedVias,
             gridStepDivisor: 2,
             alignGridToPads: true,
+            forbidEarlyExitBoundaryContact,
           },
           1,
           includeVisualization,
