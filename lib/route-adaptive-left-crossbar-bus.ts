@@ -25,6 +25,10 @@ import type {
   RoutedSegment,
   RoutedVia,
 } from "./types"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 
 /** Choose unordered left source exits, then reconnect their original target order through a two-layer crossbar. */
 export function* routeAdaptiveLeftCrossbarBusSteps(
@@ -62,7 +66,18 @@ export function* routeAdaptiveLeftCrossbarBusSteps(
   )
   const pitch = w + c,
     padPitch = Math.min(bus.pitchX, bus.pitchY),
-    viaPitch = params.viaDiameter + c
+    viaPitch = getViaPairMinimumCenterDistance({
+      first: {
+        diameter: params.viaDiameter,
+        holeDiameter: params.viaHoleDiameter,
+      },
+      second: {
+        diameter: params.viaDiameter,
+        holeDiameter: params.viaHoleDiameter,
+      },
+      copperClearance: c,
+      holeToHoleClearance: getViaHoleToHoleClearance(params.srj, c),
+    })
   const firstColumn =
     bus.sharedBoundary.minX + Math.max(padPitch / 2, params.viaDiameter / 2 + c)
   if (
@@ -406,10 +421,7 @@ export function* routeAdaptiveLeftCrossbarBusSteps(
             return null
       }
       for (const added of plan.additionalVias!) {
-        if (
-          distance(added.center, source.via.center) <
-          params.viaDiameter + c - 1e-7
-        )
+        if (distance(added.center, source.via.center) < viaPitch - 1e-7)
           return null
         for (const s of source.segments)
           if (

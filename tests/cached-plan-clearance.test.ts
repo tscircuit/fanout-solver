@@ -237,6 +237,34 @@ test("cached clearance rechecks replacement traces and vias during length tuning
   expect(cached([otherNet, b])).toBe(
     fanoutPlansAreClear({ ...rules, plans: [otherNet, b] }),
   )
+  const withVia = (plan: FanoutRoutePlan, y: number): FanoutRoutePlan => ({
+    ...plan,
+    via: {
+      center: { x: 0, y },
+      diameter: 0.25,
+      holeDiameter: 0.15,
+      fromLayer: "top",
+      toLayer: "bottom",
+      spanLayers: ["top", "bottom"],
+    },
+  })
+  const drillLimitedPlans = [withVia(a, -0.2), withVia(b, 0.15)]
+  // The 0.35 mm centers pass the 0.33 mm copper rule but violate the board's
+  // independent 0.404 mm drilled-hole rule.
+  expect(fanoutPlansAreClear({ ...rules, plans: drillLimitedPlans })).toBe(true)
+  const drillRules = {
+    ...rules,
+    srj: {
+      ...srj,
+      minViaHoleEdgeToViaHoleEdgeClearance: 0.254,
+    } as SimpleRouteJson,
+  }
+  expect(
+    createFanoutPlanClearanceValidator(drillRules)(drillLimitedPlans),
+  ).toBe(false)
+  expect(fanoutPlansAreClear({ ...drillRules, plans: drillLimitedPlans })).toBe(
+    false,
+  )
   await expect(
     getSvgFromGraphicsObject(
       visualizeSimpleRouteJson({

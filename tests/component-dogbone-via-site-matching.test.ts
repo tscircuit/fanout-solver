@@ -318,6 +318,7 @@ test("dogbone candidates clear board obstacles and already-routed vias", () => {
           connectionIndex: 99,
           center: blockedPoint,
           diameter: rules.viaDiameter,
+          holeDiameter: rules.viaHoleDiameter,
           spanLayers: ["top", "inner1"],
         },
       ],

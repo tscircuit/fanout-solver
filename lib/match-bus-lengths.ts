@@ -27,6 +27,10 @@ import type {
   RoutedSegment,
   RoutedVia,
 } from "./types"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 
 const EPSILON = 1e-6
 
@@ -165,6 +169,7 @@ export function addedTuningViasAreSelfClear(
   plan: FanoutRoutePlan,
   addedVias: readonly RoutedVia[],
   clearance: number,
+  holeToHoleClearance = clearance,
 ): boolean {
   const vias = [
     ...getPlanVias(plan),
@@ -173,10 +178,15 @@ export function addedTuningViasAreSelfClear(
   for (const via of addedVias) {
     for (const other of vias) {
       if (other === via) continue
+      const minimumCenterDistance = getViaPairMinimumCenterDistance({
+        first: via,
+        second: other,
+        copperClearance: clearance,
+        holeToHoleClearance,
+      })
       if (
         via.spanLayers.some((layer) => other.spanLayers.includes(layer)) &&
-        distance(via.center, other.center) <
-          (via.diameter + other.diameter) / 2 + clearance - 1e-9
+        distance(via.center, other.center) < minimumCenterDistance - 1e-9
       )
         return false
     }
@@ -242,13 +252,15 @@ function* createTransitTuningBases(params: {
   bus: PreparedBus
   layerNames: string[]
   clearance: number
+  holeToHoleClearance: number
   workBudget?: MatchingWorkBudget
 }): Generator<{
   plan: FanoutRoutePlan
   tuningLayer: string
   addedVias: RoutedVia[]
 }> {
-  const { plan, bus, layerNames, clearance, workBudget } = params
+  const { plan, bus, layerNames, clearance, holeToHoleClearance, workBudget } =
+    params
   if (!plan.via || getPlanVias(plan).length > 5) return
   const allowed = bus.allowedLayers ?? layerNames
   const layers = (bus.routableEscapeLayers ?? allowed).filter(
@@ -317,7 +329,13 @@ function* createTransitTuningBases(params: {
             last = point(1 - fraction)
           if (
             !reuseFirst &&
-            distance(first, last) < plan.via.diameter + clearance
+            distance(first, last) <
+              getViaPairMinimumCenterDistance({
+                first: plan.via,
+                second: plan.via,
+                copperClearance: clearance,
+                holeToHoleClearance,
+              })
           )
             continue
           const addedVias = reuseFirst
@@ -362,7 +380,15 @@ function* createTransitTuningBases(params: {
                   ...original.segments.slice(index + 1),
                 ],
               )
-          if (base && addedTuningViasAreSelfClear(base, addedVias, clearance))
+          if (
+            base &&
+            addedTuningViasAreSelfClear(
+              base,
+              addedVias,
+              clearance,
+              holeToHoleClearance,
+            )
+          )
             yield { plan: base, tuningLayer, addedVias }
         }
       }
@@ -1698,6 +1724,7 @@ function matchBusPlanLengthsWithBudget(
                 candidate,
                 window.addedVias,
                 clearance,
+                getViaHoleToHoleClearance(inputSrj, clearance),
               ) &&
               changedFanoutCopperIsSelfClear(
                 candidate,
@@ -1904,6 +1931,7 @@ function matchBusPlanLengthsWithBudget(
           bus,
           layerNames: getCopperLayerNames(inputSrj.layerCount),
           clearance,
+          holeToHoleClearance: getViaHoleToHoleClearance(inputSrj, clearance),
           workBudget,
         })) {
           if (
@@ -1929,7 +1957,12 @@ function matchBusPlanLengthsWithBudget(
           ]) {
             for (const tuned of candidates) {
               if (
-                !addedTuningViasAreSelfClear(tuned, base.addedVias, clearance)
+                !addedTuningViasAreSelfClear(
+                  tuned,
+                  base.addedVias,
+                  clearance,
+                  getViaHoleToHoleClearance(inputSrj, clearance),
+                )
               )
                 continue
               acceptedPlans = acceptCandidate({

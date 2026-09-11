@@ -29,6 +29,11 @@ import type {
   RoutedSegment,
 } from "./types"
 import { segmentIsLegalTerminalBodyEscape } from "./validate-routed-copper-drc"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+  getViaPairMinimumHoleCenterDistance,
+} from "./via-clearance"
 
 const EPSILON = 1e-6
 
@@ -684,10 +689,18 @@ function validateClearances(params: {
   plans: readonly FanoutRoutePlan[]
   inputSrj: SimpleRouteJson
   clearance: number
+  holeToHoleClearance: number
   allowBlindAndBuriedVias: boolean
   issues: FanoutValidationIssue[]
 }): void {
-  const { plans, inputSrj, clearance, allowBlindAndBuriedVias, issues } = params
+  const {
+    plans,
+    inputSrj,
+    clearance,
+    holeToHoleClearance,
+    allowBlindAndBuriedVias,
+    issues,
+  } = params
   for (const plan of plans) {
     if (
       getSourcePadReentries(plan, clearance).some(
@@ -764,14 +777,38 @@ function validateClearances(params: {
       inputSrj,
       allowBlindAndBuriedVias,
     )) {
-      if (
-        plan.connectionName === traceCopper.connectionName ||
-        connectionsShareElectricalNet(
-          inputSrj,
-          plan.connectionName,
-          traceCopper.connectionName,
-        )
-      ) {
+      if (plan.connectionName === traceCopper.connectionName) continue
+      const sharesElectricalNet = connectionsShareElectricalNet(
+        inputSrj,
+        plan.connectionName,
+        traceCopper.connectionName,
+      )
+      if (sharesElectricalNet) {
+        for (const via of getPlanVias(plan)) {
+          for (const existingVia of traceCopper.vias) {
+            const minimumCenterDistance = getViaPairMinimumHoleCenterDistance({
+              first: via,
+              second: existingVia,
+              holeToHoleClearance,
+            })
+            if (
+              via.spanLayers.some((layer) =>
+                existingVia.spanLayers.includes(layer),
+              ) &&
+              distance(via.center, existingVia.center) > 1e-9 &&
+              distance(via.center, existingVia.center) <
+                minimumCenterDistance - 1e-9
+            ) {
+              addIssue(
+                issues,
+                "via-hole-clearance",
+                `Vias ${plan.connectionName} and ${traceCopper.connectionName} violate drilled-hole clearance on an overlapping layer span`,
+                plan,
+                traceCopper.connectionName,
+              )
+            }
+          }
+        }
         continue
       }
       for (const segment of getPlanSegments(plan)) {
@@ -827,12 +864,18 @@ function validateClearances(params: {
           }
         }
         for (const existingVia of traceCopper.vias) {
+          const minimumCenterDistance = getViaPairMinimumCenterDistance({
+            first: via,
+            second: existingVia,
+            copperClearance: clearance,
+            holeToHoleClearance,
+          })
           if (
             via.spanLayers.some((layer) =>
               existingVia.spanLayers.includes(layer),
             ) &&
             distance(via.center, existingVia.center) <
-              (via.diameter + existingVia.diameter) / 2 + clearance - 1e-9
+              minimumCenterDistance - 1e-9
           ) {
             addIssue(
               issues,
@@ -855,13 +898,37 @@ function validateClearances(params: {
       secondIndex++
     ) {
       const second = plans[secondIndex]!
-      if (
-        connectionsShareElectricalNet(
-          inputSrj,
-          first.connectionName,
-          second.connectionName,
-        )
-      ) {
+      const sharesElectricalNet = connectionsShareElectricalNet(
+        inputSrj,
+        first.connectionName,
+        second.connectionName,
+      )
+      if (sharesElectricalNet) {
+        for (const firstVia of getPlanVias(first)) {
+          for (const secondVia of getPlanVias(second)) {
+            const minimumCenterDistance = getViaPairMinimumHoleCenterDistance({
+              first: firstVia,
+              second: secondVia,
+              holeToHoleClearance,
+            })
+            if (
+              firstVia.spanLayers.some((layer) =>
+                secondVia.spanLayers.includes(layer),
+              ) &&
+              distance(firstVia.center, secondVia.center) > 1e-9 &&
+              distance(firstVia.center, secondVia.center) <
+                minimumCenterDistance - 1e-9
+            ) {
+              addIssue(
+                issues,
+                "via-hole-clearance",
+                `Vias ${first.connectionName} and ${second.connectionName} violate drilled-hole clearance on an overlapping layer span`,
+                first,
+                second.connectionName,
+              )
+            }
+          }
+        }
         continue
       }
       const firstSegments = getPlanSegments(first)
@@ -921,12 +988,18 @@ function validateClearances(params: {
           }
         }
         for (const secondVia of secondVias) {
+          const minimumCenterDistance = getViaPairMinimumCenterDistance({
+            first: firstVia,
+            second: secondVia,
+            copperClearance: clearance,
+            holeToHoleClearance,
+          })
           if (
             firstVia.spanLayers.some((layer) =>
               secondVia.spanLayers.includes(layer),
             ) &&
             distance(firstVia.center, secondVia.center) <
-              (firstVia.diameter + secondVia.diameter) / 2 + clearance - 1e-9
+              minimumCenterDistance - 1e-9
           ) {
             addIssue(
               issues,
@@ -1044,6 +1117,7 @@ export function validateFanoutSolution(params: {
   preparedBuses: readonly PreparedBus[]
   sharedBoundary: Bounds
   clearance: number
+  holeToHoleClearance?: number
   allowBlindAndBuriedVias?: boolean
 }): FanoutValidationReport {
   const {
@@ -1053,6 +1127,7 @@ export function validateFanoutSolution(params: {
     preparedBuses,
     sharedBoundary,
     clearance,
+    holeToHoleClearance = getViaHoleToHoleClearance(inputSrj, clearance),
     allowBlindAndBuriedVias = true,
   } = params
   const issues: FanoutValidationIssue[] = []
@@ -1130,6 +1205,7 @@ export function validateFanoutSolution(params: {
     plans,
     inputSrj,
     clearance,
+    holeToHoleClearance,
     allowBlindAndBuriedVias,
     issues,
   })

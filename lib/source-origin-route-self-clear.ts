@@ -4,6 +4,7 @@ import {
   distanceSegmentToSegment,
 } from "./geometry"
 import type { Point2D } from "./types"
+import { getViaPairMinimumCenterDistance } from "./via-clearance"
 
 /** Same-net DRC cannot detect copper that bypasses an earlier part of this route. */
 export function sourceOriginRouteIsSelfClear(params: {
@@ -11,9 +12,25 @@ export function sourceOriginRouteIsSelfClear(params: {
   topZ: number
   traceWidth: number
   viaDiameter: number
+  viaHoleDiameter?: number
   clearance: number
+  holeToHoleClearance?: number
 }): boolean {
-  const { points, topZ, traceWidth, viaDiameter, clearance } = params
+  const {
+    points,
+    topZ,
+    traceWidth,
+    viaDiameter,
+    viaHoleDiameter = viaDiameter,
+    clearance,
+    holeToHoleClearance = clearance,
+  } = params
+  const minimumViaPairDistance = getViaPairMinimumCenterDistance({
+    first: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
+    second: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
+    copperClearance: clearance,
+    holeToHoleClearance,
+  })
   const segments: {
     a: Point2D
     b: Point2D
@@ -50,10 +67,7 @@ export function sourceOriginRouteIsSelfClear(params: {
   for (let i = 0; i < vias.length; i++) {
     const via = vias[i]!
     for (let j = i + 1; j < vias.length; j++)
-      if (
-        distance(via.center, vias[j]!.center) <
-        viaDiameter + clearance - 1e-9
-      )
+      if (distance(via.center, vias[j]!.center) < minimumViaPairDistance - 1e-9)
         return false
     const radius = (viaDiameter + traceWidth) / 2 + clearance
     const incident = new Set<number>()

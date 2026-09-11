@@ -6,6 +6,10 @@ import {
   segmentsAreClear,
 } from "./geometry"
 import { matchComponentDogboneViaSites } from "./match-component-dogbone-via-sites"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 import type { PeripheralSourceEscape } from "./route-peripheral-source-escapes"
 import {
   routeSplitPerimeterBusSteps,
@@ -33,6 +37,10 @@ function sourcesAreClear(
       .map((connection) => [connection.connectionIndex, connection]),
   )
   const boundary = params.bus.sharedBoundary
+  const holeToHoleClearance = getViaHoleToHoleClearance(
+    params.srj,
+    params.clearance,
+  )
   for (const source of sources) {
     const own = connections.get(source.connectionIndex)!
     const radius = source.via.diameter / 2
@@ -72,7 +80,13 @@ function sourcesAreClear(
       if (source.connectionIndex === other.connectionIndex) continue
       if (
         distance(source.via.center, other.via.center) <
-        radius + other.via.diameter / 2 + params.clearance - EPSILON
+        getViaPairMinimumCenterDistance({
+          first: source.via,
+          second: other.via,
+          copperClearance: params.clearance,
+          holeToHoleClearance,
+        }) -
+          EPSILON
       )
         return false
       if (
@@ -194,6 +208,10 @@ export function* routeShallowSplitPerimeterBusSteps(
     const rematch = (plans: FanoutRoutePlan[] = []) => {
       const matched = matchComponentDogboneViaSites(movableBuses, {
         ...params,
+        holeToHoleClearance: getViaHoleToHoleClearance(
+          params.srj,
+          params.clearance,
+        ),
         additionalObstacles: params.srj.obstacles,
         maximumSearchStates: 300_000,
         preferredViaPointsByConnectionIndex: viaPoints,

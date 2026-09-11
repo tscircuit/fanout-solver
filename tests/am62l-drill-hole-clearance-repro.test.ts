@@ -47,7 +47,7 @@ function getClosestViaPair(vias: readonly RoutedVia[]) {
   return closest
 }
 
-test.failing("honors drill-hole clearance in a real AM62L memory fanout", async () => {
+test("honors drill-hole clearance in a real AM62L memory fanout", async () => {
   const { generatedFrom, selectedBusIds, inputSrj, options } =
     createAm62lDrillHoleClearanceRepro()
   expect(generatedFrom).toMatchObject({

@@ -7,6 +7,7 @@ import { fanoutPlansAreClear } from "./route-bus"
 import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
 import type { FanoutRoutePlan, PreparedBus } from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
+import { getViaHoleToHoleClearance } from "./via-clearance"
 
 /**
  * Reassign only caller-declared, unfinished direct signal dogbones around a
@@ -81,6 +82,7 @@ export function rematchUnroutedSourceDogbones(params: {
     clearance,
     viaDiameter: via.diameter,
     viaHoleDiameter: via.holeDiameter,
+    holeToHoleClearance: getViaHoleToHoleClearance(inputSrj, clearance),
     maximumSearchStates: 10_000,
     preferredViaPointsByConnectionIndex: new Map(
       plans

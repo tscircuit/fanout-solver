@@ -22,6 +22,10 @@ import type {
   RoutedSegment,
   RoutedVia,
 } from "./types"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 
 /** Route a right-edge bus through a peripheral crossbar on its two allowed layers. */
 export function* routeLeftCrossbarBusSteps(
@@ -59,7 +63,18 @@ export function* routeLeftCrossbarBusSteps(
   )
   const pitch = w + c,
     padPitch = Math.min(bus.pitchX, bus.pitchY),
-    viaPitch = params.viaDiameter + c
+    viaPitch = getViaPairMinimumCenterDistance({
+      first: {
+        diameter: params.viaDiameter,
+        holeDiameter: params.viaHoleDiameter,
+      },
+      second: {
+        diameter: params.viaDiameter,
+        holeDiameter: params.viaHoleDiameter,
+      },
+      copperClearance: c,
+      holeToHoleClearance: getViaHoleToHoleClearance(params.srj, c),
+    })
   const center = {
     x: (bus.componentBounds.minX + bus.componentBounds.maxX) / 2,
     y: (bus.componentBounds.minY + bus.componentBounds.maxY) / 2,
@@ -380,10 +395,7 @@ export function* routeLeftCrossbarBusSteps(
             return null
       }
       for (const added of plan.additionalVias!) {
-        if (
-          distance(added.center, source.via.center) <
-          params.viaDiameter + c - 1e-7
-        )
+        if (distance(added.center, source.via.center) < viaPitch - 1e-7)
           return null
         for (const s of source.segments)
           if (

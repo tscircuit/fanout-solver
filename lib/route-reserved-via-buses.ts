@@ -44,6 +44,10 @@ import type {
   RoutedSegment,
 } from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 
 export interface RouteReservedViaBusesParams {
   srj: SimpleRouteJson
@@ -224,6 +228,7 @@ type Blocker =
       connectionName: string
       center: Point2D
       diameter: number
+      holeDiameter: number
       layers: readonly string[]
     }
   | { kind: "obstacle"; obstacle: SimpleRouteJson["obstacles"][number] }
@@ -457,6 +462,7 @@ function* routeReservedViaBusesWorker(
     traceWidth,
     clearance,
     viaDiameter,
+    viaHoleDiameter,
     srj,
   } = params
   const maximumIterations = params.maximumIterations ?? 30_000_000
@@ -668,9 +674,17 @@ function* routeReservedViaBusesWorker(
     return null
   const paths = new Map<number, readonly Point2D[]>(),
     owners = new Map<string, PreparedBus>()
+  const holeToHoleClearance = getViaHoleToHoleClearance(srj, clearance)
+  const minimumViaPairDistance = getViaPairMinimumCenterDistance({
+    first: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
+    second: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
+    copperClearance: clearance,
+    holeToHoleClearance,
+  })
+  const viaPairSearchMargin = minimumViaPairDistance - viaDiameter / 2
   const index = new CopperIndex(
     Math.max(0.5, viaDiameter * 2),
-    Math.max(traceWidth, viaDiameter) / 2 + clearance + 1e-7,
+    Math.max(traceWidth / 2 + clearance, viaPairSearchMargin) + 1e-7,
   )
   const sourceOwners = new Map(connections.map((c) => [c.connection.name, c]))
   const obstacleOwners = new Map(connections.map((c) => [c.sourceObstacle, c]))
@@ -711,6 +725,7 @@ function* routeReservedViaBusesWorker(
         connectionName: connection.connection.name,
         center: site,
         diameter: viaDiameter,
+        holeDiameter: viaHoleDiameter,
         layers: layerNames,
       })
       for (let i = 1; i < points.length; i++)
@@ -932,7 +947,16 @@ function* routeReservedViaBusesWorker(
       if (blocker.kind === "via")
         return (
           distance(point, blocker.center) >=
-          (viaDiameter + blocker.diameter) / 2 + clearance - 1e-9
+          getViaPairMinimumCenterDistance({
+            first: {
+              diameter: viaDiameter,
+              holeDiameter: viaHoleDiameter,
+            },
+            second: blocker,
+            copperClearance: clearance,
+            holeToHoleClearance,
+          }) -
+            1e-9
         )
       if (blocker.kind === "segment")
         return (
@@ -1142,7 +1166,7 @@ function* routeReservedViaBusesWorker(
         router,
         requiresTopTransit,
         topRouterZ,
-        viaDiameter + clearance,
+        minimumViaPairDistance,
       )
     }
   }
@@ -1564,7 +1588,7 @@ function* routeReservedViaBusesWorker(
         if (
           !internalTravel ||
           distance(a, b) > 1e-7 ||
-          distance(points[first]!, b) < viaDiameter + clearance - 1e-9
+          distance(points[first]!, b) < minimumViaPairDistance - 1e-9
         )
           return false
         returned = true
@@ -1577,7 +1601,9 @@ function* routeReservedViaBusesWorker(
         topZ: layerNames.indexOf("top"),
         traceWidth,
         viaDiameter,
+        viaHoleDiameter,
         clearance,
+        holeToHoleClearance,
       })
     )
   }
@@ -1710,6 +1736,7 @@ function* routeReservedViaBusesWorker(
             connectionName: route.connectionName,
             center: a,
             diameter: viaDiameter,
+            holeDiameter: viaHoleDiameter,
             layers: layerNames,
           })
       }
@@ -1844,6 +1871,7 @@ function* routeReservedViaBusesWorker(
           connectionName: route.connectionName,
           center,
           diameter: viaDiameter,
+          holeDiameter: viaHoleDiameter,
           layers: layerNames,
         })
     }

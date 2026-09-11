@@ -17,6 +17,11 @@ import {
   obstacleSharesElectricalNet,
 } from "./net-identity"
 import type { Point2D, RoutedSegment } from "./types"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+  getViaPairMinimumHoleCenterDistance,
+} from "./via-clearance"
 
 const EPSILON = 1e-6
 
@@ -30,6 +35,7 @@ export type RoutedCopperDrcIssueCode =
   | "different-net-trace-clearance"
   | "different-net-trace-via-clearance"
   | "different-net-via-clearance"
+  | "via-hole-clearance"
 
 export interface RoutedCopperDrcIssue {
   code: RoutedCopperDrcIssueCode
@@ -53,6 +59,7 @@ export interface RoutedCopperDrcReport {
 interface RoutedVia {
   center: Point2D
   diameter: number
+  holeDiameter: number
   spanLayers: string[]
 }
 
@@ -157,6 +164,11 @@ function extractTraceCopper(params: {
         center: { x: routePoint.x, y: routePoint.y },
         diameter:
           routePoint.via_diameter ?? srj.minViaPadDiameter ?? srj.minTraceWidth,
+        holeDiameter:
+          routePoint.via_hole_diameter ??
+          srj.minViaHoleDiameter ??
+          srj.min_via_hole_diameter ??
+          srj.minTraceWidth,
         spanLayers,
       })
       if (
@@ -245,12 +257,14 @@ export function validateRoutedCopperDrc(params: {
   inputSrj: SimpleRouteJson
   routedSrj: SimpleRouteJson
   clearance: number
+  holeToHoleClearance?: number
   allowBlindAndBuriedVias?: boolean
 }): RoutedCopperDrcReport {
   const {
     inputSrj,
     routedSrj,
     clearance,
+    holeToHoleClearance = getViaHoleToHoleClearance(inputSrj, clearance),
     allowBlindAndBuriedVias = true,
   } = params
   const issues: RoutedCopperDrcIssue[] = []
@@ -388,13 +402,39 @@ export function validateRoutedCopperDrc(params: {
       secondIndex++
     ) {
       const second = traceCopper[secondIndex]!
-      if (
-        connectionsShareElectricalNet(
-          inputSrj,
-          first.connectionName,
-          second.connectionName,
-        )
-      ) {
+      if (first.connectionName === second.connectionName) continue
+      const sharesElectricalNet = connectionsShareElectricalNet(
+        inputSrj,
+        first.connectionName,
+        second.connectionName,
+      )
+      if (sharesElectricalNet) {
+        for (const firstVia of first.vias) {
+          for (const secondVia of second.vias) {
+            const minimumCenterDistance = getViaPairMinimumHoleCenterDistance({
+              first: firstVia,
+              second: secondVia,
+              holeToHoleClearance,
+            })
+            if (
+              firstVia.spanLayers.some((layer) =>
+                secondVia.spanLayers.includes(layer),
+              ) &&
+              distance(firstVia.center, secondVia.center) > EPSILON &&
+              distance(firstVia.center, secondVia.center) <
+                minimumCenterDistance - EPSILON
+            ) {
+              addIssue(issues, {
+                code: "via-hole-clearance",
+                traceId: first.trace.pcb_trace_id,
+                connectionName: first.connectionName,
+                otherTraceId: second.trace.pcb_trace_id,
+                otherConnectionName: second.connectionName,
+                message: `Vias in ${first.trace.pcb_trace_id} and ${second.trace.pcb_trace_id} violate drilled-hole clearance on an overlapping layer span`,
+              })
+            }
+          }
+        }
         continue
       }
 
@@ -465,12 +505,18 @@ export function validateRoutedCopperDrc(params: {
           })
         }
         for (const secondVia of second.vias) {
+          const minimumCenterDistance = getViaPairMinimumCenterDistance({
+            first: firstVia,
+            second: secondVia,
+            copperClearance: clearance,
+            holeToHoleClearance,
+          })
           if (
             !firstVia.spanLayers.some((layer) =>
               secondVia.spanLayers.includes(layer),
             ) ||
             distance(firstVia.center, secondVia.center) >=
-              (firstVia.diameter + secondVia.diameter) / 2 + clearance - EPSILON
+              minimumCenterDistance - EPSILON
           ) {
             continue
           }

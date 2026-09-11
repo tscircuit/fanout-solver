@@ -28,6 +28,7 @@ import type {
   PreparedBus,
 } from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
+import { getViaHoleToHoleClearance } from "./via-clearance"
 
 export interface ShortcutFanoutPlansParams {
   inputSrj: SimpleRouteJson
@@ -412,7 +413,9 @@ export function shortcutFanoutPlans(
           topZ: layerNames.indexOf(original.sourceLayer),
           traceWidth: params.traceWidth,
           viaDiameter: original.via!.diameter,
+          viaHoleDiameter: original.via!.holeDiameter,
           clearance,
+          holeToHoleClearance: getViaHoleToHoleClearance(inputSrj, clearance),
         })
       )
         continue

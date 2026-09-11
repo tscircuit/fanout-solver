@@ -13,6 +13,10 @@ import type {
   PreparedConnection,
   RoutedSegment,
 } from "./types"
+import {
+  getViaPairMinimumCenterDistance,
+  getViaPairMinimumHoleCenterDistance,
+} from "./via-clearance"
 
 const EPSILON = 1e-9
 const DEFAULT_MAXIMUM_SEARCH_STATES = 100_000
@@ -47,6 +51,7 @@ export interface DogboneViaSiteGeometryRules {
     connectionIndex: number
     center: Point2D
     diameter: number
+    holeDiameter?: number
     spanLayers: readonly string[]
   }[]
   /** Board obstacles outside the source component that dogbones must clear. */
@@ -448,10 +453,33 @@ function getConnectionCandidates(params: {
         if (blocker.connectionIndex === preparedConnection.connectionIndex) {
           return true
         }
-        if (
-          distance(point, blocker.center) <
-          (rules.viaDiameter + blocker.diameter) / 2 + rules.clearance - EPSILON
-        ) {
+        const canShareCopper =
+          rules.canShareCopper?.(
+            preparedConnection.connectionIndex,
+            blocker.connectionIndex,
+          ) ?? false
+        const candidateVia = {
+          diameter: rules.viaDiameter,
+          holeDiameter: rules.viaHoleDiameter ?? rules.viaDiameter,
+        }
+        const minimumCenterDistance = canShareCopper
+          ? getViaPairMinimumHoleCenterDistance({
+              first: candidateVia,
+              second: {
+                holeDiameter: blocker.holeDiameter ?? candidateVia.holeDiameter,
+              },
+              holeToHoleClearance: rules.holeToHoleClearance ?? rules.clearance,
+            })
+          : getViaPairMinimumCenterDistance({
+              first: candidateVia,
+              second: {
+                ...blocker,
+                holeDiameter: blocker.holeDiameter ?? candidateVia.holeDiameter,
+              },
+              copperClearance: rules.clearance,
+              holeToHoleClearance: rules.holeToHoleClearance ?? rules.clearance,
+            })
+        if (distance(point, blocker.center) < minimumCenterDistance - EPSILON) {
           return false
         }
         if (
@@ -552,11 +580,26 @@ function candidatesAreMutuallyClear(params: {
     rules.canShareCopper?.(first.connectionIndex, second.connectionIndex) ??
     false
   const requiredHoleSeparation = rules.viaHoleDiameter
-    ? rules.viaHoleDiameter + (rules.holeToHoleClearance ?? rules.clearance)
+    ? getViaPairMinimumHoleCenterDistance({
+        first: { holeDiameter: rules.viaHoleDiameter },
+        second: { holeDiameter: rules.viaHoleDiameter },
+        holeToHoleClearance: rules.holeToHoleClearance ?? rules.clearance,
+      })
     : 0
   const requiredViaSeparation = canShareCopper
     ? requiredHoleSeparation
-    : Math.max(rules.viaDiameter + rules.clearance, requiredHoleSeparation)
+    : getViaPairMinimumCenterDistance({
+        first: {
+          diameter: rules.viaDiameter,
+          holeDiameter: rules.viaHoleDiameter ?? rules.viaDiameter,
+        },
+        second: {
+          diameter: rules.viaDiameter,
+          holeDiameter: rules.viaHoleDiameter ?? rules.viaDiameter,
+        },
+        copperClearance: rules.clearance,
+        holeToHoleClearance: rules.holeToHoleClearance ?? rules.clearance,
+      })
   if (distance(first.point, second.point) < requiredViaSeparation - EPSILON) {
     return false
   }

@@ -286,6 +286,7 @@ export interface FanoutValidationIssue {
     | "different-net-trace-clearance"
     | "different-net-trace-via-clearance"
     | "different-net-via-clearance"
+    | "via-hole-clearance"
     | "plan-length-mismatch"
     | "fanout-normalization"
     | "bus-length-skew"

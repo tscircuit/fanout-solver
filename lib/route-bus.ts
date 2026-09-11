@@ -41,6 +41,11 @@ import type {
   RoutedSegment,
 } from "./types"
 import { segmentIsLegalTerminalBodyEscape } from "./validate-routed-copper-drc"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+  getViaPairMinimumHoleCenterDistance,
+} from "./via-clearance"
 
 export type RouteBusStaticClearanceCache = Map<string, boolean>
 
@@ -1872,6 +1877,7 @@ function planIsStaticallyClear(params: {
     allowBlindAndBuriedVias,
     allowSameNetMerges,
   } = params
+  const holeToHoleClearance = getViaHoleToHoleClearance(srj, clearance)
   const routableBounds = getRoutableBounds(srj.bounds, sharedBoundary)
   if (
     !pointIsInsideBounds(plan.exitPoint, routableBounds) ||
@@ -2001,12 +2007,18 @@ function planIsStaticallyClear(params: {
         }
       }
       for (const existingVia of traceCopper.vias) {
+        const minimumCenterDistance = getViaPairMinimumCenterDistance({
+          first: via,
+          second: existingVia,
+          copperClearance: clearance,
+          holeToHoleClearance,
+        })
         if (
           via.spanLayers.some((layer) =>
             existingVia.spanLayers.includes(layer),
           ) &&
           distance(via.center, existingVia.center) <
-            (via.diameter + existingVia.diameter) / 2 + clearance - 1e-9
+            minimumCenterDistance - 1e-9
         ) {
           return false
         }
@@ -2037,17 +2049,15 @@ function planIsClearOfPlans(params: {
   } = params
   const planSegments = getPlanSegments(plan)
   const planVias = getPlanVias(plan)
+  const holeToHoleClearance = getViaHoleToHoleClearance(srj, clearance)
   for (const otherPlan of otherPlans) {
-    if (
+    const canShareCopper =
       allowSameNetMerges &&
       connectionsShareElectricalNet(
         srj,
         plan.connectionName,
         otherPlan.connectionName,
       )
-    ) {
-      continue
-    }
     const plansShareSourcePort =
       (plan.sourcePoint.pcb_port_id &&
         plan.sourcePoint.pcb_port_id === otherPlan.sourcePoint.pcb_port_id) ||
@@ -2063,6 +2073,28 @@ function planIsClearOfPlans(params: {
     }
     const otherSegments = getPlanSegments(otherPlan)
     const otherVias = getPlanVias(otherPlan)
+    if (canShareCopper) {
+      for (const planVia of planVias) {
+        for (const otherVia of otherVias) {
+          if (
+            planVia.spanLayers.some((layer) =>
+              otherVia.spanLayers.includes(layer),
+            ) &&
+            distance(planVia.center, otherVia.center) <
+              getViaPairMinimumHoleCenterDistance({
+                first: planVia,
+                second: otherVia,
+                holeToHoleClearance,
+              }) -
+                1e-9
+          ) {
+            recordBlocker()
+            return false
+          }
+        }
+      }
+      continue
+    }
     let segmentIndex = segmentIndexes?.get(otherPlan)
     if (segmentIndexes && !segmentIndex) {
       segmentIndex = new RouteSegmentSpatialIndex(otherSegments)
@@ -2106,12 +2138,18 @@ function planIsClearOfPlans(params: {
         }
       }
       for (const otherVia of otherVias) {
+        const minimumCenterDistance = getViaPairMinimumCenterDistance({
+          first: planVia,
+          second: otherVia,
+          copperClearance: clearance,
+          holeToHoleClearance,
+        })
         if (
           planVia.spanLayers.some((layer) =>
             otherVia.spanLayers.includes(layer),
           ) &&
           distance(planVia.center, otherVia.center) <
-            (planVia.diameter + otherVia.diameter) / 2 + clearance - 1e-9
+            minimumCenterDistance - 1e-9
         ) {
           recordBlocker()
           return false
@@ -3343,6 +3381,7 @@ export function* routeBusAlternativesSteps(
         ? matchComponentDogboneViaSites([bus], {
             viaDiameter,
             viaHoleDiameter,
+            holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
             traceWidth,
             clearance,
             additionalObstacles: srj.obstacles,
@@ -3358,6 +3397,7 @@ export function* routeBusAlternativesSteps(
                 ...via.center,
                 center: via.center,
                 diameter: via.diameter,
+                holeDiameter: via.holeDiameter,
                 spanLayers: via.spanLayers,
               })),
             ),
@@ -3587,6 +3627,7 @@ export function* routeBusAlternativesSteps(
         !matchComponentDogboneViaSites([bus], {
           viaDiameter,
           viaHoleDiameter,
+          holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
           traceWidth,
           clearance,
           additionalObstacles: srj.obstacles,
@@ -3608,6 +3649,7 @@ export function* routeBusAlternativesSteps(
                 connectionIndex: plan.connectionIndex,
                 center: via.center,
                 diameter: via.diameter,
+                holeDiameter: via.holeDiameter,
                 spanLayers: via.spanLayers,
               })),
             ),
@@ -3849,6 +3891,12 @@ export function* routeBusAlternativesSteps(
       (connection) =>
         fixedViaPointsByConnectionIndex.get(connection.connectionIndex)!,
     )
+    const minimumViaPairDistance = getViaPairMinimumCenterDistance({
+      first: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
+      second: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
+      copperClearance: clearance,
+      holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+    })
     const packageEdgeViaCandidates = [
       {
         distance: sourceCenter.x - bus.componentBounds.minX,
@@ -3880,7 +3928,7 @@ export function* routeBusAlternativesSteps(
         const order = matchedVias
           .map((via, index) => ({ index, track: via[otherAxis] }))
           .toSorted((a, b) => a.track - b.track || a.index - b.index)
-        const pitch = viaDiameter + clearance
+        const pitch = minimumViaPairDistance
         const points = matchedVias.map((via, index) => ({
           ...via,
           [axis]: value,
@@ -3922,11 +3970,18 @@ export function* routeBusAlternativesSteps(
       ),
     ]
     for (const { points: boundaryViaPoints, boundarySide } of viaCandidates) {
+      const minimumBoundaryViaDistance = getViaPairMinimumCenterDistance({
+        first: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
+        second: { diameter: viaDiameter, holeDiameter: viaHoleDiameter },
+        copperClearance: clearance,
+        holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+      })
       const boundaryVias = bus.connections.map((connection, index) => ({
         connectionName: connection.connection.name,
         via: {
           center: boundaryViaPoints[index]!,
           diameter: viaDiameter,
+          holeDiameter: viaHoleDiameter,
           spanLayers: getViaSpanLayers({
             fromLayer: sourceLayer,
             toLayer: targetLayer,
@@ -3941,7 +3996,7 @@ export function* routeBusAlternativesSteps(
             (other, otherIndex) =>
               index !== otherIndex &&
               (distance(candidate.via.center, other.via.center) <
-                viaDiameter + clearance - 1e-9 ||
+                minimumBoundaryViaDistance - 1e-9 ||
                 (boundarySide &&
                   distancePointToSegment(
                     candidate.via.center,
@@ -4145,24 +4200,40 @@ export function* routeBusAlternativesSteps(
       const reservedViasAreClear = plans.every((plan) =>
         reservedVias.every((reserved) => {
           const via = plan.via!
-          if (
-            reserved.connectionName === plan.connectionName ||
-            (allowSameNetMerges &&
-              connectionsShareElectricalNet(
-                srj,
-                reserved.connectionName,
-                plan.connectionName,
-              ))
-          )
-            return true
+          if (reserved.connectionName === plan.connectionName) return true
+          const canShareCopper =
+            allowSameNetMerges &&
+            connectionsShareElectricalNet(
+              srj,
+              reserved.connectionName,
+              plan.connectionName,
+            )
+          const minimumCenterDistance = canShareCopper
+            ? getViaPairMinimumHoleCenterDistance({
+                first: via,
+                second: {
+                  holeDiameter: reserved.via.holeDiameter ?? viaHoleDiameter,
+                },
+                holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+              })
+            : getViaPairMinimumCenterDistance({
+                first: via,
+                second: {
+                  ...reserved.via,
+                  holeDiameter: reserved.via.holeDiameter ?? viaHoleDiameter,
+                },
+                copperClearance: clearance,
+                holeToHoleClearance: getViaHoleToHoleClearance(srj, clearance),
+              })
           if (
             via.spanLayers.some((layer) =>
               reserved.via.spanLayers.includes(layer),
             ) &&
             distance(via.center, reserved.via.center) <
-              (via.diameter + reserved.via.diameter) / 2 + clearance - 1e-9
+              minimumCenterDistance - 1e-9
           )
             return false
+          if (canShareCopper) return true
           return plan.segments.every(
             (segment) =>
               !reserved.via.spanLayers.includes(segment.layer) ||

@@ -27,6 +27,10 @@ import type {
   RoutedSegment,
   RoutedVia,
 } from "./types"
+import {
+  getViaHoleToHoleClearance,
+  getViaPairMinimumCenterDistance,
+} from "./via-clearance"
 
 /** Use two allowed layers to permute unordered bottom exits into either side of the boundary. */
 export function* routeBottomCrossbarBusSteps(
@@ -69,11 +73,18 @@ export function* routeBottomCrossbarBusSteps(
     )
   )
     return null
+  const holeToHoleClearance = getViaHoleToHoleClearance(srj, clearance)
   const usesLowerBand =
     getCornerBandSide(bus.exitEdge, bus.preferredExit) === "minimum"
   const count = bus.connections.length,
     pitch = width + clearance
-  const portPitch = Math.ceil((viaDiameter + clearance) / pitch) * pitch
+  const minimumViaPairDistance = getViaPairMinimumCenterDistance({
+    first: { diameter: viaDiameter, holeDiameter: params.viaHoleDiameter },
+    second: { diameter: viaDiameter, holeDiameter: params.viaHoleDiameter },
+    copperClearance: clearance,
+    holeToHoleClearance,
+  })
+  const portPitch = Math.ceil(minimumViaPairDistance / pitch) * pitch
   const byIndex = new Map(
     sourceEscapes.map((source) => [source.connectionIndex, source]),
   )
@@ -243,8 +254,7 @@ export function* routeBottomCrossbarBusSteps(
   // axis; the final physical check also verifies their diagonal via clearance.
   const crossingPitch =
     usesLowerBand || layout?.compactRows
-      ? Math.max(viaTraceDistance, (viaDiameter + clearance) / Math.SQRT2) +
-        1e-5
+      ? Math.max(viaTraceDistance, minimumViaPairDistance / Math.SQRT2) + 1e-5
       : portPitch
   const lowestAcceptedCopper = Math.min(
     ...acceptedPlans
@@ -325,7 +335,7 @@ export function* routeBottomCrossbarBusSteps(
           Math.min(...blockers.map((interval) => interval.minimum)) - 1e-7
       }
       columns.push(nextColumn)
-      nextColumn -= usesLowerBand ? crossingPitch : viaDiameter + clearance
+      nextColumn -= usesLowerBand ? crossingPitch : minimumViaPairDistance
     }
   }
   const minimumColumn = columns.at(-1)!
@@ -360,7 +370,7 @@ export function* routeBottomCrossbarBusSteps(
         Math.min(...blockers.map((interval) => interval.minimum)) - 1e-7
     }
     tracks[rank] = nextTrack
-    nextTrack -= viaDiameter + clearance
+    nextTrack -= minimumViaPairDistance
   }
   if (usesLowerBand)
     tracks.splice(0, tracks.length, ...ordered.map(targetTrack))
@@ -543,7 +553,13 @@ export function* routeBottomCrossbarBusSteps(
       for (const via of plan.additionalVias!) {
         if (
           distance(via.center, source.via.center) <
-          (via.diameter + source.via.diameter) / 2 + clearance - 1e-7
+          getViaPairMinimumCenterDistance({
+            first: via,
+            second: source.via,
+            copperClearance: clearance,
+            holeToHoleClearance,
+          }) -
+            1e-7
         )
           return null
         for (const segment of source.segments)

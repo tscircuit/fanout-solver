@@ -42,7 +42,8 @@ export interface ViaMinimalWindingTerminal {
 
 export interface ViaMinimalWindingReservedVia {
   connectionName: string
-  via: Pick<RoutedVia, "center" | "diameter" | "spanLayers">
+  via: Pick<RoutedVia, "center" | "diameter" | "spanLayers"> &
+    Partial<Pick<RoutedVia, "holeDiameter">>
   /** Keep the future pad-to-via dogbone available during source-layer escape. */
   sourceEscapeSegment?: RoutedSegment
 }
@@ -218,7 +219,8 @@ class SegmentSpatialIndex {
 
 interface BlockingVia {
   connectionName: string
-  via: Pick<RoutedVia, "center" | "diameter" | "spanLayers">
+  via: Pick<RoutedVia, "center" | "diameter" | "spanLayers"> &
+    Partial<Pick<RoutedVia, "holeDiameter">>
 }
 
 interface IndexedObstacle {
@@ -953,6 +955,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
       via: {
         center: terminal.viaPoint,
         diameter: viaDiameter,
+        holeDiameter: viaHoleDiameter,
         spanLayers: getViaSpanLayers({
           fromLayer: terminal.connection.sourceLayer,
           toLayer: targetLayer,
