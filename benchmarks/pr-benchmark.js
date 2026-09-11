@@ -43,6 +43,7 @@ export async function preparePrBenchmark({ github, context, core }) {
   let repository = `${context.repo.owner}/${context.repo.repo}`
   let ref = context.sha
   let commentId = ""
+  let target = "workflow ref"
   const runUrl = `${context.serverUrl}/${repository}/actions/runs/${context.runId}`
   if (rawNumber) {
     const pr = (
@@ -51,16 +52,26 @@ export async function preparePrBenchmark({ github, context, core }) {
         pull_number: Number(rawNumber),
       })
     ).data
-    if (pr.state !== "open")
-      throw new Error("Benchmark requests require an open pull request")
-    if (!pr.head.repo || !/^[a-f0-9]{40}$/.test(pr.head.sha))
-      throw new Error("PR head is unavailable")
-    ref = pr.head.sha
-    repository = pr.head.repo.full_name
+    if (pr.state === "open") {
+      if (!pr.head.repo || !/^[a-f0-9]{40}$/.test(pr.head.sha))
+        throw new Error("PR head is unavailable")
+      ref = pr.head.sha
+      repository = pr.head.repo.full_name
+      target = "PR head"
+    } else if (pr.merged_at) {
+      if (!/^[a-f0-9]{40}$/.test(pr.merge_commit_sha))
+        throw new Error("Merged PR commit is unavailable")
+      ref = pr.merge_commit_sha
+      target = "merged commit"
+    } else {
+      throw new Error(
+        "Benchmark requests require an open or merged pull request",
+      )
+    }
     const comment = await github.rest.issues.createComment({
       ...context.repo,
       issue_number: Number(rawNumber),
-      body: `## Dataset 31 — AM62L, RK3308, K230, i.MX6ULL, T113-S3, and AM3352 fanout benchmark\n\nQueued for \`${ref.slice(0, 7)}\` on Blacksmith. All 72 dataset-fanout31-am62l samples (12 AM62L, 12 RK3308, 12 K230, 12 i.MX6ULL, 12 T113-S3, and 12 AM3352) will run, with a per-sample deadline.\n\n[View run](${runUrl})`,
+      body: `## Dataset 31 — AM62L, RK3308, K230, i.MX6ULL, T113-S3, and AM3352 fanout benchmark\n\nQueued ${target} \`${ref.slice(0, 7)}\` on Blacksmith. All 72 dataset-fanout31-am62l samples (12 AM62L, 12 RK3308, 12 K230, 12 i.MX6ULL, 12 T113-S3, and 12 AM3352) will run, with a per-sample deadline.\n\n[View run](${runUrl})`,
     })
     commentId = String(comment.data.id)
   }
