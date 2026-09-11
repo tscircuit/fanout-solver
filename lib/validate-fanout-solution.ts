@@ -395,10 +395,13 @@ function validatePlanStructure(params: {
     plan,
     issues,
   })
+  const declaredTraceSegments = plan.segments.filter(
+    (segment) => distance(segment.start, segment.end) > EPSILON,
+  )
   if (
-    traceSegments.length !== plan.segments.length ||
+    traceSegments.length !== declaredTraceSegments.length ||
     traceSegments.some((segment, index) => {
-      const declared = plan.segments[index]
+      const declared = declaredTraceSegments[index]
       return (
         !declared ||
         segment.layer !== declared.layer ||
