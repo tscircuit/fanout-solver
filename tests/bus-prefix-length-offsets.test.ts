@@ -8,7 +8,7 @@ import { getSvgFromGraphicsObject } from "graphics-debug"
 import { FanoutSolver } from "lib/fanout-solver"
 import type { FanoutBusSpec, Point2D } from "lib/types"
 
-const signalPadIndices = [5, 6, 9, 10]
+const signalPadIndices = [5, 10]
 
 function createBgaObstacles(componentId: string, centerX: number): Obstacle[] {
   return Array.from({ length: 16 }, (_, padIndex) => {
@@ -55,15 +55,11 @@ test.failing("matches complete bus lengths including existing connection prefixe
   const rightPads = createBgaObstacles("right-bga", 4)
   const desiredExitTargets: Record<string, Point2D> = {
     DATA0: { x: 1, y: -0.6 },
-    DATA1: { x: 1, y: -0.2 },
-    DATA2: { x: 1, y: 0.4 },
-    DATA3: { x: 1, y: 0.6 },
+    DATA1: { x: 1, y: 0.6 },
   }
   const connectionLengthOffsets: Record<string, number> = {
     DATA0: 2,
     DATA1: 0,
-    DATA2: 0,
-    DATA3: 0,
   }
   const bus = {
     busId: "DATA_BUS",
@@ -85,7 +81,7 @@ test.failing("matches complete bus lengths including existing connection prefixe
     minTraceToPadEdgeClearance: 0.1,
     minViaEdgeToPadEdgeClearance: 0.1,
     defaultObstacleMargin: 0.1,
-    bounds: { minX: -8, maxX: 6, minY: -4, maxY: 4 },
+    bounds: { minX: -11, maxX: 6, minY: -6, maxY: 6 },
     obstacles: [...leftPads, ...rightPads],
     connections: signalPadIndices.map((padIndex, connectionIndex) => {
       const sourcePad = leftPads[padIndex]!
@@ -110,7 +106,7 @@ test.failing("matches complete bus lengths including existing connection prefixe
   }
   const solver = new FanoutSolver(simpleRouteJson, {
     buses: [bus],
-    sharedBoundary: { minX: -7, maxX: -1, minY: -3, maxY: 3 },
+    sharedBoundary: { minX: -10, maxX: -1, minY: -5, maxY: 5 },
     escapeLayers: ["top", "bottom"],
     compactBusTracks: true,
     borderDistribution: "even",
