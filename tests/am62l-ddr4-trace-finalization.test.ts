@@ -26,7 +26,7 @@ const fixture = JSON.parse(
   ).toString("utf8"),
 ) as CapturedFixture
 
-test.failing("finalizes the exact AM62L DDR4 clock escape", async () => {
+test("finalizes the exact AM62L DDR4 clock escape", async () => {
   expect(fixture.generatedFrom).toEqual({
     repository: "https://github.com/tscircuit/core",
     integrationCommit: "9107d743",
