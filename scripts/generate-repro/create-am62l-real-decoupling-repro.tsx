@@ -228,9 +228,13 @@ const DirectDecouplingNetwork = () => (
 )
 
 const Am62lRealDecouplingCircuit = ({
-  captureSocFanout,
+  captureFanout,
+  captureTarget,
+  minViaHoleEdgeToViaHoleEdgeClearance,
 }: {
-  captureSocFanout: AutorouterAlgorithm
+  captureFanout: AutorouterAlgorithm
+  captureTarget: "soc" | "dram"
+  minViaHoleEdgeToViaHoleEdgeClearance: string
 }) => (
   <board
     name="AM62L_LPDDR4_REAL_DECOUPLING_REPRO"
@@ -241,7 +245,7 @@ const Am62lRealDecouplingCircuit = ({
     minTraceWidth="0.08128mm"
     minTraceToPadEdgeClearance="0.05mm"
     minViaEdgeToPadEdgeClearance="0.08128mm"
-    minViaHoleEdgeToViaHoleEdgeClearance="0.1016mm"
+    minViaHoleEdgeToViaHoleEdgeClearance={minViaHoleEdgeToViaHoleEdgeClearance}
     minViaHoleDiameter="0.15mm"
     minViaPadDiameter="0.24mm"
     pcbStyle={{ viaHoleDiameter: "0.15mm", viaPadDiameter: "0.24mm" }}
@@ -275,7 +279,12 @@ const Am62lRealDecouplingCircuit = ({
       pcbX={SOC_X}
       pcbY={SOC_Y}
       padding="3mm"
-      autorouter={{ algorithmFn: captureSocFanout }}
+      autorouter={{
+        algorithmFn:
+          captureTarget === "soc"
+            ? captureFanout
+            : async (input) => createCompletedAutorouter(input),
+      }}
       fanoutRoutingLayers={[...signalLayers]}
       fanoutPourNetMap={{ inner1: "GND", inner2: "VDD_LPDDR4" }}
       busFanoutDirections={socBusDirections}
@@ -311,7 +320,10 @@ const Am62lRealDecouplingCircuit = ({
       pcbY={DRAM_Y}
       padding="3mm"
       autorouter={{
-        algorithmFn: async (input) => createCompletedAutorouter(input),
+        algorithmFn:
+          captureTarget === "dram"
+            ? captureFanout
+            : async (input) => createCompletedAutorouter(input),
       }}
       fanoutRoutingLayers={[...signalLayers]}
     >
@@ -426,12 +438,18 @@ const Am62lRealDecouplingCircuit = ({
   </board>
 )
 
-export const createAm62lRealDecouplingRepro = async (): Promise<{
+export const createAm62lRealDecouplingRepro = async ({
+  captureTarget = "soc",
+  minViaHoleEdgeToViaHoleEdgeClearance = "0.1016mm",
+}: {
+  captureTarget?: "soc" | "dram"
+  minViaHoleEdgeToViaHoleEdgeClearance?: string
+} = {}): Promise<{
   inputSrj: SimpleRouteJson
   options: FanoutSolverOptions
 }> => {
   let capturedInput: SimpleRouteJson | undefined
-  const captureSocFanout: AutorouterAlgorithm = async (input) => {
+  const captureFanout: AutorouterAlgorithm = async (input) => {
     capturedInput = structuredClone(input)
     return createCompletedAutorouter(input)
   }
@@ -439,10 +457,17 @@ export const createAm62lRealDecouplingRepro = async (): Promise<{
     platform: { placementDrcChecksDisabled: true },
   })
   circuit.add(
-    <Am62lRealDecouplingCircuit captureSocFanout={captureSocFanout} />,
+    <Am62lRealDecouplingCircuit
+      captureFanout={captureFanout}
+      captureTarget={captureTarget}
+      minViaHoleEdgeToViaHoleEdgeClearance={
+        minViaHoleEdgeToViaHoleEdgeClearance
+      }
+    />,
   )
   await circuit.renderUntilSettled()
-  if (!capturedInput) throw new Error("SOC_FANOUT algorithmFn was not invoked")
+  if (!capturedInput)
+    throw new Error(`${captureTarget.toUpperCase()}_FANOUT was not invoked`)
 
   return {
     inputSrj: capturedInput,
