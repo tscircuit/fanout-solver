@@ -15,6 +15,7 @@ test("native decoupler plane drops join retained ground without relaxing physica
       "utf8",
     ),
   )
+  if (!options) throw new Error("Repro must include native fanout options")
   const before = JSON.stringify([srj, options])
   expect(options.allowSameNetMerges).toBeUndefined()
   const solver = new FanoutSolver(srj, options)
