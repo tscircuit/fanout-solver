@@ -1,9 +1,8 @@
 import { DATASET31_DIRECTION_CASES } from "../scripts/generate-repro/dataset31-source"
 
 export const benchmarkSamples = DATASET31_DIRECTION_CASES.map((sample) => ({
+  ...sample,
   dataset: "dataset31" as const,
-  id: sample.id,
-  exitPosition: sample.exitPosition,
 }))
 
 const keys = benchmarkSamples.map((sample) => `${sample.dataset}/${sample.id}`)
