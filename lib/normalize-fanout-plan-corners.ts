@@ -584,6 +584,7 @@ export function normalizeFanoutPlanCorners(
   )
     return null
   let plans = [...params.plans]
+  let repairedSourceCorners = false
   if (params.repairPlaneSourceCorners || params.repairSignalSourceCorners) {
     for (let index = 0; index < plans.length; index++) {
       const plan = plans[index]!
@@ -610,7 +611,15 @@ export function normalizeFanoutPlanCorners(
       )
       if (!normalized) return null
       plans[index] = normalized
+      repairedSourceCorners = true
     }
+  }
+  // Source chamfers can shorten a tightly matched bus before target-side
+  // normalization gets a chance to repair its remaining geometry.
+  if (repairedSourceCorners && params.rematchRepairedLengths) {
+    const rematched = params.rematchRepairedLengths(plans)
+    if (!rematched) return null
+    plans = rematched
   }
   const sourceNormalizedPlans = [...plans]
   const pairs = getDeclaredDifferentialPairs(params.inputSrj)

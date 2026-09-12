@@ -4,6 +4,7 @@ import { gunzipSync } from "node:zlib"
 import { getSvgFromGraphicsObject, mergeGraphics } from "graphics-debug"
 import { FanoutSolver } from "lib/fanout-solver"
 import type { FanoutSolverOptions } from "lib/types"
+import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 
 const captured: readonly [
   ConstructorParameters<typeof FanoutSolver>[0],
@@ -16,7 +17,7 @@ const captured: readonly [
   ).toString("utf8"),
 )
 
-test.failing("routes every connection in the exact AM62L DDR4 SoC fanout", async () => {
+test("routes every connection in the exact AM62L DDR4 SoC fanout", async () => {
   // This is the exact SOC_ESCAPE constructor input captured from the real
   // AM62L + x16 DDR4 Core TSX circuit, including all physical obstacles.
   const [inputSrj, options] = captured
@@ -53,4 +54,50 @@ test.failing("routes every connection in the exact AM62L DDR4 SoC fanout", async
   const output = solver.getOutput()
   expect(output.fanoutTraces).toHaveLength(49)
   expect(output.validation).toMatchObject({ valid: true, issues: [] })
+  for (const trace of output.fanoutTraces) {
+    let wireRun: Array<{ x: number; y: number; layer: string }> = []
+    for (const routePoint of trace.route) {
+      if (routePoint.route_type !== "wire") {
+        wireRun = []
+        continue
+      }
+      if (wireRun.at(-1)?.layer !== routePoint.layer) wireRun = []
+      wireRun.push(routePoint)
+      if (wireRun.length < 3) continue
+      const start = wireRun.at(-3)!
+      const corner = wireRun.at(-2)!
+      const end = wireRun.at(-1)!
+      const incoming = {
+        x: corner.x - start.x,
+        y: corner.y - start.y,
+      }
+      const outgoing = {
+        x: end.x - corner.x,
+        y: end.y - corner.y,
+      }
+      const incomingLength = Math.hypot(incoming.x, incoming.y)
+      const outgoingLength = Math.hypot(outgoing.x, outgoing.y)
+      if (incomingLength < 1e-9 || outgoingLength < 1e-9) continue
+      const normalizedDot =
+        (incoming.x * outgoing.x + incoming.y * outgoing.y) /
+        (incomingLength * outgoingLength)
+      expect(Math.abs(normalizedDot)).toBeGreaterThan(1e-6)
+    }
+  }
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj,
+      routedSrj: {
+        ...output.simpleRouteJson,
+        traces: output.fanoutTraces,
+      },
+      clearance: inputSrj.minViaEdgeToPadEdgeClearance!,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({
+    valid: true,
+    checkedTraceCount: 49,
+    checkedViaCount: 49,
+    issues: [],
+  })
 }, 1_800_000)
