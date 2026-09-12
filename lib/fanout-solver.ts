@@ -14,11 +14,7 @@ import {
   getExitEdgeForDirection,
 } from "./boundary-exit"
 import { buildOutputSimpleRouteJson } from "./build-output"
-import {
-  getDenseBoundaryRoutingMode,
-  orderDenseBoundaryBusesForRouting,
-  shouldUseJointBoundaryViaReservation,
-} from "./dense-boundary-routing-policy"
+import { orderDenseBoundaryBuses } from "./order-dense-boundary-buses"
 import {
   type CompleteOriginalEndpointsResult,
   completeOriginalEndpoints,
@@ -769,6 +765,20 @@ function busUsesCoordinatedWinding(bus: PreparedBus): boolean {
       bus.connections.every(
         (connection) => connection.hasExplicitLayeredExitTarget === true,
       ),
+  )
+}
+
+export function shouldUseJointBoundaryViaReservation(
+  boundaryBusConnectionCounts: readonly number[],
+): boolean {
+  return (
+    boundaryBusConnectionCounts.length === 5 ||
+    boundaryBusConnectionCounts.length === 6 ||
+    boundaryBusConnectionCounts.length === 7 ||
+    boundaryBusConnectionCounts.length === 8 ||
+    boundaryBusConnectionCounts.length === 9 ||
+    (boundaryBusConnectionCounts.length === 4 &&
+      new Set(boundaryBusConnectionCounts).size > 1)
   )
 }
 
@@ -1950,6 +1960,21 @@ export class FanoutSolver extends BaseSolver {
     const unsortedBoundaryBuses = params.busesInRoutingOrder.filter(
       (bus) => bus.termination.type === "boundary",
     )
+    const hasOnlyBoundaryBuses =
+      unsortedBoundaryBuses.length === params.busesInRoutingOrder.length
+    const firstMultiConnectionBoundaryBus = unsortedBoundaryBuses.find(
+      (bus) => bus.connections.length > 1,
+    )
+    // Separate atomic fields can fence singleton corridors in boundary-only
+    // layouts. Reserve their vias jointly and route the atomic fields first.
+    const hasCompetingMixedWidthBoundaryBuses =
+      hasOnlyBoundaryBuses &&
+      firstMultiConnectionBoundaryBus !== undefined &&
+      unsortedBoundaryBuses.some((bus) => bus.connections.length === 1) &&
+      unsortedBoundaryBuses.some(
+        (bus) =>
+          bus !== firstMultiConnectionBoundaryBus && bus.connections.length > 1,
+      )
     const wideBoundaryBuses = unsortedBoundaryBuses.filter(
       (bus) => bus.connections.length >= 8,
     )
@@ -2195,7 +2220,11 @@ export class FanoutSolver extends BaseSolver {
         // control groups can usually route around their copper, while routing
         // a two-line corner bus first can consume a critical channel needed by
         // an eight-line winding bus and force the expensive fallback search.
-        if (useJointBoundaryViaReservation || wideBoundaryBuses.length > 0) {
+        if (
+          useJointBoundaryViaReservation ||
+          hasCompetingMixedWidthBoundaryBuses ||
+          wideBoundaryBuses.length > 0
+        ) {
           if (hasThreeWideBoundaryBuses) {
             const threeWidePriorityDifference =
               getThreeWideRoutingPriority(first) -
@@ -2380,19 +2409,16 @@ export class FanoutSolver extends BaseSolver {
     const boundaryBusConnectionCounts = boundaryBuses.map(
       (bus) => bus.connections.length,
     )
-    const denseBoundaryRoutingMode = getDenseBoundaryRoutingMode({
-      boundaryBusConnectionCounts,
-      planeBusCount: planeBuses.length,
-    })
     debugDense(
       "start",
       boundaryBuses.map((bus) => `${bus.busId}:${bus.connections.length}`),
       `planes:${planeBuses.length}`,
-      `joint:${useJointBoundaryViaReservation}`,
+      `joint:${useJointBoundaryViaReservation || hasCompetingMixedWidthBoundaryBuses}`,
     )
     if (
       boundaryBuses.length === 0 ||
-      denseBoundaryRoutingMode === null ||
+      (!hasCompetingMixedWidthBoundaryBuses &&
+        (boundaryBuses.length > 9 || planeBuses.length < 8)) ||
       boundaryBuses.some((bus) => !busUsesCoordinatedWinding(bus)) ||
       planeBuses.some((bus) => bus.connections.length !== 1) ||
       boundaryBuses.length + planeBuses.length !==
@@ -2731,28 +2757,29 @@ export class FanoutSolver extends BaseSolver {
     const initiallyMatchedBoundaryBuses = boundaryBuses.filter(
       (bus) => !viaProvisionalBoundaryBusSet.has(bus),
     )
-    const jointViaPoints = useJointBoundaryViaReservation
-      ? matchComponentDogboneViaSites(
-          [
-            ...activeBoundaryReservationPlaneBuses,
-            ...initiallyMatchedBoundaryBuses,
-          ],
-          {
-            viaDiameter: this.config.viaDiameter,
-            viaHoleDiameter: this.config.viaHoleDiameter,
-            traceWidth: this.config.traceWidth,
-            clearance: this.config.clearance,
-            maximumSearchStates: 100_000,
-            preferredViaPointsByConnectionIndex:
-              params.preferredBoundaryViaPoints,
-            preferredBoundaryPerpendicularSideByBusId,
-            preferBoundaryOutwardByBusId,
-            additionalObstacles: denseAdditionalObstacles,
-            preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
-            canShareCopper,
-          },
-        )
-      : null
+    const jointViaPoints =
+      useJointBoundaryViaReservation || hasCompetingMixedWidthBoundaryBuses
+        ? matchComponentDogboneViaSites(
+            [
+              ...activeBoundaryReservationPlaneBuses,
+              ...initiallyMatchedBoundaryBuses,
+            ],
+            {
+              viaDiameter: this.config.viaDiameter,
+              viaHoleDiameter: this.config.viaHoleDiameter,
+              traceWidth: this.config.traceWidth,
+              clearance: this.config.clearance,
+              maximumSearchStates: 100_000,
+              preferredViaPointsByConnectionIndex:
+                params.preferredBoundaryViaPoints,
+              preferredBoundaryPerpendicularSideByBusId,
+              preferBoundaryOutwardByBusId,
+              additionalObstacles: denseAdditionalObstacles,
+              preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
+              canShareCopper,
+            },
+          )
+        : null
     let seedViaPoints =
       jointViaPoints ??
       matchComponentDogboneViaSites(
@@ -2865,29 +2892,48 @@ export class FanoutSolver extends BaseSolver {
     yield
     if (seedViaPoints) {
       const denseBoundaryBusesInRoutingOrder =
-        orderDenseBoundaryBusesForRouting({
-          busesInRoutingOrder: [
-            ...(hasForeignAllLayerObstaclesInComponent
-              ? []
-              : multiLayerLeadingSingletonBuses),
-            ...boundaryBuses
-              .filter(
-                (bus) =>
-                  (hasForeignAllLayerObstaclesInComponent ||
-                    !multiLayerLeadingSingletonBuses.includes(bus)) &&
-                  !throughAllLeadingBuses.includes(bus),
-              )
-              .flatMap((bus) => [
-                ...throughAllLeadingBuses.filter(
-                  (candidate) =>
-                    getContainingWideSourceField(candidate) === bus,
-                ),
-                bus,
-              ]),
-          ],
-          busLayerAssignments: params.busLayerAssignments,
-          routingMode: denseBoundaryRoutingMode,
-        })
+        hasCompetingMixedWidthBoundaryBuses
+          ? orderDenseBoundaryBuses({
+              busesInRoutingOrder: [
+                ...(hasForeignAllLayerObstaclesInComponent
+                  ? []
+                  : multiLayerLeadingSingletonBuses),
+                ...boundaryBuses
+                  .filter(
+                    (bus) =>
+                      (hasForeignAllLayerObstaclesInComponent ||
+                        !multiLayerLeadingSingletonBuses.includes(bus)) &&
+                      !throughAllLeadingBuses.includes(bus),
+                  )
+                  .flatMap((bus) => [
+                    ...throughAllLeadingBuses.filter(
+                      (candidate) =>
+                        getContainingWideSourceField(candidate) === bus,
+                    ),
+                    bus,
+                  ]),
+              ],
+              busLayerAssignments: params.busLayerAssignments,
+            })
+          : [
+              ...(hasForeignAllLayerObstaclesInComponent
+                ? []
+                : multiLayerLeadingSingletonBuses),
+              ...boundaryBuses
+                .filter(
+                  (bus) =>
+                    (hasForeignAllLayerObstaclesInComponent ||
+                      !multiLayerLeadingSingletonBuses.includes(bus)) &&
+                    !throughAllLeadingBuses.includes(bus),
+                )
+                .flatMap((bus) => [
+                  ...throughAllLeadingBuses.filter(
+                    (candidate) =>
+                      getContainingWideSourceField(candidate) === bus,
+                  ),
+                  bus,
+                ]),
+            ]
       const allWideBusesExitDirectly = wideBoundaryBuses.every(
         (bus) =>
           bus.exitEdge &&
@@ -3630,10 +3676,9 @@ export class FanoutSolver extends BaseSolver {
           debugDense("plane-reservations:expanded", planeBuses.length)
         }
       }
-      const firstBoundaryCandidates =
-        denseBoundaryRoutingMode === "large_boundary_only"
-          ? denseBoundaryBusesInRoutingOrder
-          : denseBoundaryBusesInRoutingOrder.slice(0, 1)
+      const firstBoundaryCandidates = hasCompetingMixedWidthBoundaryBuses
+        ? denseBoundaryBusesInRoutingOrder
+        : denseBoundaryBusesInRoutingOrder.slice(0, 1)
       let firstBoundaryBus: PreparedBus | undefined
       for (const candidate of firstBoundaryCandidates) {
         const candidateRouted = yield* routeMatchedBoundaryBusSteps(candidate)
