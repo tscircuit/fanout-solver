@@ -7,6 +7,9 @@ test("comment reporting uses trusted workflow code on a different runner from PR
     ).text(),
   ) as any
   expect(workflow.on.issue_comment.types).toEqual(["created"])
+  expect(workflow.on.workflow_dispatch.inputs.pr_number.description).toContain(
+    "open or merged PR",
+  )
   expect(workflow.permissions).toEqual({})
   const { prepare, benchmark, report } = workflow.jobs
   expect(benchmark["runs-on"]).toBe("blacksmith-32vcpu-ubuntu-2404-arm")

@@ -396,12 +396,13 @@ I/O failures are command failures (nonzero exit).
 ### PR comment trigger
 
 Once `.github/workflows/benchmark.yml` is on the default branch, a repository
-writer can comment **`/benchmark`** on an open PR. The workflow captures that
-PR's exact head SHA, runs all 72 dataset 31 samples on a **32-vCPU Blacksmith ARM**
-runner, then updates a status comment with solve totals, per-sample results,
-and a link to the complete JSON/Markdown reports and captured inputs. The Actions
-UI also supports a manual run, optionally supplying an open PR number. No custom
-bot token is required.
+writer can comment **`/benchmark`** on an open or merged PR. The workflow
+captures an open PR's exact head SHA or a merged PR's immutable merge commit,
+runs all 72 dataset 31 samples on a **32-vCPU Blacksmith ARM** runner, then
+updates a status comment with solve totals, per-sample results, and a link to
+the complete JSON/Markdown reports and captured inputs. The Actions UI also
+supports a manual run, optionally supplying an open or merged PR number. No
+custom bot token is required.
 
 The runner defaults to 32 processes and a 120-second per-sample deadline; set
 repository variables `BENCHMARK_CONCURRENCY` and
