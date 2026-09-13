@@ -27,13 +27,17 @@ import { packBoundaryBusIntervals } from "./pack-boundary-bus-intervals"
 import { getBoundaryBusSlotOffsets } from "./get-boundary-bus-slot-offsets"
 import { getBoundaryApproachReservations } from "./get-boundary-approach-reservations"
 import { routeLayerReservedSourceEscapesSteps } from "./route-layer-reserved-source-escapes"
-import { routeReservedViaBusesSteps } from "./route-reserved-via-buses"
+import {
+  routeReservedViaBusesSteps,
+  type ReservedViaBusesSubsolverRequest,
+} from "./route-reserved-via-buses"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import { mergeLayeredBoundaryTargets } from "./merge-layered-boundary-targets"
 import { hasAlignedOppositeApproach } from "./aligned-opposite-approach"
 import { hasOppositeWideExitOverSourceField } from "./opposite-wide-exit-over-source-field"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
 import { rerouteOverlongBusLanesSteps } from "./reroute-overlong-bus-lanes"
+import { isSubsolverRequest } from "./subsolver-request"
 import { repairBusLengthsWithTransitSteps } from "./repair-bus-lengths-with-transit"
 import { rerouteBusWithRetainedBoundaryTailsSteps } from "./reroute-bus-with-retained-boundary-tails"
 import type { FanoutRoutePlan, Point2D, PreparedBus } from "./types"
@@ -51,11 +55,16 @@ export interface LayerReservedBusesParams {
 }
 
 export interface LayerReservedRoutingProgress {
+  type?: never
   phase: "sources" | "route-layer" | "match-layer" | "repair-lengths"
   layer?: string
   routedConnectionCount: number
   iterations?: number
 }
+
+export type LayerReservedRoutingYield =
+  | LayerReservedRoutingProgress
+  | ReservedViaBusesSubsolverRequest
 
 interface FixedRoutingRetryPause {
   requested: boolean
@@ -181,7 +190,7 @@ export function getLayerReservedBusTargets(params: LayerReservedBusesParams) {
 /** Finish each target layer around a complete, shared set of source reservations. */
 export function* routeLayerReservedBusesSteps(
   params: LayerReservedBusesParams,
-): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
+): Generator<LayerReservedRoutingYield, FanoutRoutePlan[] | null, unknown> {
   const attemptedWideSourceRepairs = new Set<string>()
   let deferredFixedRouting:
     | ReturnType<typeof routeLayerReservedAttemptSteps>
@@ -263,7 +272,7 @@ function* routeLayerReservedAttemptSteps(
   attemptedWideSourceRepairs: Set<string>,
   initialSourcePolicy?: { travelCost: number; maximumIterations: number },
   fixedRetryPause?: FixedRoutingRetryPause,
-): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
+): Generator<LayerReservedRoutingYield, FanoutRoutePlan[] | null, unknown> {
   const { buses, srj, layerNames } = params
   const targets = getLayerReservedBusTargets(params)
   if (!targets) return null
@@ -563,6 +572,11 @@ function* routeLayerReservedAttemptSteps(
       })()
       let next = steps.next()
       while (!next.done) {
+        if (isSubsolverRequest(next.value)) {
+          const output = yield next.value
+          next = steps.next(output)
+          continue
+        }
         yield {
           phase: "route-layer",
           layer,
@@ -860,6 +874,11 @@ function* routeLayerReservedAttemptSteps(
         })
         let replacement = replacementSteps.next()
         while (!replacement.done) {
+          if (isSubsolverRequest(replacement.value)) {
+            const output = yield replacement.value
+            replacement = replacementSteps.next(output)
+            continue
+          }
           yield {
             phase: "repair-lengths",
             layer,

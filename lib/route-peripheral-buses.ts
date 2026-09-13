@@ -7,17 +7,18 @@ import { repairPairLengthsWithSourceTransitSteps } from "./repair-pair-lengths-w
 import { rerouteSourceOriginLengthsSteps } from "./reroute-source-origin-lengths"
 import type {
   LayerReservedBusesParams,
-  LayerReservedRoutingProgress,
+  LayerReservedRoutingYield,
 } from "./route-layer-reserved-buses"
 import { routeReservedViaBusesSteps } from "./route-reserved-via-buses"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
+import { isSubsolverRequest } from "./subsolver-request"
 import type { FanoutRoutePlan } from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
 
 /** Route a four-sided lead package as one transaction across its permitted signal layers. */
 export function* routePeripheralBusesSteps(
   params: LayerReservedBusesParams & { allowBlindAndBuriedVias?: boolean },
-): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null> {
+): Generator<LayerReservedRoutingYield, FanoutRoutePlan[] | null, unknown> {
   const { srj, buses, layerNames } = params
   yield { phase: "sources", routedConnectionCount: 0 }
   const sources = preparePeripheralSourceReservations(params)
@@ -74,6 +75,11 @@ export function* routePeripheralBusesSteps(
   })
   let step = routing.next()
   while (!step.done) {
+    if (isSubsolverRequest(step.value)) {
+      const output = yield step.value
+      step = routing.next(output)
+      continue
+    }
     yield {
       phase: "route-layer",
       iterations: step.value.iterations,

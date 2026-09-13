@@ -1,4 +1,4 @@
-import type { LayerReservedRoutingProgress } from "./route-layer-reserved-buses"
+import type { LayerReservedRoutingYield } from "./route-layer-reserved-buses"
 import type { FanoutRoutePlan } from "./types"
 
 export interface LayerReservedAttemptState {
@@ -17,12 +17,8 @@ export function* retryLayerReservedRoutingSteps(
   sourceOriginRouting: boolean,
   attempt: (
     state: LayerReservedAttemptState,
-  ) => Generator<
-    LayerReservedRoutingProgress,
-    FanoutRoutePlan[] | null,
-    unknown
-  >,
-): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
+  ) => Generator<LayerReservedRoutingYield, FanoutRoutePlan[] | null, unknown>,
+): Generator<LayerReservedRoutingYield, FanoutRoutePlan[] | null, unknown> {
   const protectedState: LayerReservedAttemptState = {
     reserveFutureApproaches: true,
     failedNarrowGroup: false,
