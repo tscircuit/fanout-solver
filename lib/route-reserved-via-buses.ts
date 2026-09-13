@@ -15,6 +15,7 @@ import {
   PortfolioSingleIntraNodeSolver,
   type SimpleRouteJson,
 } from "@tscircuit/capacity-autorouter"
+import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { getExitEdgeForDirection } from "./boundary-exit"
 import { cacheViaOccupantNeighborhoods } from "./cache-via-occupant-neighborhoods"
@@ -92,8 +93,6 @@ export interface RouteReservedViaBusesParams {
   sourceOriginPhysicalGridPhase?: boolean
   /** Reserve an exact perpendicular exit tail and use checked 45-degree entry links. */
   terminalApproachLength?: number
-  /** Publish the native router visualization lazily so non-visual runs do not pay to render it. */
-  onVisualizationAvailable?: (visualize: () => GraphicsObject) => void
 }
 
 export interface ReservedViaBusesProgress {
@@ -101,6 +100,16 @@ export interface ReservedViaBusesProgress {
   routedConnectionCount: number
   connectionCount: number
 }
+
+export interface ReservedViaBusesSubsolverRequest
+  extends ReservedViaBusesProgress {
+  type: "subsolver"
+  solver: BaseSolver
+}
+
+export type ReservedViaBusesYield =
+  | ReservedViaBusesProgress
+  | ReservedViaBusesSubsolverRequest
 
 function getBusTargetLayer(
   params: RouteReservedViaBusesParams,
@@ -126,12 +135,7 @@ type MoveArgs = [number, number, number, boolean, number, number, number]
  * The two overrides supply immutable copper and retain overlapping keepouts;
  * they do not replace the negotiated router's path search or rip-up decisions.
  */
-interface NegotiatedRouter {
-  solved: boolean
-  failed: boolean
-  iterations: number
-  visualize(): GraphicsObject
-  MAX_ITERATIONS: number
+interface NegotiatedRouter extends BaseSolver {
   MAX_RIPS: number
   planeSize: number
   layers: number
@@ -219,6 +223,87 @@ interface NegotiatedRouter {
   ): void
   shouldSkipFixedPortHalo(flatIndex: number, connectionId: number): boolean
   addSharedOccupant(flatIndex: number, connectionId: number): void
+}
+
+interface BatchedReservedViaRoutingSolverOptions {
+  router: NegotiatedRouter
+  connectionCount: number
+  sourceOrigin: boolean
+  maximumPartialCandidates: number
+}
+
+class BatchedReservedViaRoutingSolver extends BaseSolver {
+  readonly partialCandidates: HdRoute[][] = []
+  private readonly partialSignatures = new Set<string>()
+
+  constructor(
+    private readonly options: BatchedReservedViaRoutingSolverOptions,
+  ) {
+    super()
+    this.activeSubSolver = options.router
+    this.MAX_ITERATIONS = Math.ceil(options.router.MAX_ITERATIONS / 5_000) + 1
+  }
+
+  override _step(): void {
+    const { router } = this.options
+    for (
+      let batch = 0;
+      batch < 5_000 && !router.solved && !router.failed;
+      batch++
+    )
+      router.step()
+    this.collectPartialCandidate()
+    this.stats = {
+      iterations: router.iterations,
+      routedConnectionCount: router.getSolvedRouteCount(),
+      connectionCount: this.options.connectionCount,
+    }
+    if (router.solved || router.failed) {
+      this.activeSubSolver = null
+      this.solved = true
+    }
+  }
+
+  private collectPartialCandidate(): void {
+    const { router, connectionCount, sourceOrigin, maximumPartialCandidates } =
+      this.options
+    if (
+      maximumPartialCandidates === 0 ||
+      connectionCount < (sourceOrigin ? 2 : 3) ||
+      router.getSolvedRouteCount() !== connectionCount - 1
+    )
+      return
+    const output = router.getOutput()
+    const signature = output
+      .map((route) => {
+        const middle = route.route[Math.floor(route.route.length / 2)]!
+        return `${route.connectionName}:${route.route.length}:${middle.x},${middle.y}`
+      })
+      .sort()
+      .join(";")
+    if (
+      this.partialSignatures.has(signature) ||
+      (sourceOrigin &&
+        this.partialCandidates.length >= maximumPartialCandidates)
+    )
+      return
+    this.partialSignatures.add(signature)
+    this.partialCandidates.push(output)
+    if (this.partialCandidates.length > maximumPartialCandidates)
+      this.partialCandidates.shift()
+  }
+
+  computeProgress(): number {
+    return this.options.router.iterations / this.options.router.MAX_ITERATIONS
+  }
+
+  override getConstructorParams(): [BatchedReservedViaRoutingSolverOptions] {
+    return [this.options]
+  }
+
+  override visualize(): GraphicsObject {
+    return this.activeSubSolver?.visualize() ?? this.options.router.visualize()
+  }
 }
 
 type Blocker =
@@ -445,14 +530,14 @@ function convertRoutes(
 /** Negotiated fixed-via routing; only fully validated, complete buses are returned. */
 export function routeReservedViaBusesSteps(
   params: RouteReservedViaBusesParams,
-): Generator<ReservedViaBusesProgress, FanoutRoutePlan[] | null, unknown> {
+): Generator<ReservedViaBusesYield, FanoutRoutePlan[] | null, unknown> {
   return routeReservedViaBusesWorker(params, new WeakMap())
 }
 
 function* routeReservedViaBusesWorker(
   params: RouteReservedViaBusesParams,
   validatedTerminalSplices: WeakMap<FanoutRoutePlan, BoundaryTerminalSplice>,
-): Generator<ReservedViaBusesProgress, FanoutRoutePlan[] | null, unknown> {
+): Generator<ReservedViaBusesYield, FanoutRoutePlan[] | null, unknown> {
   const {
     buses,
     allBuses,
@@ -1411,49 +1496,34 @@ function* routeReservedViaBusesWorker(
   }
   // A rip-up search can discard its best topology before reaching its limit.
   // Retain a few distinct one-short candidates, but never expose partial buses.
-  const partialCandidates: HdRoute[][] = []
-  const partialSignatures = new Set<string>()
   const maximumPartialCandidates = sourceOrigin
     ? maximumSourceOriginRepairAttempts
     : maximumLocalRepairAttempts
-  while (!router.solved && !router.failed) {
-    for (
-      let batch = 0;
-      batch < 5_000 && !router.solved && !router.failed;
-      batch++
-    )
-      router.step()
-    const routedConnectionCount = router.getSolvedRouteCount()
-    params.onVisualizationAvailable?.(() => router.visualize())
-    if (
-      maximumPartialCandidates > 0 &&
-      connections.length >= (sourceOrigin ? 2 : 3) &&
-      routedConnectionCount === connections.length - 1
-    ) {
-      const output = router.getOutput()
-      const signature = output
-        .map((route) => {
-          const middle = route.route[Math.floor(route.route.length / 2)]!
-          return `${route.connectionName}:${route.route.length}:${middle.x},${middle.y}`
-        })
-        .sort()
-        .join(";")
-      if (
-        !partialSignatures.has(signature) &&
-        (!sourceOrigin || partialCandidates.length < maximumPartialCandidates)
-      ) {
-        partialSignatures.add(signature)
-        partialCandidates.push(output)
-        if (partialCandidates.length > maximumPartialCandidates)
-          partialCandidates.shift()
-      }
-    }
+  router.setup()
+  const routingSolver = new BatchedReservedViaRoutingSolver({
+    router,
+    connectionCount: connections.length,
+    sourceOrigin,
+    maximumPartialCandidates,
+  })
+  // FanoutWorkSolver adopts this child through its standard activeSubSolver
+  // path. Generator-only callers resume here and advance the same child below.
+  yield {
+    type: "subsolver",
+    solver: routingSolver,
+    iterations: router.iterations,
+    routedConnectionCount: router.getSolvedRouteCount(),
+    connectionCount: connections.length,
+  }
+  while (!routingSolver.solved && !routingSolver.failed) {
+    routingSolver.step()
     yield {
       iterations: router.iterations,
-      routedConnectionCount,
+      routedConnectionCount: router.getSolvedRouteCount(),
       connectionCount: connections.length,
     }
   }
+  const { partialCandidates } = routingSolver
   const makePrefixes = (routed: ReadonlySet<number>): FanoutRoutePlan[] =>
     allBuses.flatMap((bus) =>
       bus.connections

@@ -21,14 +21,16 @@ import {
   routeSourceOriginBusesSteps,
 } from "./route-source-origin-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
-import type { GraphicsObject } from "graphics-debug"
 import { sourceTransitHasMajorityCrossings } from "./source-transit-crossing-pressure"
 import { LayerRoutingAttempts } from "./layer-routing-attempts"
 import { packBoundaryBusIntervals } from "./pack-boundary-bus-intervals"
 import { getBoundaryBusSlotOffsets } from "./get-boundary-bus-slot-offsets"
 import { getBoundaryApproachReservations } from "./get-boundary-approach-reservations"
 import { routeLayerReservedSourceEscapesSteps } from "./route-layer-reserved-source-escapes"
-import { routeReservedViaBusesSteps } from "./route-reserved-via-buses"
+import {
+  routeReservedViaBusesSteps,
+  type ReservedViaBusesSubsolverRequest,
+} from "./route-reserved-via-buses"
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import { mergeLayeredBoundaryTargets } from "./merge-layered-boundary-targets"
 import { hasAlignedOppositeApproach } from "./aligned-opposite-approach"
@@ -49,16 +51,19 @@ export interface LayerReservedBusesParams {
   viaHoleDiameter: number
   /** Choose first vias jointly for the widest constrained source group. */
   sourceOriginRouting?: boolean
-  /** Forward a lazy native routing view to interactive solver debuggers. */
-  onVisualizationAvailable?: (visualize: () => GraphicsObject) => void
 }
 
 export interface LayerReservedRoutingProgress {
+  type?: never
   phase: "sources" | "route-layer" | "match-layer" | "repair-lengths"
   layer?: string
   routedConnectionCount: number
   iterations?: number
 }
+
+export type LayerReservedRoutingYield =
+  | LayerReservedRoutingProgress
+  | ReservedViaBusesSubsolverRequest
 
 interface FixedRoutingRetryPause {
   requested: boolean
@@ -184,7 +189,7 @@ export function getLayerReservedBusTargets(params: LayerReservedBusesParams) {
 /** Finish each target layer around a complete, shared set of source reservations. */
 export function* routeLayerReservedBusesSteps(
   params: LayerReservedBusesParams,
-): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
+): Generator<LayerReservedRoutingYield, FanoutRoutePlan[] | null, unknown> {
   const attemptedWideSourceRepairs = new Set<string>()
   let deferredFixedRouting:
     | ReturnType<typeof routeLayerReservedAttemptSteps>
@@ -266,7 +271,7 @@ function* routeLayerReservedAttemptSteps(
   attemptedWideSourceRepairs: Set<string>,
   initialSourcePolicy?: { travelCost: number; maximumIterations: number },
   fixedRetryPause?: FixedRoutingRetryPause,
-): Generator<LayerReservedRoutingProgress, FanoutRoutePlan[] | null, unknown> {
+): Generator<LayerReservedRoutingYield, FanoutRoutePlan[] | null, unknown> {
   const { buses, srj, layerNames } = params
   const targets = getLayerReservedBusTargets(params)
   if (!targets) return null
@@ -566,6 +571,11 @@ function* routeLayerReservedAttemptSteps(
       })()
       let next = steps.next()
       while (!next.done) {
+        if ("type" in next.value && next.value.type === "subsolver") {
+          const output = yield next.value
+          next = steps.next(output)
+          continue
+        }
         yield {
           phase: "route-layer",
           layer,
@@ -863,6 +873,14 @@ function* routeLayerReservedAttemptSteps(
         })
         let replacement = replacementSteps.next()
         while (!replacement.done) {
+          if (
+            "type" in replacement.value &&
+            replacement.value.type === "subsolver"
+          ) {
+            const output = yield replacement.value
+            replacement = replacementSteps.next(output)
+            continue
+          }
           yield {
             phase: "repair-lengths",
             layer,
