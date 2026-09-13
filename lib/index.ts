@@ -1,10 +1,17 @@
 export { completeOriginalEndpoints } from "./complete-original-endpoints"
 export { getFanoutExitPositionConfig } from "./fanout-exit-position"
+export {
+  getBoundaryHandoffReport,
+  requestedExitsFromPreparedBuses,
+} from "./get-boundary-handoff-report"
 export { FanoutSolver } from "./fanout-solver"
 export { getCopperLayerColor } from "./layer-colors"
 export { getCopperLayerNames } from "./layer-names"
 export type {
   Bounds,
+  BoundaryHandoffEndpoint,
+  BoundaryHandoffLayerReport,
+  BoundaryHandoffReport,
   FanoutAttemptSummary,
   FanoutAvailableCornerAndSide,
   FanoutAvailableCornerAndSideAlias,

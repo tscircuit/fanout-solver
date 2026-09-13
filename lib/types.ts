@@ -251,6 +251,35 @@ export interface FanoutSolverOutput {
   busDirections: Readonly<Record<string, FanoutDirection>>
   attempts: FanoutAttemptSummary[]
   validation: FanoutValidationReport
+  boundaryHandoff: BoundaryHandoffReport
+}
+
+export interface BoundaryHandoffEndpoint {
+  connectionName: string
+  busId: string
+  layer: string
+  direction: FanoutDirection
+  actual: Point2D
+  requested?: Point2D
+  alongEdgeActual: number
+  alongEdgeRequested?: number
+  deviationMm: number | null
+}
+
+export interface BoundaryHandoffLayerReport {
+  layer: string
+  endpoints: BoundaryHandoffEndpoint[]
+  requestedOrder: string[]
+  actualOrder: string[]
+  inversionCount: number
+  minimumPitchMm: number | null
+}
+
+export interface BoundaryHandoffReport {
+  layers: BoundaryHandoffLayerReport[]
+  endpointCount: number
+  inversionCount: number
+  minimumPitchMm: number | null
 }
 
 export interface FanoutEndpointCompletionReport {
