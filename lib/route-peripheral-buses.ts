@@ -11,6 +11,7 @@ import type {
 } from "./route-layer-reserved-buses"
 import { routeReservedViaBusesSteps } from "./route-reserved-via-buses"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
+import { isSubsolverRequest } from "./subsolver-request"
 import type { FanoutRoutePlan } from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
 
@@ -74,7 +75,7 @@ export function* routePeripheralBusesSteps(
   })
   let step = routing.next()
   while (!step.done) {
-    if ("type" in step.value && step.value.type === "subsolver") {
+    if (isSubsolverRequest(step.value)) {
       const output = yield step.value
       step = routing.next(output)
       continue

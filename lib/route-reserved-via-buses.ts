@@ -17,6 +17,7 @@ import {
 } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import type { SubsolverRequest } from "./subsolver-request"
 import { getExitEdgeForDirection } from "./boundary-exit"
 import { cacheViaOccupantNeighborhoods } from "./cache-via-occupant-neighborhoods"
 import {
@@ -101,11 +102,8 @@ export interface ReservedViaBusesProgress {
   connectionCount: number
 }
 
-export interface ReservedViaBusesSubsolverRequest
-  extends ReservedViaBusesProgress {
-  type: "subsolver"
-  solver: BaseSolver
-}
+export type ReservedViaBusesSubsolverRequest = ReservedViaBusesProgress &
+  SubsolverRequest
 
 export type ReservedViaBusesYield =
   | ReservedViaBusesProgress

@@ -37,6 +37,7 @@ import { hasAlignedOppositeApproach } from "./aligned-opposite-approach"
 import { hasOppositeWideExitOverSourceField } from "./opposite-wide-exit-over-source-field"
 import { shortcutFanoutPlans } from "./shortcut-fanout-plans"
 import { rerouteOverlongBusLanesSteps } from "./reroute-overlong-bus-lanes"
+import { isSubsolverRequest } from "./subsolver-request"
 import { repairBusLengthsWithTransitSteps } from "./repair-bus-lengths-with-transit"
 import { rerouteBusWithRetainedBoundaryTailsSteps } from "./reroute-bus-with-retained-boundary-tails"
 import type { FanoutRoutePlan, Point2D, PreparedBus } from "./types"
@@ -571,7 +572,7 @@ function* routeLayerReservedAttemptSteps(
       })()
       let next = steps.next()
       while (!next.done) {
-        if ("type" in next.value && next.value.type === "subsolver") {
+        if (isSubsolverRequest(next.value)) {
           const output = yield next.value
           next = steps.next(output)
           continue
@@ -873,10 +874,7 @@ function* routeLayerReservedAttemptSteps(
         })
         let replacement = replacementSteps.next()
         while (!replacement.done) {
-          if (
-            "type" in replacement.value &&
-            replacement.value.type === "subsolver"
-          ) {
+          if (isSubsolverRequest(replacement.value)) {
             const output = yield replacement.value
             replacement = replacementSteps.next(output)
             continue

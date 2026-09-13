@@ -65,6 +65,7 @@ import { routeSingleLayerWithAdaptiveExitsSteps } from "./route-single-layer-ada
 import { routeSingleLayerWithPushAndShove } from "./route-single-layer-push-shove"
 import { getRuntimeProcess } from "./runtime-process"
 import { shortenBusPlans } from "./shorten-bus-plans"
+import { isSubsolverRequest, type SubsolverRequest } from "./subsolver-request"
 import type {
   AssignmentAttempt,
   Bounds,
@@ -123,12 +124,7 @@ interface MixedTerminationState {
 
 type RoutingStrategy = "default" | "group-by-layer" | "deep-first"
 
-interface FanoutSubsolverRequest {
-  type: "subsolver"
-  solver: BaseSolver
-}
-
-type FanoutWorkYield = undefined | FanoutSubsolverRequest
+type FanoutWorkYield = undefined | SubsolverRequest
 
 class FanoutWorkSolver<T> extends BaseSolver {
   private output: T | undefined
@@ -180,10 +176,8 @@ class FanoutWorkSolver<T> extends BaseSolver {
       this.solved = true
       return
     }
-    const yielded = result.value as Partial<FanoutSubsolverRequest> | undefined
-    if (yielded?.type === "subsolver" && yielded.solver instanceof BaseSolver) {
-      this.activeSubSolver = yielded.solver
-    }
+    if (isSubsolverRequest(result.value))
+      this.activeSubSolver = result.value.solver
   }
 
   computeProgress(): number {
@@ -1287,7 +1281,7 @@ export class FanoutSolver extends BaseSolver {
       : routeLayerReservedBusesSteps(params)
     let next = steps.next()
     while (!next.done) {
-      if ("type" in next.value && next.value.type === "subsolver") {
+      if (isSubsolverRequest(next.value)) {
         this.stats = {
           ...this.stats,
           phase: "layer-reserved-route-layer",
