@@ -1,0 +1,70 @@
+import type { createAm3352FanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-am3352-fanout-sample"
+import type { createAm62lFanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-am62l-fanout-sample"
+import type { createImx6ullFanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-imx6ull-fanout-sample"
+import type { createK230FanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-k230-fanout-sample"
+import type { createRk3308FanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-rk3308-fanout-sample"
+import type { createT113s3FanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-t113s3-fanout-sample"
+import type { DATASET31_DIRECTION_CASES } from "./dataset31-source"
+
+type Dataset31DirectionCase = (typeof DATASET31_DIRECTION_CASES)[number]
+type Dataset31Chip = Dataset31DirectionCase["chip"]
+
+export type Dataset31Sample =
+  | Awaited<ReturnType<typeof createAm62lFanoutSample>>
+  | Awaited<ReturnType<typeof createRk3308FanoutSample>>
+  | Awaited<ReturnType<typeof createK230FanoutSample>>
+  | Awaited<ReturnType<typeof createImx6ullFanoutSample>>
+  | Awaited<ReturnType<typeof createT113s3FanoutSample>>
+  | Awaited<ReturnType<typeof createAm3352FanoutSample>>
+
+type Dataset31SampleCreator = (
+  exitPosition: Dataset31DirectionCase["exitPosition"],
+) => Promise<Dataset31Sample>
+
+const sampleCreators = {
+  am62l: async (exitPosition) => {
+    const { createAm62lFanoutSample } = await import(
+      "@tscircuit/dataset-fanout31-am62l/lib/create-am62l-fanout-sample"
+    )
+    return createAm62lFanoutSample(exitPosition)
+  },
+  rk3308: async (exitPosition) => {
+    const { createRk3308FanoutSample } = await import(
+      "@tscircuit/dataset-fanout31-am62l/lib/create-rk3308-fanout-sample"
+    )
+    return createRk3308FanoutSample(exitPosition)
+  },
+  k230: async (exitPosition) => {
+    const { createK230FanoutSample } = await import(
+      "@tscircuit/dataset-fanout31-am62l/lib/create-k230-fanout-sample"
+    )
+    return createK230FanoutSample(exitPosition)
+  },
+  imx6ull: async (exitPosition) => {
+    const { createImx6ullFanoutSample } = await import(
+      "@tscircuit/dataset-fanout31-am62l/lib/create-imx6ull-fanout-sample"
+    )
+    return createImx6ullFanoutSample(exitPosition)
+  },
+  t113s3: async (exitPosition) => {
+    const { createT113s3FanoutSample } = await import(
+      "@tscircuit/dataset-fanout31-am62l/lib/create-t113s3-fanout-sample"
+    )
+    return createT113s3FanoutSample(exitPosition)
+  },
+  am3352: async (exitPosition) => {
+    const { createAm3352FanoutSample } = await import(
+      "@tscircuit/dataset-fanout31-am62l/lib/create-am3352-fanout-sample"
+    )
+    return createAm3352FanoutSample(exitPosition)
+  },
+} satisfies Record<Dataset31Chip, Dataset31SampleCreator>
+
+export async function createDataset31Sample(
+  direction: Pick<Dataset31DirectionCase, "chip" | "exitPosition" | "id">,
+): Promise<Dataset31Sample> {
+  const sample = await sampleCreators[direction.chip](direction.exitPosition)
+  if (sample.id !== direction.id)
+    throw new Error(`Upstream sample id mismatch: ${sample.id}`)
+  return sample
+}

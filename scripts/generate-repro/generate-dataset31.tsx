@@ -1,12 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
-import { createAm3352FanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-am3352-fanout-sample"
-import { createAm62lFanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-am62l-fanout-sample"
-import { createImx6ullFanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-imx6ull-fanout-sample"
-import { createK230FanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-k230-fanout-sample"
-import { createRk3308FanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-rk3308-fanout-sample"
-import { createT113s3FanoutSample } from "@tscircuit/dataset-fanout31-am62l/lib/create-t113s3-fanout-sample"
+import { createDataset31Sample } from "./create-dataset31-sample"
 import { dataset31Source, DATASET31_DIRECTION_CASES } from "./dataset31-source"
 
 /** Capture the upstream TSX/core inputs; this does not run this repo's solver. */
@@ -26,21 +21,7 @@ export async function generateDataset31Inputs(
   // Core's capture hook is process-local. Generate sequentially and only then
   // send the frozen constructor inputs to independent local-solver workers.
   for (const direction of selected) {
-    const createSample =
-      direction.chip === "am62l"
-        ? createAm62lFanoutSample
-        : direction.chip === "rk3308"
-          ? createRk3308FanoutSample
-          : direction.chip === "k230"
-            ? createK230FanoutSample
-            : direction.chip === "imx6ull"
-              ? createImx6ullFanoutSample
-              : direction.chip === "t113s3"
-                ? createT113s3FanoutSample
-                : createAm3352FanoutSample
-    const sample = await createSample(direction.exitPosition)
-    if (sample.id !== direction.id)
-      throw new Error(`Upstream sample id mismatch: ${sample.id}`)
+    const sample = await createDataset31Sample(direction)
     const path = resolve(outputDirectory, `${sample.id}.json`)
     await writeFile(
       path,
