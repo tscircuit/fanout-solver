@@ -1,6 +1,6 @@
 import { GenericSolverDebugger } from "@tscircuit/solver-utils/react"
 import { FanoutSolver } from "lib/fanout-solver"
-import { type ChangeEvent, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import {
   createDataset31Sample,
   type Dataset31Sample,
@@ -34,18 +34,21 @@ const buttonStyle: React.CSSProperties = {
   padding: "8px 12px",
 }
 
-const samplePromises = new Map<string, Promise<Dataset31Sample>>()
+const samplePromises = new WeakMap<
+  BenchmarkDefinition,
+  Promise<Dataset31Sample>
+>()
 
 function loadBenchmarkSample(
   definition: BenchmarkDefinition,
 ): Promise<Dataset31Sample> {
-  const cached = samplePromises.get(definition.id)
+  const cached = samplePromises.get(definition)
   if (cached) return cached
   const pending = createDataset31Sample(definition).catch((error) => {
-    samplePromises.delete(definition.id)
+    samplePromises.delete(definition)
     throw error
   })
-  samplePromises.set(definition.id, pending)
+  samplePromises.set(definition, pending)
   return pending
 }
 
@@ -97,15 +100,6 @@ export default function BenchmarkSamplesPage() {
     }
   }, [selectedDefinition])
 
-  const selectSample = (index: number): void => {
-    if (index < 0 || index >= benchmarkSamples.length) return
-    setSelectedIndex(index)
-  }
-
-  const onSelectSample = (event: ChangeEvent<HTMLSelectElement>): void => {
-    selectSample(Number(event.currentTarget.value))
-  }
-
   return (
     <div
       style={{
@@ -151,7 +145,9 @@ export default function BenchmarkSamplesPage() {
           >
             <button
               type="button"
-              onClick={() => selectSample(selectedIndex - 1)}
+              onClick={() =>
+                setSelectedIndex((index) => Math.max(0, index - 1))
+              }
               disabled={selectedIndex === 0}
               style={{
                 ...buttonStyle,
@@ -163,7 +159,9 @@ export default function BenchmarkSamplesPage() {
             </button>
             <select
               aria-label="Dataset 31 benchmark sample"
-              onChange={onSelectSample}
+              onChange={(event) =>
+                setSelectedIndex(Number(event.currentTarget.value))
+              }
               style={{ ...buttonStyle, maxWidth: "100%", width: 360 }}
               value={selectedIndex}
             >
@@ -181,7 +179,11 @@ export default function BenchmarkSamplesPage() {
             </select>
             <button
               type="button"
-              onClick={() => selectSample(selectedIndex + 1)}
+              onClick={() =>
+                setSelectedIndex((index) =>
+                  Math.min(benchmarkSamples.length - 1, index + 1),
+                )
+              }
               disabled={selectedIndex === benchmarkSamples.length - 1}
               style={{
                 ...buttonStyle,
