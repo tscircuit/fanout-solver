@@ -21,6 +21,7 @@ import {
   routeSourceOriginBusesSteps,
 } from "./route-source-origin-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import type { GraphicsObject } from "graphics-debug"
 import { sourceTransitHasMajorityCrossings } from "./source-transit-crossing-pressure"
 import { LayerRoutingAttempts } from "./layer-routing-attempts"
 import { packBoundaryBusIntervals } from "./pack-boundary-bus-intervals"
@@ -48,6 +49,8 @@ export interface LayerReservedBusesParams {
   viaHoleDiameter: number
   /** Choose first vias jointly for the widest constrained source group. */
   sourceOriginRouting?: boolean
+  /** Forward a lazy native routing view to interactive solver debuggers. */
+  onVisualizationAvailable?: (visualize: () => GraphicsObject) => void
 }
 
 export interface LayerReservedRoutingProgress {

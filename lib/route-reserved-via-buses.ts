@@ -15,6 +15,7 @@ import {
   PortfolioSingleIntraNodeSolver,
   type SimpleRouteJson,
 } from "@tscircuit/capacity-autorouter"
+import type { GraphicsObject } from "graphics-debug"
 import { getExitEdgeForDirection } from "./boundary-exit"
 import { cacheViaOccupantNeighborhoods } from "./cache-via-occupant-neighborhoods"
 import {
@@ -91,6 +92,8 @@ export interface RouteReservedViaBusesParams {
   sourceOriginPhysicalGridPhase?: boolean
   /** Reserve an exact perpendicular exit tail and use checked 45-degree entry links. */
   terminalApproachLength?: number
+  /** Publish the native router visualization lazily so non-visual runs do not pay to render it. */
+  onVisualizationAvailable?: (visualize: () => GraphicsObject) => void
 }
 
 export interface ReservedViaBusesProgress {
@@ -127,6 +130,7 @@ interface NegotiatedRouter {
   solved: boolean
   failed: boolean
   iterations: number
+  visualize(): GraphicsObject
   MAX_ITERATIONS: number
   MAX_RIPS: number
   planeSize: number
@@ -1420,6 +1424,7 @@ function* routeReservedViaBusesWorker(
     )
       router.step()
     const routedConnectionCount = router.getSolvedRouteCount()
+    params.onVisualizationAvailable?.(() => router.visualize())
     if (
       maximumPartialCandidates > 0 &&
       connections.length >= (sourceOrigin ? 2 : 3) &&

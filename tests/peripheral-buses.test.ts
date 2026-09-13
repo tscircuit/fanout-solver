@@ -109,10 +109,20 @@ test("routes every four-sided lead and exposed pad while preserving atomic paire
     },
     buses = prepareFanoutBuses(srj, options),
     original = JSON.stringify({ srj, buses })
-  const g = routePeripheralBusesSteps({ ...rules, srj, buses })
+  let nativeVisualization: () => ReturnType<FanoutSolver["visualize"]>
+  const g = routePeripheralBusesSteps({
+    ...rules,
+    srj,
+    buses,
+    onVisualizationAvailable: (visualize) => {
+      nativeVisualization = visualize
+    },
+  })
   let n = g.next()
   while (!n.done) n = g.next()
   const plans = n.value!
+  expect(nativeVisualization!).toBeFunction()
+  expect(nativeVisualization!().lines?.length).toBeGreaterThan(0)
   expect(plans).toHaveLength(9)
   expect(new Set(plans.map((p) => p.connectionIndex)).size).toBe(9)
   for (const bus of buses) {
@@ -184,8 +194,17 @@ test("routes every four-sided lead and exposed pad while preserving atomic paire
   expect(rejected.value).toBeNull()
   expect(JSON.stringify({ srj, buses })).toBe(original)
   const solver = new FanoutSolver(srj, { ...rules, ...options })
-  solver.solve()
+  let showedNativeRouting = false
+  while (!solver.solved && !solver.failed) {
+    solver.step()
+    const visualization = solver.visualize()
+    if ((visualization.lines?.length ?? 0) > 0) {
+      showedNativeRouting = true
+      expect(visualization.lines?.length).toBeGreaterThan(0)
+    }
+  }
   expect(solver.solved).toBe(true)
+  expect(showedNativeRouting).toBe(true)
   const publicOutput = solver.getOutput()
   expect(publicOutput.validation).toMatchObject({
     valid: true,

@@ -1105,6 +1105,7 @@ export class FanoutSolver extends BaseSolver {
   private activeOperation: ActiveFanoutOperation<unknown> | null = null
   private inProgressPlans: FanoutRoutePlan[] = []
   private activeRoutingVisualization: GraphicsObject | null = null
+  private activeLayerReservedVisualization: (() => GraphicsObject) | null = null
   private activeAdaptiveVisualization: GraphicsObject | null = null
   private bestAttempt: AssignmentAttempt | null = null
   private lengthMatchingFailure: FanoutValidationIssue | null = null
@@ -1279,6 +1280,9 @@ export class FanoutSolver extends BaseSolver {
     const params = {
       ...this.config,
       sourceOriginRouting,
+      onVisualizationAvailable: (visualize: () => GraphicsObject) => {
+        this.activeLayerReservedVisualization = visualize
+      },
       srj: this.routingSrj,
       buses: this.preparedBuses,
     }
@@ -1573,11 +1577,13 @@ export class FanoutSolver extends BaseSolver {
     generator: Generator<unknown, T, unknown>
     onSolved: (output: T) => void
     getProgress?: () => number
+    getVisualization?: () => GraphicsObject
   }): void {
     const solver = this.createWorkSolver(
       params.name,
       params.generator,
       params.getProgress,
+      params.getVisualization,
     )
     // Each work solver owns the termination budget for its generator. Keep the
     // parent alive for that declared work plus the step that consumes its result.
@@ -6673,6 +6679,7 @@ export class FanoutSolver extends BaseSolver {
         sourceOriginRouting ||
         this.shouldTryLayerReservedRouting()
       ) {
+        this.activeLayerReservedVisualization = null
         this.startOperation({
           name: "FanoutLayerReservedSolver",
           generator: this.evaluateLayerReservedRoutingSteps(
@@ -6693,6 +6700,9 @@ export class FanoutSolver extends BaseSolver {
           getProgress: () =>
             Number(this.stats.workUnit ?? 0) /
             Math.max(1, this.inputSrj.connections.length),
+          getVisualization: () =>
+            this.activeLayerReservedVisualization?.() ??
+            this.visualizeWorkState("FanoutLayerReservedSolver"),
         })
         this.stats = { phase: "prepare-layer-reserved-routing" }
         return
