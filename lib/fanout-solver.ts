@@ -79,6 +79,10 @@ import type {
   SimpleRouteJsonWithFanoutPlanes,
 } from "./types"
 import { validateFanoutSolution } from "./validate-fanout-solution"
+import {
+  getBoundaryHandoffReport,
+  requestedExitsFromPreparedBuses,
+} from "./get-boundary-handoff-report"
 import { visualizeSimpleRouteJson } from "./visualize-simple-route-json"
 
 // Browser Web Workers do not expose Node's `process` global. Keep a local,
@@ -6884,7 +6888,15 @@ export class FanoutSolver extends BaseSolver {
       ),
       attempts: [...this.attempts],
       validation,
+      boundaryHandoff: this.getBoundaryHandoffReport(),
     }
+  }
+
+  getBoundaryHandoffReport() {
+    return getBoundaryHandoffReport({
+      plans: this.bestAttempt?.plans ?? [],
+      requestedExits: requestedExitsFromPreparedBuses(this.preparedBuses),
+    })
   }
 
   getOutputSimpleRouteJson(): SimpleRouteJsonWithFanoutPlanes {
