@@ -86,7 +86,7 @@ export interface RouteViaMinimalWindingParams {
   forbidEarlyExitBoundaryContact?: boolean
   /** Internal path-only mode used before a boundary-side via is appended. */
   allowSourceLayerRouting?: boolean
-  /** Promote a blocked terminal while staying within maximumRouteOrderAttempts. */
+  /** Retry actual copper conflicts while staying within maximumRouteOrderAttempts. */
   adaptiveRouteOrder?: boolean
   /** Align a fine grid with pad/interstice centers instead of the boundary. */
   alignGridToPads?: boolean
@@ -977,6 +977,12 @@ export function* routeViaMinimalWindingAlternativesSteps(
       clearance,
     )
   const blockingSegmentIndex = createSegmentIndex(blockingSegments)
+  // Track only movable copper from this bus attempt, never fixed obstacles or
+  // earlier committed buses. Ownership survives failed-search cache hits.
+  const conflictOwnersBySegmentIndex = new WeakMap<
+    SegmentSpatialIndex,
+    Set<string>
+  >()
   const allBlockingVias = [...blockingVias, ...terminalVias]
   const maximumViaToTraceDistance = allBlockingVias.reduce(
     (maximum, { via }) =>
@@ -1082,6 +1088,9 @@ export function* routeViaMinimalWindingAlternativesSteps(
         ) <
         (segment.width + blocker.segment.width) / 2 + clearance - EPSILON
       ) {
+        conflictOwnersBySegmentIndex
+          .get(acceptedAttemptSegmentIndex)
+          ?.add(blocker.connectionName)
         return false
       }
     }
@@ -1308,6 +1317,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
     terminal: ViaMinimalWindingTerminal
     acceptedAttemptSegments: BlockingSegment[]
     laneBias: -1 | 0 | 1
+    blockingConnectionNames?: Set<string>
   }): Generator<
     {
       expandedStateCount: number
@@ -1320,6 +1330,12 @@ export function* routeViaMinimalWindingAlternativesSteps(
     const acceptedAttemptSegmentIndex = createSegmentIndex(
       acceptedAttemptSegments,
     )
+    if (params.blockingConnectionNames) {
+      conflictOwnersBySegmentIndex.set(
+        acceptedAttemptSegmentIndex,
+        params.blockingConnectionNames,
+      )
+    }
     const starts = connectorCandidates({
       terminal,
       endpoint: terminal.viaPoint,
@@ -1709,6 +1725,9 @@ export function* routeViaMinimalWindingAlternativesSteps(
     maximumOrderCount: maximumRouteOrderCount,
   })
   const pendingRouteOrders: ViaMinimalWindingTerminal[][] = []
+  // Keep the original fallback search available: one learned order per call,
+  // within the existing attempt budget, instead of an expanding repair tree.
+  let queuedConflictRepair = false
   const seenAdaptiveOrders = new Set<string>()
   const adaptiveRouteOrders = function* () {
     while (true) {
@@ -1734,8 +1753,17 @@ export function* routeViaMinimalWindingAlternativesSteps(
   // A reused failure still emits its normal completion progress below.
   const failedSearches = new Map<
     string,
-    { expandedStateCount: number; searchBatch: number }
+    {
+      expandedStateCount: number
+      searchBatch: number
+      blockingConnectionNames: ReadonlySet<string>
+    }
   >()
+  // Conflict-directed retries retain a prefix. Reuse its exact successful
+  // searches (same terminal, lane bias and preceding copper) rather than
+  // expanding the same grid again. Bound retained successful geometry.
+  const successfulSearches = new Map<string, Point2D[]>()
+  let cachedPointCount = 0
   let routeOrderAttemptCount = 0
   for (const routeOrder of adaptiveRouteOrders()) {
     for (const laneBias of laneBiases) {
@@ -1755,7 +1783,7 @@ export function* routeViaMinimalWindingAlternativesSteps(
         terminalIndex++
       ) {
         const terminal = routeOrder[terminalIndex]!
-        const failedSearchKey = JSON.stringify([
+        const searchKey = JSON.stringify([
           terminals.indexOf(terminal),
           laneBias,
           acceptedAttemptSegments.map(({ connectionName, segment }) => [
@@ -1768,22 +1796,34 @@ export function* routeViaMinimalWindingAlternativesSteps(
             segment.layer,
           ]),
         ])
-        const cachedFailure = failedSearches.get(failedSearchKey)
+        const cachedFailure = failedSearches.get(searchKey)
+        const cachedPoints = successfulSearches.get(searchKey)
+        const blockingConnectionNames = new Set(
+          cachedFailure?.blockingConnectionNames,
+        )
         const connectionSteps = routeOneSteps({
           terminal,
           acceptedAttemptSegments,
           laneBias,
+          ...(adaptiveRouteOrder && !queuedConflictRepair
+            ? { blockingConnectionNames }
+            : {}),
         })
         let connectionResult: ReturnType<typeof connectionSteps.next> =
-          cachedFailure === undefined
-            ? connectionSteps.next()
-            : {
+          cachedPoints !== undefined
+            ? {
                 done: true,
-                value: {
-                  points: null,
-                  expandedStateCount: cachedFailure.expandedStateCount,
-                },
+                value: { points: cachedPoints, expandedStateCount: 0 },
               }
+            : cachedFailure !== undefined
+              ? {
+                  done: true,
+                  value: {
+                    points: null,
+                    expandedStateCount: cachedFailure.expandedStateCount,
+                  },
+                }
+              : connectionSteps.next()
         let searchBatch = cachedFailure?.searchBatch ?? 0
         let expandedStateCount = 0
         while (!connectionResult.done) {
@@ -1831,9 +1871,10 @@ export function* routeViaMinimalWindingAlternativesSteps(
             : {}),
         }
         if (!points) {
-          failedSearches.set(failedSearchKey, {
+          failedSearches.set(searchKey, {
             expandedStateCount: finalExpandedStateCount,
             searchBatch,
+            blockingConnectionNames,
           })
           if (
             adaptiveRouteOrder &&
@@ -1843,12 +1884,39 @@ export function* routeViaMinimalWindingAlternativesSteps(
             const others = routeOrder.filter(
               (candidate) => candidate !== terminal,
             )
+            const firstBlockerIndex = routeOrder.findIndex(
+              (candidate, index) =>
+                index < terminalIndex &&
+                blockingConnectionNames.has(
+                  candidate.connection.connection.name,
+                ),
+            )
+            // Backjump only over traces that blocked the real clearance search.
+            // Preserve unrelated earlier routes instead of moving every failed
+            // terminal to the front and changing the entire corridor layout.
+            if (firstBlockerIndex > 0 && !queuedConflictRepair) {
+              queuedConflictRepair = true
+              pendingRouteOrders.push([
+                ...others.slice(0, firstBlockerIndex),
+                terminal,
+                ...others.slice(firstBlockerIndex),
+              ])
+            }
             pendingRouteOrders.push([terminal, ...others])
           }
           failed = true
           break
         }
         const connectionName = terminal.connection.connection.name
+        if (
+          adaptiveRouteOrder &&
+          cachedPoints === undefined &&
+          successfulSearches.size < 64 &&
+          cachedPointCount + points.length <= 16_384
+        ) {
+          successfulSearches.set(searchKey, points)
+          cachedPointCount += points.length
+        }
         routedPointsByConnectionName.set(connectionName, points)
         acceptedAttemptSegments.push(
           ...getSegments(points, traceWidth, targetLayer).map((segment) => ({
