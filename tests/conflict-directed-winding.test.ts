@@ -98,8 +98,18 @@ test("conflict repair retains the independent prefix and escapes all five lanes"
     if (result.value.connectionComplete) completions.push(result.value)
     result = steps.next()
   }
+  const plans = result.value[0] ?? []
+  // Capture the current geometry even when the bus cannot escape.
+  await expect(
+    getSvgFromGraphicsObject(
+      visualizeSimpleRouteJson({
+        ...srj,
+        connections: [],
+        traces: plans.map((plan) => plan.trace),
+      }),
+    ),
+  ).toMatchSvgSnapshot(import.meta.path)
   expect(result.value).toHaveLength(1)
-  const plans = result.value[0]!
   expect(plans).toHaveLength(5)
   // Promoting every blocked lane to the front fails within this budget.
   // The learned order preserves N1 ahead of N3/N4/N0/N2 on the successful retry.
@@ -139,13 +149,4 @@ test("conflict repair retains the independent prefix and escapes all five lanes"
     checkedViaCount: 5,
     issues: [],
   })
-  await expect(
-    getSvgFromGraphicsObject(
-      visualizeSimpleRouteJson({
-        ...srj,
-        connections: [],
-        traces: plans.map((plan) => plan.trace),
-      }),
-    ),
-  ).toMatchSvgSnapshot(import.meta.path)
 })
