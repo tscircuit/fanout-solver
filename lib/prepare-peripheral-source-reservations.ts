@@ -1,8 +1,12 @@
-import type { Obstacle, SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import {
+  getAxisAlignedObstacleSize,
+  getFourSidedPeripheralLeadDirections,
+} from "./peripheral-lead-geometry"
 import { fanoutPlansAreClear } from "./route-bus"
 import type { SourceOriginReservations } from "./route-source-origin-buses"
 import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
-import type { Bounds, FanoutDirection, Point2D, PreparedBus } from "./types"
+import type { FanoutDirection, Point2D, PreparedBus } from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
 
 export interface PeripheralSourceReservationParams {
@@ -18,42 +22,11 @@ export interface PeripheralSourceReservationParams {
   side?: "inward" | "outward"
 }
 
-const EPSILON = 1e-7
 const opposite: Record<FanoutDirection, FanoutDirection> = {
   left: "right",
   right: "left",
   up: "down",
   down: "up",
-}
-
-function padSize(obstacle: Obstacle): Point2D | null {
-  const shaped = obstacle as Obstacle & {
-    shape?: string
-    ccwRotationDegrees?: number
-  }
-  if (shaped.shape === "circle" || obstacle.type !== "rect") return null
-  const quarterTurns = (shaped.ccwRotationDegrees ?? 0) / 90
-  if (Math.abs(quarterTurns - Math.round(quarterTurns)) > EPSILON) return null
-  return Math.abs(Math.round(quarterTurns)) % 2 === 0
-    ? { x: obstacle.width, y: obstacle.height }
-    : { x: obstacle.height, y: obstacle.width }
-}
-
-function outwardDirection(
-  bounds: Bounds,
-  obstacle: Obstacle,
-): FanoutDirection | null {
-  const size = padSize(obstacle)
-  if (!size || Math.abs(size.x - size.y) < EPSILON) return null
-  const { center } = obstacle
-  if (size.x > size.y) {
-    if (Math.abs(center.x - size.x / 2 - bounds.minX) < EPSILON) return "left"
-    if (Math.abs(center.x + size.x / 2 - bounds.maxX) < EPSILON) return "right"
-  } else {
-    if (Math.abs(center.y - size.y / 2 - bounds.minY) < EPSILON) return "down"
-    if (Math.abs(center.y + size.y / 2 - bounds.maxY) < EPSILON) return "up"
-  }
-  return null
 }
 
 /** Lead bodies need an axial escape beyond their ends, not a half-pad-pitch via. */
@@ -71,25 +44,15 @@ export function preparePeripheralSourceReservations(
     )
   )
     return null
-  const bounds: Bounds = {
-    minX: Infinity,
-    maxX: -Infinity,
-    minY: Infinity,
-    maxY: -Infinity,
-  }
-  for (const obstacle of first.componentObstacles) {
-    const size = padSize(obstacle)
-    if (!size) return null
-    bounds.minX = Math.min(bounds.minX, obstacle.center.x - size.x / 2)
-    bounds.maxX = Math.max(bounds.maxX, obstacle.center.x + size.x / 2)
-    bounds.minY = Math.min(bounds.minY, obstacle.center.y - size.y / 2)
-    bounds.maxY = Math.max(bounds.maxY, obstacle.center.y + size.y / 2)
-  }
+  const peripheralDirections = getFourSidedPeripheralLeadDirections(
+    first.componentObstacles,
+  )
+  if (!peripheralDirections) return null
   const directions = new Set<FanoutDirection>()
   for (const bus of params.buses) {
     if (bus.termination.type !== "boundary") continue
     for (const connection of bus.connections) {
-      const direction = outwardDirection(bounds, connection.sourceObstacle)
+      const direction = peripheralDirections.get(connection.sourceObstacle)
       if (!direction) return null
       directions.add(direction)
     }
@@ -110,9 +73,9 @@ export function preparePeripheralSourceReservations(
     if (!targetLayer || !params.layerNames.includes(targetLayer)) return null
     for (const connection of bus.connections) {
       const obstacle = connection.sourceObstacle,
-        size = padSize(obstacle)
+        size = getAxisAlignedObstacleSize(obstacle)
       if (!size) return null
-      let direction = outwardDirection(bounds, obstacle)
+      let direction = peripheralDirections.get(obstacle)
       if (!direction) {
         if (bus.termination.type !== "plane") return null
         direction = bus.direction
