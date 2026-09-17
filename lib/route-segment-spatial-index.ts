@@ -36,7 +36,10 @@ export class RouteSegmentSpatialIndex {
     })
   }
 
-  queryVia(via: RoutedVia, clearance: number): RoutedSegment[] {
+  queryVia(
+    via: Pick<RoutedVia, "center" | "diameter" | "spanLayers">,
+    clearance: number,
+  ): RoutedSegment[] {
     const margin = via.diameter / 2 + clearance + 1e-8
     return this.query(via.spanLayers, {
       minX: via.center.x - margin,
