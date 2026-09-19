@@ -7,6 +7,7 @@ import type {
 import { borderTargetIncludesEdge, getCornerBandSide } from "./boundary-exit"
 import { getFanoutExitPositionConfig } from "./fanout-exit-position"
 import { distance, pointIsInsideObstacle } from "./geometry"
+import { getFourSidedPeripheralLeadDirections } from "./peripheral-lead-geometry"
 import type {
   Bounds,
   FanoutAvailableCornerAndSideInput,
@@ -898,6 +899,70 @@ function prepareConnection(params: {
   )
 }
 
+function getTargetBoundaryEdge(
+  point: { x: number; y: number },
+  boundary: Bounds,
+  tolerance: number,
+): FanoutEdge | undefined {
+  const candidates: Array<{ edge: FanoutEdge; distance: number }> = [
+    { edge: "left", distance: Math.abs(point.x - boundary.minX) },
+    { edge: "right", distance: Math.abs(point.x - boundary.maxX) },
+    { edge: "bottom", distance: Math.abs(point.y - boundary.minY) },
+    { edge: "top", distance: Math.abs(point.y - boundary.maxY) },
+  ]
+  const closest = candidates.toSorted(
+    (first, second) => first.distance - second.distance,
+  )[0]!
+  return closest.distance <= tolerance ? closest.edge : undefined
+}
+
+function inferCollapsedPeripheralDirection(params: {
+  sourceGrid: ComponentGrid
+  connections: PreparedConnection[]
+  componentInputs: Array<{
+    busSpec: FanoutBusSpec
+    sourceGrid: ComponentGrid
+    preparedConnections: PreparedConnection[]
+  }>
+  sharedBoundary: Bounds
+  tolerance: number
+}): FanoutDirection | undefined {
+  const directionsByLead = getFourSidedPeripheralLeadDirections(
+    params.sourceGrid.obstacles,
+  )
+  if (!directionsByLead) return undefined
+
+  const sourceDirections = new Set<FanoutDirection>()
+  const targetEdges = new Set<FanoutEdge>()
+  for (const input of params.componentInputs) {
+    if (
+      input.sourceGrid.componentId !== params.sourceGrid.componentId ||
+      input.busSpec.termination?.type === "plane"
+    ) {
+      continue
+    }
+    for (const connection of input.preparedConnections) {
+      const sourceDirection = directionsByLead.get(connection.sourceObstacle)
+      const targetEdge = getTargetBoundaryEdge(
+        connection.exitTargetPoint ?? connection.targetPoint,
+        params.sharedBoundary,
+        params.tolerance,
+      )
+      if (!sourceDirection || !targetEdge) return undefined
+      sourceDirections.add(sourceDirection)
+      targetEdges.add(targetEdge)
+    }
+  }
+  if (sourceDirections.size !== 4 || targetEdges.size !== 1) return undefined
+
+  const busDirections = new Set(
+    params.connections.map((connection) =>
+      directionsByLead.get(connection.sourceObstacle),
+    ),
+  )
+  return busDirections.size === 1 ? [...busDirections][0] : undefined
+}
+
 function inferDirection(
   busId: string,
   connections: PreparedConnection[],
@@ -1012,6 +1077,7 @@ function tryInferDirection(
 function resolveAvailableBusExit(params: {
   busId: string
   explicitDirection?: FanoutDirection
+  inferredDirection?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   connections: PreparedConnection[]
   sharedBoundary: Bounds
@@ -1020,6 +1086,7 @@ function resolveAvailableBusExit(params: {
   const {
     busId,
     explicitDirection,
+    inferredDirection,
     preferredExit,
     connections,
     sharedBoundary,
@@ -1037,12 +1104,12 @@ function resolveAvailableBusExit(params: {
     )
   }
 
-  const inferredDirection = explicitDirection
+  const routingDirection = explicitDirection
     ? undefined
-    : tryInferDirection(busId, connections)
-  const preferredDirectionRegions = inferredDirection
+    : (inferredDirection ?? tryInferDirection(busId, connections))
+  const preferredDirectionRegions = routingDirection
     ? compatibleRegions.filter(
-        (region) => region.direction === inferredDirection,
+        (region) => region.direction === routingDirection,
       )
     : []
   const candidates =
@@ -1094,6 +1161,7 @@ function validateExplicitExitAvailability(params: {
 function resolveBusDirection(params: {
   busId: string
   explicitDirection?: FanoutDirection
+  inferredDirection?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   connections: PreparedConnection[]
   sharedBoundary: Bounds
@@ -1102,6 +1170,7 @@ function resolveBusDirection(params: {
   const {
     busId,
     explicitDirection,
+    inferredDirection,
     preferredExit,
     connections,
     sharedBoundary,
@@ -1111,6 +1180,7 @@ function resolveBusDirection(params: {
     return resolveAvailableBusExit({
       busId,
       explicitDirection,
+      inferredDirection,
       preferredExit,
       connections,
       sharedBoundary,
@@ -1119,7 +1189,10 @@ function resolveBusDirection(params: {
   }
   if (!preferredExit) {
     return {
-      direction: explicitDirection ?? inferDirection(busId, connections),
+      direction:
+        explicitDirection ??
+        inferredDirection ??
+        inferDirection(busId, connections),
     }
   }
 
@@ -1136,14 +1209,10 @@ function resolveBusDirection(params: {
     return { direction: compatibleDirections[0]!, preferredExit }
   }
 
-  let inferredDirection: FanoutDirection | undefined
-  try {
-    inferredDirection = inferDirection(busId, connections)
-  } catch {
-    inferredDirection = undefined
-  }
-  if (inferredDirection && compatibleDirections.includes(inferredDirection)) {
-    return { direction: inferredDirection, preferredExit }
+  const routingDirection =
+    inferredDirection ?? tryInferDirection(busId, connections)
+  if (routingDirection && compatibleDirections.includes(routingDirection)) {
+    return { direction: routingDirection, preferredExit }
   }
   const averageSource = getAverageSourcePoint(connections)
   return {
@@ -1220,6 +1289,8 @@ export function prepareFanoutBuses(
     ).values(),
   ]
   const sharedBoundary = resolveSharedBoundary(sourceGrids, options)
+  const targetBoundaryTolerance =
+    Math.max(options.traceWidth ?? srj.minTraceWidth, 1e-6) * 0.01
   const availableRegions = resolveAvailableBoundaryRegions(
     options.availableCornersAndSides,
   )
@@ -1244,10 +1315,27 @@ export function prepareFanoutBuses(
         `FanoutSolver: bus "${busSpec.busId}" exitEdge "${busSpec.exitEdge}" is incompatible with preferredExit "${busSpec.preferredExit}"`,
       )
     }
+    const requestedDirection =
+      busSpec.direction ?? options.busDirections?.[busSpec.busId]
+    const peripheralLeadDirection =
+      busSpec.termination?.type !== "plane" &&
+      requestedDirection === undefined &&
+      busSpec.preferredExit === undefined &&
+      preparedConnections.every(
+        (connection) => !connection.hasExplicitLayeredExitTarget,
+      )
+        ? inferCollapsedPeripheralDirection({
+            sourceGrid,
+            connections: preparedConnections,
+            componentInputs: resolvedBusInputs,
+            sharedBoundary,
+            tolerance: targetBoundaryTolerance,
+          })
+        : undefined
     const resolvedExit = resolveBusDirection({
       busId: busSpec.busId,
-      explicitDirection:
-        busSpec.direction ?? options.busDirections?.[busSpec.busId],
+      explicitDirection: requestedDirection,
+      inferredDirection: peripheralLeadDirection,
       preferredExit: busSpec.preferredExit,
       connections: preparedConnections,
       sharedBoundary,
