@@ -132,6 +132,16 @@ export function distancePointToObstacle(
   return Math.hypot(dx, dy)
 }
 
+function distanceLocalPointToRectangle(
+  point: Point2D,
+  rectangle: Pick<Obstacle, "width" | "height">,
+): number {
+  return Math.hypot(
+    Math.max(Math.abs(point.x) - rectangle.width / 2, 0),
+    Math.max(Math.abs(point.y) - rectangle.height / 2, 0),
+  )
+}
+
 export function distanceSegmentToObstacle(
   segment: RoutedSegment,
   obstacle: Obstacle,
@@ -184,14 +194,9 @@ export function distanceSegmentToObstacle(
       )
         return 0
     }
-    const endpointDistance = (point: Point2D) =>
-      Math.hypot(
-        Math.max(Math.abs(point.x) - obstacle.width / 2, 0),
-        Math.max(Math.abs(point.y) - obstacle.height / 2, 0),
-      )
     let minimumDistance = Math.min(
-      endpointDistance(localStart),
-      endpointDistance(localEnd),
+      distanceLocalPointToRectangle(localStart, obstacle),
+      distanceLocalPointToRectangle(localEnd, obstacle),
     )
     for (const corner of corners) {
       minimumDistance = Math.min(

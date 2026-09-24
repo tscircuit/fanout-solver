@@ -3,13 +3,42 @@ import type { Bounds, RoutedSegment, RoutedVia } from "./types"
 
 type Entry = Bounds & { obstacle: Obstacle }
 type Node = Bounds & { entries?: Entry[]; left?: Node; right?: Node }
+type LayerName = RoutedSegment["layer"]
+
+interface ObstacleQueryContext {
+  bounds: Bounds
+  matches: Set<Obstacle>
+}
+
+function boundsOverlap(bounds: Bounds, other: Bounds): boolean {
+  return !(
+    other.minX > bounds.maxX ||
+    other.maxX < bounds.minX ||
+    other.minY > bounds.maxY ||
+    other.maxY < bounds.minY
+  )
+}
+
+function collectOverlappingObstacles(
+  node: Node,
+  ctx: ObstacleQueryContext,
+): void {
+  if (!boundsOverlap(ctx.bounds, node)) return
+  if (node.entries) {
+    for (const entry of node.entries)
+      if (boundsOverlap(ctx.bounds, entry)) ctx.matches.add(entry.obstacle)
+  } else {
+    collectOverlappingObstacles(node.left!, ctx)
+    collectOverlappingObstacles(node.right!, ctx)
+  }
+}
 
 /** Immutable broad phase; exact shape and electrical exemptions remain with callers. */
 export class ObstacleSpatialIndex {
-  private readonly layers = new Map<string, Node>()
+  private readonly layers = new Map<LayerName, Node>()
 
   constructor(obstacles: readonly Obstacle[]) {
-    const byLayer = new Map<string, Obstacle[]>()
+    const byLayer = new Map<LayerName, Obstacle[]>()
     for (const obstacle of obstacles)
       for (const layer of new Set(obstacle.layers)) {
         const entries = byLayer.get(layer) ?? []
@@ -23,9 +52,10 @@ export class ObstacleSpatialIndex {
           shape?: string
           ccwRotationDegrees?: number
         }
-        const angle = ((shape.ccwRotationDegrees ?? 0) * Math.PI) / 180
-        const cos = Math.abs(Math.cos(angle)),
-          sin = Math.abs(Math.sin(angle))
+        const ccwRotationRadians =
+          ((shape.ccwRotationDegrees ?? 0) * Math.PI) / 180
+        const cos = Math.abs(Math.cos(ccwRotationRadians)),
+          sin = Math.abs(Math.sin(ccwRotationRadians))
         // Circular geometry uses width as its diameter, including when height differs.
         const halfWidth =
           shape.shape === "circle"
@@ -67,28 +97,12 @@ export class ObstacleSpatialIndex {
     })
   }
 
-  private query(layers: readonly string[], bounds: Bounds): Obstacle[] {
+  private query(layers: readonly LayerName[], bounds: Bounds): Obstacle[] {
     const matches = new Set<Obstacle>()
+    const ctx: ObstacleQueryContext = { bounds, matches }
     for (const layer of layers) {
-      const overlaps = (other: Bounds) =>
-        !(
-          other.minX > bounds.maxX ||
-          other.maxX < bounds.minX ||
-          other.minY > bounds.maxY ||
-          other.maxY < bounds.minY
-        )
-      const visit = (node: Node): void => {
-        if (!overlaps(node)) return
-        if (node.entries) {
-          for (const entry of node.entries)
-            if (overlaps(entry)) matches.add(entry.obstacle)
-        } else {
-          visit(node.left!)
-          visit(node.right!)
-        }
-      }
       const root = this.layers.get(layer)
-      if (root) visit(root)
+      if (root) collectOverlappingObstacles(root, ctx)
     }
     return [...matches]
   }

@@ -43,7 +43,11 @@ import type {
 } from "./types"
 import { segmentIsLegalTerminalBodyEscape } from "./validate-routed-copper-drc"
 
-export type RouteBusStaticClearanceCache = Map<string, boolean>
+type RouteBusStaticClearanceCacheKey = string
+export type RouteBusStaticClearanceCache = Map<
+  RouteBusStaticClearanceCacheKey,
+  boolean
+>
 
 export interface RouteBusParams {
   srj: SimpleRouteJson

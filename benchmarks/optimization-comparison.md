@@ -1,7 +1,8 @@
 # Clearance optimization measurements
 
-Measured on 2026-09-24 against baseline `97118aa`, using identical captured
-dataset31 inputs from `8eabec2516c5066d43ec7672511a1134430c5d45` and Bun 1.3.14.
+Measured on 2026-09-24 against baseline `97118aa`, using the optimization now
+recorded in `44a60ee`, identical captured dataset31 inputs from
+`8eabec2516c5066d43ec7672511a1134430c5d45`, and Bun 1.3.14.
 The optimized version adds an obstacle spatial index and reduces rectangle
 distance calculations; solver constraints and search budgets are unchanged.
 

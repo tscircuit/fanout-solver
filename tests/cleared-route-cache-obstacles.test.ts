@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { prepareFanoutBuses } from "lib/prepare-buses"
-import { routeBus, type RouteBusParams } from "lib/route-bus"
+import {
+  routeBus,
+  type RouteBusParams,
+  type RouteBusStaticClearanceCache,
+} from "lib/route-bus"
 
 test("clearing route results rebuilds obstacle bounds after geometry changes", () => {
   const bounds = { minX: -1, maxX: 3, minY: -1, maxY: 1 }
@@ -42,7 +46,7 @@ test("clearing route results rebuilds obstacle bounds after geometry changes", (
       },
     ],
   })
-  const staticClearanceCache = new Map<string, boolean>()
+  const staticClearanceCache: RouteBusStaticClearanceCache = new Map()
   const params: RouteBusParams = {
     srj,
     bus: bus!,
