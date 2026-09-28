@@ -1247,7 +1247,19 @@ export function prepareFanoutBuses(
     const resolvedExit = resolveBusDirection({
       busId: busSpec.busId,
       explicitDirection:
-        busSpec.direction ?? options.busDirections?.[busSpec.busId],
+        busSpec.direction ??
+        options.busDirections?.[busSpec.busId] ??
+        // A source-only plane has no target vector. Seed the plane router's
+        // four-direction search without changing explicit or inferred exits.
+        (busSpec.termination?.type === "plane" &&
+        preparedConnections.every(
+          (connection) =>
+            connection.connection.pointsToConnect.length === 1 &&
+            busSpec.connectionExitTargets?.[connection.connection.name] ===
+              undefined,
+        )
+          ? "right"
+          : undefined),
       preferredExit: busSpec.preferredExit,
       connections: preparedConnections,
       sharedBoundary,

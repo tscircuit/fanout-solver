@@ -246,8 +246,11 @@ type FanoutBusTermination =
   | { type: "plane"; layer: string }
 ```
 
-A plane-targeted connection may contain only its package-pad source point. The
-solver creates the local dogbone and via, records it in `planeTerminations`, and
+A plane-targeted connection may contain only its package-pad source point. When
+all connections in the bus are source-only and no exit target is supplied, an
+escape direction is optional: the solver tries right first, then the other
+directions. Explicit direction settings still take precedence. The solver
+creates the local dogbone and via, records it in `planeTerminations`, and
 removes the completed connection from the returned downstream
 `SimpleRouteJson`. Plane layers are fixed targets and are not included in the
 bus-layer combination search.
