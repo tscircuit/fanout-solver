@@ -1,3 +1,4 @@
+import { fitLocalViaGrid } from "./fit-local-via-grid"
 import type {
   SimpleRouteJson,
   SimpleRouteConnection,
@@ -130,6 +131,16 @@ export function routeLocalSignalDogbones(
       })
     bus.xCoordinates = fillMissingRows(bus.xCoordinates, bus.pitchX)
     bus.yCoordinates = fillMissingRows(bus.yCoordinates, bus.pitchY)
+    const xGrid = fitLocalViaGrid(bus.xCoordinates, tolerance)
+    const yGrid = fitLocalViaGrid(bus.yCoordinates, tolerance)
+    if (xGrid) {
+      bus.xCoordinates = xGrid.coordinates
+      bus.pitchX = xGrid.pitch
+    }
+    if (yGrid) {
+      bus.yCoordinates = yGrid.coordinates
+      bus.pitchY = yGrid.pitch
+    }
   }
   const blockingSegments: Array<{
     connectionIndex: number
