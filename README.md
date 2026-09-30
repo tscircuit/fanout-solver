@@ -9,6 +9,21 @@ pad-to-pad channel or move an oversized via diagonally into the interstice
 between four pad corners. It routes every member of a bus in the same direction
 and treats each bus-layer decision atomically.
 
+## Local dogbone site matching
+
+`matchComponentDogboneViaSites(preparedBuses, geometryRules)` is exported for
+callers that need adjacent pad-to-via escapes without boundary routing. It returns
+a map from prepared connection index to a via-center point, or `null` when no
+complete assignment is found within the geometry/search limits. Coordinates are
+board-world millimeters (+X right, +Y up). The function selects sites; callers
+remain responsible for trace/via emission, layer spans, board-edge checks, and
+downstream connectivity. It does not declare signals connected to planes.
+
+`getComponentDogboneViaSiteCandidates` exposes statically legal candidates for
+debugging/reservation; those candidates are not a mutually assigned solution.
+Both functions and their geometry-rule/candidate types are available from the
+package root.
+
 ## Behavior
 
 - Uses `SimpleRouteJson.buses` when present. It also understands a point
