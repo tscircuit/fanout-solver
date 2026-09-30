@@ -9,6 +9,33 @@ pad-to-pad channel or move an oversized via diagonally into the interstice
 between four pad corners. It routes every member of a bus in the same direction
 and treats each bus-layer decision atomically.
 
+## Local signal dogbones
+
+`routeLocalSignalDogbones(input, options)` escapes both terminals of two-terminal
+signals onto the caller's chosen signal layers and stops at each local via. Use
+this primitive before a fixed-layer interconnect solver; it does not route to a
+package or shared boundary. `FanoutSolver` keeps its existing boundary behavior.
+
+```ts
+import { routeLocalSignalDogbones } from "@tscircuit/fanout-solver"
+
+const { connections, traces } = routeLocalSignalDogbones(input, {
+  targetLayers: new Map(input.connections.map(c => [c.name, "inner1"])),
+  traceWidth: 0.1,
+  viaDiameter: 0.3,
+  viaHoleDiameter: 0.15,
+  clearance: 0.1,
+})
+```
+
+Dimensions are millimeters in board coordinates. The caller chooses bus-atomic
+layers before invoking this function. An endpoint already reachable on its target
+layer needs no new via. Other endpoints require a component pad identified by
+`componentId` and connectivity metadata. Physical through vias span the complete
+stack by default, and must clear pads on every layer. Supplied copper remains
+fixed. The function leaves its input unchanged and throws if it cannot assign
+all local escapes; it never returns a partial successful assignment.
+
 ## Behavior
 
 - Uses `SimpleRouteJson.buses` when present. It also understands a point
