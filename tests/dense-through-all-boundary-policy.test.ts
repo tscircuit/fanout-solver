@@ -5,7 +5,29 @@ import {
   isDenseSingletonEmbeddedInMultiLayerWideBus,
   shouldDeferSingletonBoundaryViaReservation,
   shouldSearchAdditionalBoundaryRouteTopologies,
+  shouldUseJointBoundaryViaReservation,
 } from "../lib/fanout-solver"
+
+test("uses joint boundary via reservation for bounded dense groups through nine buses", () => {
+  expect(shouldUseJointBoundaryViaReservation([8])).toBe(false)
+  expect(shouldUseJointBoundaryViaReservation([8, 8])).toBe(false)
+  expect(shouldUseJointBoundaryViaReservation([8, 8, 8])).toBe(false)
+  expect(shouldUseJointBoundaryViaReservation([8, 8, 8, 8])).toBe(false)
+  expect(shouldUseJointBoundaryViaReservation([8, 9, 8, 2])).toBe(true)
+  expect(shouldUseJointBoundaryViaReservation([8, 8, 8, 8, 8])).toBe(true)
+  expect(shouldUseJointBoundaryViaReservation([8, 9, 8, 2, 9])).toBe(true)
+  expect(shouldUseJointBoundaryViaReservation([8, 9, 8, 2, 9, 2])).toBe(true)
+  expect(shouldUseJointBoundaryViaReservation([8, 8, 8, 2, 2, 2, 1])).toBe(true)
+  expect(shouldUseJointBoundaryViaReservation([8, 8, 8, 2, 2, 2, 1, 1])).toBe(
+    true,
+  )
+  expect(
+    shouldUseJointBoundaryViaReservation([8, 8, 8, 2, 2, 2, 1, 1, 1]),
+  ).toBe(true)
+  expect(
+    shouldUseJointBoundaryViaReservation([8, 8, 8, 2, 2, 2, 1, 1, 1, 1]),
+  ).toBe(false)
+})
 
 test("defers bounded singleton dogbones without changing the five- through seven-bus policy", () => {
   expect(shouldDeferSingletonBoundaryViaReservation([8, 8, 8, 2])).toBe(false)
