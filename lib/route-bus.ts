@@ -1,3 +1,4 @@
+import { ObstacleSpatialIndex } from "./obstacle-spatial-index"
 import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
 import type {
   Obstacle,
@@ -42,7 +43,11 @@ import type {
 } from "./types"
 import { segmentIsLegalTerminalBodyEscape } from "./validate-routed-copper-drc"
 
-export type RouteBusStaticClearanceCache = Map<string, boolean>
+type RouteBusStaticClearanceCacheKey = string
+export type RouteBusStaticClearanceCache = Map<
+  RouteBusStaticClearanceCacheKey,
+  boolean
+>
 
 export interface RouteBusParams {
   srj: SimpleRouteJson
@@ -1845,7 +1850,7 @@ function viaFitsInsidePlanSourcePad(
 }
 
 interface StaticPlanSegmentCache {
-  obstaclesByLayer: Map<string, Obstacle[]>
+  obstacleIndex: ObstacleSpatialIndex
   byConnection: Map<
     string,
     WeakMap<
@@ -1857,6 +1862,7 @@ interface StaticPlanSegmentCache {
 
 function planIsStaticallyClear(params: {
   segmentCache?: StaticPlanSegmentCache
+  obstacleIndex?: ObstacleSpatialIndex
   plan: FanoutRoutePlan
   srj: SimpleRouteJson
   sharedBoundary: Bounds
@@ -1872,6 +1878,8 @@ function planIsStaticallyClear(params: {
     allowBlindAndBuriedVias,
     allowSameNetMerges,
   } = params
+  const obstacleIndex =
+    params.obstacleIndex ?? params.segmentCache?.obstacleIndex
   const routableBounds = getRoutableBounds(srj.bounds, sharedBoundary)
   if (
     !pointIsInsideBounds(plan.exitPoint, routableBounds) ||
@@ -1915,9 +1923,8 @@ function planIsStaticallyClear(params: {
         segmentIndex,
         srj,
         allowSameNetMerges,
-        obstacles: params.segmentCache
-          ? (params.segmentCache.obstaclesByLayer.get(segment.layer) ?? [])
-          : srj.obstacles,
+        obstacles:
+          obstacleIndex?.querySegment(segment, clearance) ?? srj.obstacles,
         clearance,
       })
       results?.set(segment, clear)
@@ -1925,7 +1932,8 @@ function planIsStaticallyClear(params: {
     if (!clear) return false
   }
   for (const via of getPlanVias(plan)) {
-    for (const obstacle of srj.obstacles) {
+    for (const obstacle of obstacleIndex?.queryVia(via, clearance) ??
+      srj.obstacles) {
       if (
         allowsViaInPad(srj) &&
         obstacle === plan.sourceObstacle &&
@@ -2140,6 +2148,12 @@ export function fanoutPlansAreMutuallyClear(params: {
   )
 }
 
+// Reuse the index for the same immutable geometry lifetime as static results.
+const staticObstacleIndexes = new WeakMap<
+  RouteBusStaticClearanceCache,
+  { obstacles: Obstacle[]; index: ObstacleSpatialIndex }
+>()
+
 function planIsClear(params: {
   plan: FanoutRoutePlan
   otherPlans: FanoutRoutePlan[]
@@ -2166,7 +2180,23 @@ function planIsClear(params: {
   } = params
   let staticallyClear = staticClearanceCache?.get(cacheKey)
   if (staticallyClear === undefined) {
+    let cachedIndex =
+      staticClearanceCache && staticObstacleIndexes.get(staticClearanceCache)
+    if (
+      staticClearanceCache &&
+      (!cachedIndex ||
+        staticClearanceCache.size === 0 ||
+        cachedIndex.obstacles !== srj.obstacles)
+    ) {
+      cachedIndex = {
+        obstacles: srj.obstacles,
+        index: new ObstacleSpatialIndex(srj.obstacles),
+      }
+      staticObstacleIndexes.set(staticClearanceCache, cachedIndex)
+    }
+    const obstacleIndex = cachedIndex?.index
     staticallyClear = planIsStaticallyClear({
+      obstacleIndex,
       plan,
       srj,
       sharedBoundary,
@@ -2276,21 +2306,15 @@ export function createFanoutPlanClearanceValidator(
     allowSameNetPlaneMerges = false,
   } = params
   const segmentCache: StaticPlanSegmentCache = {
-    obstaclesByLayer: new Map(),
+    obstacleIndex: new ObstacleSpatialIndex(srj.obstacles),
     byConnection: new Map(),
   }
-  for (const obstacle of srj.obstacles)
-    for (const layer of obstacle.layers) {
-      const obstacles = segmentCache.obstaclesByLayer.get(layer) ?? []
-      obstacles.push(obstacle)
-      segmentCache.obstaclesByLayer.set(layer, obstacles)
-    }
   // The same retained segment can appear in a plane or signal candidate.
   // Its static result must not cross those different merge permissions.
   const planeSegmentCache: StaticPlanSegmentCache =
     allowSameNetPlaneMerges && !allowSameNetMerges
       ? {
-          obstaclesByLayer: segmentCache.obstaclesByLayer,
+          obstacleIndex: segmentCache.obstacleIndex,
           byConnection: new Map(),
         }
       : segmentCache
