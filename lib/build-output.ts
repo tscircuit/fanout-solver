@@ -1,4 +1,4 @@
-import type { Obstacle, SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+import type { Obstacle } from "@tscircuit/capacity-autorouter"
 import { createFanoutOutputIds } from "./fanout-output-ids"
 import type { FanoutRoutePlan, SimpleRouteJsonWithFanoutPlanes } from "./types"
 
@@ -37,7 +37,7 @@ function createViaObstacle(
 }
 
 export function buildOutputSimpleRouteJson(params: {
-  inputSrj: SimpleRouteJson
+  inputSrj: SimpleRouteJsonWithFanoutPlanes
   plans: FanoutRoutePlan[]
   layerNames: string[]
 }): SimpleRouteJsonWithFanoutPlanes {
@@ -142,16 +142,21 @@ export function buildOutputSimpleRouteJson(params: {
 
   return {
     ...inputSrj,
-    fanoutPlaneConnectivity: plans.flatMap((plan) =>
-      plan.termination.type === "plane"
-        ? [
-            {
-              connectionName: plan.connectionName,
-              layer: plan.termination.layer,
-            },
-          ]
-        : [],
-    ),
+    fanoutPlaneConnectivity: [
+      ...(inputSrj.fanoutPlaneConnectivity ?? []).map((entry) => ({
+        ...entry,
+      })),
+      ...plans.flatMap((plan) =>
+        plan.termination.type === "plane"
+          ? [
+              {
+                connectionName: plan.connectionName,
+                layer: plan.termination.layer,
+              },
+            ]
+          : [],
+      ),
+    ],
     bounds: outputBounds,
     connections: outputConnections.filter(
       (connection) => !planeTerminatedConnectionNames.has(connection.name),
