@@ -49,6 +49,46 @@ export interface FinalFanoutPlanNormalizationParams
 }
 const EPSILON = 1e-7
 
+function plansSatisfyLengthConstraints(params: {
+  inputSrj: SimpleRouteJson
+  plans: readonly FanoutRoutePlan[]
+  preparedBuses: readonly PreparedBus[]
+}): boolean {
+  for (const bus of params.preparedBuses) {
+    if (bus.maxLengthSkew === undefined) continue
+    const busPlans = params.plans.filter((plan) => plan.busId === bus.busId)
+    if (busPlans.length !== bus.connections.length) return false
+    const lengths = busPlans.map((plan) => plan.length)
+    if (
+      Math.max(...lengths) - Math.min(...lengths) >
+      bus.maxLengthSkew + EPSILON
+    )
+      return false
+  }
+  const plansByConnection = new Map(
+    params.plans.map((plan) => [plan.connectionIndex, plan]),
+  )
+  for (const pair of getDeclaredDifferentialPairs(params.inputSrj)) {
+    const pairPlans = pair.connectionIndices.map((connectionIndex) =>
+      plansByConnection.get(connectionIndex),
+    )
+    const [firstPlan, secondPlan] = pairPlans
+    if (!firstPlan || !secondPlan) continue
+    const lengths = [firstPlan, secondPlan].map((plan) =>
+      [...plan.segments, ...(plan.planeEndpointSegments ?? [])].reduce(
+        (total, segment) => total + distance(segment.start, segment.end),
+        0,
+      ),
+    )
+    if (
+      lengths.some((length) => !Number.isFinite(length)) ||
+      Math.abs(lengths[0]! - lengths[1]!) > pair.lengthTolerance + EPSILON
+    )
+      return false
+  }
+  return true
+}
+
 /** Check new copper without reinterpreting retained runs as one replaced edge. */
 export function changedFanoutCopperIsSelfClear(
   plan: FanoutRoutePlan,
@@ -614,9 +654,15 @@ export function normalizeFanoutPlanCorners(
       repairedSourceCorners = true
     }
   }
-  // Source chamfers can shorten a tightly matched bus before target-side
-  // normalization gets a chance to repair its remaining geometry.
-  if (repairedSourceCorners && params.rematchRepairedLengths) {
+  if (
+    repairedSourceCorners &&
+    params.rematchRepairedLengths &&
+    !plansSatisfyLengthConstraints({
+      inputSrj: params.inputSrj,
+      plans,
+      preparedBuses: params.preparedBuses,
+    })
+  ) {
     const rematched = params.rematchRepairedLengths(plans)
     if (!rematched) return null
     plans = rematched
