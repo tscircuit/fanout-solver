@@ -201,6 +201,5 @@ test("dogbone wires ignore opposite-layer pads while through-vias clear every la
     })
   }
   const svg = getSvgFromGraphicsObject(graphics)
-  console.log("DOGBONE_LAYER_SVG=" + JSON.stringify(svg))
   await expect(svg).toMatchSvgSnapshot(import.meta.path)
 })
