@@ -1,0 +1,50 @@
+name: Temporary layer fix baseline comparison
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - name: Compare unchanged and fixed matcher with numeric checks
+        run: |
+          cat > /tmp/capture-am62l.ts <<'AM62L_SCRIPT'
+          import { readFileSync, writeFileSync } from "node:fs"
+          import { expect } from "bun:test"
+          
+          const cases = [
+            ["tests/am62l-real-decoupling-copper.test.tsx", "getSvgFromGraphicsObject(visualization)"],
+            ["tests/am62l-top-edge-breakout-solved-repro.test.ts", "getSvgFromGraphicsObject(solver.visualize())"],
+          ]
+          for (const [path, expression] of cases) {
+            const source = readFileSync(path, "utf8")
+            const needle = "await expect(" + expression + ").toMatchSvgSnapshot("
+            if (source.split(needle).length !== 2) throw new Error("Unexpected snapshot assertion: " + path)
+            writeFileSync(path, source.replace(needle, "const svg = " + expression + "\n  console.log(\"AM62L_CAPTURE=\" + JSON.stringify({path: " + JSON.stringify(path) + ", svg}))\n  await expect(svg).toMatchSvgSnapshot("))
+          }
+          const matcherPath = "lib/match-component-dogbone-via-sites.ts"
+          const candidate = readFileSync(matcherPath, "utf8")
+          const guard = "      !obstacle.layers.includes(segment.layer) ||\n"
+          if (candidate.split(guard).length !== 2) throw new Error("Unexpected matcher guard")
+          const baseline = candidate.replace(guard, "")
+          const hash = (text: string) => new Bun.CryptoHasher("sha256").update(text).digest("hex")
+          if (hash(baseline) !== "4d087054c545b05c7afb357f468e97349aba3a72497d61f01ef4749827a5bad8") throw new Error("Unexpected baseline")
+          for (const [variant, source] of [["baseline", baseline], ["candidate", candidate]]) {
+            writeFileSync(matcherPath, source)
+            console.log("AM62L_VARIANT=" + variant)
+            const args = [process.execPath, "test", "--timeout", "15000", ...cases.map(([p]) => p), "./tests/bus-length-matching-crowded-spans.test.ts"]
+            if (variant === "candidate") args.splice(2, 0, "-u")
+            const child = Bun.spawn(args, {stdout: "inherit", stderr: "inherit"})
+            const code = await child.exited
+            console.log("AM62L_VARIANT_EXIT=" + JSON.stringify({variant, code}))
+          }
+          writeFileSync(matcherPath, candidate)
+          AM62L_SCRIPT
+          cp /tmp/capture-am62l.ts ./capture-am62l.ts
+          bun capture-am62l.ts
