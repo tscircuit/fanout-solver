@@ -4381,6 +4381,7 @@ export function* routeBusAlternativesSteps(
   searchAnalyticBus(bus)
   if (
     alternatives.length < maxAlternatives &&
+    bus.busId.startsWith("connection:") &&
     bus.connections.length === 1 &&
     !bus.exitEdge &&
     !bus.preferredExit &&
