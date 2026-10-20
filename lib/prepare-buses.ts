@@ -376,6 +376,19 @@ function getPointLayers(point: ConnectionPoint): string[] {
   return "layer" in point ? [point.layer] : point.layers
 }
 
+function pointHasDirectObstacleMatch(
+  point: ConnectionPoint,
+  connection: SimpleRouteConnection,
+  obstacle: Obstacle,
+): boolean {
+  return (
+    obstacle.connectedTo.includes(connection.name) ||
+    (Boolean(point.pointId) && obstacle.connectedTo.includes(point.pointId!)) ||
+    (Boolean(point.pcb_port_id) &&
+      obstacle.connectedTo.includes(point.pcb_port_id!))
+  )
+}
+
 function findPointObstacleMatches(params: {
   point: ConnectionPoint
   connection: SimpleRouteConnection
@@ -383,6 +396,20 @@ function findPointObstacleMatches(params: {
 }): Array<{ grid: ComponentGrid; obstacle: Obstacle }> {
   const { point, connection, componentGrids } = params
   const pointLayers = getPointLayers(point)
+  const pointHasExplicitAttachment = Boolean(point.pointId || point.pcb_port_id)
+  const connectionHasDirectMatch =
+    !pointHasExplicitAttachment &&
+    connection.pointsToConnect.some((candidatePoint) => {
+      const candidateLayers = getPointLayers(candidatePoint)
+      return componentGrids.some((grid) =>
+        grid.obstacles.some(
+          (obstacle) =>
+            obstacle.layers.some((layer) => candidateLayers.includes(layer)) &&
+            pointIsInsideObstacle(candidatePoint, obstacle, 1e-5) &&
+            pointHasDirectObstacleMatch(candidatePoint, connection, obstacle),
+        ),
+      )
+    })
   const matches: Array<{ grid: ComponentGrid; obstacle: Obstacle }> = []
 
   for (const grid of componentGrids) {
@@ -391,15 +418,20 @@ function findPointObstacleMatches(params: {
         obstacle.layers.some((layer) => pointLayers.includes(layer)),
       )
       .filter((obstacle) => pointIsInsideObstacle(point, obstacle, 1e-5))
+      .filter((obstacle) => {
+        if (
+          connectionHasDirectMatch &&
+          !pointHasExplicitAttachment &&
+          obstacle.connectedTo.length > 0 &&
+          !pointHasDirectObstacleMatch(point, connection, obstacle)
+        ) {
+          return false
+        }
+        return true
+      })
       .sort((a, b) => {
-        const aDirect =
-          a.connectedTo.includes(connection.name) ||
-          a.connectedTo.includes(point.pointId ?? "") ||
-          a.connectedTo.includes(point.pcb_port_id ?? "")
-        const bDirect =
-          b.connectedTo.includes(connection.name) ||
-          b.connectedTo.includes(point.pointId ?? "") ||
-          b.connectedTo.includes(point.pcb_port_id ?? "")
+        const aDirect = pointHasDirectObstacleMatch(point, connection, a)
+        const bDirect = pointHasDirectObstacleMatch(point, connection, b)
         if (aDirect !== bDirect) return aDirect ? -1 : 1
         return a.width * a.height - b.width * b.height
       })
@@ -878,6 +910,23 @@ function prepareConnection(params: {
       sourcePointIndex,
       termination,
     )
+    const targetPointLayers = getPointLayers(targetPoint)
+    const targetPointIsForeignComponentPlaceholder =
+      !targetPoint.pointId &&
+      !targetPoint.pcb_port_id &&
+      componentGrids.some(
+        (grid) =>
+          grid.componentId !== sourceGrid.componentId &&
+          grid.obstacles.some(
+            (obstacle) =>
+              obstacle.layers.some((layer) =>
+                targetPointLayers.includes(layer),
+              ) &&
+              pointIsInsideObstacle(targetPoint, obstacle, 1e-5) &&
+              obstacle.connectedTo.length > 0 &&
+              !pointHasDirectObstacleMatch(targetPoint, connection, obstacle),
+          ),
+      )
     return {
       connection,
       connectionIndex,
@@ -886,10 +935,17 @@ function prepareConnection(params: {
       sourceLayer,
       sourceObstacle: sourceMatch.obstacle,
       targetPoint,
-      exitTargetPoint: exitTargetPoint ?? {
-        x: targetPoint.x,
-        y: targetPoint.y,
-      },
+      exitTargetPoint:
+        exitTargetPoint ??
+        (targetPointIsForeignComponentPlaceholder
+          ? {
+              x: 2 * sourcePoint.x - targetPoint.x,
+              y: 2 * sourcePoint.y - targetPoint.y,
+            }
+          : {
+              x: targetPoint.x,
+              y: targetPoint.y,
+            }),
       hasExplicitLayeredExitTarget: exitTargetPoint?.layer !== undefined,
     }
   }

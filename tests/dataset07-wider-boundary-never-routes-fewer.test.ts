@@ -55,6 +55,16 @@ test("Dataset 07 preserves the captured RP2350A breakout input", () => {
 // outside srj.bounds -- exactly what fanoutBoundaryPadding produces -- had
 // every plan rejected before its geometry was considered, taking this input
 // from 13/23 to 0/23.
+test("Dataset 07 routes all 23 connections across widened boundaries", () => {
+  for (const grownBy of GROWN_SIZES) {
+    const solver = solveWithBoundaryGrownBy(grownBy)
+    expect(solver.solved).toBe(true)
+    expect(routedConnectionCountWithBoundaryGrownBy(grownBy)).toBe(
+      connectionCount,
+    )
+  }
+}, 60_000)
+
 datasetBenchmarkTest(
   "widening the shared boundary never routes fewer connections",
   () => {
