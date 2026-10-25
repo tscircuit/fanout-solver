@@ -365,6 +365,30 @@ function getConnectionCandidates(params: {
     ...adjacentY.map((y) => ({ x: source.x, y })),
     ...adjacentX.flatMap((x) => adjacentY.map((y) => ({ x, y }))),
   ]
+  // Rectangular SMT terminals may be longer than the local pad-grid pitch.
+  // Add straight, pad-edge-derived sites; existing continuous geometry checks
+  // still validate every land, hole and immutable routed-copper clearance.
+  const pad = preparedConnection.sourceObstacle
+  if (
+    connection.terminationType === "plane" &&
+    pad.shape !== "circle" &&
+    Math.abs(pad.width - pad.height) > EPSILON
+  ) {
+    const angle = ((pad.ccwRotationDegrees ?? 0) * Math.PI) / 180
+    const halfX =
+      (Math.abs(Math.cos(angle)) * pad.width +
+        Math.abs(Math.sin(angle)) * pad.height) /
+      2
+    const halfY =
+      (Math.abs(Math.sin(angle)) * pad.width +
+        Math.abs(Math.cos(angle)) * pad.height) /
+      2
+    const reach = rules.viaDiameter / 2 + rules.clearance + 0.001
+    for (const sign of [-1, 1]) {
+      rawPoints.push({ x: source.x + sign * (halfX + reach), y: source.y })
+      rawPoints.push({ x: source.x, y: source.y + sign * (halfY + reach) })
+    }
+  }
   const uniquePoints: Point2D[] = []
   for (const point of rawPoints) {
     if (
