@@ -42,7 +42,7 @@ export function createSmtTerminalViaSiteFixture() {
     pitchY: 0.5,
     connections,
   }
-  const input: SimpleRouteJson = {
+  const input = {
     layerCount: 4,
     minTraceWidth: 0.1,
     minViaPadDiameter: 0.5,
@@ -53,7 +53,7 @@ export function createSmtTerminalViaSiteFixture() {
     bounds: bus.sharedBoundary,
     obstacles,
     connections: connections.map((c) => c.connection),
-  }
+  } as SimpleRouteJson
   const rules = {
     viaDiameter: 0.5,
     viaHoleDiameter: 0.3,
