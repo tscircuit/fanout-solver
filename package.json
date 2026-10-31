@@ -58,6 +58,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "bun-match-svg": "^0.0.16",
+    "capacity-autorouter-motor-controller": "npm:@tscircuit/capacity-autorouter@0.0.1003",
     "circuit-json": "0.0.479",
     "circuit-json-to-connectivity-map": "0.0.23",
     "circuit-to-svg": "0.0.364",

@@ -1,0 +1,12 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../../..",
+    "paths": {
+      "@tscircuit/capacity-autorouter": [
+        "./node_modules/capacity-autorouter-motor-controller/dist/index.d.ts"
+      ]
+    }
+  },
+  "include": ["./index.ts"]
+}
