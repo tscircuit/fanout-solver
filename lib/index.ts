@@ -1,6 +1,12 @@
 export { completeOriginalEndpoints } from "./complete-original-endpoints"
 export { getFanoutExitPositionConfig } from "./fanout-exit-position"
 export { FanoutSolver } from "./fanout-solver"
+export {
+  matchComponentDogboneViaSites,
+  getComponentDogboneViaSiteCandidates,
+  type DogboneViaSiteGeometryRules,
+  type ComponentDogboneViaSiteCandidate,
+} from "./match-component-dogbone-via-sites"
 export { getCopperLayerColor } from "./layer-colors"
 export { getCopperLayerNames } from "./layer-names"
 export type {

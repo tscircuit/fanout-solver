@@ -330,6 +330,7 @@ function sourceSegmentClearsOtherObstacles(params: {
   return obstacles.every(
     (obstacle) =>
       obstacle === sourceObstacle ||
+      !obstacle.layers.includes(segment.layer) ||
       distanceSegmentToObstacle(segment, obstacle) >=
         requiredClearance - EPSILON,
   )
