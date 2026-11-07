@@ -2,7 +2,7 @@ export { completeOriginalEndpoints } from "./complete-original-endpoints"
 export { getFanoutExitPositionConfig } from "./fanout-exit-position"
 export { FanoutSolver } from "./fanout-solver"
 export { getCopperLayerColor } from "./layer-colors"
-export { getCopperLayerNames } from "./layer-names"
+export { getCopperLayerNames, getRouteViaSpanLayers } from "./layer-names"
 export type {
   Bounds,
   FanoutAttemptSummary,
