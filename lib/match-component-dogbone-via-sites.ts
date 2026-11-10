@@ -308,13 +308,17 @@ function getOutwardRank(params: {
 function viaSiteClearsObstacles(params: {
   point: Point2D
   obstacles: readonly Obstacle[]
+  sourceLayer: string
   viaDiameter: number
   clearance: number
 }): boolean {
-  const { point, obstacles, viaDiameter, clearance } = params
+  const { point, obstacles, sourceLayer, viaDiameter, clearance } = params
   const requiredClearance = viaDiameter / 2 + clearance
   return obstacles.every(
     (obstacle) =>
+      // Other-layer pours can form antipads around the via. Source-layer
+      // reservations and physical pads/holes must still satisfy clearance.
+      (obstacle.isCopperPour && !obstacle.layers.includes(sourceLayer)) ||
       distancePointToObstacle(point, obstacle) >= requiredClearance - EPSILON,
   )
 }
@@ -390,6 +394,7 @@ function getConnectionCandidates(params: {
       !viaSiteClearsObstacles({
         point,
         obstacles,
+        sourceLayer: preparedConnection.sourceLayer,
         viaDiameter: rules.viaDiameter,
         clearance: rules.clearance,
       })

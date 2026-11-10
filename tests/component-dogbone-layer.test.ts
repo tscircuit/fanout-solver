@@ -78,7 +78,7 @@ function fixture(blocker: Obstacle) {
 }
 
 function obstacle(
-  layer: "top" | "bottom",
+  layer: "top" | "bottom" | "inner1",
   center: { x: number; y: number },
 ): Obstacle {
   return {
@@ -93,7 +93,7 @@ function obstacle(
   }
 }
 
-test("dogbone wires ignore opposite-layer pads while through-vias clear every layer", async () => {
+test("dogbone vias cross reserved planes while clearing fixed copper on every layer", async () => {
   // At (-0.1, -0.1), the foreign pad intersects the wire interior but its
   // nearest corner is over 0.388 mm from the via center: clear of the
   // 0.25 mm via radius plus 0.1 mm clearance. Only its layer should decide
@@ -117,6 +117,27 @@ test("dogbone wires ignore opposite-layer pads while through-vias clear every la
       blocker: obstacle("bottom", via),
       accepted: false,
     },
+    {
+      label: "INNER1 pour at through-via",
+      detail: "Accepted: pour can form an antipad",
+      blocker: { ...obstacle("inner1", via), isCopperPour: true },
+      accepted: true,
+    },
+    {
+      label: "TOP pour across TOP wire",
+      detail: "Rejected: source-layer wire collision",
+      blocker: {
+        ...obstacle("top", { x: -0.1, y: -0.1 }),
+        isCopperPour: true,
+      },
+      accepted: false,
+    },
+    {
+      label: "TOP pour at through-via",
+      detail: "Rejected: source-layer via collision",
+      blocker: { ...obstacle("top", via), isCopperPour: true },
+      accepted: false,
+    },
   ]
   const graphics: GraphicsObject = {
     title: "Dogbone candidate clearance: TOP wire and through-via",
@@ -137,7 +158,8 @@ test("dogbone wires ignore opposite-layer pads while through-vias clear every la
       scenario.accepted ? [[0, via]] : null,
     )
 
-    const shift = panel * 3.4
+    const shift = (panel % 3) * 3.4
+    const rowShift = -Math.floor(panel / 3) * 3.9
     const color = matching ? "#2b8a3e" : "#868e96"
     const blockerColor = scenario.blocker.layers.includes("top")
       ? "#e03131"
@@ -145,13 +167,13 @@ test("dogbone wires ignore opposite-layer pads while through-vias clear every la
     graphics.texts!.push(
       {
         x: 0.2 + shift,
-        y: 1.55,
+        y: 1.55 + rowShift,
         text: scenario.label,
         fontSize: 0.14,
       },
       {
         x: 0.2 + shift,
-        y: -1.05,
+        y: -1.05 + rowShift,
         text: scenario.detail,
         color: matching ? "#2b8a3e" : "#c92a2a",
         fontSize: 0.12,
@@ -159,7 +181,7 @@ test("dogbone wires ignore opposite-layer pads while through-vias clear every la
     )
     for (const pad of pads)
       graphics.circles!.push({
-        center: { x: pad.center.x + shift, y: pad.center.y },
+        center: { x: pad.center.x + shift, y: pad.center.y + rowShift },
         radius: pad.width / 2,
         // Translucent projection keeps the opposite-layer pad visible.
         fill: "rgba(233,236,239,0.5)",
@@ -169,21 +191,21 @@ test("dogbone wires ignore opposite-layer pads while through-vias clear every la
     // these are candidate sites, not copper returned by the matcher.
     graphics.lines!.push({
       points: [
-        { x: shift, y: 0 },
-        { x: via.x + shift, y: via.y },
+        { x: shift, y: rowShift },
+        { x: via.x + shift, y: via.y + rowShift },
       ],
       strokeWidth: rules.traceWidth,
       strokeColor: color,
     })
     graphics.circles!.push(
       {
-        center: { x: via.x + shift, y: via.y },
+        center: { x: via.x + shift, y: via.y + rowShift },
         radius: rules.viaDiameter / 2,
         fill: matching ? "rgba(43,138,62,0.2)" : "rgba(134,142,150,0.2)",
         stroke: color,
       },
       {
-        center: { x: via.x + shift, y: via.y },
+        center: { x: via.x + shift, y: via.y + rowShift },
         radius: rules.viaHoleDiameter / 2,
         fill: "none",
         stroke: color,
@@ -192,7 +214,7 @@ test("dogbone wires ignore opposite-layer pads while through-vias clear every la
     graphics.rects!.push({
       center: {
         x: scenario.blocker.center.x + shift,
-        y: scenario.blocker.center.y,
+        y: scenario.blocker.center.y + rowShift,
       },
       width: scenario.blocker.width,
       height: scenario.blocker.height,
@@ -200,6 +222,9 @@ test("dogbone wires ignore opposite-layer pads while through-vias clear every la
       stroke: blockerColor,
     })
   }
-  const svg = getSvgFromGraphicsObject(graphics)
+  const svg = getSvgFromGraphicsObject(graphics, {
+    svgWidth: 1200,
+    svgHeight: 900,
+  })
   await expect(svg).toMatchSvgSnapshot(import.meta.path)
 })

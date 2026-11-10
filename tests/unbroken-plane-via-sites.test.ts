@@ -36,7 +36,7 @@ function matchSites(capture: typeof ordinary | typeof reserved) {
   }
 }
 
-test("repro: reserved inner1 GND eliminates legal SIGNAL via sites", async () => {
+test("reserved inner1 GND preserves legal SIGNAL via sites", async () => {
   const control = matchSites(ordinary)
   const repro = matchSites(reserved)
 
@@ -51,12 +51,12 @@ test("repro: reserved inner1 GND eliminates legal SIGNAL via sites", async () =>
   expect(repro.buses).toEqual(control.buses)
   expect(control.matching?.size).toBe(1)
   expect(control.candidates.length).toBeGreaterThan(0)
-  expect(repro.matching).toBeNull()
-  expect(repro.candidates).toHaveLength(0)
+  expect(repro.matching).toEqual(control.matching)
+  expect(repro.candidates).toEqual(control.candidates)
 
   const plane = reserved.input.obstacles.find((o) => "isCopperPour" in o)!
   const graphics: GraphicsObject = {
-    title: "Reserved ground plane blocks native via-site assignment",
+    title: "Reserved ground plane permits native via-site assignment",
     coordinateSystem: "cartesian",
     rects: [],
     circles: [],
@@ -95,7 +95,7 @@ test("repro: reserved inner1 GND eliminates legal SIGNAL via sites", async () =>
       {
         x: plane.center.x + shift,
         y: 2.8,
-        text: panel ? "REPRO: unbroken = true" : "CONTROL: unbroken = false",
+        text: panel ? "RESERVED: unbroken = true" : "CONTROL: unbroken = false",
         fontSize: 0.3,
       },
       {
@@ -110,7 +110,7 @@ test("repro: reserved inner1 GND eliminates legal SIGNAL via sites", async () =>
     "Blue: top SIGNAL pad. Light orange: candidates. Dark orange: selected site.",
     "Red: reserved inner1 GND region. Both original TSX boards contain a GND pour.",
     "Expected: SIGNAL crosses inner1 through a via, with a copper-free ring in GND.",
-    "Actual: viaSiteClearsObstacles rejects every site inside the reserved pour.",
+    "Both cases return the same four candidates and select the same via site.",
     "Via-site matcher output only; no generated copper or antipads are shown.",
   ].entries())
     graphics.texts!.push({
