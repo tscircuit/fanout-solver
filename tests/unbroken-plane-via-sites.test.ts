@@ -9,6 +9,8 @@ import { prepareFanoutBuses } from "lib/prepare-buses"
 import ordinary from "./fixtures/unbroken-plane-ordinary.json"
 import reserved from "./fixtures/unbroken-plane-reserved.json"
 
+// Unchanged native inputs captured with core 0.0.2323 / props 0.0.724.
+// Explicit TSX source and capture script: https://github.com/tscircuit/dogbone-solver/tree/4780f6a5a70dcde7432baca3c0f7427556546ae7/examples
 function matchSites(capture: typeof ordinary | typeof reserved) {
   const input = structuredClone(capture.input)
   const srj = input as SimpleRouteJson
@@ -34,58 +36,6 @@ function matchSites(capture: typeof ordinary | typeof reserved) {
   }
 }
 
-function panel(
-  result: ReturnType<typeof matchSites>,
-  x: number,
-  unbroken: boolean,
-) {
-  const plane = reserved.input.obstacles.find((o) => "isCopperPour" in o)!
-  const pads = result.buses[0]!.componentObstacles
-  const source = result.buses[0]!.connections[0]!.sourceObstacle
-  const graphics: GraphicsObject = {
-    // A common frame keeps both panels at the same scale. Red is the actual
-    // captured pour obstacle; the ordinary case has no reserved obstacle.
-    rects: [
-      {
-        center: plane.center,
-        width: plane.width,
-        height: plane.height,
-        fill: unbroken ? "rgba(200,40,40,0.14)" : "transparent",
-        stroke: "#cbd5e1",
-      },
-    ],
-    circles: [
-      ...pads.map((pad) => ({
-        center: pad.center,
-        radius: pad.width / 2,
-        fill: pad === source ? "#2563eb" : "#cbd5e1",
-        stroke: "#475569",
-      })),
-      ...result.candidates.map(({ point }) => ({
-        center: point,
-        radius: result.rules.viaDiameter / 2,
-        fill: "#fed7aa",
-        stroke: "#d97706",
-      })),
-      ...[...(result.matching?.values() ?? [])].map((point) => ({
-        center: point,
-        radius: result.rules.viaDiameter / 2,
-        fill: "#d97706",
-        stroke: "#92400e",
-      })),
-    ],
-  }
-  const svg = getSvgFromGraphicsObject(graphics, {
-    svgWidth: 560,
-    svgHeight: 340,
-  }).replace(/<svg\b/, `<svg x="${x}" y="145"`)
-  return `
-    <text x="${x}" y="88" font-size="22" font-weight="bold">${unbroken ? "REPRO: unbroken = true" : "CONTROL: unbroken = false"}</text>
-    <text x="${x}" y="120" font-size="19">${result.candidates.length} candidate sites; ${result.matching === null ? "assignment = null" : `${result.matching.size} assigned site`}</text>
-    ${svg}
-  `
-}
-
 test("repro: reserved inner1 GND eliminates legal SIGNAL via sites", async () => {
   const control = matchSites(ordinary)
   const repro = matchSites(reserved)
@@ -104,17 +54,72 @@ test("repro: reserved inner1 GND eliminates legal SIGNAL via sites", async () =>
   expect(repro.matching).toBeNull()
   expect(repro.candidates).toHaveLength(0)
 
-  await expect(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660">
-    <rect width="1200" height="660" fill="white"/>
-    <g font-family="sans-serif" fill="#182230">
-      <text x="28" y="40" font-size="25" font-weight="bold">fanout-solver: a reserved ground plane blocks via-site assignment</text>
-      ${panel(control, 28, false)}
-      ${panel(repro, 612, true)}
-      <text x="28" y="512" font-size="18">Blue: top SIGNAL pad. Light orange: returned candidates. Dark orange: selected site.</text>
-      <text x="28" y="545" font-size="18">Red: inner1 GND reserved obstacle. Both TSX boards contain GND; only unbroken changes.</text>
-      <text x="28" y="578" font-size="18">Expected: a SIGNAL via can cross inner1 on its way to inner2, with a copper-free ring in GND.</text>
-      <text x="28" y="611" font-size="18">Actual: viaSiteClearsObstacles rejects every candidate inside the reserved pour region.</text>
-      <text x="28" y="642" font-size="16">Direct helper output only. No dogbone-solver dependency, saved routes, routed copper, or antipad output.</text>
-    </g>
-  </svg>`).toMatchSvgSnapshot(import.meta.path)
+  const plane = reserved.input.obstacles.find((o) => "isCopperPour" in o)!
+  const graphics: GraphicsObject = {
+    title: "Reserved ground plane blocks native via-site assignment",
+    coordinateSystem: "cartesian",
+    rects: [],
+    circles: [],
+    texts: [],
+  }
+  for (const [panel, result] of [control, repro].entries()) {
+    const shift = panel * 8
+    const source = result.buses[0]!.connections[0]!.sourceObstacle
+    // Same frame in both panels; only the reserved pour is shaded red.
+    graphics.rects!.push({
+      center: { x: plane.center.x + shift, y: plane.center.y },
+      width: plane.width,
+      height: plane.height,
+      fill: panel ? "rgba(200,40,40,0.14)" : "transparent",
+      stroke: "#cbd5e1",
+    })
+    for (const pad of result.buses[0]!.componentObstacles)
+      graphics.circles!.push({
+        center: { x: pad.center.x + shift, y: pad.center.y },
+        radius: pad.width / 2,
+        fill: pad === source ? "#2563eb" : "#cbd5e1",
+      })
+    for (const { point } of result.candidates)
+      graphics.circles!.push({
+        center: { x: point.x + shift, y: point.y },
+        radius: result.rules.viaDiameter / 2,
+        fill: "#fed7aa",
+      })
+    for (const point of result.matching?.values() ?? [])
+      graphics.circles!.push({
+        center: { x: point.x + shift, y: point.y },
+        radius: result.rules.viaDiameter / 2,
+        fill: "#d97706",
+      })
+    graphics.texts!.push(
+      {
+        x: plane.center.x + shift,
+        y: 2.8,
+        text: panel ? "REPRO: unbroken = true" : "CONTROL: unbroken = false",
+        fontSize: 0.3,
+      },
+      {
+        x: plane.center.x + shift,
+        y: 2.3,
+        text: `${result.candidates.length} candidate sites; ${result.matching === null ? "assignment = null" : `${result.matching.size} assigned site`}`,
+        fontSize: 0.25,
+      },
+    )
+  }
+  for (const [index, text] of [
+    "Blue: top SIGNAL pad. Light orange: candidates. Dark orange: selected site.",
+    "Red: reserved inner1 GND region. Both original TSX boards contain a GND pour.",
+    "Expected: SIGNAL crosses inner1 through a via, with a copper-free ring in GND.",
+    "Actual: viaSiteClearsObstacles rejects every site inside the reserved pour.",
+    "Via-site matcher output only; no generated copper or antipads are shown.",
+  ].entries())
+    graphics.texts!.push({
+      x: 2,
+      y: -2.6 - index * 0.45,
+      text,
+      fontSize: 0.24,
+    })
+  await expect(
+    getSvgFromGraphicsObject(graphics, { svgWidth: 1200, svgHeight: 720 }),
+  ).toMatchSvgSnapshot(import.meta.path)
 })

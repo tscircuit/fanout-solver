@@ -1,11 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660">
-    <rect width="1200" height="660" fill="white"/>
-    <g font-family="sans-serif" fill="#182230">
-      <text x="28" y="40" font-size="25" font-weight="bold">fanout-solver: a reserved ground plane blocks via-site assignment</text>
-      
-    <text x="28" y="88" font-size="22" font-weight="bold">CONTROL: unbroken = false</text>
-    <text x="28" y="120" font-size="19">4 candidate sites; 1 assigned site</text>
-    <svg x="28" y="145" width="560" height="340" viewBox="0 0 560 340" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><rect data-type="rect" data-label="" data-x="-2" data-y="0" x="85" y="40" width="390" height="260" fill="transparent" stroke="#cbd5e1" stroke-width="0.015384615384615385"/></g><circle data-type="circle" data-label="" data-x="-3.8" data-y="-0.8" cx="163" cy="222" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3.8" data-y="0" cx="163" cy="170" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3.8" data-y="0.8" cx="163" cy="118" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3" data-y="-0.8" cx="215" cy="222" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3" data-y="0" cx="215" cy="170" r="13" fill="#2563eb" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3" data-y="0.8" cx="215" cy="118" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-2.2" data-y="-0.8" cx="267" cy="222" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-2.2" data-y="0" cx="267" cy="170" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-2.2" data-y="0.8" cx="267" cy="118" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3.4" data-y="-0.4" cx="189" cy="196" r="9.75" fill="#fed7aa" stroke="#d97706" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-2.6" data-y="-0.4" cx="241" cy="196" r="9.75" fill="#fed7aa" stroke="#d97706" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3.4" data-y="0.4" cx="189" cy="144" r="9.75" fill="#fed7aa" stroke="#d97706" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-2.6" data-y="0.4" cx="241" cy="144" r="9.75" fill="#fed7aa" stroke="#d97706" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3.4" data-y="-0.4" cx="189" cy="196" r="9.75" fill="#d97706" stroke="#92400e" stroke-width="0.015384615384615385"/><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="340" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="560" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+<svg width="1200" height="720" viewBox="0 0 1200 720" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><rect data-type="rect" data-label="" data-x="-2" data-y="0" x="40" y="137.2" width="480" height="320" fill="transparent" stroke="#cbd5e1" stroke-width="0.0125"/></g><g><rect data-type="rect" data-label="" data-x="6" data-y="0" x="680" y="137.2" width="480" height="320" fill="rgba(200,40,40,0.14)" stroke="#cbd5e1" stroke-width="0.0125"/></g><circle data-type="circle" data-label="" data-x="-3.8" data-y="-0.8" cx="136" cy="361.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-3.8" data-y="0" cx="136" cy="297.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-3.8" data-y="0.8" cx="136" cy="233.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-3" data-y="-0.8" cx="200" cy="361.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-3" data-y="0" cx="200" cy="297.2" r="16" fill="#2563eb" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-3" data-y="0.8" cx="200" cy="233.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-2.2" data-y="-0.8" cx="264" cy="361.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-2.2" data-y="0" cx="264" cy="297.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-2.2" data-y="0.8" cx="264" cy="233.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-3.4" data-y="-0.4" cx="168" cy="329.2" r="12" fill="#fed7aa" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-2.6" data-y="-0.4" cx="232" cy="329.2" r="12" fill="#fed7aa" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-3.4" data-y="0.4" cx="168" cy="265.2" r="12" fill="#fed7aa" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-2.6" data-y="0.4" cx="232" cy="265.2" r="12" fill="#fed7aa" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="-3.4" data-y="-0.4" cx="168" cy="329.2" r="12" fill="#d97706" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="4.2" data-y="-0.8" cx="776" cy="361.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="4.2" data-y="0" cx="776" cy="297.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="4.2" data-y="0.8" cx="776" cy="233.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="5" data-y="-0.8" cx="840" cy="361.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="5" data-y="0" cx="840" cy="297.2" r="16" fill="#2563eb" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="5" data-y="0.8" cx="840" cy="233.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="5.8" data-y="-0.8" cx="904" cy="361.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="5.8" data-y="0" cx="904" cy="297.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><circle data-type="circle" data-label="" data-x="5.8" data-y="0.8" cx="904" cy="233.2" r="16" fill="#cbd5e1" stroke="black" stroke-width="0.0125"/><text data-type="text" data-label="CONTROL: unbroken = false" data-x="-2" data-y="2.8" x="280" y="73.19999999999999" fill="black" font-size="24" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">CONTROL: unbroken = false</text><text data-type="text" data-label="4 candidate sites; 1 assigned site" data-x="-2" data-y="2.3" x="280" y="113.19999999999999" fill="black" font-size="20" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">4 candidate sites; 1 assigned site</text><text data-type="text" data-label="REPRO: unbroken = true" data-x="6" data-y="2.8" x="920" y="73.19999999999999" fill="black" font-size="24" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">REPRO: unbroken = true</text><text data-type="text" data-label="0 candidate sites; assignment = null" data-x="6" data-y="2.3" x="920" y="113.19999999999999" fill="black" font-size="20" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">0 candidate sites; assignment = null</text><text data-type="text" data-label="Blue: top SIGNAL pad. Light orange: candidates. Dark orange: selected site." data-x="2" data-y="-2.6" x="600" y="505.2" fill="black" font-size="19.2" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Blue: top SIGNAL pad. Light orange: candidates. Dark orange: selected site.</text><text data-type="text" data-label="Red: reserved inner1 GND region. Both original TSX boards contain a GND pour." data-x="2" data-y="-3.0500000000000003" x="600" y="541.2" fill="black" font-size="19.2" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Red: reserved inner1 GND region. Both original TSX boards contain a GND pour.</text><text data-type="text" data-label="Expected: SIGNAL crosses inner1 through a via, with a copper-free ring in GND." data-x="2" data-y="-3.5" x="600" y="577.2" fill="black" font-size="19.2" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Expected: SIGNAL crosses inner1 through a via, with a copper-free ring in GND.</text><text data-type="text" data-label="Actual: viaSiteClearsObstacles rejects every site inside the reserved pour." data-x="2" data-y="-3.95" x="600" y="613.2" fill="black" font-size="19.2" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Actual: viaSiteClearsObstacles rejects every site inside the reserved pour.</text><text data-type="text" data-label="Via-site matcher output only; no generated copper or antipads are shown." data-x="2" data-y="-4.4" x="600" y="649.2" fill="black" font-size="19.2" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Via-site matcher output only; no generated copper or antipads are shown.</text><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="720" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="1200" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
               document.currentScript.parentElement.addEventListener('mousemove', (e) => {
                 const svg = e.currentTarget;
                 const rect = svg.getBoundingClientRect();
@@ -18,16 +11,16 @@
                 
                 crosshair.style.display = 'block';
                 h.setAttribute('x1', '0');
-                h.setAttribute('x2', '560');
+                h.setAttribute('x2', '1200');
                 h.setAttribute('y1', y);
                 h.setAttribute('y2', y);
                 v.setAttribute('x1', x);
                 v.setAttribute('x2', x);
                 v.setAttribute('y1', '0');
-                v.setAttribute('y2', '340');
+                v.setAttribute('y2', '720');
 
                 // Calculate real coordinates using inverse transformation
-                const matrix = {"a":65,"c":0,"e":410,"b":0,"d":-65,"f":170};
+                const matrix = {"a":80,"c":0,"e":440,"b":0,"d":-80,"f":297.2};
                 // Manually invert and apply the affine transform
                 // Since we only use translate and scale, we can directly compute:
                 // x' = (x - tx) / sx
@@ -49,59 +42,3 @@
                 document.currentScript.parentElement.getElementById('crosshair').style.display = 'none';
               });
             ]]></script></svg>
-  
-      
-    <text x="612" y="88" font-size="22" font-weight="bold">REPRO: unbroken = true</text>
-    <text x="612" y="120" font-size="19">0 candidate sites; assignment = null</text>
-    <svg x="612" y="145" width="560" height="340" viewBox="0 0 560 340" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><rect data-type="rect" data-label="" data-x="-2" data-y="0" x="85" y="40" width="390" height="260" fill="rgba(200,40,40,0.14)" stroke="#cbd5e1" stroke-width="0.015384615384615385"/></g><circle data-type="circle" data-label="" data-x="-3.8" data-y="-0.8" cx="163" cy="222" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3.8" data-y="0" cx="163" cy="170" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3.8" data-y="0.8" cx="163" cy="118" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3" data-y="-0.8" cx="215" cy="222" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3" data-y="0" cx="215" cy="170" r="13" fill="#2563eb" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-3" data-y="0.8" cx="215" cy="118" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-2.2" data-y="-0.8" cx="267" cy="222" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-2.2" data-y="0" cx="267" cy="170" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><circle data-type="circle" data-label="" data-x="-2.2" data-y="0.8" cx="267" cy="118" r="13" fill="#cbd5e1" stroke="#475569" stroke-width="0.015384615384615385"/><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="340" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="560" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
-              document.currentScript.parentElement.addEventListener('mousemove', (e) => {
-                const svg = e.currentTarget;
-                const rect = svg.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
-                const crosshair = svg.getElementById('crosshair');
-                const h = svg.getElementById('crosshair-h');
-                const v = svg.getElementById('crosshair-v');
-                const coords = svg.getElementById('coordinates');
-                
-                crosshair.style.display = 'block';
-                h.setAttribute('x1', '0');
-                h.setAttribute('x2', '560');
-                h.setAttribute('y1', y);
-                h.setAttribute('y2', y);
-                v.setAttribute('x1', x);
-                v.setAttribute('x2', x);
-                v.setAttribute('y1', '0');
-                v.setAttribute('y2', '340');
-
-                // Calculate real coordinates using inverse transformation
-                const matrix = {"a":65,"c":0,"e":410,"b":0,"d":-65,"f":170};
-                // Manually invert and apply the affine transform
-                // Since we only use translate and scale, we can directly compute:
-                // x' = (x - tx) / sx
-                // y' = (y - ty) / sy
-                const sx = matrix.a;
-                const sy = matrix.d;
-                const tx = matrix.e; 
-                const ty = matrix.f;
-                const realPoint = {
-                  x: (x - tx) / sx,
-                  y: (y - ty) / sy // Flip y back since we used negative scale
-                }
-                
-                coords.textContent = `(${realPoint.x.toFixed(2)}, ${realPoint.y.toFixed(2)})`;
-                coords.setAttribute('x', (x + 5).toString());
-                coords.setAttribute('y', (y - 5).toString());
-              });
-              document.currentScript.parentElement.addEventListener('mouseleave', () => {
-                document.currentScript.parentElement.getElementById('crosshair').style.display = 'none';
-              });
-            ]]></script></svg>
-  
-      <text x="28" y="512" font-size="18">Blue: top SIGNAL pad. Light orange: returned candidates. Dark orange: selected site.</text>
-      <text x="28" y="545" font-size="18">Red: inner1 GND reserved obstacle. Both TSX boards contain GND; only unbroken changes.</text>
-      <text x="28" y="578" font-size="18">Expected: a SIGNAL via can cross inner1 on its way to inner2, with a copper-free ring in GND.</text>
-      <text x="28" y="611" font-size="18">Actual: viaSiteClearsObstacles rejects every candidate inside the reserved pour region.</text>
-      <text x="28" y="642" font-size="16">Direct helper output only. No dogbone-solver dependency, saved routes, routed copper, or antipad output.</text>
-    </g>
-  </svg>
