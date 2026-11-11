@@ -25,7 +25,6 @@ test("MT8395 HDMI blind vias escape above bottom decoupling pads", async () => {
       clearance: 0.06,
       holeToHoleClearance: 0.1,
       boardEdgeClearance: 0.2,
-      allowBlindAndBuriedVias: true,
     })
   } catch (cause) {
     error = cause

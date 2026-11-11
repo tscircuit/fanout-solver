@@ -54,7 +54,10 @@ test("blind dogbones clear off-span pads, traces and vias but reject in-span cop
     "through_via",
   ] as const
   for (const name of cases) {
-    const input = fixture()
+    const input = {
+      ...fixture(),
+      allowBlindAndBuriedVias: name !== "through_via",
+    }
     if (
       name === "bottom_pad" ||
       name === "inner1_pad" ||
@@ -134,7 +137,6 @@ test("blind dogbones clear off-span pads, traces and vias but reject in-span cop
         viaHoleDiameter: 0.15,
         traceWidth: 0.1,
         clearance: 0.1,
-        allowBlindAndBuriedVias: name !== "through_via",
       })
     } catch (error) {
       expect(String(error)).toContain(

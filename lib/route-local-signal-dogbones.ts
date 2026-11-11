@@ -33,16 +33,18 @@ export interface LocalSignalDogboneOptions {
   clearance: number
   holeToHoleClearance?: number
   boardEdgeClearance?: number
-  allowBlindAndBuriedVias?: boolean
 }
 
 /** Local signal escapes in board-world mm (+X right, +Y up). All geometry is
  * points, not directions. Signals remain unresolved at the returned handoffs;
- * no shared-boundary routing or plane termination is performed. Input is immutable. */
+ * no shared-boundary routing or plane termination is performed. Input is immutable.
+ * The SRJ allowBlindAndBuriedVias flag is authoritative and defaults to false;
+ * neither routing options nor supplied via metadata enable the capability. */
 export function routeLocalSignalDogbones(
-  input: SimpleRouteJson,
+  input: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean },
   options: LocalSignalDogboneOptions,
 ) {
+  const allowBlindAndBuriedVias = input.allowBlindAndBuriedVias ?? false
   const connections = structuredClone(input.connections)
   const endpoints: Array<{ connectionIndex: number; pointIndex: number }> = []
   const virtualConnections: SimpleRouteConnection[] = []
@@ -168,7 +170,7 @@ export function routeLocalSignalDogbones(
             toLayer: point.to_layer,
             layers: (point as typeof point & { layers?: string[] }).layers,
             layerNames: layers,
-            allowBlindAndBuriedVias: options.allowBlindAndBuriedVias ?? false,
+            allowBlindAndBuriedVias: allowBlindAndBuriedVias,
           }),
         })
         const next = trace.route[i + 1]
@@ -219,7 +221,7 @@ export function routeLocalSignalDogbones(
           fromLayer: source.sourceLayer,
           toLayer: options.targetLayers.get(connection.name)!,
           layerNames: layers,
-          allowBlindAndBuriedVias: options.allowBlindAndBuriedVias ?? false,
+          allowBlindAndBuriedVias: allowBlindAndBuriedVias,
         }),
       ] as const
     }),

@@ -3,7 +3,8 @@ import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { routeLocalSignalDogbones, validateRoutedCopperDrc } from "lib"
 
 test("opposite-side pad escapes may share XY only with disjoint physical via spans", async () => {
-  const input: SimpleRouteJson = {
+  const input: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean } = {
+    allowBlindAndBuriedVias: true,
     layerCount: 4,
     minTraceWidth: 0.1,
     bounds: { minX: -3, maxX: 3, minY: -3, maxY: 3 },
@@ -41,7 +42,6 @@ test("opposite-side pad escapes may share XY only with disjoint physical via spa
     viaHoleDiameter: 0.15,
     traceWidth: 0.1,
     clearance: 0.1,
-    allowBlindAndBuriedVias: true,
   }
   let result: ReturnType<typeof routeLocalSignalDogbones> | undefined
   let error: unknown

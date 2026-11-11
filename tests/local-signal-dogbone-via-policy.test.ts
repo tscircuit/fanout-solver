@@ -40,8 +40,8 @@ test("local escapes require explicit opt-in to blind and buried vias", () => {
     { allowBlindAndBuriedVias: false },
     { allowBlindAndBuriedVias: true },
   ]) {
-    const configured = { ...options, ...policy }
-    const result = routeLocalSignalDogbones(input, configured)
+    const configured = { ...input, ...policy }
+    const result = routeLocalSignalDogbones(configured, options)
     expect(result.traces).toHaveLength(1)
     expect(
       result.traces[0]!.route.find((p) => p.route_type === "via")!.layers,
@@ -52,13 +52,13 @@ test("local escapes require explicit opt-in to blind and buried vias", () => {
     )
     expect(
       validateRoutedCopperDrc({
-        inputSrj: input,
-        routedSrj: { ...input, traces: result.traces },
+        inputSrj: configured,
+        routedSrj: { ...configured, traces: result.traces },
         clearance: 0.1,
       }).issues,
     ).toEqual([])
 
-    const blocked = structuredClone(input)
+    const blocked = structuredClone(configured)
     blocked.obstacles.push({
       type: "rect",
       center: { x: 0, y: 0 },
@@ -69,7 +69,7 @@ test("local escapes require explicit opt-in to blind and buried vias", () => {
     })
     const original = JSON.stringify(blocked)
     if (policy.allowBlindAndBuriedVias) {
-      const escaped = routeLocalSignalDogbones(blocked, configured)
+      const escaped = routeLocalSignalDogbones(blocked, options)
       expect(escaped.traces).toHaveLength(1)
       expect(
         validateRoutedCopperDrc({
@@ -79,10 +79,45 @@ test("local escapes require explicit opt-in to blind and buried vias", () => {
         }).issues,
       ).toEqual([])
     } else {
-      expect(() => routeLocalSignalDogbones(blocked, configured)).toThrow(
+      expect(() => routeLocalSignalDogbones(blocked, options)).toThrow(
         "No collision-free local dogbone assignment",
       )
     }
     expect(JSON.stringify(blocked)).toBe(original)
+
+    // Input via metadata must never opt the board into blind/buried routing.
+    // Reject a supplied buried span under the default/false board policy,
+    // rather than widening immutable input copper or silently enabling HDI.
+    const supplied = {
+      ...configured,
+      traces: [
+        {
+          type: "pcb_trace" as const,
+          pcb_trace_id: "supplied_buried_via",
+          connection_name: "fixed",
+          route: [
+            {
+              route_type: "via" as const,
+              x: 2,
+              y: -2,
+              from_layer: "inner2",
+              to_layer: "bottom",
+              layers: ["inner2", "bottom"],
+              via_diameter: 0.3,
+              via_hole_diameter: 0.15,
+            },
+          ],
+        },
+      ],
+    }
+    const before = JSON.stringify(supplied)
+    if (policy.allowBlindAndBuriedVias) {
+      expect(routeLocalSignalDogbones(supplied, options).traces).toHaveLength(1)
+    } else {
+      expect(() => routeLocalSignalDogbones(supplied, options)).toThrow(
+        "supplied via span requires allowBlindAndBuriedVias=true in the input SRJ",
+      )
+    }
+    expect(JSON.stringify(supplied)).toBe(before)
   }
 })
