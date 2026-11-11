@@ -11,7 +11,7 @@ import {
 import {
   getComponentDogboneViaSiteCandidates,
   matchComponentDogboneViaSites,
-} from "lib/match-component-dogbone-via-sites"
+} from "../lib"
 import type {
   Point2D,
   PreparedBus,
