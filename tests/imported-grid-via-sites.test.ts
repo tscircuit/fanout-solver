@@ -6,9 +6,11 @@ import {
   matchComponentDogboneViaSites,
 } from "lib/match-component-dogbone-via-sites"
 import { prepareFanoutBuses } from "lib/prepare-buses"
+import type { FanoutSimplifiedPcbTrace } from "lib/types"
+import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import fixture from "./fixtures/imported-grid-via-sites.json"
 
-test("imported STM32 pad grid loses legal direct dogbone sites", async () => {
+test("imported STM32 pad grid assigns every direct dogbone with valid copper geometry", async () => {
   const input = structuredClone(fixture.inputSrj) as SimpleRouteJson
   const pads = fixture.inputSrj.obstacles.filter(
     (pad) => pad.componentId === "pcb_component_0",
@@ -59,19 +61,59 @@ test("imported STM32 pad grid loses legal direct dogbone sites", async () => {
     .filter((_, index) => !candidateIndices.has(index))
     .map(({ name }) => name)
 
-  expect(missing).toEqual([
-    "A5",
-    "A10",
-    "A15",
-    "E1",
-    "K1",
-    "K19",
-    "R1",
-    "W5",
-    "W10",
-    "W15",
-  ])
-  expect(matching).toBeNull()
+  expect(missing).toEqual([])
+  expect(matching?.size).toBe(354)
+  for (const { connectionIndex, point } of candidates) {
+    const source = pads[connectionIndex]!.center
+    const dx = Math.abs(point.x - source.x)
+    const dy = Math.abs(point.y - source.y)
+    expect(Math.min(dx, dy, Math.abs(dx - dy))).toBeLessThan(1e-9)
+  }
+  // Audit the assigned straight stubs and full through-vias together against
+  // every captured obstacle, independently of candidate selection.
+  const traces = input.connections.map(
+    (connection, index): FanoutSimplifiedPcbTrace => {
+      const source = connection.pointsToConnect[0]!
+      const via = matching!.get(index)!
+      return {
+        type: "pcb_trace",
+        pcb_trace_id: `escape_${index}`,
+        connection_name: connection.name,
+        route: [
+          {
+            route_type: "wire",
+            ...source,
+            layer: "top",
+            width: rules.traceWidth,
+          },
+          { route_type: "wire", ...via, layer: "top", width: rules.traceWidth },
+          {
+            route_type: "via",
+            ...via,
+            from_layer: "top",
+            to_layer: "inner3",
+            layers: ["top", "inner1", "inner2", "inner3", "inner4", "bottom"],
+            via_diameter: rules.viaDiameter,
+            via_hole_diameter: rules.viaHoleDiameter,
+          },
+          {
+            route_type: "wire",
+            ...via,
+            layer: "inner3",
+            width: rules.traceWidth,
+          },
+        ],
+      }
+    },
+  )
+  const drc = validateRoutedCopperDrc({
+    inputSrj: input,
+    routedSrj: { ...input, traces },
+    clearance: rules.clearance,
+    allowBlindAndBuriedVias: false,
+  })
+  expect(drc.issues).toEqual([])
+  expect(drc.checkedViaCount).toBe(354)
   expect(JSON.stringify({ input, buses })).toBe(before)
 
   const focus = pads.find(
