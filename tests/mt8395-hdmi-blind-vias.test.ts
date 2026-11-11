@@ -33,8 +33,8 @@ test("MT8395 HDMI blind vias escape above bottom decoupling pads", async () => {
   expect(hashMt8395Input(input)).toBe(before)
   expect(input.connections).toHaveLength(2)
   expect(input.traces).toHaveLength(138)
-  expect(String(error)).toContain("No collision-free local dogbone assignment")
-  expect(result).toBeUndefined()
+  expect(error).toBeUndefined()
+  expect(result?.traces).toHaveLength(4)
   if (result) {
     for (const trace of result.traces) {
       const via = trace.route.find((p) => p.route_type === "via")!

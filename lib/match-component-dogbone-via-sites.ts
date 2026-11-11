@@ -19,6 +19,9 @@ const DEFAULT_MAXIMUM_SEARCH_STATES = 100_000
 
 export interface DogboneViaSiteGeometryRules {
   viaDiameter: number
+  /** Physical copper layers occupied by each candidate via. Omitted entries
+   * preserve the conservative through-via behavior of existing callers. */
+  viaLayersByConnectionIndex?: ReadonlyMap<number, readonly string[]>
   viaHoleDiameter?: number
   traceWidth: number
   clearance: number
@@ -81,6 +84,7 @@ interface ViaSiteCandidate {
   connectionIndex: number
   point: Point2D
   sourceSegment: RoutedSegment
+  viaLayers?: readonly string[]
   outwardRank: number
 }
 
@@ -345,6 +349,14 @@ function getConnectionCandidates(params: {
   const obstacles = rules.additionalObstacles
     ? [...new Set([...component.obstacles, ...rules.additionalObstacles])]
     : component.obstacles
+  const viaLayers = rules.viaLayersByConnectionIndex?.get(
+    preparedConnection.connectionIndex,
+  )
+  if (
+    viaLayers &&
+    (!viaLayers.length || !viaLayers.includes(preparedConnection.sourceLayer))
+  )
+    throw Error("FanoutSolver: dogbone via span must include its source layer")
   const source = {
     x: preparedConnection.sourcePoint.x,
     y: preparedConnection.sourcePoint.y,
@@ -377,6 +389,16 @@ function getConnectionCandidates(params: {
   )
   const candidatePoints = fixedViaPoint ? [fixedViaPoint] : uniquePoints
 
+  const viaObstacles = viaLayers
+    ? obstacles.filter((obstacle) =>
+        obstacle.layers.some((layer) => viaLayers.includes(layer)),
+      )
+    : obstacles
+  const sourceObstacles = viaLayers
+    ? obstacles.filter((obstacle) =>
+        obstacle.layers.includes(preparedConnection.sourceLayer),
+      )
+    : obstacles
   const candidates: ViaSiteCandidate[] = []
   for (const point of candidatePoints) {
     if (
@@ -388,7 +410,7 @@ function getConnectionCandidates(params: {
     if (
       !viaSiteClearsObstacles({
         point,
-        obstacles,
+        obstacles: viaObstacles,
         viaDiameter: rules.viaDiameter,
         clearance: rules.clearance,
       })
@@ -405,7 +427,7 @@ function getConnectionCandidates(params: {
       !sourceSegmentClearsOtherObstacles({
         segment: sourceSegment,
         sourceObstacle: preparedConnection.sourceObstacle,
-        obstacles,
+        obstacles: sourceObstacles,
         clearance: rules.clearance,
       })
     ) {
@@ -427,12 +449,13 @@ function getConnectionCandidates(params: {
         const viaToTraceClearance =
           rules.viaDiameter / 2 + blocker.segment.width / 2 + rules.clearance
         if (
+          (!viaLayers || viaLayers.includes(blocker.segment.layer)) &&
           distancePointToSegment(
             point,
             blocker.segment.start,
             blocker.segment.end,
           ) <
-          viaToTraceClearance - EPSILON
+            viaToTraceClearance - EPSILON
         ) {
           return false
         }
@@ -449,8 +472,12 @@ function getConnectionCandidates(params: {
           return true
         }
         if (
+          (!viaLayers ||
+            blocker.spanLayers.some((layer) => viaLayers.includes(layer))) &&
           distance(point, blocker.center) <
-          (rules.viaDiameter + blocker.diameter) / 2 + rules.clearance - EPSILON
+            (rules.viaDiameter + blocker.diameter) / 2 +
+              rules.clearance -
+              EPSILON
         ) {
           return false
         }
@@ -476,6 +503,7 @@ function getConnectionCandidates(params: {
       connectionIndex: preparedConnection.connectionIndex,
       point,
       sourceSegment,
+      viaLayers,
       outwardRank: getOutwardRank({ source, site: point, direction }),
     })
   }
@@ -557,34 +585,44 @@ function candidatesAreMutuallyClear(params: {
   const requiredViaSeparation = canShareCopper
     ? requiredHoleSeparation
     : Math.max(rules.viaDiameter + rules.clearance, requiredHoleSeparation)
-  if (distance(first.point, second.point) < requiredViaSeparation - EPSILON) {
+  const spansOverlap =
+    !first.viaLayers ||
+    !second.viaLayers ||
+    first.viaLayers.some((layer) => second.viaLayers!.includes(layer))
+  if (
+    spansOverlap &&
+    distance(first.point, second.point) < requiredViaSeparation - EPSILON
+  ) {
     return false
   }
   const requiredViaToTraceClearance =
     rules.viaDiameter / 2 + rules.traceWidth / 2 + rules.clearance
   if (!canShareCopper) {
     if (
-      distancePointToSegment(
-        first.point,
-        second.sourceSegment.start,
-        second.sourceSegment.end,
-      ) <
-        requiredViaToTraceClearance - EPSILON ||
-      distancePointToSegment(
-        second.point,
-        first.sourceSegment.start,
-        first.sourceSegment.end,
-      ) <
-        requiredViaToTraceClearance - EPSILON
+      ((!first.viaLayers ||
+        first.viaLayers.includes(second.sourceSegment.layer)) &&
+        distancePointToSegment(
+          first.point,
+          second.sourceSegment.start,
+          second.sourceSegment.end,
+        ) <
+          requiredViaToTraceClearance - EPSILON) ||
+      ((!second.viaLayers ||
+        second.viaLayers.includes(first.sourceSegment.layer)) &&
+        distancePointToSegment(
+          second.point,
+          first.sourceSegment.start,
+          first.sourceSegment.end,
+        ) <
+          requiredViaToTraceClearance - EPSILON)
     ) {
       return false
     }
   }
   if (canShareCopper) return true
-  return segmentsAreClear(
-    first.sourceSegment,
-    second.sourceSegment,
-    rules.clearance,
+  return (
+    first.sourceSegment.layer !== second.sourceSegment.layer ||
+    segmentsAreClear(first.sourceSegment, second.sourceSegment, rules.clearance)
   )
 }
 

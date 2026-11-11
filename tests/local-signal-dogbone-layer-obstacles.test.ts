@@ -150,7 +150,7 @@ test("blind dogbones clear off-span pads, traces and vias but reject in-span cop
     ].includes(name)
       ? 0
       : 2
-    expect(result?.traces.length ?? 0).toBe(0)
+    expect(result?.traces.length ?? 0).toBe(expected)
     if (result) {
       expect(
         validateRoutedCopperDrc({

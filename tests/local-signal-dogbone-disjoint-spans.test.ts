@@ -52,8 +52,8 @@ test("opposite-side pad escapes may share XY only with disjoint physical via spa
     error = cause
   }
   expect(JSON.stringify(input)).toBe(original)
-  expect(String(error)).toContain("No collision-free local dogbone assignment")
-  expect(result).toBeUndefined()
+  expect(error).toBeUndefined()
+  expect(result?.traces).toHaveLength(2)
   if (result) {
     const vias = result.traces.map(
       (t) => t.route.find((p) => p.route_type === "via")!,
