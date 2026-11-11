@@ -2,7 +2,13 @@ import type { Obstacle, SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { fanoutPlansAreClear } from "./route-bus"
 import type { SourceOriginReservations } from "./route-source-origin-buses"
 import { buildViaMinimalWindingPlan } from "./route-via-minimal-winding"
-import type { Bounds, FanoutDirection, Point2D, PreparedBus } from "./types"
+import type {
+  Bounds,
+  FanoutDirection,
+  FanoutRoutePlan,
+  Point2D,
+  PreparedBus,
+} from "./types"
 import { validateRoutedCopperDrc } from "./validate-routed-copper-drc"
 
 export interface PeripheralSourceReservationParams {
@@ -99,7 +105,7 @@ export function preparePeripheralSourceReservations(
   if (directions.size !== 4) return null
   const fixedViaPointsByConnectionIndex = new Map<number, Point2D>(),
     sourceEscapePaths = new Map<number, readonly Point2D[]>()
-  const sourcePlans = []
+  const sourcePlans: FanoutRoutePlan[] = []
   for (const bus of params.buses) {
     const targetLayer =
       bus.termination.type === "plane"
