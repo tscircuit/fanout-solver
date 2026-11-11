@@ -101,7 +101,7 @@ test("opposite-side pad escapes may share XY only with disjoint physical via spa
   }
   const layers = ["top", "inner1", "inner2", "bottom"],
     colors = ["#ffcf75", "#82cfe9"]
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="920" height="460"><rect width="920" height="460" fill="#10202c"/><g font-family="Arial" fill="#eff4f7"><text x="28" y="42" font-size="25">Opposite-side blind vias: same position, separate layers</text><text x="28" y="78" font-size="20">${result ? "2/2 local escapes routed; copper clearance passed" : "BEFORE: no escapes; opposite-side pads block the search"}</text>${layers.map((l, i) => `<path d="M90 ${140 + i * 65}H500" stroke="#72858d" stroke-width="2"/><text x="520" y="${146 + i * 65}" font-size="18">${l}</text>`).join("")}${(
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="920" height="460"><rect width="920" height="460" fill="#10202c"/><g font-family="Arial" fill="#eff4f7"><text x="28" y="42" font-size="25">Opposite-side blind vias: same position, separate layers</text><text x="28" y="78" font-size="20">${result ? "2/2 local escapes routed; copper clearance passed" : "BEFORE: no escapes; opposite-side spans treated as colliding"}</text>${layers.map((l, i) => `<path d="M90 ${140 + i * 65}H500" stroke="#72858d" stroke-width="2"/><text x="520" y="${146 + i * 65}" font-size="18">${l}</text>`).join("")}${(
     result?.traces ?? []
   )
     .map((t, i) => {

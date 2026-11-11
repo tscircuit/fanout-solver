@@ -312,13 +312,17 @@ function getOutwardRank(params: {
 function viaSiteClearsObstacles(params: {
   point: Point2D
   obstacles: readonly Obstacle[]
+  sourceLayer: string
   viaDiameter: number
   clearance: number
 }): boolean {
-  const { point, obstacles, viaDiameter, clearance } = params
+  const { point, obstacles, sourceLayer, viaDiameter, clearance } = params
   const requiredClearance = viaDiameter / 2 + clearance
   return obstacles.every(
     (obstacle) =>
+      // Other-layer pours can form antipads around the via. Source-layer
+      // reservations and physical pads/holes must still satisfy clearance.
+      (obstacle.isCopperPour && !obstacle.layers.includes(sourceLayer)) ||
       distancePointToObstacle(point, obstacle) >= requiredClearance - EPSILON,
   )
 }
@@ -334,6 +338,7 @@ function sourceSegmentClearsOtherObstacles(params: {
   return obstacles.every(
     (obstacle) =>
       obstacle === sourceObstacle ||
+      !obstacle.layers.includes(segment.layer) ||
       distanceSegmentToObstacle(segment, obstacle) >=
         requiredClearance - EPSILON,
   )
@@ -343,8 +348,9 @@ function getConnectionCandidates(params: {
   connection: ComponentConnection
   component: ComponentMatchingInput
   rules: DogboneViaSiteGeometryRules
+  includeProjectedSites?: boolean
 }): ViaSiteCandidate[] {
-  const { connection, component, rules } = params
+  const { connection, component, rules, includeProjectedSites = true } = params
   const { preparedConnection, direction } = connection
   const obstacles = rules.additionalObstacles
     ? [...new Set([...component.obstacles, ...rules.additionalObstacles])]
@@ -376,6 +382,21 @@ function getConnectionCandidates(params: {
     ...adjacentY.map((y) => ({ x: source.x, y })),
     ...adjacentX.flatMap((x) => adjacentY.map((y) => ({ x, y }))),
   ]
+  if (includeProjectedSites && connection.terminationType === "plane") {
+    // A rectangular or rounded imported grid can put an interstitial midpoint
+    // off the source's 45-degree rays. Intersect those rays with each adjacent
+    // interstitial row/column; all resulting sites still pass normal clearance.
+    for (const x of adjacentX) {
+      for (const y of adjacentY) {
+        const dx = x - source.x
+        const dy = y - source.y
+        rawPoints.push(
+          { x, y: source.y + Math.sign(dy) * Math.abs(dx) },
+          { x: source.x + Math.sign(dx) * Math.abs(dy), y },
+        )
+      }
+    }
+  }
   const uniquePoints: Point2D[] = []
   for (const point of rawPoints) {
     if (
@@ -411,6 +432,7 @@ function getConnectionCandidates(params: {
       !viaSiteClearsObstacles({
         point,
         obstacles: viaObstacles,
+        sourceLayer: preparedConnection.sourceLayer,
         viaDiameter: rules.viaDiameter,
         clearance: rules.clearance,
       })
@@ -630,12 +652,18 @@ function matchComponent(params: {
   component: ComponentMatchingInput
   rules: DogboneViaSiteGeometryRules
   consumeSearchState: () => boolean
+  includeProjectedSites: boolean
 }): Map<number, Point2D> | null {
-  const { component, rules, consumeSearchState } = params
+  const { component, rules, consumeSearchState, includeProjectedSites } = params
   const entries: ConnectionCandidates[] = component.connections.map(
     (connection) => ({
       connection,
-      candidates: getConnectionCandidates({ connection, component, rules }),
+      candidates: getConnectionCandidates({
+        connection,
+        component,
+        rules,
+        includeProjectedSites,
+      }),
     }),
   )
   if (entries.some((entry) => entry.candidates.length === 0)) return null
@@ -768,8 +796,9 @@ function matchComponent(params: {
  * Matches every prepared connection to a legal adjacent dogbone via site.
  *
  * Candidate sites are derived from the component pad-center grid: midpoint
- * gaps plus one half-pitch perimeter coordinate on each side. The matcher
- * never infers component or connection metadata from identifiers.
+ * gaps plus one half-pitch perimeter coordinate on each side. Plane dogbones
+ * can also use the intersections of 45-degree source rays with those rows and
+ * columns. The matcher never infers metadata from component/connection IDs.
  */
 export function matchComponentDogboneViaSites(
   preparedBuses: readonly PreparedBus[],
@@ -785,11 +814,27 @@ export function matchComponentDogboneViaSites(
   }
   const result = new Map<number, Point2D>()
   for (const component of getComponentMatchingInputs(preparedBuses)) {
-    const componentResult = matchComponent({
+    // Preserve complete midpoint assignments before expanding the search to
+    // projected 45-degree sites. Both passes share the same search-state limit.
+    let componentResult = matchComponent({
       component,
       rules,
       consumeSearchState,
+      includeProjectedSites: false,
     })
+    if (
+      !componentResult &&
+      component.connections.some(
+        ({ terminationType }) => terminationType === "plane",
+      )
+    ) {
+      componentResult = matchComponent({
+        component,
+        rules,
+        consumeSearchState,
+        includeProjectedSites: true,
+      })
+    }
     if (!componentResult) return null
     for (const [connectionIndex, point] of componentResult) {
       result.set(connectionIndex, point)
