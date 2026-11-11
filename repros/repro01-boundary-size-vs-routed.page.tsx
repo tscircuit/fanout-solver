@@ -22,11 +22,11 @@ const buttonStyle: React.CSSProperties = {
 }
 
 const variants = [
-  { grownBy: 0, label: "As resolved by core", routed: "13/23" },
-  { grownBy: 0.3, label: "+0.3mm", routed: "17/23" },
-  { grownBy: 0.6, label: "+0.6mm", routed: "18/23" },
-  { grownBy: 1.2, label: "+1.2mm", routed: "19/23" },
-  { grownBy: 3, label: "+3mm", routed: "19/23" },
+  { grownBy: 0, label: "As resolved by core", routed: "18/23" },
+  { grownBy: 0.3, label: "+0.3mm", routed: "23/23" },
+  { grownBy: 0.6, label: "+0.6mm", routed: "23/23" },
+  { grownBy: 1.2, label: "+1.2mm", routed: "23/23" },
+  { grownBy: 3, label: "+3mm", routed: "23/23" },
 ]
 
 /**
@@ -68,10 +68,10 @@ export default function Repro01WiderBoundaryRoutesFewerPage() {
             {simpleRouteJson.obstacles.length} obstacles ·{" "}
             {simpleRouteJson.layerCount} layers
           </div>
-          <div style={{ color: "#b91c1c", fontSize: 13, marginTop: 6 }}>
+          <div style={{ color: "#0f766e", fontSize: 13, marginTop: 6 }}>
             Every tab is the same problem with only the shared boundary changed.
             Widening it used to drop the result from 13/23 to 0/23; it now
-            improves with room, as it should. Reaching 23/23 is still open.
+            routes 18/23 at the tight boundary and 23/23 once widened.
           </div>
         </div>
 

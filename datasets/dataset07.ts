@@ -13,8 +13,8 @@ import type { FanoutDatasetSample } from "./dataset-types"
  * fanoutBoundaryPadding produces -- had every plan rejected. Widening the
  * boundary took this from 13 of 23 connections to zero.
  *
- * It now improves with room, as it should: 13/23 at the resolved boundary,
- * 17/23 at +0.3mm, 19/23 from +1.2mm. Reaching 23/23 is still open.
+ * It now improves with room, as it should: 18/23 at the resolved boundary,
+ * and 23/23 from +0.3mm onward.
  */
 const fixture = rp2350aBreakoutFixture as unknown as {
   simpleRouteJson: SimpleRouteJson
@@ -66,19 +66,19 @@ export const fanoutDataset07: FanoutDatasetSample[] = [
   createSample(
     "sample001",
     "As resolved by core",
-    "The breakout boundary core resolved: the tight bounding box of the QFN plus its decoupling ring. Routes 13 of 23 connections.",
+    "The breakout boundary core resolved: the tight bounding box of the QFN plus its decoupling ring. Routes 18 of 23 connections.",
     0,
   ),
   createSample(
     "sample002",
     "Boundary widened 0.6mm",
-    "The same problem with 0.6mm more room on every side. Routes 18 of 23, better than the tighter boundary above.",
+    "The same problem with 0.6mm more room on every side. Routes all 23 of 23 connections.",
     0.6,
   ),
   createSample(
     "sample003",
     "Boundary widened 3mm",
-    "3mm more room on every side, well clear of every pad. Routes 19 of 23.",
+    "3mm more room on every side, well clear of every pad. Routes all 23 of 23 connections.",
     3,
   ),
 ]

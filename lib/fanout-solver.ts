@@ -456,7 +456,34 @@ function busIsOnOutwardComponentEdge(bus: PreparedBus): boolean {
     bus.direction === "right" || bus.direction === "up"
       ? Math.max(...directionalCoordinates)
       : Math.min(...directionalCoordinates)
-  return Math.abs(averageSource - outwardCoordinate) < 1e-6
+  if (Math.abs(averageSource - outwardCoordinate) < 1e-6) return true
+  const sign = bus.direction === "right" || bus.direction === "up" ? 1 : -1
+  return bus.connections.every((connection) => {
+    const sourceAxis = isHorizontal
+      ? connection.sourcePoint.x
+      : connection.sourcePoint.y
+    const sourcePerpendicular = isHorizontal
+      ? connection.sourcePoint.y
+      : connection.sourcePoint.x
+    const sourceHalfSpan =
+      (isHorizontal
+        ? connection.sourceObstacle.height
+        : connection.sourceObstacle.width) / 2
+    return !bus.componentObstacles.some((obstacle) => {
+      if (obstacle === connection.sourceObstacle) return false
+      const obstacleAxis = isHorizontal ? obstacle.center.x : obstacle.center.y
+      if ((obstacleAxis - sourceAxis) * sign <= 1e-6) return false
+      const obstaclePerpendicular = isHorizontal
+        ? obstacle.center.y
+        : obstacle.center.x
+      const obstacleHalfSpan =
+        (isHorizontal ? obstacle.height : obstacle.width) / 2
+      return (
+        Math.abs(obstaclePerpendicular - sourcePerpendicular) <=
+        sourceHalfSpan + obstacleHalfSpan + 1e-6
+      )
+    })
+  })
 }
 
 function getBusDepthInRows(bus: PreparedBus): number {
