@@ -1,0 +1,36 @@
+name: SMT terminal via-site regression
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  benchmark:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 135
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || 'main' }}
+          path: base
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: head
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install before timing
+        run: |
+          (cd base && bun install --ignore-scripts)
+          (cd head && bun install --ignore-scripts)
+      - name: Fresh base and head with the same fixture and harness
+        run: |
+          mkdir -p results
+          bun head/benchmarks/smt-terminal-via-sites.ts base/lib/index.ts results/base.json || true
+          bun head/benchmarks/smt-terminal-via-sites.ts head/lib/index.ts results/head.json
+      - name: Retain benchmark reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smt-terminal-via-sites-comparison
+          path: results/
+          retention-days: 30
