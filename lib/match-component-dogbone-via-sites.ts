@@ -575,7 +575,7 @@ function getConnectionCandidates(params: {
     rules.allowPadEdgeSites &&
     !params.padEdgeFallback &&
     !fixedViaPoint &&
-    pad.shape !== "circle" &&
+    !("shape" in pad && pad.shape === "circle") &&
     Math.max(pad.width, pad.height) > 1.5 * Math.min(pad.width, pad.height)
   ) {
     for (const edge of getConnectionCandidates({
