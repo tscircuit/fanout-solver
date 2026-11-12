@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="850">
+<rect width="1000" height="850" fill="#122330"/>
+<g font-family="Arial" fill="#edf3f7">
+<text x="28" y="40" font-size="25">USB ESD pad: shorter legal fanout</text>
+<text x="28" y="77" font-size="19">BEFORE: distant grid midpoint; escape 0.475 mm</text>
+<rect x="85.12000000000002" y="483.52" width="95.76" height="192.96" fill="#526575" stroke="#c8d5dc"/><rect x="85.12000000000002" y="141.51999999999998" width="95.76" height="192.96" fill="#526575" stroke="#c8d5dc"/><rect x="256.12" y="483.52" width="95.76" height="192.96" fill="#526575" stroke="#c8d5dc"/><rect x="256.12" y="141.51999999999998" width="95.76" height="192.96" fill="#526575" stroke="#c8d5dc"/><rect x="427.12" y="483.52" width="95.76" height="192.96" fill="#b38336" stroke="#c8d5dc"/><rect x="427.12" y="141.51999999999998" width="95.76" height="192.96" fill="#526575" stroke="#c8d5dc"/>
+<path d="M475 580H560.5" fill="none" stroke="#63d9fc" stroke-width="9"/>
+<ellipse cx="560.5" cy="580" rx="13.5" ry="13.5" fill="#63d9fc"/>
+<ellipse cx="560.5" cy="580" rx="6.75" ry="6.75" fill="#122330"/>
+<text x="740" y="185" font-size="18">Pad: 0.532 × 1.072 mm</text>
+<text x="740" y="220" font-size="18">Via: 0.15 mm</text>
+<text x="740" y="255" font-size="18">Clearance: 0.06 mm</text>
+<text x="740" y="315" font-size="18">Actual accepted escape</text>
+<text x="740" y="350" font-size="18">Through via by default</text>
+<text x="28" y="725" font-size="17">Local escape only. End-to-end routing is outside this fixture.</text>
+<text x="28" y="780" font-family="monospace" font-size="17">&lt;board layers={4} allowBlindAndBuriedVias={false}&gt;</text>
+<text x="28" y="815" font-family="monospace" font-size="17">  &lt;smtpad pcbX={0.95} pcbY={0} width={0.532} height={1.072} /&gt;</text>
+</g></svg>
