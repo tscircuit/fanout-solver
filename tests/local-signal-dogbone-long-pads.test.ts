@@ -77,7 +77,17 @@ ${input.obstacles
       `<rect x="${sx(p.center.x - p.width / 2)}" y="${sy(p.height / 2)}" width="${p.width * 125}" height="${p.height * 125}" fill="${i === 1 ? "#b38336" : "#526575"}" stroke="#c8d5dc"/><text x="${sx(p.center.x)}" y="${sy(p.height / 2) - 12}" text-anchor="middle" font-size="16">${i === 1 ? "signal" : "NC"}</text>`,
   )
   .join("")}
-${result?.traces.map((t) => `<polyline points="${t.route.map((p) => `${sx(p.x)},${sy(p.y)}`).join(" ")}" fill="none" stroke="#63d9fc" stroke-width="7.5"/>`).join("") ?? ""}
+${
+  result?.traces
+    .map(
+      (t) =>
+        `<polyline points="${t.route
+          .filter((p) => p.route_type === "wire" || p.route_type === "via")
+          .map((p) => `${sx(p.x)},${sy(p.y)}`)
+          .join(" ")}" fill="none" stroke="#63d9fc" stroke-width="7.5"/>`,
+    )
+    .join("") ?? ""
+}
 ${via ? `<circle cx="${sx(via.x)}" cy="${sy(via.y)}" r="9.375" fill="#63d9fc"/><circle cx="${sx(via.x)}" cy="${sy(via.y)}" r="4.6875" fill="#122330"/>` : ""}
 <text x="480" y="165" font-size="19">Actual signal-pad geometry</text>
 <text x="480" y="201" font-size="17">Pad: 0.30 × 2.66 mm; pitch: 0.50 mm</text>
