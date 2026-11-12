@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="620">
+<rect width="980" height="620" fill="#122330"/>
+<g font-family="Arial" fill="#edf3f7">
+<text x="28" y="42" font-size="25">HDMI connector: escape a long signal pad</text>
+<text x="28" y="78" font-size="19">BEFORE: no local escape; all grid candidates lie inside pads</text>
+<rect x="178.75" y="153.75" width="37.5" height="332.5" fill="#526575" stroke="#c8d5dc"/><text x="197.5" y="141.75" text-anchor="middle" font-size="16">NC</text><rect x="241.25" y="153.75" width="37.5" height="332.5" fill="#b38336" stroke="#c8d5dc"/><text x="260" y="141.75" text-anchor="middle" font-size="16">signal</text><rect x="303.75" y="153.75" width="37.5" height="332.5" fill="#526575" stroke="#c8d5dc"/><text x="322.5" y="141.75" text-anchor="middle" font-size="16">NC</text>
+
+
+<text x="480" y="165" font-size="19">Actual signal-pad geometry</text>
+<text x="480" y="201" font-size="17">Pad: 0.30 × 2.66 mm; pitch: 0.50 mm</text>
+<text x="480" y="231" font-size="17">Trace / clearance: 0.06 / 0.06 mm</text>
+<text x="480" y="261" font-size="17">Via / drill: 0.15 / 0.075 mm</text>
+<text x="480" y="315" font-size="17">Grid midpoints are obstructed.</text>
+<text x="480" y="345" font-size="17">A clear site exists beyond the pad end.</text>
+<text x="480" y="399" font-size="17">Local pad-to-via escape only</text>
+<text x="480" y="429" font-size="17">Default policy: through vias</text>
+<text x="28" y="558" font-family="monospace" font-size="17">&lt;board layers={4} allowBlindAndBuriedVias={false}&gt;</text>
+<text x="28" y="588" font-family="monospace" font-size="17">  &lt;smtpad pcbX={0} pcbY={0} width={0.3} height={2.66} /&gt;</text>
+</g></svg>
