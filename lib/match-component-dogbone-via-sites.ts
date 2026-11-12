@@ -567,6 +567,29 @@ function getConnectionCandidates(params: {
   )
     return getConnectionCandidates({ ...params, padEdgeFallback: true })
 
+  // A long rectangular pad need not inherit an unnecessarily distant midpoint
+  // from its package grid. Keep ordinary candidates as alternatives; the same
+  // physical clearance checks and ordering select a shorter legal escape.
+  const pad = preparedConnection.sourceObstacle
+  if (
+    rules.allowPadEdgeSites &&
+    !params.padEdgeFallback &&
+    !fixedViaPoint &&
+    !("shape" in pad && pad.shape === "circle") &&
+    Math.max(pad.width, pad.height) > 1.5 * Math.min(pad.width, pad.height)
+  ) {
+    for (const edge of getConnectionCandidates({
+      ...params,
+      padEdgeFallback: true,
+    }))
+      if (
+        !candidates.some(
+          (candidate) => distance(candidate.point, edge.point) <= EPSILON,
+        )
+      )
+        candidates.push(edge)
+  }
+
   const perpendicularCoordinates =
     direction === "left" || direction === "right"
       ? component.yCoordinates
