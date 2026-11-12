@@ -57,8 +57,52 @@ test("a long connector pad can escape beyond its edge when grid sites are blocke
     error = cause
   }
   expect(JSON.stringify(input)).toBe(before)
-  expect(String(error)).toContain("No collision-free local dogbone assignment")
-  expect(result).toBeUndefined()
+  expect(error).toBeUndefined()
+  expect(result?.traces).toHaveLength(1)
+  for (const policy of [undefined, false, true]) {
+    const configured = { ...input, allowBlindAndBuriedVias: policy }
+    const routed = routeLocalSignalDogbones(configured, options)
+    const via = routed.traces[0]!.route.find((p) => p.route_type === "via")!
+    expect(Math.abs(via.y)).toBeGreaterThan(1.33 + 0.075 + 0.06)
+    expect(via.layers).toEqual(
+      policy ? ["top", "inner1"] : ["top", "inner1", "inner2", "bottom"],
+    )
+    expect(
+      validateRoutedCopperDrc({
+        inputSrj: configured,
+        routedSrj: { ...configured, traces: routed.traces },
+        clearance: 0.06,
+      }).issues,
+    ).toEqual([])
+    const blocked = structuredClone(configured)
+    blocked.obstacles.push({
+      type: "rect",
+      center: { x: 0, y: 0 },
+      width: 2,
+      height: 4,
+      layers: ["bottom"],
+      connectedTo: [],
+    })
+    if (policy) {
+      const escaped = routeLocalSignalDogbones(blocked, options)
+      expect(
+        validateRoutedCopperDrc({
+          inputSrj: blocked,
+          routedSrj: { ...blocked, traces: escaped.traces },
+          clearance: 0.06,
+        }).issues,
+      ).toEqual([])
+    } else {
+      expect(() => routeLocalSignalDogbones(blocked, options)).toThrow(
+        "No collision-free local dogbone assignment",
+      )
+    }
+    // A nearby unowned top pad still blocks the fallback under every via policy.
+    blocked.obstacles.at(-1)!.layers = ["top"]
+    expect(() => routeLocalSignalDogbones(blocked, options)).toThrow(
+      "No collision-free local dogbone assignment",
+    )
+  }
 
   // Draw only accepted output. The unattached inner-layer destination is outside
   // this pad-detail view: this test concerns the local escape, not a full route.

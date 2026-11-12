@@ -227,6 +227,7 @@ export function routeLocalSignalDogbones(
     }),
   )
   const geometryRules = {
+    allowPadEdgeSites: true,
     viaLayersByConnectionIndex,
     viaDiameter: options.viaDiameter,
     viaHoleDiameter: options.viaHoleDiameter,
