@@ -4,7 +4,7 @@ import { routeLocalSignalDogbones, validateRoutedCopperDrc } from "lib"
 
 // USB ESD package from the MT8395 SBC, translated to the origin. A 0.95 mm
 // inferred grid produces a 0.475 mm escape even though a legal site is closer.
-test("rectangular USB pads retain unnecessarily long midpoint escapes", async () => {
+test("rectangular USB pads use shorter legal edge escapes", async () => {
   const input: SimpleRouteJson = {
     layerCount: 4,
     minTraceWidth: 0.06,
@@ -42,7 +42,7 @@ test("rectangular USB pads retain unnecessarily long midpoint escapes", async ()
   const via = result.traces[0]!.route.find((p) => p.route_type === "via")!
   expect(JSON.stringify(input)).toBe(before)
   expect(result.traces).toHaveLength(1)
-  expect(via.x).toBeCloseTo(1.425, 8)
+  expect(via.x).toBeCloseTo(1.352, 8)
   expect(via.y).toBe(0)
   for (const policy of [undefined, false, true]) {
     const configured = { ...input, allowBlindAndBuriedVias: policy }
