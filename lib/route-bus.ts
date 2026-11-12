@@ -1,3 +1,7 @@
+import {
+  getViaToViaClearance,
+  getViaToObstacleClearance,
+} from "./get-via-to-via-clearance"
 import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
 import type {
   Obstacle,
@@ -1873,6 +1877,7 @@ function planIsStaticallyClear(params: {
     allowSameNetMerges,
   } = params
   const routableBounds = getRoutableBounds(srj.bounds, sharedBoundary)
+  const viaToViaClearance = getViaToViaClearance(srj, clearance)
   if (
     !pointIsInsideBounds(plan.exitPoint, routableBounds) ||
     getPlanSegments(plan).some(
@@ -1944,7 +1949,13 @@ function planIsStaticallyClear(params: {
       }
       if (
         distancePointToObstacle(via.center, obstacle) <
-        via.diameter / 2 + clearance - 1e-9
+        via.diameter / 2 +
+          getViaToObstacleClearance({
+            obstacle,
+            clearance,
+            viaToViaClearance,
+          }) -
+          1e-9
       ) {
         return false
       }
@@ -2006,7 +2017,7 @@ function planIsStaticallyClear(params: {
             existingVia.spanLayers.includes(layer),
           ) &&
           distance(via.center, existingVia.center) <
-            (via.diameter + existingVia.diameter) / 2 + clearance - 1e-9
+            (via.diameter + existingVia.diameter) / 2 + viaToViaClearance - 1e-9
         ) {
           return false
         }
@@ -2037,6 +2048,7 @@ function planIsClearOfPlans(params: {
   } = params
   const planSegments = getPlanSegments(plan)
   const planVias = getPlanVias(plan)
+  const viaToViaClearance = getViaToViaClearance(srj, clearance)
   for (const otherPlan of otherPlans) {
     if (
       allowSameNetMerges &&
@@ -2111,7 +2123,9 @@ function planIsClearOfPlans(params: {
             otherVia.spanLayers.includes(layer),
           ) &&
           distance(planVia.center, otherVia.center) <
-            (planVia.diameter + otherVia.diameter) / 2 + clearance - 1e-9
+            (planVia.diameter + otherVia.diameter) / 2 +
+              viaToViaClearance -
+              1e-9
         ) {
           recordBlocker()
           return false
@@ -2888,6 +2902,7 @@ export function* routeBusAlternativesSteps(
     cornerExitLaneOffset,
     forbidEarlyExitBoundaryContact = false,
   } = params
+  const viaToViaClearance = getViaToViaClearance(srj, clearance)
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
     throw new Error(
       `FanoutSolver: maxAlternatives must be a positive integer, received ${maxAlternatives}`,
@@ -3345,6 +3360,7 @@ export function* routeBusAlternativesSteps(
             viaHoleDiameter,
             traceWidth,
             clearance,
+            viaToViaClearance,
             additionalObstacles: srj.obstacles,
             blockingSegments: acceptedPlans.flatMap((plan) =>
               getPlanSegments(plan).map((segment) => ({
@@ -3589,6 +3605,7 @@ export function* routeBusAlternativesSteps(
           viaHoleDiameter,
           traceWidth,
           clearance,
+          viaToViaClearance,
           additionalObstacles: srj.obstacles,
           fixedViaPointsByConnectionIndex: new Map(
             terminals.map((terminal) => [
@@ -3880,7 +3897,7 @@ export function* routeBusAlternativesSteps(
         const order = matchedVias
           .map((via, index) => ({ index, track: via[otherAxis] }))
           .toSorted((a, b) => a.track - b.track || a.index - b.index)
-        const pitch = viaDiameter + clearance
+        const pitch = viaDiameter + viaToViaClearance
         const points = matchedVias.map((via, index) => ({
           ...via,
           [axis]: value,
@@ -3941,7 +3958,7 @@ export function* routeBusAlternativesSteps(
             (other, otherIndex) =>
               index !== otherIndex &&
               (distance(candidate.via.center, other.via.center) <
-                viaDiameter + clearance - 1e-9 ||
+                viaDiameter + viaToViaClearance - 1e-9 ||
                 (boundarySide &&
                   distancePointToSegment(
                     candidate.via.center,
@@ -4160,7 +4177,9 @@ export function* routeBusAlternativesSteps(
               reserved.via.spanLayers.includes(layer),
             ) &&
             distance(via.center, reserved.via.center) <
-              (via.diameter + reserved.via.diameter) / 2 + clearance - 1e-9
+              (via.diameter + reserved.via.diameter) / 2 +
+                viaToViaClearance -
+                1e-9
           )
             return false
           return plan.segments.every(

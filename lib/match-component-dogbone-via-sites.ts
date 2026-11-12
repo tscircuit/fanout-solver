@@ -1,4 +1,5 @@
 import type { Obstacle } from "@tscircuit/capacity-autorouter"
+import { getViaToObstacleClearance } from "./get-via-to-via-clearance"
 import {
   distance,
   distancePointToObstacle,
@@ -25,8 +26,12 @@ export interface DogboneViaSiteGeometryRules {
   viaHoleDiameter?: number
   traceWidth: number
   clearance: number
+  /** Minimum copper-edge gap between vias. Defaults to `clearance`. */
+  viaToViaClearance?: number
   /** Defaults to `clearance` when a hole diameter is supplied. */
   holeToHoleClearance?: number
+  /** Include projected 45-degree plane sites when retrying blocked boundary routes. */
+  includeProjectedPlaneSites?: boolean
   /** Bounds the deterministic backtracking search across all components. */
   maximumSearchStates?: number
   /**
@@ -112,6 +117,14 @@ function assertGeometryRules(rules: DogboneViaSiteGeometryRules): number {
   if (!Number.isFinite(rules.clearance) || rules.clearance < 0) {
     throw new Error(
       `FanoutSolver: dogbone clearance must be a non-negative finite number, received ${rules.clearance}`,
+    )
+  }
+  if (
+    rules.viaToViaClearance !== undefined &&
+    (!Number.isFinite(rules.viaToViaClearance) || rules.viaToViaClearance < 0)
+  ) {
+    throw new Error(
+      `FanoutSolver: dogbone viaToViaClearance must be a non-negative finite number, received ${rules.viaToViaClearance}`,
     )
   }
   if (
@@ -315,15 +328,29 @@ function viaSiteClearsObstacles(params: {
   sourceLayer: string
   viaDiameter: number
   clearance: number
+  viaToViaClearance: number
 }): boolean {
-  const { point, obstacles, sourceLayer, viaDiameter, clearance } = params
-  const requiredClearance = viaDiameter / 2 + clearance
+  const {
+    point,
+    obstacles,
+    sourceLayer,
+    viaDiameter,
+    clearance,
+    viaToViaClearance,
+  } = params
   return obstacles.every(
     (obstacle) =>
       // Other-layer pours can form antipads around the via. Source-layer
       // reservations and physical pads/holes must still satisfy clearance.
       (obstacle.isCopperPour && !obstacle.layers.includes(sourceLayer)) ||
-      distancePointToObstacle(point, obstacle) >= requiredClearance - EPSILON,
+      distancePointToObstacle(point, obstacle) >=
+        viaDiameter / 2 +
+          getViaToObstacleClearance({
+            obstacle,
+            clearance,
+            viaToViaClearance,
+          }) -
+          EPSILON,
   )
 }
 
@@ -435,6 +462,7 @@ function getConnectionCandidates(params: {
         sourceLayer: preparedConnection.sourceLayer,
         viaDiameter: rules.viaDiameter,
         clearance: rules.clearance,
+        viaToViaClearance: rules.viaToViaClearance ?? rules.clearance,
       })
     ) {
       continue
@@ -498,7 +526,7 @@ function getConnectionCandidates(params: {
             blocker.spanLayers.some((layer) => viaLayers.includes(layer))) &&
           distance(point, blocker.center) <
             (rules.viaDiameter + blocker.diameter) / 2 +
-              rules.clearance -
+              (rules.viaToViaClearance ?? rules.clearance) -
               EPSILON
         ) {
           return false
@@ -606,7 +634,10 @@ function candidatesAreMutuallyClear(params: {
     : 0
   const requiredViaSeparation = canShareCopper
     ? requiredHoleSeparation
-    : Math.max(rules.viaDiameter + rules.clearance, requiredHoleSeparation)
+    : Math.max(
+        rules.viaDiameter + (rules.viaToViaClearance ?? rules.clearance),
+        requiredHoleSeparation,
+      )
   const spansOverlap =
     !first.viaLayers ||
     !second.viaLayers ||
@@ -820,10 +851,11 @@ export function matchComponentDogboneViaSites(
       component,
       rules,
       consumeSearchState,
-      includeProjectedSites: false,
+      includeProjectedSites: rules.includeProjectedPlaneSites ?? false,
     })
     if (
       !componentResult &&
+      !rules.includeProjectedPlaneSites &&
       component.connections.some(
         ({ terminationType }) => terminationType === "plane",
       )

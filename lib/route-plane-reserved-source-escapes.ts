@@ -1,3 +1,4 @@
+import { getViaToViaClearance } from "./get-via-to-via-clearance"
 import type { Obstacle, SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { matchComponentDogboneViaSites } from "./match-component-dogbone-via-sites"
 import { fanoutPlansAreClear } from "./route-bus"
@@ -124,6 +125,7 @@ export function* routePlaneReservedSourceEscapesSteps(
   )
     return null
   const rules = {
+    viaToViaClearance: getViaToViaClearance(srj, clearance),
     traceWidth,
     clearance,
     viaDiameter,

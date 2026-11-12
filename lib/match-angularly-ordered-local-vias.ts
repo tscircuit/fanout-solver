@@ -135,7 +135,10 @@ export function matchAngularlyOrderedLocalVias(params: {
       rules.canShareCopper?.(a.connectionIndex, b.connectionIndex) ?? false
     const minimumViaDistance = share
       ? requiredHoleSeparation
-      : Math.max(requiredHoleSeparation, rules.viaDiameter + rules.clearance)
+      : Math.max(
+          requiredHoleSeparation,
+          rules.viaDiameter + (rules.viaToViaClearance ?? rules.clearance),
+        )
     if (distance(a.point, b.point) < minimumViaDistance - EPSILON) return false
     if (share) return true
     return (

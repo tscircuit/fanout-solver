@@ -1,3 +1,4 @@
+import { getViaToViaClearance } from "./get-via-to-via-clearance"
 import { getRetainedBoundaryTail } from "./reroute-bus-with-retained-boundary-tails"
 import { normalizeFanoutPlanTargetPath } from "./normalize-fanout-plan-corners"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
@@ -67,6 +68,7 @@ export function prepareSourceOriginReservations(
     return null
   const sites = matchComponentDogboneViaSites(params.buses, {
     ...params,
+    viaToViaClearance: getViaToViaClearance(params.srj, params.clearance),
     maximumSearchStates: 10_000,
     additionalObstacles: params.srj.obstacles,
   })

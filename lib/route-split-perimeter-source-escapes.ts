@@ -1,3 +1,4 @@
+import { getViaToViaClearance } from "./get-via-to-via-clearance"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import {
   distance,
@@ -64,9 +65,11 @@ function orderedPhysicalSubset(
 ): FanoutRoutePlan[] | null {
   if (paths.length > 28) return null
   const { traceWidth: w, clearance: c, viaDiameter: d } = params
+  const viaToViaClearance = getViaToViaClearance(params.srj, c)
   const all = params.buses.flatMap((b) => b.connections)
   const candidates = getComponentDogboneViaSiteCandidates(params.buses, {
     ...params,
+    viaToViaClearance,
     additionalObstacles: params.srj.obstacles,
   })
   const own = new Map(paths.map((p, i) => [p.connectionIndex, i]))
@@ -85,7 +88,7 @@ function orderedPhysicalSubset(
         paths.forEach((p, i) => {
           if (p.connectionIndex === connection.connectionIndex) return
           if (
-            distance(v.point, p.exitPoint) < d + c - EPS ||
+            distance(v.point, p.exitPoint) < d + viaToViaClearance - EPS ||
             distancePointToSegment(p.exitPoint, s.start, s.end) <
               d / 2 + w / 2 + c - EPS ||
             p.segments.some(
@@ -150,6 +153,7 @@ export function* routeSplitPerimeterSourceEscapesSteps(
   params: PeripheralSourceEscapeParams,
 ): Generator<void, SplitPerimeterSources | null, unknown> {
   const { bus, srj, traceWidth: w, clearance: c, viaDiameter: d } = params
+  const viaToViaClearance = getViaToViaClearance(srj, c)
   if (
     bus.termination.type !== "boundary" ||
     bus.exitEdge !== "left" ||
@@ -305,7 +309,7 @@ export function* routeSplitPerimeterSourceEscapesSteps(
     return others.every(
       (q) =>
         q.connectionIndex === p.connectionIndex ||
-        (distance(p.via.center, q.via.center) >= d + c - EPS &&
+        (distance(p.via.center, q.via.center) >= d + viaToViaClearance - EPS &&
           p.segments.every(
             (s) =>
               distancePointToSegment(q.via.center, s.start, s.end) >=
@@ -333,6 +337,7 @@ export function* routeSplitPerimeterSourceEscapesSteps(
     fixed: PeripheralSourceEscape[],
   ): DogboneViaSiteGeometryRules => ({
     ...params,
+    viaToViaClearance,
     additionalObstacles: srj.obstacles,
     maximumSearchStates: 300_000,
     blockingSegments: fixed.flatMap((p) =>

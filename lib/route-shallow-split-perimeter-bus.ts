@@ -1,3 +1,4 @@
+import { getViaToViaClearance } from "./get-via-to-via-clearance"
 import {
   distance,
   distancePointToObstacle,
@@ -72,7 +73,10 @@ function sourcesAreClear(
       if (source.connectionIndex === other.connectionIndex) continue
       if (
         distance(source.via.center, other.via.center) <
-        radius + other.via.diameter / 2 + params.clearance - EPSILON
+        radius +
+          other.via.diameter / 2 +
+          getViaToViaClearance(params.srj, params.clearance) -
+          EPSILON
       )
         return false
       if (
@@ -194,6 +198,7 @@ export function* routeShallowSplitPerimeterBusSteps(
     const rematch = (plans: FanoutRoutePlan[] = []) => {
       const matched = matchComponentDogboneViaSites(movableBuses, {
         ...params,
+        viaToViaClearance: getViaToViaClearance(params.srj, params.clearance),
         additionalObstacles: params.srj.obstacles,
         maximumSearchStates: 300_000,
         preferredViaPointsByConnectionIndex: viaPoints,

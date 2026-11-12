@@ -1,3 +1,4 @@
+import { getViaToViaClearance } from "./get-via-to-via-clearance"
 import type {
   Obstacle,
   SimplifiedPcbTrace,
@@ -51,6 +52,7 @@ export function* routeBottomCrossbarBusSteps(
     clearance,
     viaDiameter,
   } = params
+  const viaToViaClearance = getViaToViaClearance(srj, clearance)
   const oppositeSide = bus.exitEdge === "left"
   const layout = oppositeSide ? params.oppositeLayout : undefined
   const allowedLayers = bus.routableEscapeLayers ?? bus.allowedLayers ?? []
@@ -73,7 +75,7 @@ export function* routeBottomCrossbarBusSteps(
     getCornerBandSide(bus.exitEdge, bus.preferredExit) === "minimum"
   const count = bus.connections.length,
     pitch = width + clearance
-  const portPitch = Math.ceil((viaDiameter + clearance) / pitch) * pitch
+  const portPitch = Math.ceil((viaDiameter + viaToViaClearance) / pitch) * pitch
   const byIndex = new Map(
     sourceEscapes.map((source) => [source.connectionIndex, source]),
   )
@@ -243,8 +245,10 @@ export function* routeBottomCrossbarBusSteps(
   // axis; the final physical check also verifies their diagonal via clearance.
   const crossingPitch =
     usesLowerBand || layout?.compactRows
-      ? Math.max(viaTraceDistance, (viaDiameter + clearance) / Math.SQRT2) +
-        1e-5
+      ? Math.max(
+          viaTraceDistance,
+          (viaDiameter + viaToViaClearance) / Math.SQRT2,
+        ) + 1e-5
       : portPitch
   const lowestAcceptedCopper = Math.min(
     ...acceptedPlans
@@ -325,7 +329,9 @@ export function* routeBottomCrossbarBusSteps(
           Math.min(...blockers.map((interval) => interval.minimum)) - 1e-7
       }
       columns.push(nextColumn)
-      nextColumn -= usesLowerBand ? crossingPitch : viaDiameter + clearance
+      nextColumn -= usesLowerBand
+        ? crossingPitch
+        : viaDiameter + viaToViaClearance
     }
   }
   const minimumColumn = columns.at(-1)!
@@ -360,7 +366,7 @@ export function* routeBottomCrossbarBusSteps(
         Math.min(...blockers.map((interval) => interval.minimum)) - 1e-7
     }
     tracks[rank] = nextTrack
-    nextTrack -= viaDiameter + clearance
+    nextTrack -= viaDiameter + viaToViaClearance
   }
   if (usesLowerBand)
     tracks.splice(0, tracks.length, ...ordered.map(targetTrack))
@@ -543,7 +549,7 @@ export function* routeBottomCrossbarBusSteps(
       for (const via of plan.additionalVias!) {
         if (
           distance(via.center, source.via.center) <
-          (via.diameter + source.via.diameter) / 2 + clearance - 1e-7
+          (via.diameter + source.via.diameter) / 2 + viaToViaClearance - 1e-7
         )
           return null
         for (const segment of source.segments)

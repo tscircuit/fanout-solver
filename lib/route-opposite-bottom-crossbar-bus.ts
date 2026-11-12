@@ -1,3 +1,4 @@
+import { getViaToViaClearance } from "./get-via-to-via-clearance"
 import { reflectFanoutX } from "./reflect-fanout-x"
 import { routeBottomCrossbarBusSteps } from "./route-bottom-crossbar-bus"
 import type { RouteBusParams } from "./route-bus"
@@ -17,7 +18,11 @@ export function* routeOppositeBottomCrossbarBusSteps(
   const padPitch = Math.min(params.bus.pitchX, params.bus.pitchY)
   const pitch = params.traceWidth + params.clearance
   const portPitch =
-    Math.ceil((params.viaDiameter + params.clearance) / pitch) * pitch
+    Math.ceil(
+      (params.viaDiameter +
+        getViaToViaClearance(params.srj, params.clearance)) /
+        pitch,
+    ) * pitch
   const maximumPortShift = Math.max(
     0,
     Math.min(

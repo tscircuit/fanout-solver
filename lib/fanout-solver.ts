@@ -1,3 +1,4 @@
+import { getViaToViaClearance } from "./get-via-to-via-clearance"
 import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
 import { routePeripheralBusesSteps } from "./route-peripheral-buses"
@@ -91,6 +92,7 @@ interface ResolvedFanoutConfig {
   viaDiameter: number
   viaHoleDiameter: number
   clearance: number
+  viaToViaClearance: number
   compactBusTracks: boolean
   allowBlindAndBuriedVias: boolean
   allowSameNetMerges: boolean
@@ -274,6 +276,7 @@ function resolveConfig(
     viaDiameter,
     viaHoleDiameter,
     clearance,
+    viaToViaClearance: getViaToViaClearance(srj, clearance),
     compactBusTracks: options.compactBusTracks ?? false,
     allowBlindAndBuriedVias: options.allowBlindAndBuriedVias ?? true,
     allowSameNetMerges: options.allowSameNetMerges ?? false,
@@ -1913,6 +1916,7 @@ export class FanoutSolver extends BaseSolver {
     promotedPlaneReservationBusIds?: readonly string[]
     preferredBoundaryViaPoints?: ReadonlyMap<number, { x: number; y: number }>
     planeReservationRetryCount?: number
+    includeProjectedPlaneSites?: boolean
     boundaryRecovery?: {
       busId: string
       preferOutward: boolean
@@ -2057,6 +2061,8 @@ export class FanoutSolver extends BaseSolver {
           viaHoleDiameter: this.config.viaHoleDiameter,
           traceWidth: this.config.traceWidth,
           clearance: this.config.clearance,
+          viaToViaClearance: this.config.viaToViaClearance,
+          includeProjectedPlaneSites: params.includeProjectedPlaneSites,
           additionalObstacles: this.routingSrj.obstacles,
         },
       )) {
@@ -2382,6 +2388,7 @@ export class FanoutSolver extends BaseSolver {
       ]
     }
     const unroutablePlaneBusIds = new Set<string>()
+    let retriedProjectedPlaneSites = false
     let failedBoundaryBus: PreparedBus | undefined
     let failedWideBoundaryBus: PreparedBus | undefined
     const boundaryBusConnectionCounts = boundaryBuses.map(
@@ -2749,6 +2756,8 @@ export class FanoutSolver extends BaseSolver {
             viaHoleDiameter: this.config.viaHoleDiameter,
             traceWidth: this.config.traceWidth,
             clearance: this.config.clearance,
+            viaToViaClearance: this.config.viaToViaClearance,
+            includeProjectedPlaneSites: params.includeProjectedPlaneSites,
             maximumSearchStates: 100_000,
             preferredViaPointsByConnectionIndex:
               params.preferredBoundaryViaPoints,
@@ -2769,6 +2778,8 @@ export class FanoutSolver extends BaseSolver {
           viaHoleDiameter: this.config.viaHoleDiameter,
           traceWidth: this.config.traceWidth,
           clearance: this.config.clearance,
+          viaToViaClearance: this.config.viaToViaClearance,
+          includeProjectedPlaneSites: params.includeProjectedPlaneSites,
           maximumSearchStates: 20_000,
           preferredViaPointsByConnectionIndex:
             params.preferredBoundaryViaPoints,
@@ -2829,6 +2840,8 @@ export class FanoutSolver extends BaseSolver {
             viaHoleDiameter: this.config.viaHoleDiameter,
             traceWidth: this.config.traceWidth,
             clearance: this.config.clearance,
+            viaToViaClearance: this.config.viaToViaClearance,
+            includeProjectedPlaneSites: params.includeProjectedPlaneSites,
             maximumSearchStates: 100_000,
             preferredViaPointsByConnectionIndex:
               params.preferredBoundaryViaPoints,
@@ -3292,6 +3305,8 @@ export class FanoutSolver extends BaseSolver {
                 viaHoleDiameter: this.config.viaHoleDiameter,
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
+                viaToViaClearance: this.config.viaToViaClearance,
+                includeProjectedPlaneSites: params.includeProjectedPlaneSites,
                 maximumSearchStates: 100_000,
                 preferredBoundaryPerpendicularSideByBusId: new Map([
                   ...preferredBoundaryPerpendicularSideByBusId,
@@ -3387,6 +3402,8 @@ export class FanoutSolver extends BaseSolver {
               viaHoleDiameter: this.config.viaHoleDiameter,
               traceWidth: this.config.traceWidth,
               clearance: this.config.clearance,
+              viaToViaClearance: this.config.viaToViaClearance,
+              includeProjectedPlaneSites: params.includeProjectedPlaneSites,
               additionalObstacles: this.routingSrj.obstacles,
               blockingSegments: [
                 ...matchedPlans.flatMap((plan) =>
@@ -3520,6 +3537,8 @@ export class FanoutSolver extends BaseSolver {
                 viaHoleDiameter: this.config.viaHoleDiameter,
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
+                viaToViaClearance: this.config.viaToViaClearance,
+                includeProjectedPlaneSites: params.includeProjectedPlaneSites,
                 maximumSearchStates: 3_000_000,
                 preferredBoundaryPerpendicularSideByBusId,
                 preferBoundaryOutwardByBusId,
@@ -3730,6 +3749,9 @@ export class FanoutSolver extends BaseSolver {
                     viaHoleDiameter: this.config.viaHoleDiameter,
                     traceWidth: this.config.traceWidth,
                     clearance: this.config.clearance,
+                    viaToViaClearance: this.config.viaToViaClearance,
+                    includeProjectedPlaneSites:
+                      params.includeProjectedPlaneSites,
                     maximumSearchStates: 100_000,
                     preferredBoundaryPerpendicularSideByBusId,
                     preferBoundaryOutwardByBusId,
@@ -3782,6 +3804,8 @@ export class FanoutSolver extends BaseSolver {
                 viaHoleDiameter: this.config.viaHoleDiameter,
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
+                viaToViaClearance: this.config.viaToViaClearance,
+                includeProjectedPlaneSites: params.includeProjectedPlaneSites,
                 maximumSearchStates: 100_000,
                 preferredBoundaryPerpendicularSideByBusId,
                 preferBoundaryOutwardByBusId,
@@ -3806,6 +3830,8 @@ export class FanoutSolver extends BaseSolver {
                   viaHoleDiameter: this.config.viaHoleDiameter,
                   traceWidth: this.config.traceWidth,
                   clearance: this.config.clearance,
+                  viaToViaClearance: this.config.viaToViaClearance,
+                  includeProjectedPlaneSites: params.includeProjectedPlaneSites,
                   blockingSegments,
                   additionalObstacles: denseAdditionalObstacles,
                   preferPlaneCheckerboardSites: useConfiguredDensePlaneRouting,
@@ -3867,6 +3893,9 @@ export class FanoutSolver extends BaseSolver {
                       viaHoleDiameter: this.config.viaHoleDiameter,
                       traceWidth: this.config.traceWidth,
                       clearance: this.config.clearance,
+                      viaToViaClearance: this.config.viaToViaClearance,
+                      includeProjectedPlaneSites:
+                        params.includeProjectedPlaneSites,
                       maximumSearchStates: 100_000,
                       preferredBoundaryPerpendicularSideByBusId,
                       preferBoundaryOutwardByBusId,
@@ -3902,6 +3931,21 @@ export class FanoutSolver extends BaseSolver {
               break
             }
             matchedPlans.splice(previousPlanCount)
+          }
+          // A legal midpoint assignment can still fence off a boundary route.
+          // Try the existing projected plane sites once before repeating the
+          // same field with different bus orders and routing grids.
+          if (
+            !params.includeProjectedPlaneSites &&
+            !retriedProjectedPlaneSites
+          ) {
+            retriedProjectedPlaneSites = true
+            const expandedSiteState =
+              yield* this.routeDenseThroughAllMixedTerminationSteps({
+                ...params,
+                includeProjectedPlaneSites: true,
+              })
+            if (expandedSiteState) return expandedSiteState
           }
           fixedViaPointsByConnectionIndex = previousFixedViaPoints
           this.setInProgressPlans({
@@ -3981,6 +4025,8 @@ export class FanoutSolver extends BaseSolver {
                 viaHoleDiameter: this.config.viaHoleDiameter,
                 traceWidth: this.config.traceWidth,
                 clearance: this.config.clearance,
+                viaToViaClearance: this.config.viaToViaClearance,
+                includeProjectedPlaneSites: params.includeProjectedPlaneSites,
                 maximumSearchStates: 1,
                 preferredBoundaryPerpendicularSideByBusId,
                 preferBoundaryOutwardByBusId,
@@ -4055,6 +4101,9 @@ export class FanoutSolver extends BaseSolver {
                     viaHoleDiameter: this.config.viaHoleDiameter,
                     traceWidth: this.config.traceWidth,
                     clearance: this.config.clearance,
+                    viaToViaClearance: this.config.viaToViaClearance,
+                    includeProjectedPlaneSites:
+                      params.includeProjectedPlaneSites,
                     maximumSearchStates: 100_000,
                     preferredBoundaryPerpendicularSideByBusId,
                     preferBoundaryOutwardByBusId,
@@ -4387,6 +4436,9 @@ export class FanoutSolver extends BaseSolver {
                         viaHoleDiameter: this.config.viaHoleDiameter,
                         traceWidth: this.config.traceWidth,
                         clearance: this.config.clearance,
+                        viaToViaClearance: this.config.viaToViaClearance,
+                        includeProjectedPlaneSites:
+                          params.includeProjectedPlaneSites,
                         blockingSegments: acceptedPlans.flatMap((plan) =>
                           plan.segments.map((segment) => ({
                             connectionIndex: plan.connectionIndex,
@@ -4761,6 +4813,8 @@ export class FanoutSolver extends BaseSolver {
                   viaHoleDiameter: this.config.viaHoleDiameter,
                   traceWidth: this.config.traceWidth,
                   clearance: this.config.clearance,
+                  viaToViaClearance: this.config.viaToViaClearance,
+                  includeProjectedPlaneSites: params.includeProjectedPlaneSites,
                   blockingSegments: allBlockingSegments,
                   blockingVias: alternateBlockingVias,
                   additionalObstacles: denseAdditionalObstacles,
@@ -4904,6 +4958,8 @@ export class FanoutSolver extends BaseSolver {
                   viaHoleDiameter: this.config.viaHoleDiameter,
                   traceWidth: this.config.traceWidth,
                   clearance: this.config.clearance,
+                  viaToViaClearance: this.config.viaToViaClearance,
+                  includeProjectedPlaneSites: params.includeProjectedPlaneSites,
                   maximumSearchStates: 100_000,
                   preferredBoundaryPerpendicularSideByBusId,
                   preferBoundaryOutwardByBusId,
@@ -4949,6 +5005,8 @@ export class FanoutSolver extends BaseSolver {
               viaHoleDiameter: this.config.viaHoleDiameter,
               traceWidth: this.config.traceWidth,
               clearance: this.config.clearance,
+              viaToViaClearance: this.config.viaToViaClearance,
+              includeProjectedPlaneSites: params.includeProjectedPlaneSites,
               maximumSearchStates: 100_000,
               preferredBoundaryPerpendicularSideByBusId,
               preferBoundaryOutwardByBusId,
@@ -4976,6 +5034,9 @@ export class FanoutSolver extends BaseSolver {
               allowBlindAndBuriedVias: false,
               allowSameNetMerges: this.config.allowSameNetMerges,
               allowMatchingInsideDenseBounds: true,
+              // Grow folds incrementally while preserving pending plane sites.
+              allowDistributedMatching: true,
+              maximumWorkUnits: 20_000,
               candidatePlansAreFeasible: (candidatePlans) => {
                 const candidateViaPoints =
                   matchViaPointsAroundPlans(candidatePlans)
@@ -5201,6 +5262,9 @@ export class FanoutSolver extends BaseSolver {
         }
       }
     }
+
+    // The expanded-site pass is one bounded retry of the current strategy.
+    if (params.includeProjectedPlaneSites) return null
 
     if (
       (useAdaptiveDensePlaneRouting || useSameNetPlaneCopperStaging) &&

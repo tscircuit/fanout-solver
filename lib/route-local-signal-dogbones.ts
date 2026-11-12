@@ -1,3 +1,4 @@
+import { getViaToViaClearance } from "./get-via-to-via-clearance"
 import { fitLocalViaGrid } from "./fit-local-via-grid"
 import type {
   SimpleRouteJson,
@@ -226,7 +227,9 @@ export function routeLocalSignalDogbones(
       ] as const
     }),
   )
+  const viaToViaClearance = getViaToViaClearance(input, options.clearance)
   const geometryRules = {
+    viaToViaClearance,
     viaLayersByConnectionIndex,
     viaDiameter: options.viaDiameter,
     viaHoleDiameter: options.viaHoleDiameter,
@@ -289,7 +292,7 @@ export function routeLocalSignalDogbones(
         width: options.traceWidth,
       }
       const viaSeparation = Math.max(
-        options.viaDiameter + options.clearance,
+        options.viaDiameter + viaToViaClearance,
         options.viaHoleDiameter +
           (options.holeToHoleClearance ?? options.clearance),
       )

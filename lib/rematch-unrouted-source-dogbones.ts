@@ -1,3 +1,4 @@
+import { getViaToViaClearance } from "./get-via-to-via-clearance"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { distance } from "./geometry"
 import { getAllRoutedTraceCopper } from "./get-routed-trace-copper"
@@ -79,6 +80,7 @@ export function rematchUnroutedSourceDogbones(params: {
   const sites = matchComponentDogboneViaSites(eligible, {
     traceWidth,
     clearance,
+    viaToViaClearance: getViaToViaClearance(inputSrj, clearance),
     viaDiameter: via.diameter,
     viaHoleDiameter: via.holeDiameter,
     maximumSearchStates: 10_000,

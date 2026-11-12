@@ -1,3 +1,4 @@
+import { getViaToViaClearance } from "./get-via-to-via-clearance"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import {
   distance,
@@ -133,6 +134,7 @@ export function* routePeripheralSourceEscapesSteps(
   params: PeripheralSourceEscapeParams,
 ): Generator<void, PeripheralSourceEscapes | null, unknown> {
   const { bus, srj, traceWidth: w, clearance: c, viaDiameter: d } = params
+  const viaToViaClearance = getViaToViaClearance(srj, c)
   // This adjacent-band construction currently handles a right edge from the
   // upper source perimeter. Other orientations retain the general fallback.
   if (
@@ -352,7 +354,10 @@ export function* routePeripheralSourceEscapesSteps(
     }
     for (const other of others) {
       if (escape.connectionIndex === other.connectionIndex) continue
-      if (distance(escape.via.center, other.via.center) < d + c - EPSILON)
+      if (
+        distance(escape.via.center, other.via.center) <
+        d + viaToViaClearance - EPSILON
+      )
         return false
       if (
         escape.segments.some(
@@ -389,6 +394,7 @@ export function* routePeripheralSourceEscapesSteps(
       .filter((b) => b.connections.length)
   }
   const rules = (): DogboneViaSiteGeometryRules => ({
+    viaToViaClearance,
     viaDiameter: d,
     viaHoleDiameter: params.viaHoleDiameter,
     traceWidth: w,

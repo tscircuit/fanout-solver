@@ -1,3 +1,7 @@
+import {
+  getViaToViaClearance,
+  getViaToObstacleClearance,
+} from "./get-via-to-via-clearance"
 import type {
   SimpleRouteJson,
   SimplifiedPcbTrace,
@@ -254,6 +258,7 @@ export function validateRoutedCopperDrc(params: {
     allowBlindAndBuriedVias = true,
   } = params
   const issues: RoutedCopperDrcIssue[] = []
+  const viaToViaClearance = getViaToViaClearance(inputSrj, clearance)
   const layerNames = getCopperLayerNames(routedSrj.layerCount)
   const traceCopper: TraceCopper[] = []
   const originalAndRoutedEndpoints = [inputSrj, routedSrj].flatMap((srj) =>
@@ -366,7 +371,13 @@ export function validateRoutedCopperDrc(params: {
           continue
         }
         const actual = distancePointToObstacle(via.center, obstacle)
-        const required = via.diameter / 2 + clearance
+        const required =
+          via.diameter / 2 +
+          getViaToObstacleClearance({
+            obstacle,
+            clearance,
+            viaToViaClearance,
+          })
         if (actual < required - EPSILON) {
           addIssue(issues, {
             code: "via-obstacle-clearance",
@@ -470,7 +481,9 @@ export function validateRoutedCopperDrc(params: {
               secondVia.spanLayers.includes(layer),
             ) ||
             distance(firstVia.center, secondVia.center) >=
-              (firstVia.diameter + secondVia.diameter) / 2 + clearance - EPSILON
+              (firstVia.diameter + secondVia.diameter) / 2 +
+                viaToViaClearance -
+                EPSILON
           ) {
             continue
           }

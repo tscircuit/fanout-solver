@@ -1,3 +1,7 @@
+import {
+  getViaToViaClearance,
+  getViaToObstacleClearance,
+} from "./get-via-to-via-clearance"
 import type {
   ConnectionPoint,
   SimpleRouteJson,
@@ -691,6 +695,7 @@ function validateClearances(params: {
   issues: FanoutValidationIssue[]
 }): void {
   const { plans, inputSrj, clearance, allowBlindAndBuriedVias, issues } = params
+  const viaToViaClearance = getViaToViaClearance(inputSrj, clearance)
   for (const plan of plans) {
     if (
       getSourcePadReentries(plan, clearance).some(
@@ -751,7 +756,13 @@ function validateClearances(params: {
           continue
         }
         const actual = distancePointToObstacle(via.center, obstacle)
-        const required = via.diameter / 2 + clearance
+        const required =
+          via.diameter / 2 +
+          getViaToObstacleClearance({
+            obstacle,
+            clearance,
+            viaToViaClearance,
+          })
         if (actual < required - 1e-9) {
           addIssue(
             issues,
@@ -835,7 +846,9 @@ function validateClearances(params: {
               existingVia.spanLayers.includes(layer),
             ) &&
             distance(via.center, existingVia.center) <
-              (via.diameter + existingVia.diameter) / 2 + clearance - 1e-9
+              (via.diameter + existingVia.diameter) / 2 +
+                viaToViaClearance -
+                1e-9
           ) {
             addIssue(
               issues,
@@ -929,7 +942,9 @@ function validateClearances(params: {
               secondVia.spanLayers.includes(layer),
             ) &&
             distance(firstVia.center, secondVia.center) <
-              (firstVia.diameter + secondVia.diameter) / 2 + clearance - 1e-9
+              (firstVia.diameter + secondVia.diameter) / 2 +
+                viaToViaClearance -
+                1e-9
           ) {
             addIssue(
               issues,

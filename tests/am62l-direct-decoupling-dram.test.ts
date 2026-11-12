@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { getSvgFromGraphicsObject, mergeGraphics } from "graphics-debug"
 import { FanoutSolver } from "../lib/fanout-solver"
+import { validateRoutedCopperDrc } from "../lib/validate-routed-copper-drc"
 import { expectSvgSnapshotWithActual } from "./fixtures/expect-svg-snapshot-with-actual"
 import { expectStraightOr45Fanout } from "./fixtures/expect-straight-or-45-fanout"
 import { createAm62lDirectDecouplingDramInput } from "./fixtures/create-am62l-direct-decoupling-dram-input"
@@ -62,6 +63,17 @@ test("finalizes the real AM62L direct-decoupling DRAM fanout", async () => {
     brokenOutConnectionCount: 143,
     issues: [],
   })
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj,
+      routedSrj: {
+        ...output.simpleRouteJson,
+        traces: output.fanoutTraces,
+      },
+      clearance: inputSrj.minViaEdgeToPadEdgeClearance!,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({ valid: true, checkedTraceCount: 143, issues: [] })
 
   const visualization = mergeGraphics(solver.visualize(), {
     texts: [
