@@ -2,10 +2,10 @@
 <rect width="980" height="620" fill="#122330"/>
 <g font-family="Arial" fill="#edf3f7">
 <text x="28" y="42" font-size="25">HDMI connector: escape a long signal pad</text>
-<text x="28" y="78" font-size="19">BEFORE: no local escape; all grid candidates lie inside pads</text>
+<text x="28" y="78" font-size="19">AFTER: pad connected to a through via; clearance passed</text>
 <rect x="178.75" y="153.75" width="37.5" height="332.5" fill="#526575" stroke="#c8d5dc"/><text x="197.5" y="141.75" text-anchor="middle" font-size="16">NC</text><rect x="241.25" y="153.75" width="37.5" height="332.5" fill="#b38336" stroke="#c8d5dc"/><text x="260" y="141.75" text-anchor="middle" font-size="16">signal</text><rect x="303.75" y="153.75" width="37.5" height="332.5" fill="#526575" stroke="#c8d5dc"/><text x="322.5" y="141.75" text-anchor="middle" font-size="16">NC</text>
-
-
+<polyline points="260,320 260,503.25 260,503.25 260,503.25" fill="none" stroke="#63d9fc" stroke-width="7.5"/>
+<circle cx="260" cy="503.25" r="9.375" fill="#63d9fc"/><circle cx="260" cy="503.25" r="4.6875" fill="#122330"/>
 <text x="480" y="165" font-size="19">Actual signal-pad geometry</text>
 <text x="480" y="201" font-size="17">Pad: 0.30 × 2.66 mm; pitch: 0.50 mm</text>
 <text x="480" y="231" font-size="17">Trace / clearance: 0.06 / 0.06 mm</text>

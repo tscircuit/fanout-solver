@@ -18,6 +18,8 @@ const EPSILON = 1e-9
 const DEFAULT_MAXIMUM_SEARCH_STATES = 100_000
 
 export interface DogboneViaSiteGeometryRules {
+  /** Local connector escapes may try just outside a pad when grid sites fail. */
+  allowPadEdgeSites?: boolean
   viaDiameter: number
   /** Physical copper layers occupied by each candidate via. Omitted entries
    * preserve the conservative through-via behavior of existing callers. */
@@ -349,6 +351,7 @@ function getConnectionCandidates(params: {
   component: ComponentMatchingInput
   rules: DogboneViaSiteGeometryRules
   includeProjectedSites?: boolean
+  padEdgeFallback?: boolean
 }): ViaSiteCandidate[] {
   const { connection, component, rules, includeProjectedSites = true } = params
   const { preparedConnection, direction } = connection
@@ -382,6 +385,32 @@ function getConnectionCandidates(params: {
     ...adjacentY.map((y) => ({ x: source.x, y })),
     ...adjacentX.flatMap((x) => adjacentY.map((y) => ({ x, y }))),
   ]
+  if (params.padEdgeFallback) {
+    const pad = preparedConnection.sourceObstacle
+    const angle = ((pad.ccwRotationDegrees ?? 0) * Math.PI) / 180
+    const reachX =
+      (Math.abs(Math.cos(angle)) * pad.width +
+        Math.abs(Math.sin(angle)) * pad.height) /
+        2 +
+      rules.viaDiameter / 2 +
+      rules.clearance +
+      0.001
+    const reachY =
+      (Math.abs(Math.sin(angle)) * pad.width +
+        Math.abs(Math.cos(angle)) * pad.height) /
+        2 +
+      rules.viaDiameter / 2 +
+      rules.clearance +
+      0.001
+    rawPoints.splice(
+      0,
+      rawPoints.length,
+      { x: pad.center.x - reachX, y: source.y },
+      { x: pad.center.x + reachX, y: source.y },
+      { x: source.x, y: pad.center.y - reachY },
+      { x: source.x, y: pad.center.y + reachY },
+    )
+  }
   if (includeProjectedSites && connection.terminationType === "plane") {
     // A rectangular or rounded imported grid can put an interstitial midpoint
     // off the source's 45-degree rays. Intersect those rays with each adjacent
@@ -529,6 +558,14 @@ function getConnectionCandidates(params: {
       outwardRank: getOutwardRank({ source, site: point, direction }),
     })
   }
+
+  if (
+    !candidates.length &&
+    rules.allowPadEdgeSites &&
+    !params.padEdgeFallback &&
+    !fixedViaPoint
+  )
+    return getConnectionCandidates({ ...params, padEdgeFallback: true })
 
   const perpendicularCoordinates =
     direction === "left" || direction === "right"
