@@ -132,5 +132,7 @@ test("matches offset split buses after protecting aligned opposite approaches", 
     getSvgFromGraphicsObject(solver.visualize()),
     import.meta.path,
   )
-  // The benchmark independently preserves its 120-second routing deadline.
-}, 240_000)
+  // Allow the full solve, DRC, and snapshot checks on slower CI runners
+  // (an isolated run took over six minutes). The benchmark independently
+  // preserves its 120-second routing deadline.
+}, 600_000)

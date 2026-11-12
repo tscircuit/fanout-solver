@@ -45,6 +45,7 @@ export function getViaSpanLayers(params: {
   return allowBlindAndBuriedVias ? logicalSpan : [...layerNames]
 }
 
+/** Read physical metadata without allowing it to override the board via policy. */
 export function getRouteViaSpanLayers(params: {
   fromLayer: string
   toLayer: string
@@ -69,6 +70,14 @@ export function getRouteViaSpanLayers(params: {
   ) {
     throw new Error(
       `FanoutSolver: route via from "${fromLayer}" to "${toLayer}" has an invalid physical layer span`,
+    )
+  }
+  if (
+    !allowBlindAndBuriedVias &&
+    layerNames.some((layer) => !layers.includes(layer))
+  ) {
+    throw new Error(
+      "FanoutSolver: supplied via span requires allowBlindAndBuriedVias=true in the input SRJ",
     )
   }
   return [...layers]

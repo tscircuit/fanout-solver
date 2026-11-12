@@ -13,7 +13,7 @@ import {
   distanceSegmentToSegment,
   pointIsInsideObstacle,
 } from "./geometry"
-import { getCopperLayerNames, getLayerSpan } from "./layer-names"
+import { getCopperLayerNames, getRouteViaSpanLayers } from "./layer-names"
 import {
   connectionsShareElectricalNet,
   getConnectionNetKey,
@@ -103,11 +103,17 @@ function extractTraceCopper(
         type: "via",
         center: { x: routePoint.x, y: routePoint.y },
         diameter: routePoint.via_diameter ?? 0,
-        layers: getLayerSpan(
-          routePoint.from_layer,
-          routePoint.to_layer,
+        layers: getRouteViaSpanLayers({
+          fromLayer: routePoint.from_layer,
+          toLayer: routePoint.to_layer,
+          layers:
+            "layers" in routePoint && Array.isArray(routePoint.layers)
+              ? (routePoint.layers as string[])
+              : undefined,
           layerNames,
-        ),
+          // Preserve endpoint-derived spans when physical metadata is absent.
+          allowBlindAndBuriedVias: true,
+        }),
       })
       previousWire = undefined
       continue

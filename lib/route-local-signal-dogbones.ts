@@ -14,7 +14,11 @@ import {
   matchComponentDogboneViaSites,
   getComponentDogboneViaSiteCandidates,
 } from "./match-component-dogbone-via-sites"
-import { getCopperLayerNames, getViaSpanLayers } from "./layer-names"
+import {
+  getCopperLayerNames,
+  getViaSpanLayers,
+  getRouteViaSpanLayers,
+} from "./layer-names"
 import type {
   FanoutSimplifiedPcbTrace,
   FanoutBusSpec,
@@ -29,16 +33,18 @@ export interface LocalSignalDogboneOptions {
   clearance: number
   holeToHoleClearance?: number
   boardEdgeClearance?: number
-  allowBlindAndBuriedVias?: boolean
 }
 
 /** Local signal escapes in board-world mm (+X right, +Y up). All geometry is
  * points, not directions. Signals remain unresolved at the returned handoffs;
- * no shared-boundary routing or plane termination is performed. Input is immutable. */
+ * no shared-boundary routing or plane termination is performed. Input is immutable.
+ * The SRJ allowBlindAndBuriedVias flag is authoritative and defaults to false;
+ * neither routing options nor supplied via metadata enable the capability. */
 export function routeLocalSignalDogbones(
-  input: SimpleRouteJson,
+  input: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean },
   options: LocalSignalDogboneOptions,
 ) {
+  const allowBlindAndBuriedVias = input.allowBlindAndBuriedVias ?? false
   const connections = structuredClone(input.connections)
   const endpoints: Array<{ connectionIndex: number; pointIndex: number }> = []
   const virtualConnections: SimpleRouteConnection[] = []
@@ -159,7 +165,13 @@ export function routeLocalSignalDogbones(
           connectionIndex: -1,
           center: point,
           diameter: point.via_diameter ?? options.viaDiameter,
-          spanLayers: layers,
+          spanLayers: getRouteViaSpanLayers({
+            fromLayer: point.from_layer,
+            toLayer: point.to_layer,
+            layers: (point as typeof point & { layers?: string[] }).layers,
+            layerNames: layers,
+            allowBlindAndBuriedVias: allowBlindAndBuriedVias,
+          }),
         })
         const next = trace.route[i + 1]
         if (next?.route_type === "wire")
@@ -198,7 +210,24 @@ export function routeLocalSignalDogbones(
         throw Error("Unsupported fixed copper primitive for local dogbones")
     }
   }
+  const allPrepared = prepared.flatMap((bus) => bus.connections)
+  const viaLayersByConnectionIndex = new Map(
+    endpoints.map((endpoint, index) => {
+      const connection = connections[endpoint.connectionIndex]!
+      const source = allPrepared.find((c) => c.connectionIndex === index)!
+      return [
+        index,
+        getViaSpanLayers({
+          fromLayer: source.sourceLayer,
+          toLayer: options.targetLayers.get(connection.name)!,
+          layerNames: layers,
+          allowBlindAndBuriedVias: allowBlindAndBuriedVias,
+        }),
+      ] as const
+    }),
+  )
   const geometryRules = {
+    viaLayersByConnectionIndex,
     viaDiameter: options.viaDiameter,
     viaHoleDiameter: options.viaHoleDiameter,
     traceWidth: options.traceWidth,
@@ -241,7 +270,6 @@ export function routeLocalSignalDogbones(
   if (!sites) throw Error("No collision-free local dogbone assignment")
   // The matcher works component by component. Check interactions across those
   // assignments too: through vias can collide even on different signal layers.
-  const allPrepared = prepared.flatMap((b) => b.connections)
   for (let i = 0; i < allPrepared.length; i++)
     for (let j = 0; j < i; j++) {
       const a = allPrepared[i]!,
@@ -268,9 +296,22 @@ export function routeLocalSignalDogbones(
       const viaTrace =
         options.viaDiameter / 2 + options.traceWidth / 2 + options.clearance
       if (
-        distance(p, q) < viaSeparation - 1e-9 ||
-        distancePointToSegment(p, stubB.start, stubB.end) < viaTrace - 1e-9 ||
-        distancePointToSegment(q, stubA.start, stubA.end) < viaTrace - 1e-9 ||
+        (viaLayersByConnectionIndex
+          .get(a.connectionIndex)!
+          .some((layer) =>
+            viaLayersByConnectionIndex.get(b.connectionIndex)!.includes(layer),
+          ) &&
+          distance(p, q) < viaSeparation - 1e-9) ||
+        (viaLayersByConnectionIndex
+          .get(a.connectionIndex)!
+          .includes(stubB.layer) &&
+          distancePointToSegment(p, stubB.start, stubB.end) <
+            viaTrace - 1e-9) ||
+        (viaLayersByConnectionIndex
+          .get(b.connectionIndex)!
+          .includes(stubA.layer) &&
+          distancePointToSegment(q, stubA.start, stubA.end) <
+            viaTrace - 1e-9) ||
         (a.sourceLayer === b.sourceLayer &&
           !segmentsAreClear(stubA, stubB, options.clearance))
       )
@@ -294,12 +335,7 @@ export function routeLocalSignalDogbones(
       site.y > input.bounds.maxY - margin
     )
       throw Error(`${connection.name}: dogbone outside board bounds`)
-    const span = getViaSpanLayers({
-      fromLayer,
-      toLayer,
-      layerNames: layers,
-      allowBlindAndBuriedVias: options.allowBlindAndBuriedVias ?? false,
-    })
+    const span = viaLayersByConnectionIndex.get(endpointIndex)!
     traces.push({
       type: "pcb_trace",
       pcb_trace_id: `local_dogbone_${connection.name}_${endpoint.pointIndex}`,

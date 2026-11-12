@@ -44,13 +44,20 @@ for (const testFile of selectedTestFiles) console.log(`- ${testFile}`)
 
 // Allow cold SVG renderer startup on macOS runners. Explicit test timeouts
 // still take precedence; benchmark worker deadlines are configured separately.
-const testProcess = Bun.spawn(
-  ["bun", "test", "--timeout", "15000", ...selectedTestFiles],
-  {
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  },
-)
+// Large routing fixtures and snapshot renderers can retain memory for the
+// lifetime of the test process. Give each file a fresh process while keeping
+// the same shard assignment, assertions, snapshots, and timeout limits.
+let failedFileCount = 0
+for (const testFile of selectedTestFiles) {
+  const testProcess = Bun.spawn(
+    ["bun", "test", "--timeout", "15000", testFile],
+    {
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    },
+  )
+  if ((await testProcess.exited) !== 0) failedFileCount++
+}
 
-process.exit(await testProcess.exited)
+process.exit(failedFileCount > 0 ? 1 : 0)
