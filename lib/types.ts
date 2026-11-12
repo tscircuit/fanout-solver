@@ -118,7 +118,7 @@ export type FanoutBusTermination =
       layer: string
     }
 
-export interface FanoutBusSpec extends SimpleRouteBus {
+export interface FanoutBusSpec extends Omit<SimpleRouteBus, "allowedLayers"> {
   /** Component whose connection endpoints should be escaped. */
   sourceComponentId?: string
   /** Canonical local-escape, boundary-edge, and edge-band selection. */
