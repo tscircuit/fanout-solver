@@ -58,11 +58,12 @@ test("a ground pad dropping into a reserved inner1 plane", async () => {
       busDirections: { GND_A1: "right" },
     })
     solver.solve()
-    expect(solver.solved).toBe(planeNet === null)
+    expect(solver.solved).toBe(planeNet !== "VCC")
     if (!solver.solved) expect(solver.error).toContain("routed 0/1 connections")
     const output = solver.solved ? solver.getOutput() : undefined
     const drop = output?.planeTerminations[0]
     if (output) {
+      expect(output.validation.issues).toEqual([])
       expect(output.fanoutTraces).toHaveLength(1)
       expect(output.planeTerminations).toHaveLength(1)
       expect(drop).toMatchObject({ connectionName: "GND_A1", layer: "inner1" })

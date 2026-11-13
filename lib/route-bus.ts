@@ -1937,7 +1937,8 @@ function planIsStaticallyClear(params: {
         continue
       }
       if (
-        allowSameNetMerges &&
+        (allowSameNetMerges ||
+          (plan.termination.type === "plane" && obstacle.isCopperPour)) &&
         obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
       ) {
         continue
