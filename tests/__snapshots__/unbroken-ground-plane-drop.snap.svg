@@ -1,0 +1,44 @@
+<svg width="1100" height="360" viewBox="0 0 1100 360" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><polyline data-points="0,0 0.526,0.175" data-type="line" data-label="" points="223.12775330396482,180.61674008810573 288.00881057268725,159.0308370044053" fill="none" stroke="#a6472c" stroke-linejoin="round" stroke-width="12.334801762114536"/></g><g><rect data-type="rect" data-label="" data-x="0" data-y="0" x="68.94273127753314" y="81.93832599118946" width="308.37004405286336" height="197.35682819383254" fill="#eff3f6" stroke="#64748b" stroke-width="0.00810714285714286"/></g><g><rect data-type="rect" data-label="" data-x="2.65" data-y="0" x="395.8149779735683" y="81.93832599118946" width="308.37004405286336" height="197.35682819383254" fill="#d9ede2" stroke="#64748b" stroke-width="0.00810714285714286"/></g><g><rect data-type="rect" data-label="" data-x="5.3" data-y="0" x="722.6872246696036" y="81.93832599118946" width="308.37004405286325" height="197.35682819383254" fill="#f6e1df" stroke="#64748b" stroke-width="0.00810714285714286"/></g><circle data-type="circle" data-label="" data-x="0" data-y="0" cx="223.12775330396482" cy="180.61674008810573" r="21.585903083700433" fill="#a6472c" stroke="black" stroke-width="0.00810714285714286"/><circle data-type="circle" data-label="" data-x="0.526" data-y="0.175" cx="288.00881057268725" cy="159.0308370044053" r="30.837004405286336" fill="#bf8020" stroke="black" stroke-width="0.00810714285714286"/><circle data-type="circle" data-label="" data-x="0.526" data-y="0.175" cx="288.00881057268725" cy="159.0308370044053" r="15.418502202643168" fill="white" stroke="black" stroke-width="0.00810714285714286"/><circle data-type="circle" data-label="" data-x="2.65" data-y="0" cx="550" cy="180.61674008810573" r="21.585903083700433" fill="#a6472c" stroke="black" stroke-width="0.00810714285714286"/><circle data-type="circle" data-label="" data-x="5.3" data-y="0" cx="876.8722466960352" cy="180.61674008810573" r="21.585903083700433" fill="#a6472c" stroke="black" stroke-width="0.00810714285714286"/><text data-type="text" data-label="No pour reservation" data-x="0" data-y="1.05" x="223.12775330396482" y="51.10132158590312" fill="black" font-size="22.202643171806162" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">No pour reservation</text><text data-type="text" data-label="GND pad + via to inner1" data-x="0" data-y="-1.05" x="223.12775330396482" y="310.13215859030834" fill="black" font-size="19.735682819383257" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">GND pad + via to inner1</text><text data-type="text" data-label="inner1: GND pour" data-x="2.65" data-y="1.05" x="550" y="51.10132158590312" fill="black" font-size="22.202643171806162" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">inner1: GND pour</text><text data-type="text" data-label="GND pad only: 0 vias" data-x="2.65" data-y="-1.05" x="550" y="310.13215859030834" fill="black" font-size="19.735682819383257" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">GND pad only: 0 vias</text><text data-type="text" data-label="inner1: VCC pour" data-x="5.3" data-y="1.05" x="876.8722466960352" y="51.10132158590312" fill="black" font-size="22.202643171806162" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">inner1: VCC pour</text><text data-type="text" data-label="GND pad only: 0 vias" data-x="5.3" data-y="-1.05" x="876.8722466960352" y="310.13215859030834" fill="black" font-size="19.735682819383257" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">GND pad only: 0 vias</text><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="360" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="1100" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+              document.currentScript.parentElement.addEventListener('mousemove', (e) => {
+                const svg = e.currentTarget;
+                const rect = svg.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const crosshair = svg.getElementById('crosshair');
+                const h = svg.getElementById('crosshair-h');
+                const v = svg.getElementById('crosshair-v');
+                const coords = svg.getElementById('coordinates');
+
+                crosshair.style.display = 'block';
+                h.setAttribute('x1', '0');
+                h.setAttribute('x2', '1100');
+                h.setAttribute('y1', y);
+                h.setAttribute('y2', y);
+                v.setAttribute('x1', x);
+                v.setAttribute('x2', x);
+                v.setAttribute('y1', '0');
+                v.setAttribute('y2', '360');
+
+                // Calculate real coordinates using inverse transformation
+                const matrix = {"a":123.34801762114535,"c":0,"e":223.12775330396482,"b":0,"d":-123.34801762114535,"f":180.61674008810573};
+                // Manually invert and apply the affine transform
+                // Since we only use translate and scale, we can directly compute:
+                // x' = (x - tx) / sx
+                // y' = (y - ty) / sy
+                const sx = matrix.a;
+                const sy = matrix.d;
+                const tx = matrix.e;
+                const ty = matrix.f;
+                const realPoint = {
+                  x: (x - tx) / sx,
+                  y: (y - ty) / sy // Flip y back since we used negative scale
+                }
+
+                coords.textContent = `(${realPoint.x.toFixed(2)}, ${realPoint.y.toFixed(2)})`;
+                coords.setAttribute('x', (x + 5).toString());
+                coords.setAttribute('y', (y - 5).toString());
+              });
+              document.currentScript.parentElement.addEventListener('mouseleave', () => {
+                document.currentScript.parentElement.getElementById('crosshair').style.display = 'none';
+              });
+            ]]></script></svg>
