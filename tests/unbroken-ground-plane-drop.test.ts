@@ -76,10 +76,10 @@ test("a ground pad dropping into a reserved inner1 plane", async () => {
       height: 1.6,
       fill:
         planeNet === "GND"
-          ? "#d9ede2"
+          ? "rgba(36,130,77,0.16)"
           : planeNet === "VCC"
-            ? "#f6e1df"
-            : "#eff3f6",
+            ? "rgba(175,42,32,0.14)"
+            : "rgba(60,85,110,0.08)",
       stroke: "#64748b",
     })
     graphics.circles!.push({
