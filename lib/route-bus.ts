@@ -730,7 +730,34 @@ function busIsOnOutwardComponentEdge(bus: PreparedBus): boolean {
     directionSign(bus.direction) > 0
       ? Math.max(...directionalCoordinates)
       : Math.min(...directionalCoordinates)
-  return Math.abs(averageDirectionalSource - outwardCoordinate) < 1e-6
+  if (Math.abs(averageDirectionalSource - outwardCoordinate) < 1e-6) return true
+  const sign = directionSign(bus.direction)
+  return bus.connections.every((connection) => {
+    const sourceAxis = getAxis(connection.sourcePoint, bus.direction)
+    const sourcePerpendicular = getPerpendicularAxis(
+      connection.sourcePoint,
+      bus.direction,
+    )
+    const sourceHalfSpan =
+      (isHorizontal(bus.direction)
+        ? connection.sourceObstacle.height
+        : connection.sourceObstacle.width) / 2
+    return !bus.componentObstacles.some((obstacle) => {
+      if (obstacle === connection.sourceObstacle) return false
+      const obstacleAxis = getAxis(obstacle.center, bus.direction)
+      if ((obstacleAxis - sourceAxis) * sign <= 1e-6) return false
+      const obstaclePerpendicular = getPerpendicularAxis(
+        obstacle.center,
+        bus.direction,
+      )
+      const obstacleHalfSpan =
+        (isHorizontal(bus.direction) ? obstacle.height : obstacle.width) / 2
+      return (
+        Math.abs(obstaclePerpendicular - sourcePerpendicular) <=
+        sourceHalfSpan + obstacleHalfSpan + 1e-6
+      )
+    })
+  })
 }
 
 function getConnectionRank(
@@ -4193,120 +4220,178 @@ export function* routeBusAlternativesSteps(
   )
     return alternatives
 
-  const searchConnectionOrder = (
-    connectionOrder: PreparedConnection[],
-    viaHandedness: ViaHandedness,
-    connectionIndex: number,
-    candidatePlans: FanoutRoutePlan[],
-  ): void => {
-    if (alternatives.length >= maxAlternatives) return
-    if (connectionIndex >= connectionOrder.length) {
-      addAlternative(candidatePlans)
-      return
-    }
-
-    const preparedConnection = connectionOrder[connectionIndex]!
-    const connectionRank = getConnectionRank(bus, preparedConnection)
-    const preferredTracks = [
-      getPreferredTrack({
-        bus,
-        connection: preparedConnection,
-        traceWidth,
-      }),
-      getLegacyPreferredTrack({
-        bus,
-        connection: preparedConnection,
-        targetUsesVia,
-        interstitialEscape,
-        compactBusTracks,
-        traceWidth,
-        viaDiameter,
-        clearance,
-      }),
-    ].filter(
-      (track, index, tracks) =>
-        tracks.findIndex((candidate) => Math.abs(candidate - track) < 1e-9) ===
-        index,
-    )
-    const trackCandidates = preferredTracks
-      .flatMap((preferredTrack) =>
-        getTrackCandidates({
-          bus,
-          connection: preparedConnection,
-          preferredTrack,
-          traceWidth,
-          clearance,
-        }),
-      )
-      .filter(
-        (track, index, tracks) =>
-          tracks.findIndex(
-            (candidate) => Math.abs(candidate.value - track.value) < 1e-9,
-          ) === index,
-      )
-    for (
-      let trackIndex = 0;
-      trackIndex < trackCandidates.length;
-      trackIndex++
-    ) {
-      const track = trackCandidates[trackIndex]!
-      const plan = buildPlan({
-        preparedConnection,
-        bus,
-        targetLayer,
-        track: track.value,
-        exitAxis,
-        layerNames,
-        traceWidth,
-        viaDiameter,
-        viaHoleDiameter,
-        viaHandedness,
-        interstitialEscape,
-        spreadLaneIndex: Math.min(
-          connectionRank,
-          bus.connections.length - connectionRank - 1,
-        ),
-        cornerExitLaneOffset: cornerLaneOffsets.exit,
-        cornerLocalChannelLaneOffset: cornerLaneOffsets.localChannel,
-        cornerBoundaryChannelLaneOffset: cornerLaneOffsets.boundaryChannel,
-        clearance,
-        terminateAtVia: false,
-        allowBlindAndBuriedVias,
-        cornerBandTargetTrackOffset,
-        fixedBoundaryTracksByConnectionIndex,
-      })
-      if (
-        !planIsClear({
-          plan,
-          otherPlans: [...acceptedPlans, ...candidatePlans],
-          staticClearanceCache,
-          blockingBusCounts,
-          cacheKey: `boundary:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
-          srj,
-          sharedBoundary: bus.sharedBoundary,
-          clearance,
-          allowBlindAndBuriedVias,
-          allowSameNetMerges,
-        })
-      ) {
-        continue
-      }
-      searchConnectionOrder(
-        connectionOrder,
-        viaHandedness,
-        connectionIndex + 1,
-        [...candidatePlans, plan],
-      )
-      if (alternatives.length >= maxAlternatives) return
-      if (maxAlternatives === 1) return
+  const oppositeDirection = (direction: FanoutDirection): FanoutDirection => {
+    switch (direction) {
+      case "left":
+        return "right"
+      case "right":
+        return "left"
+      case "up":
+        return "down"
+      case "down":
+        return "up"
     }
   }
 
-  for (const viaHandedness of viaHandednesses) {
-    for (const connectionOrder of getConnectionOrders(bus)) {
-      searchConnectionOrder(connectionOrder, viaHandedness, 0, [])
-      if (alternatives.length >= maxAlternatives) return alternatives
+  const searchAnalyticBus = (activeBus: PreparedBus): void => {
+    const activeExitAxis = getExitAxis(activeBus)
+    const activeDirectionalPadSize = isHorizontal(activeBus.direction)
+      ? sourceObstacle.width
+      : sourceObstacle.height
+    const activeOutwardEdgeBus = busIsOnOutwardComponentEdge(activeBus)
+    const activePairChannelFitsVia =
+      getDirectionalPitch(activeBus) / 2 - activeDirectionalPadSize / 2 >=
+      viaDiameter / 2 + clearance - 1e-9
+    const activeInterstitialEscape =
+      targetUsesVia && !activeOutwardEdgeBus && !activePairChannelFitsVia
+    const activeAvailableViaHandednesses: readonly ViaHandedness[] =
+      targetUsesVia
+        ? activePairChannelFitsVia || activeOutwardEdgeBus
+          ? [0]
+          : allowBlindAndBuriedVias
+            ? [1, -1]
+            : [-1, 1]
+        : [0]
+    const activeViaHandednesses: readonly ViaHandedness[] =
+      activeBus === bus ? viaHandednesses : activeAvailableViaHandednesses
+    const activeCornerLaneOffsets =
+      activeBus === bus
+        ? cornerLaneOffsets
+        : getCornerLaneOffsets(activeBus, acceptedPlans)
+
+    const searchConnectionOrder = (
+      connectionOrder: PreparedConnection[],
+      viaHandedness: ViaHandedness,
+      connectionIndex: number,
+      candidatePlans: FanoutRoutePlan[],
+    ): void => {
+      if (alternatives.length >= maxAlternatives) return
+      if (connectionIndex >= connectionOrder.length) {
+        addAlternative(candidatePlans)
+        return
+      }
+
+      const preparedConnection = connectionOrder[connectionIndex]!
+      const connectionRank = getConnectionRank(activeBus, preparedConnection)
+      const preferredTracks = [
+        getPreferredTrack({
+          bus: activeBus,
+          connection: preparedConnection,
+          traceWidth,
+        }),
+        getLegacyPreferredTrack({
+          bus: activeBus,
+          connection: preparedConnection,
+          targetUsesVia,
+          interstitialEscape: activeInterstitialEscape,
+          compactBusTracks,
+          traceWidth,
+          viaDiameter,
+          clearance,
+        }),
+      ].filter(
+        (track, index, tracks) =>
+          tracks.findIndex(
+            (candidate) => Math.abs(candidate - track) < 1e-9,
+          ) === index,
+      )
+      const trackCandidates = preferredTracks
+        .flatMap((preferredTrack) =>
+          getTrackCandidates({
+            bus: activeBus,
+            connection: preparedConnection,
+            preferredTrack,
+            traceWidth,
+            clearance,
+          }),
+        )
+        .filter(
+          (track, index, tracks) =>
+            tracks.findIndex(
+              (candidate) => Math.abs(candidate.value - track.value) < 1e-9,
+            ) === index,
+        )
+      for (
+        let trackIndex = 0;
+        trackIndex < trackCandidates.length;
+        trackIndex++
+      ) {
+        const track = trackCandidates[trackIndex]!
+        const plan = buildPlan({
+          preparedConnection,
+          bus: activeBus,
+          targetLayer,
+          track: track.value,
+          exitAxis: activeExitAxis,
+          layerNames,
+          traceWidth,
+          viaDiameter,
+          viaHoleDiameter,
+          viaHandedness,
+          interstitialEscape: activeInterstitialEscape,
+          spreadLaneIndex: Math.min(
+            connectionRank,
+            activeBus.connections.length - connectionRank - 1,
+          ),
+          cornerExitLaneOffset: activeCornerLaneOffsets.exit,
+          cornerLocalChannelLaneOffset: activeCornerLaneOffsets.localChannel,
+          cornerBoundaryChannelLaneOffset:
+            activeCornerLaneOffsets.boundaryChannel,
+          clearance,
+          terminateAtVia: false,
+          allowBlindAndBuriedVias,
+          cornerBandTargetTrackOffset,
+          fixedBoundaryTracksByConnectionIndex,
+        })
+        if (
+          !planIsClear({
+            plan,
+            otherPlans: [...acceptedPlans, ...candidatePlans],
+            staticClearanceCache,
+            blockingBusCounts,
+            cacheKey: `boundary:${activeBus.busId}:${activeBus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${activeBus.exitEdge ?? "legacy"}:${activeCornerLaneOffsets.exit}:${activeCornerLaneOffsets.localChannel}:${activeCornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
+            srj,
+            sharedBoundary: activeBus.sharedBoundary,
+            clearance,
+            allowBlindAndBuriedVias,
+            allowSameNetMerges,
+          })
+        ) {
+          continue
+        }
+        searchConnectionOrder(
+          connectionOrder,
+          viaHandedness,
+          connectionIndex + 1,
+          [...candidatePlans, plan],
+        )
+        if (alternatives.length >= maxAlternatives) return
+        if (maxAlternatives === 1) return
+      }
     }
+
+    for (const viaHandedness of activeViaHandednesses) {
+      for (const connectionOrder of getConnectionOrders(activeBus)) {
+        searchConnectionOrder(connectionOrder, viaHandedness, 0, [])
+        if (alternatives.length >= maxAlternatives) return
+      }
+    }
+  }
+
+  searchAnalyticBus(bus)
+  if (
+    alternatives.length < maxAlternatives &&
+    bus.busId.startsWith("connection:") &&
+    bus.connections.length === 1 &&
+    !bus.exitEdge &&
+    !bus.preferredExit &&
+    !bus.connections[0]!.targetPoint.pointId &&
+    !bus.connections[0]!.targetPoint.pcb_port_id
+  ) {
+    searchAnalyticBus({
+      ...bus,
+      direction: oppositeDirection(bus.direction),
+    })
   }
 
   return alternatives
