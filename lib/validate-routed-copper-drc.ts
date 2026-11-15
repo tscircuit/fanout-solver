@@ -16,6 +16,7 @@ import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
 } from "./net-identity"
+import { RouteSegmentSpatialIndex } from "./route-segment-spatial-index"
 import type { Point2D, RoutedSegment } from "./types"
 
 const EPSILON = 1e-6
@@ -293,6 +294,29 @@ export function validateRoutedCopperDrc(params: {
     )
   }
 
+  const obstacleBounds = new Map(
+    inputSrj.obstacles.map((obstacle) => {
+      const shape = obstacle as typeof obstacle & {
+        ccwRotationDegrees?: number
+        shape?: string
+      }
+      const radius =
+        shape.shape === "circle"
+          ? obstacle.width / 2
+          : shape.ccwRotationDegrees
+            ? Math.hypot(obstacle.width, obstacle.height) / 2
+            : 0
+      return [
+        obstacle,
+        {
+          minX: obstacle.center.x - (radius || obstacle.width / 2),
+          maxX: obstacle.center.x + (radius || obstacle.width / 2),
+          minY: obstacle.center.y - (radius || obstacle.height / 2),
+          maxY: obstacle.center.y + (radius || obstacle.height / 2),
+        },
+      ] as const
+    }),
+  )
   for (const copper of traceCopper) {
     // Electrical ownership is constant throughout this synchronous validation.
     // Resolve it once per trace, rather than rescanning each pad's metadata
@@ -310,6 +334,15 @@ export function validateRoutedCopperDrc(params: {
         if (!obstacle.layers.includes(segment.layer)) {
           continue
         }
+        const bounds = obstacleBounds.get(obstacle)!
+        const margin = segment.width / 2 + clearance + EPSILON
+        if (
+          Math.min(segment.start.x, segment.end.x) > bounds.maxX + margin ||
+          Math.max(segment.start.x, segment.end.x) < bounds.minX - margin ||
+          Math.min(segment.start.y, segment.end.y) > bounds.maxY + margin ||
+          Math.max(segment.start.y, segment.end.y) < bounds.minY - margin
+        )
+          continue
         if (
           segmentIsLegalTerminalBodyEscape({
             inputSrj,
@@ -380,6 +413,19 @@ export function validateRoutedCopperDrc(params: {
     }
   }
 
+  // Retain original segment order in diagnostics while pruning distant copper.
+  // The index includes trace widths and a conservative tolerance; every returned
+  // candidate still goes through the same exact clearance predicates below.
+  const segmentIndexes = traceCopper.map(
+    (copper) => new RouteSegmentSpatialIndex(copper.segments),
+  )
+  const segmentOrder = new Map(
+    traceCopper.flatMap((copper) =>
+      copper.segments.map((segment, index) => [segment, index] as const),
+    ),
+  )
+  const originalOrder = (a: RoutedSegment, b: RoutedSegment) =>
+    segmentOrder.get(a)! - segmentOrder.get(b)!
   for (let firstIndex = 0; firstIndex < traceCopper.length; firstIndex++) {
     const first = traceCopper[firstIndex]!
     for (
@@ -399,7 +445,10 @@ export function validateRoutedCopperDrc(params: {
       }
 
       for (const firstSegment of first.segments) {
-        for (const secondSegment of second.segments) {
+        for (const secondSegment of segmentIndexes[secondIndex]!.querySegment(
+          firstSegment,
+          clearance,
+        ).sort(originalOrder)) {
           if (segmentsAreClear(firstSegment, secondSegment, clearance)) continue
           addIssue(issues, {
             code: "different-net-trace-clearance",
@@ -439,7 +488,10 @@ export function validateRoutedCopperDrc(params: {
       }
 
       for (const firstVia of first.vias) {
-        for (const secondSegment of second.segments) {
+        for (const secondSegment of segmentIndexes[secondIndex]!.queryVia(
+          firstVia,
+          clearance,
+        ).sort(originalOrder)) {
           if (
             !firstVia.spanLayers.includes(secondSegment.layer) ||
             distancePointToSegment(
