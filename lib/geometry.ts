@@ -132,6 +132,16 @@ export function distancePointToObstacle(
   return Math.hypot(dx, dy)
 }
 
+function distanceLocalPointToRectangle(
+  point: Point2D,
+  rectangle: Pick<Obstacle, "width" | "height">,
+): number {
+  return Math.hypot(
+    Math.max(Math.abs(point.x) - rectangle.width / 2, 0),
+    Math.max(Math.abs(point.y) - rectangle.height / 2, 0),
+  )
+}
+
 export function distanceSegmentToObstacle(
   segment: RoutedSegment,
   obstacle: Obstacle,
@@ -167,6 +177,35 @@ export function distanceSegmentToObstacle(
     { x: maxX, y: maxY },
     { x: minX, y: maxY },
   ]
+
+  // For disjoint segments and rectangles, the closest pair contains either
+  // a segment endpoint or a rectangle corner. This avoids measuring both
+  // endpoints against every edge (six projections instead of sixteen).
+  // Keep the generic path for edges treated as points by the distance helper.
+  if (obstacle.width ** 2 >= EPSILON && obstacle.height ** 2 >= EPSILON) {
+    for (let index = 0; index < corners.length; index++) {
+      if (
+        segmentsProperlyCross(
+          localStart,
+          localEnd,
+          corners[index]!,
+          corners[(index + 1) % corners.length]!,
+        )
+      )
+        return 0
+    }
+    let minimumDistance = Math.min(
+      distanceLocalPointToRectangle(localStart, obstacle),
+      distanceLocalPointToRectangle(localEnd, obstacle),
+    )
+    for (const corner of corners) {
+      minimumDistance = Math.min(
+        minimumDistance,
+        distancePointToSegment(corner, localStart, localEnd),
+      )
+    }
+    return minimumDistance
+  }
 
   let minimumDistance = Number.POSITIVE_INFINITY
   for (let index = 0; index < corners.length; index++) {
