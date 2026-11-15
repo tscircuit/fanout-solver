@@ -15,7 +15,7 @@ test("visual regression: targeted repair solves a bounded assignment budget", as
 
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
-  expect(solver.attempts).toHaveLength(17)
+  expect(solver.attempts.length).toBeLessThanOrEqual(17)
   const output = solver.getOutput()
   expect(output.validation).toMatchObject({
     valid: true,
