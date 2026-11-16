@@ -214,6 +214,7 @@ export function* routeSourceOriginBusesSteps(
         transitLayers: [],
         routeFromSourcePads: true,
         sourceLayerTravelCost: 1,
+        unconstrainedTargetLayerCost: undefined,
         includeDiagonalNeighbors:
           params.cleanupRetainedBoundaryTails ||
           params.includeDiagonalNeighbors,

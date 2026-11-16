@@ -387,6 +387,11 @@ function* routeLayerReservedAttemptSteps(
     const previousAccepted = accepted
     const useSourceOrigin =
       params.sourceOriginRouting && layer === ordered[0]![0] && shortenFirst
+    const mixedSourceOriginGroup =
+      useSourceOrigin &&
+      !initialSourcePolicy &&
+      group.some((bus) => bus.maxLengthSkew !== undefined) &&
+      group.some((bus) => bus.maxLengthSkew === undefined)
     const attempts = new LayerRoutingAttempts({
       wideSingleLayer: shortenFirst,
       retrySourceOriginPhysicalGridPhase:
@@ -395,6 +400,7 @@ function* routeLayerReservedAttemptSteps(
         useSourceOrigin &&
         !initialSourcePolicy &&
         attemptState.reserveFutureApproaches,
+      retrySourceOriginUnconstrainedTop: mixedSourceOriginGroup,
       preferAlternateOrder:
         (!params.sourceOriginRouting &&
           shortenFirst &&
@@ -477,7 +483,8 @@ function* routeLayerReservedAttemptSteps(
       // ordinary retry with exactly the reservations it received.
       const previousSources =
         attempt.sourceOriginPhysicalGridPhase ||
-        attempt.sourceLayerTravelCost !== undefined
+        attempt.sourceLayerTravelCost !== undefined ||
+        attempt.unconstrainedTargetLayerCost !== undefined
           ? {
               sites: new Map(fixedViaPointsByConnectionIndex),
               paths: new Map(sourceEscapePaths),
@@ -488,7 +495,10 @@ function* routeLayerReservedAttemptSteps(
         if (!previousSources) return
         restoreSources(previousSources)
       }
-      if (attempt.sourceLayerTravelCost !== undefined)
+      if (
+        attempt.sourceLayerTravelCost !== undefined ||
+        attempt.unconstrainedTargetLayerCost !== undefined
+      )
         restoreSources(originalSources)
       const hasTransitRetry =
         attempt.routeFromSourcePads ||
@@ -538,6 +548,7 @@ function* routeLayerReservedAttemptSteps(
         sourceLayerTravelCost:
           attempt.sourceLayerTravelCost ??
           (useSourceOrigin ? initialSourcePolicy?.travelCost : undefined),
+        unconstrainedTargetLayerCost: attempt.unconstrainedTargetLayerCost,
         maximumSourceIterations:
           attempt.maximumSourceIterations ??
           (useSourceOrigin
@@ -592,7 +603,8 @@ function* routeLayerReservedAttemptSteps(
         if (
           useSourceOrigin &&
           !attempt.sourceOriginPhysicalGridPhase &&
-          attempt.sourceLayerTravelCost === undefined
+          attempt.sourceLayerTravelCost === undefined &&
+          attempt.unconstrainedTargetLayerCost === undefined
         ) {
           attemptState.failedWideMatching = groupHadLengthFailure
           return null
@@ -968,19 +980,29 @@ function* routeLayerReservedAttemptSteps(
             // across source-cost, grid and shared-reservation retries. Repeating
             // a failed repair can otherwise starve an existing successful retry.
             const selectedBusIds = new Set(group.map((bus) => bus.busId))
+            const repairKey =
+              attempt.unconstrainedTargetLayerCost !== undefined
+                ? `unconstrained-top:${layer}`
+                : undefined
             const canRepairSources =
               params.sourceOriginRouting &&
               shortenFirst &&
-              group.every(
-                (bus) => !attemptedWideSourceRepairs.has(bus.busId),
-              ) &&
+              (repairKey
+                ? !attemptedWideSourceRepairs.has(repairKey)
+                : group.every(
+                    (bus) => !attemptedWideSourceRepairs.has(bus.busId),
+                  )) &&
               hasOverlongWideSourcePrefix({
                 plans: completePlans,
                 completedBuses,
                 selectedBusIds,
               })
-            if (canRepairSources)
-              for (const bus of group) attemptedWideSourceRepairs.add(bus.busId)
+            if (canRepairSources) {
+              if (repairKey) attemptedWideSourceRepairs.add(repairKey)
+              else
+                for (const bus of group)
+                  attemptedWideSourceRepairs.add(bus.busId)
+            }
             const sourceRepair = canRepairSources
               ? repairWideSourceLengthsSteps({
                   ...params,

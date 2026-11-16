@@ -209,6 +209,62 @@ test("layer retries preserve the first successful choice and distinguish topolog
     fresh.failed(order, "lengths")
     expect(fresh.next()).toBeUndefined()
   }
+  for (const protectedReason of ["routing", "lengths"] as const) {
+    for (const unconstrainedReason of ["routing", "lengths"] as const) {
+      const mixed = new LayerRoutingAttempts({
+        ...options,
+        wideSingleLayer: true,
+        allTransitLayers: [],
+        retrySourceOriginFreshReservations: true,
+        retrySourceOriginUnconstrainedTop: true,
+        retrySourceOriginPhysicalGridPhase: true,
+      })
+      const original = mixed.next()!
+      expect(original).toEqual({
+        ripCost: 64,
+        shuffleSeed: 1,
+        transitLayers: [],
+      })
+      expect(mixed.next()).toBeUndefined()
+      mixed.failed(original, "lengths")
+      const fresh = mixed.next()!
+      expect(fresh).toEqual({
+        ...original,
+        sourceLayerTravelCost: 3,
+        maximumSourceIterations: 20_000_000,
+        reserveFutureApproaches: false,
+      })
+      mixed.failed(fresh, "routing")
+      const protectedRetry = mixed.next()!
+      expect(protectedRetry).toEqual({
+        ...original,
+        sourceLayerTravelCost: 4,
+        reserveFutureApproaches: true,
+      })
+      mixed.failed(protectedRetry, protectedReason)
+      if (protectedReason === "routing") {
+        const unconstrainedTop = mixed.next()!
+        expect(unconstrainedTop).toEqual({
+          ...original,
+          unconstrainedTargetLayerCost: 4,
+        })
+        mixed.failed(unconstrainedTop, unconstrainedReason)
+      }
+      const physical = mixed.next()!
+      expect(physical).toEqual({
+        ...original,
+        sourceOriginPhysicalGridPhase: true,
+      })
+      mixed.failed(physical, unconstrainedReason)
+      const cost = mixed.next()!
+      expect(cost).toEqual({ ...original, ripCost: 256 })
+      mixed.failed(cost, "routing")
+      const order = mixed.next()!
+      expect(order).toEqual({ ...original, shuffleSeed: 2 })
+      mixed.failed(order, "lengths")
+      expect(mixed.next()).toBeUndefined()
+    }
+  }
   const firstPreferredSuccess = new LayerRoutingAttempts({
     ...options,
     wideSingleLayer: true,

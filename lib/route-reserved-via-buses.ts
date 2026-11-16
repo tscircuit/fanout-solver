@@ -90,6 +90,8 @@ export interface RouteReservedViaBusesParams {
   allowSourceOriginTopFinal?: boolean
   /** Search-only cost for TOP travel before that first via; defaults to one. */
   sourceLayerTravelCost?: number
+  /** Search-only target-layer cost for unconstrained buses sharing a source-origin group. */
+  unconstrainedTargetLayerCost?: number
   /** Score source-origin grid channels using only vias that remain reserved. */
   sourceOriginPhysicalGridPhase?: boolean
   /** Reserve an exact perpendicular exit tail and use checked 45-degree entry links. */
@@ -595,6 +597,11 @@ function* routeReservedViaBusesWorker(
   const sourceTravelCost = params.sourceLayerTravelCost ?? 1
   if (!Number.isFinite(sourceTravelCost) || sourceTravelCost < 1)
     throw new Error("sourceLayerTravelCost must be finite and at least one")
+  const unconstrainedTargetCost = params.unconstrainedTargetLayerCost ?? 1
+  if (!Number.isFinite(unconstrainedTargetCost) || unconstrainedTargetCost < 1)
+    throw new Error(
+      "unconstrainedTargetLayerCost must be finite and at least one",
+    )
   const targetLayers = [
     ...new Set(buses.map((bus) => getBusTargetLayer(params, bus.busId))),
   ]
@@ -990,6 +997,7 @@ function* routeReservedViaBusesWorker(
   let previousZ = -1
   let layersByRouterZ: string[] = []
   let allowedLayersByConnection: boolean[][] = []
+  let unconstrainedByConnection: boolean[] = []
   let transitSearch:
     | ReturnType<typeof attachSourceOriginTransitSearch>
     | undefined
@@ -1188,6 +1196,15 @@ function* routeReservedViaBusesWorker(
         (layer) =>
           (permitted.includes(layer) || (sourceOrigin && layer === "top")) &&
           (!originalPermitted || originalPermitted.includes(layer)),
+      )
+    })
+    unconstrainedByConnection = router.connIdToName.map((name) => {
+      const owner = owners.get(name)
+      return (
+        sourceOrigin &&
+        unconstrainedTargetCost > 1 &&
+        !!owner &&
+        owner.maxLengthSkew === undefined
       )
     })
     router.MAX_ITERATIONS = maximumIterations
@@ -1483,14 +1500,17 @@ function* routeReservedViaBusesWorker(
           : router.hyperParameters.ripTracePenalty
       }
     }
-    if (
-      sourceOrigin &&
-      !isVia &&
-      layer === "top" &&
-      router._moveCost >= 0 &&
-      (!transitSearch || transitSearch.beforeFirstVia())
-    )
-      router._moveCost += baseCost * (sourceTravelCost - 1)
+    if (sourceOrigin && !isVia && router._moveCost >= 0) {
+      if (unconstrainedByConnection[connectionId]) {
+        if (layer !== "top")
+          router._moveCost += baseCost * (unconstrainedTargetCost - 1)
+      } else if (
+        layer === "top" &&
+        (!transitSearch || transitSearch.beforeFirstVia())
+      ) {
+        router._moveCost += baseCost * (sourceTravelCost - 1)
+      }
+    }
   }
   // A rip-up search can discard its best topology before reaching its limit.
   // Retain a few distinct one-short candidates, but never expose partial buses.

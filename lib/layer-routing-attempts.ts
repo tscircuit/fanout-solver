@@ -5,6 +5,7 @@ export interface LayerRoutingAttempt {
   routeFromSourcePads?: boolean
   sourceOriginPhysicalGridPhase?: boolean
   sourceLayerTravelCost?: number
+  unconstrainedTargetLayerCost?: number
   maximumSourceIterations?: number
   reserveFutureApproaches?: boolean
 }
@@ -28,6 +29,7 @@ export class LayerRoutingAttempts {
       sourceTransitRipCost?: number
       retrySourceOriginPhysicalGridPhase?: boolean
       retrySourceOriginFreshReservations?: boolean
+      retrySourceOriginUnconstrainedTop?: boolean
       preferAlternateOrder?: boolean
     },
   ) {
@@ -102,7 +104,22 @@ export class LayerRoutingAttempts {
           sourceLayerTravelCost: 4,
           reserveFutureApproaches: true,
         })
+      else if (
+        this.options.retrySourceOriginUnconstrainedTop &&
+        sourceLayerTravelCost === 4 &&
+        reserveFutureApproaches === true &&
+        reason === "routing"
+      )
+        enqueue({
+          ...ordinary,
+          unconstrainedTargetLayerCost: 4,
+        })
       else this.failed(ordinary, "lengths")
+      return
+    }
+    if (attempt.unconstrainedTargetLayerCost !== undefined) {
+      const { unconstrainedTargetLayerCost, ...ordinary } = attempt
+      this.failed(ordinary, "lengths")
       return
     }
     if (attempt.sourceOriginPhysicalGridPhase) {
