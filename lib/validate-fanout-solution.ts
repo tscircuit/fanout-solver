@@ -744,6 +744,15 @@ function validateClearances(params: {
     }
     for (const via of getPlanVias(plan)) {
       for (const obstacle of inputSrj.obstacles) {
+        // Crossed pour reservations form antipads. Keep both terminal layers
+        // protected, as in independent routed-copper validation.
+        if (
+          obstacle.isCopperPour &&
+          !obstacle.layers.includes(via.fromLayer) &&
+          !obstacle.layers.includes(via.toLayer)
+        ) {
+          continue
+        }
         if (
           !obstacle.layers.some((layer) => via.spanLayers.includes(layer)) ||
           obstacleSharesElectricalNet(inputSrj, obstacle, plan.connectionName)
