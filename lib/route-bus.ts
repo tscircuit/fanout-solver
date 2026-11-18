@@ -1780,6 +1780,10 @@ function segmentIsClearOfObstacles(params: {
   } = params
   for (const obstacle of obstacles) {
     if (!obstacle.layers.includes(segment.layer)) continue
+    const violatesClearance =
+      distanceSegmentToObstacle(segment, obstacle) <
+      segment.width / 2 + clearance - 1e-9
+    if (!violatesClearance) continue
     if (obstacle.connectedTo.includes(plan.connectionName)) continue
     if (
       allowSameNetMerges &&
@@ -1806,12 +1810,7 @@ function segmentIsClearOfObstacles(params: {
     ) {
       continue
     }
-    if (
-      distanceSegmentToObstacle(segment, obstacle) <
-      segment.width / 2 + clearance - 1e-9
-    ) {
-      return false
-    }
+    return false
   }
   return true
 }
