@@ -54,6 +54,8 @@ interface RoutedVia {
   center: Point2D
   diameter: number
   spanLayers: string[]
+  fromLayer: string
+  toLayer: string
 }
 
 interface TraceCopper {
@@ -158,6 +160,8 @@ function extractTraceCopper(params: {
         diameter:
           routePoint.via_diameter ?? srj.minViaPadDiameter ?? srj.minTraceWidth,
         spanLayers,
+        fromLayer: routePoint.from_layer,
+        toLayer: routePoint.to_layer,
       })
       if (
         !previousWire ||
@@ -362,6 +366,15 @@ export function validateRoutedCopperDrc(params: {
         })
       }
       for (const obstacle of differentNetObstacles) {
+        // Crossed pour reservations form antipads. Keep both terminal layers
+        // protected, including plane-endpoint dogbones emitted in reverse.
+        if (
+          obstacle.isCopperPour &&
+          !obstacle.layers.includes(via.fromLayer) &&
+          !obstacle.layers.includes(via.toLayer)
+        ) {
+          continue
+        }
         if (!obstacle.layers.some((layer) => via.spanLayers.includes(layer))) {
           continue
         }

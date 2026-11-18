@@ -1926,6 +1926,13 @@ function planIsStaticallyClear(params: {
   }
   for (const via of getPlanVias(plan)) {
     for (const obstacle of srj.obstacles) {
+      // Other-layer pour reservations form antipads, as in dogbone matching.
+      if (
+        obstacle.isCopperPour &&
+        !obstacle.layers.includes(plan.sourceLayer)
+      ) {
+        continue
+      }
       if (
         allowsViaInPad(srj) &&
         obstacle === plan.sourceObstacle &&
