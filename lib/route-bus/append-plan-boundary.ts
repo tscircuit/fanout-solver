@@ -62,6 +62,9 @@ export function appendPlanBoundary(
     ? getWindingCrossoverLayer({ bus, escapeLayer })
     : undefined
   const usesLayeredWindingChannel = Boolean(windingCrossoverLayer)
+  if (terminateAtVia && !usesLayeredWindingChannel) {
+    return { exitPoint: viaPoint, additionalVias: [] }
+  }
   const fixedBoundaryTrack = fixedBoundaryTracksByConnectionIndex?.get(
     preparedConnection.connectionIndex,
   )
