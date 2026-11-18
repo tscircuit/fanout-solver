@@ -11,7 +11,9 @@ export function createIcepiSinglePlaneDrop(): {
   const srj = {
     ...captured.srj,
     connections: [captured.bus.connections[0].connection],
-    buses: captured.srj.buses?.filter((bus) => bus.busId === captured.bus.busId),
+    buses: captured.srj.buses?.filter(
+      (bus) => bus.busId === captured.bus.busId,
+    ),
   }
   return {
     routeParams: { ...captured, srj },
