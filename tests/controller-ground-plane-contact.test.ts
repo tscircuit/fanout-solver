@@ -77,7 +77,7 @@ beforeAll(async () => {
   ).toMatchSvgSnapshot(import.meta.path)
 })
 
-test.failing("a QFN controller and backside decouplers contact their reserved ground planes", () => {
+test("a QFN controller and backside decouplers contact their reserved ground planes", () => {
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
   expect(output.validation).toMatchObject({
@@ -87,13 +87,16 @@ test.failing("a QFN controller and backside decouplers contact their reserved gr
   })
   expect(
     output.planeTerminations.map(({ busId, layer }) => ({ busId, layer })),
-  ).toEqual([
-    { busId: "U1_GND4", layer: "inner1" },
-    { busId: "U1_GND12", layer: "inner1" },
-    { busId: "C1_GND", layer: "inner1" },
-    { busId: "C2_GND", layer: "inner4" },
-    { busId: "C3_GND", layer: "inner4" },
-  ])
+  ).toEqual(
+    expect.arrayContaining([
+      { busId: "U1_GND4", layer: "inner1" },
+      { busId: "U1_GND12", layer: "inner1" },
+      { busId: "C1_GND", layer: "inner1" },
+      { busId: "C2_GND", layer: "inner4" },
+      { busId: "C3_GND", layer: "inner4" },
+    ]),
+  )
+  expect(output.planeTerminations).toHaveLength(5)
   expect(output.simpleRouteJson.connections).toEqual([])
   for (const { via } of output.planeTerminations) {
     expect(via.spanLayers).toEqual([

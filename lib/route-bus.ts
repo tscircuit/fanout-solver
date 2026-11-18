@@ -1760,6 +1760,24 @@ function addPlaneEndpointTerminal(params: {
   }
 }
 
+/**
+ * A plane drop may join its net's pours along either its trace or via barrel.
+ * This does not authorize contact with physical pads or ordinary signal routes.
+ * Keep the explicit general merge option independent of that plane permission.
+ */
+function planCanContactSameNetObstacle(
+  plan: FanoutRoutePlan,
+  obstacle: Obstacle,
+  srj: SimpleRouteJson,
+  allowSameNetMerges: boolean,
+): boolean {
+  return (
+    (allowSameNetMerges ||
+      (plan.termination.type === "plane" && obstacle.isCopperPour === true)) &&
+    obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
+  )
+}
+
 function segmentIsClearOfObstacles(params: {
   segment: RoutedSegment
   plan: FanoutRoutePlan
@@ -1786,8 +1804,7 @@ function segmentIsClearOfObstacles(params: {
     if (!violatesClearance) continue
     if (obstacle.connectedTo.includes(plan.connectionName)) continue
     if (
-      allowSameNetMerges &&
-      obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
+      planCanContactSameNetObstacle(plan, obstacle, srj, allowSameNetMerges)
     ) {
       continue
     }
@@ -1943,8 +1960,7 @@ function planIsStaticallyClear(params: {
         continue
       }
       if (
-        allowSameNetMerges &&
-        obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
+        planCanContactSameNetObstacle(plan, obstacle, srj, allowSameNetMerges)
       ) {
         continue
       }
@@ -2291,15 +2307,14 @@ export function createFanoutPlanClearanceValidator(
       obstacles.push(obstacle)
       segmentCache.obstaclesByLayer.set(layer, obstacles)
     }
-  // The same retained segment can appear in a plane or signal candidate.
-  // Its static result must not cross those different merge permissions.
-  const planeSegmentCache: StaticPlanSegmentCache =
-    allowSameNetPlaneMerges && !allowSameNetMerges
-      ? {
-          obstaclesByLayer: segmentCache.obstaclesByLayer,
-          byConnection: new Map(),
-        }
-      : segmentCache
+  // Plane candidates may contact their own pours even without general merges.
+  // A signal candidate reusing the same segment must receive its own check.
+  const planeSegmentCache: StaticPlanSegmentCache = !allowSameNetMerges
+    ? {
+        obstaclesByLayer: segmentCache.obstaclesByLayer,
+        byConnection: new Map(),
+      }
+    : segmentCache
   const segmentIndexes = new WeakMap<
     FanoutRoutePlan,
     RouteSegmentSpatialIndex
