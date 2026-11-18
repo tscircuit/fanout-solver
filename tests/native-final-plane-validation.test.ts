@@ -37,6 +37,11 @@ test("final validation accepts the native U22 plane drop with crossed pour reser
   expect(validation.brokenOutConnectionCount).toBe(1)
   const solver = new FanoutSolver(routeParams.srj, solverOptions)
   solver.solve()
+  expect(solver.solved).toBe(true)
+  const accepted = solver.getOutput()
+  expect(accepted.validation).toMatchObject({ valid: true, issues: [] })
+  expect(accepted.fanoutTraces).toMatchObject(plans.map((plan) => plan.trace))
+  expect(accepted.planeTerminations).toHaveLength(1)
 
   const boundary = routeParams.bus.sharedBoundary
   const viewport = {
