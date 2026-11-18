@@ -49,6 +49,6 @@ beforeAll(async () => {
   ).toMatchSvgSnapshot(import.meta.path)
 })
 
-test.failing("a capacitor ground stub can join a same-net source-layer pour before dropping to inner1", () => {
+test("a capacitor ground stub can join a same-net source-layer pour before dropping to inner1", () => {
   expect(fanoutPlansAreClear({ ...rules, plans: [plan] })).toBe(true)
 })
