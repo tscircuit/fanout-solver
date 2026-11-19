@@ -1,4 +1,5 @@
 import { routeBusAlternatives, type RouteBusParams } from "./route-bus"
+import { getPlaneGeometryCandidates } from "./get-plane-geometry-candidates"
 import type { FanoutRoutePlan } from "./types"
 
 type SingletonRouteKey = string
@@ -41,6 +42,12 @@ export function getSingletonRouteCandidates(
         plan.trace.route,
         plan.planeEndpointTrace?.route,
       ])
+      if (!candidates.has(key)) candidates.set(key, plan)
+    }
+  }
+  if (route.bus.termination.type === "plane") {
+    for (const plan of getPlaneGeometryCandidates(route)) {
+      const key = JSON.stringify([plan.trace.route, plan.planeEndpointTrace?.route])
       if (!candidates.has(key)) candidates.set(key, plan)
     }
   }
