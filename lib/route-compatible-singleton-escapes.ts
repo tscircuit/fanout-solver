@@ -1,35 +1,15 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import {
   createFanoutPlanClearanceValidator,
-  routeBusAlternatives,
   type RouteBusParams,
 } from "./route-bus"
+import { getSingletonRouteCandidates } from "./get-singleton-route-candidates"
 import type { BusId } from "./route-bus/types"
 import {
   repairCompatibleSingletonEscapes,
   type SingletonEscapeContext,
 } from "./repair-compatible-singleton-escapes"
 import type { FanoutRoutePlan, PreparedBus } from "./types"
-
-type SingletonRouteKey = string
-
-function getSingletonCandidates(route: RouteBusParams): FanoutRoutePlan[] {
-  const candidates = new Map<SingletonRouteKey, FanoutRoutePlan>()
-  for (const plans of routeBusAlternatives(route, 8)) {
-    if (plans.length !== 1)
-      throw new Error("Expected one plan per singleton escape candidate")
-    const plan = plans[0]!
-    const key = JSON.stringify([
-      plan.trace.route,
-      plan.planeEndpointTrace?.route,
-    ])
-    if (!candidates.has(key)) candidates.set(key, plan)
-  }
-  return [...candidates.values()].sort(
-    (first, second) =>
-      Math.round(first.length * 1e9) - Math.round(second.length * 1e9),
-  )
-}
 
 export function routeCompatibleSingletonEscapes(params: {
   srj: SimpleRouteJson
@@ -56,7 +36,7 @@ export function routeCompatibleSingletonEscapes(params: {
     if (!targetLayer) throw new Error(`Missing layer for bus "${bus.busId}"`)
     context.candidatesByBus.set(
       bus.busId,
-      getSingletonCandidates({
+      getSingletonRouteCandidates({
         ...routeConfig,
         srj,
         bus,

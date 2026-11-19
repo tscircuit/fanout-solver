@@ -5995,6 +5995,15 @@ export class FanoutSolver extends BaseSolver {
     }
 
     const routedBusCount = this.preparedBuses.length - failedBusIds.length
+    const routedBusLayerAssignments =
+      routingStrategy === "compatible-singletons"
+        ? {
+            ...busLayerAssignments,
+            ...Object.fromEntries(
+              plans.map((plan) => [plan.busId, plan.targetLayer]),
+            ),
+          }
+        : busLayerAssignments
     const routeLength = plans.reduce((total, plan) => total + plan.length, 0)
     const unroutedConnectionCount =
       this.inputSrj.connections.length - plans.length
@@ -6004,14 +6013,14 @@ export class FanoutSolver extends BaseSolver {
       routeLength +
       getPlanViaCount(plans) * 0.1 +
       assignmentLoadPenalty(
-        busLayerAssignments,
+        routedBusLayerAssignments,
         this.preparedBuses,
         this.config.balanceLayerLoadByConnectionCount,
       ) *
         getLayerLoadPenaltyWeight(this.config)
     const summary: FanoutAttemptSummary = {
       assignmentIndex,
-      busLayerAssignments,
+      busLayerAssignments: routedBusLayerAssignments,
       routedBusCount,
       routedConnectionCount: plans.length,
       failedBusIds,
