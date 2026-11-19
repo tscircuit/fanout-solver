@@ -18,6 +18,7 @@ export function* routeBusAlternativesSteps(
     fixedBoundaryTracksByConnectionIndex,
     cornerExitLaneOffset,
   } = params
+  const traceWidth = bus.singletonTraceWidth ?? params.traceWidth
   if (!Number.isInteger(maxAlternatives) || maxAlternatives < 1) {
     throw new Error(
       `FanoutSolver: maxAlternatives must be a positive integer, received ${maxAlternatives}`,
@@ -47,6 +48,7 @@ export function* routeBusAlternativesSteps(
       // for each successive alternative. Keep the original candidate order.
       routePlaneTerminatedBus({
         ...params,
+        traceWidth,
         planeCandidateSkipCount: 0,
         collectAlternative: (plan) => {
           alternatives.push([plan])
@@ -62,6 +64,7 @@ export function* routeBusAlternativesSteps(
     ) {
       const plan = routePlaneTerminatedBus({
         ...params,
+        traceWidth,
         planeCandidateSkipCount,
       })
       if (!plan) break
@@ -95,7 +98,7 @@ export function* routeBusAlternativesSteps(
   if (!bus.connections[0]?.sourceObstacle) return [[]]
   const context = createBoundaryRoutingContext(
     { maxAlternatives, includeVisualization },
-    params,
+    { ...params, traceWidth },
   )
   if (yield* routeSingletonBoundarySteps(context)) return context.alternatives
   if (yield* routeCoordinatedBoundarySteps(context)) return context.alternatives

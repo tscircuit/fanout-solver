@@ -890,6 +890,7 @@ function prepareConnection(params: {
         x: targetPoint.x,
         y: targetPoint.y,
       },
+      hasExplicitExitTarget: exitTargetPoint !== undefined,
       hasExplicitLayeredExitTarget: exitTargetPoint?.layer !== undefined,
     }
   }
@@ -1275,6 +1276,7 @@ export function prepareFanoutBuses(
         ? {}
         : { maxLengthSkew: busSpec.maxLengthSkew }),
       direction: resolvedExit.direction,
+      requestedDirection: busSpec.direction,
       preferredExit: resolvedExit.preferredExit,
       ...(busSpec.exitEdge ? { exitEdge: busSpec.exitEdge } : {}),
       cornerBandConnectionCount: 0,

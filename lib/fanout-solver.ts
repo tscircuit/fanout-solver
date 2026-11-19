@@ -1,9 +1,15 @@
+import { getConnectionTraceWidth } from "./get-connection-trace-width"
+import { createPlaneRequestCheck } from "./get-local-plane-escape-paths"
 import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
 import { routePeripheralBusesSteps } from "./route-peripheral-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { selectCompatibleCandidates } from "./select-compatible-candidates"
+import {
+  canRouteCompatibleSingletonEscapes,
+  routeCompatibleSingletonEscapesSteps,
+} from "./route-compatible-singleton-escapes"
 import { refineAdaptivePlaneReservationCore } from "./refine-adaptive-plane-reservations"
 import { shouldUseAdaptiveDensePlaneRouting } from "./should-use-adaptive-dense-plane-routing"
 import { type GraphicsObject, mergeGraphics } from "graphics-debug"
@@ -1021,6 +1027,7 @@ export function getDenseBoundaryPairRoutingPriorityKeys(params: {
 
 function getCandidateEscapeLayersForBus(params: {
   bus: PreparedBus
+  collapseBlockedLayers: boolean
   srj: SimpleRouteJson
   config: ResolvedFanoutConfig
   staticClearanceCache: RouteBusStaticClearanceCache
@@ -1061,7 +1068,9 @@ function getCandidateEscapeLayersForBus(params: {
   const candidateLayers =
     individuallyRoutableLayers.length > 0
       ? individuallyRoutableLayers
-      : allowedEscapeLayers
+      : params.collapseBlockedLayers
+        ? allowedEscapeLayers.slice(0, 1)
+        : allowedEscapeLayers
   return candidateLayers
 }
 
@@ -1072,6 +1081,8 @@ export class FanoutSolver extends BaseSolver {
   readonly config: ResolvedFanoutConfig
   private readonly routingSrj: SimpleRouteJson
   private readonly escapeLayersByBusId: Record<string, readonly string[]> = {}
+  private readonly compatibleSingletonRecovery: boolean
+  private readonly collapseBlockedLayers: boolean
   private readonly boundaryBuses: PreparedBus[]
   private readonly fixedPlaneAssignments: Readonly<Record<string, string>>
   private readonly evaluatedAssignmentKeys = new Set<string>()
@@ -1101,6 +1112,7 @@ export class FanoutSolver extends BaseSolver {
   private activeRoutingVisualization: GraphicsObject | null = null
   private activeAdaptiveVisualization: GraphicsObject | null = null
   private bestAttempt: AssignmentAttempt | null = null
+  private bestOrdinaryRoutedCount?: number
   private lengthMatchingFailure: FanoutValidationIssue | null = null
   private endpointCompletion: CompleteOriginalEndpointsResult | null = null
 
@@ -1116,7 +1128,21 @@ export class FanoutSolver extends BaseSolver {
     this.config = resolveConfig(inputSrj, options)
     this.preparedBuses = prepareFanoutBuses(this.routingSrj, options)
     validateCornerBandCapacities(this.preparedBuses, this.config)
+    // Explicit dense plane hints direct the existing reservation and CSP
+    // strategies. Independent via candidates do not carry those reservations.
+    this.compatibleSingletonRecovery =
+      this.config.densePlaneReservationBusIds.length === 0 &&
+      this.config.denseUnrestrictedPlaneRoutingBusIds.length === 0 &&
+      canRouteCompatibleSingletonEscapes(this.preparedBuses)
     for (const bus of this.preparedBuses) {
+      if (this.compatibleSingletonRecovery) {
+        bus.singletonTraceWidth = getConnectionTraceWidth(
+          bus.connections[0]!.connection,
+          this.config.traceWidth,
+          inputSrj.minTraceWidth,
+          options.traceWidth,
+        )
+      }
       for (const connection of bus.connections) {
         if (!connection.hasExplicitLayeredExitTarget) continue
         const targetLayer = connection.exitTargetPoint?.layer
@@ -1153,6 +1179,16 @@ export class FanoutSolver extends BaseSolver {
       )
       if (bus.termination.type !== "plane") continue
       const planeLayer = bus.termination.layer
+      if (this.compatibleSingletonRecovery) {
+        bus.acceptsPlaneEscape = createPlaneRequestCheck({
+          srj: this.routingSrj,
+          targetLayer: planeLayer,
+          connectionName: bus.connections[0]!.connection.name,
+          viaDiameter: this.config.viaDiameter,
+          clearance: this.config.clearance,
+          requiredLeadDirection: bus.requestedDirection,
+        })
+      }
       if (!this.config.layerNames.includes(planeLayer)) {
         throw new Error(
           `FanoutSolver: plane-terminated bus "${bus.busId}" targets unavailable layer "${planeLayer}"`,
@@ -1179,6 +1215,15 @@ export class FanoutSolver extends BaseSolver {
     this.boundaryBuses = this.preparedBuses.filter(
       (bus) => bus.termination.type === "boundary",
     )
+    // An ordinary singleton with no statically clear track gains nothing from
+    // trying that track on another assignment. Corner/winding tracks can move.
+    this.collapseBlockedLayers =
+      this.compatibleSingletonRecovery &&
+      this.boundaryBuses.every(
+        (bus) =>
+          !busUsesCoordinatedWinding(bus) &&
+          !getCornerBandSide(bus.exitEdge, bus.preferredExit),
+      )
     this.fixedPlaneAssignments = Object.fromEntries(
       this.preparedBuses.flatMap((bus) =>
         bus.termination.type === "plane"
@@ -1351,6 +1396,7 @@ export class FanoutSolver extends BaseSolver {
     const bus = this.boundaryBuses[this.nextCandidateLayerBusIndex]
     if (bus) {
       this.escapeLayersByBusId[bus.busId] = getCandidateEscapeLayersForBus({
+        collapseBlockedLayers: this.collapseBlockedLayers,
         bus,
         srj: this.routingSrj,
         config: this.config,
@@ -1413,7 +1459,7 @@ export class FanoutSolver extends BaseSolver {
   private setInProgressPlans(params: {
     phase: string
     plans: readonly FanoutRoutePlan[]
-    strategy?: RoutingStrategy | "grouped-beam"
+    strategy?: RoutingStrategy | "grouped-beam" | "compatible-escapes"
     unitIndex?: number
     unitCount?: number
     busId?: string
@@ -5881,9 +5927,37 @@ export class FanoutSolver extends BaseSolver {
       yield
     }
 
+    return this.finalizeAssignment({
+      assignmentIndex,
+      busLayerAssignments,
+      state: {
+        plans,
+        failedBusIds,
+        stopAfterCompleteValidation:
+          mixedTerminationState?.stopAfterCompleteValidation,
+      },
+      routingStrategy,
+      blockingBusCounts,
+    })
+  }
+
+  private finalizeAssignment({
+    assignmentIndex,
+    busLayerAssignments,
+    state,
+    routingStrategy,
+    blockingBusCounts = new Map<string, number>(),
+  }: {
+    assignmentIndex: number
+    busLayerAssignments: Readonly<Record<string, string>>
+    state: MixedTerminationState
+    routingStrategy: RoutingStrategy | "compatible-escapes"
+    blockingBusCounts?: Map<string, number>
+  }): EvaluatedAssignment {
+    let { plans, failedBusIds } = state
     let validationIssues: FanoutAttemptSummary["validationIssues"]
     const stopAfterCompleteValidation =
-      mixedTerminationState?.stopAfterCompleteValidation === true &&
+      state.stopAfterCompleteValidation === true &&
       plans.length === this.inputSrj.connections.length
     if (
       !stopAfterCompleteValidation &&
@@ -5986,7 +6060,15 @@ export class FanoutSolver extends BaseSolver {
     return {
       summary,
       plans,
-      ...(mixedTerminationState?.stopAfterCompleteValidation &&
+      ...(routingStrategy === "compatible-escapes"
+        ? {
+            busDirections: Object.fromEntries(
+              plans.map((plan) => [plan.busId, plan.direction]),
+            ),
+          }
+        : {}),
+      ...((stopAfterCompleteValidation ||
+        routingStrategy === "compatible-escapes") &&
       validation?.valid
         ? { stopAfterCompleteValidation: true as const }
         : {}),
@@ -6035,6 +6117,37 @@ export class FanoutSolver extends BaseSolver {
       }
     }
     return bestAttempt
+  }
+
+  private getCompatibleAttempt(
+    ordinary: EvaluatedAssignment,
+    plans: FanoutRoutePlan[],
+  ): EvaluatedAssignment | undefined {
+    if (plans.length <= ordinary.plans.length) return
+    const layers = new Map(plans.map((plan) => [plan.busId, plan.targetLayer]))
+    const candidate = this.finalizeAssignment({
+      assignmentIndex: ordinary.summary.assignmentIndex,
+      busLayerAssignments: {
+        ...ordinary.summary.busLayerAssignments,
+        ...Object.fromEntries(layers),
+      },
+      state: {
+        plans,
+        failedBusIds: this.preparedBuses
+          .filter((bus) => !layers.has(bus.busId))
+          .map((bus) => bus.busId),
+      },
+      routingStrategy: "compatible-escapes",
+    })
+    if (
+      candidate.stopAfterCompleteValidation ||
+      (this.isAttemptBetter(candidate, ordinary) &&
+        this.validateCompletePlans(
+          candidate.plans,
+          candidate.outputSrj,
+        ).issues.every((issue) => issue.code === "missing-plan"))
+    )
+      return candidate
   }
 
   /**
@@ -6560,20 +6673,28 @@ export class FanoutSolver extends BaseSolver {
 
   private commitAssignmentAttempt(
     assignment: Readonly<Record<string, string>>,
-    attempt: EvaluatedAssignment,
+    {
+      ordinary,
+      recovered,
+    }: { ordinary: EvaluatedAssignment; recovered?: EvaluatedAssignment },
   ): void {
+    const attempt = recovered ?? ordinary
     this.nextAssignmentIndex++
     this.evaluatedAssignmentKeys.add(JSON.stringify(assignment))
-    if (
-      !this.bestAttempt ||
-      attempt.summary.routedConnectionCount >=
-        this.bestAttempt.summary.routedConnectionCount
-    ) {
+    // A recovery can route on different layers. Only ordinary failures and
+    // blockers describe repairs to this particular assignment.
+    const previousCount =
+      this.bestOrdinaryRoutedCount ??
+      this.bestAttempt?.summary.routedConnectionCount ??
+      0
+    if (ordinary.summary.routedConnectionCount >= previousCount) {
       this.prioritizeFailedBusRepairs(
         assignment,
-        attempt.summary.failedBusIds,
-        attempt.blockingBusIds,
+        ordinary.summary.failedBusIds,
+        ordinary.blockingBusIds,
       )
+      if (recovered || this.bestOrdinaryRoutedCount !== undefined)
+        this.bestOrdinaryRoutedCount = ordinary.summary.routedConnectionCount
     }
     this.attempts.push(attempt.summary)
     if (!this.bestAttempt || this.isAttemptBetter(attempt, this.bestAttempt)) {
@@ -6695,7 +6816,7 @@ export class FanoutSolver extends BaseSolver {
             const assignment = attempt.summary.busLayerAssignments
             this.layerAssignments.push(assignment)
             this.routingInitialized = true
-            this.commitAssignmentAttempt(assignment, attempt)
+            this.commitAssignmentAttempt(assignment, { ordinary: attempt })
           },
           getProgress: () =>
             Number(this.stats.workUnit ?? 0) /
@@ -6758,7 +6879,36 @@ export class FanoutSolver extends BaseSolver {
         this.nextAssignmentIndex,
         assignment,
       ),
-      onSolved: (attempt) => this.commitAssignmentAttempt(assignment, attempt),
+      onSolved: (ordinary) => {
+        if (
+          this.nextAssignmentIndex !== 0 ||
+          !this.compatibleSingletonRecovery ||
+          ordinary.plans.length === this.inputSrj.connections.length ||
+          process.env.FANOUT_DEBUG_DENSE_ONLY === "1"
+        ) {
+          this.commitAssignmentAttempt(assignment, { ordinary })
+          return
+        }
+        this.startOperation({
+          name: "CompatibleSingletonEscapeSolver",
+          generator: routeCompatibleSingletonEscapesSteps({
+            srj: this.routingSrj,
+            buses: this.preparedBuses,
+            config: this.config,
+            onProgress: (phase, workUnit, workUnitCount) => {
+              this.stats = { ...this.stats, phase, workUnit, workUnitCount }
+            },
+          }),
+          onSolved: (plans) =>
+            this.commitAssignmentAttempt(assignment, {
+              ordinary,
+              recovered: this.getCompatibleAttempt(ordinary, plans),
+            }),
+          getProgress: () =>
+            Number(this.stats.workUnit ?? 0) /
+            Math.max(1, Number(this.stats.workUnitCount ?? 0)),
+        })
+      },
       getProgress: () => {
         const strategyIndex =
           this.stats.routingStrategy === "group-by-layer"
@@ -6879,9 +7029,11 @@ export class FanoutSolver extends BaseSolver {
           : [],
       ),
       busLayerAssignments: this.bestAttempt.summary.busLayerAssignments,
-      busDirections: Object.fromEntries(
-        this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
-      ),
+      busDirections:
+        this.bestAttempt.busDirections ??
+        Object.fromEntries(
+          this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
+        ),
       attempts: [...this.attempts],
       validation,
     }

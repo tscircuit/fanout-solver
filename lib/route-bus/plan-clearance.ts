@@ -12,6 +12,7 @@ import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 
 export function planIsClear(params: {
   plan: FanoutRoutePlan
+  acceptsStaticPlan?: (plan: FanoutRoutePlan) => boolean
   otherPlans: FanoutRoutePlan[]
   staticClearanceCache?: RouteBusStaticClearanceCache
   blockingBusCounts?: Map<BusId, number>
@@ -36,14 +37,16 @@ export function planIsClear(params: {
   } = params
   let staticallyClear = staticClearanceCache?.get(cacheKey)
   if (staticallyClear === undefined) {
-    staticallyClear = planIsStaticallyClear({
-      plan,
-      srj,
-      sharedBoundary,
-      clearance,
-      allowBlindAndBuriedVias,
-      allowSameNetMerges,
-    })
+    staticallyClear =
+      (params.acceptsStaticPlan?.(plan) ?? true) &&
+      planIsStaticallyClear({
+        plan,
+        srj,
+        sharedBoundary,
+        clearance,
+        allowBlindAndBuriedVias,
+        allowSameNetMerges,
+      })
     staticClearanceCache?.set(cacheKey, staticallyClear)
   }
   return (
@@ -136,6 +139,10 @@ export function createFanoutPlanClearanceValidator(
   params: Omit<Parameters<typeof fanoutPlansAreClear>[0], "plans">,
 ): ((plans: readonly FanoutRoutePlan[]) => boolean) & {
   mutuallyClear(plans: readonly FanoutRoutePlan[]): boolean
+  canAdd(
+    plan: FanoutRoutePlan,
+    acceptedPlans: readonly FanoutRoutePlan[],
+  ): boolean
 } {
   const {
     srj,
@@ -259,6 +266,13 @@ export function createFanoutPlanClearanceValidator(
     return true
   }
   return Object.assign(validate, {
+    // The incumbent has already passed clearance. Test only the proposed addition.
+    canAdd: (
+      plan: FanoutRoutePlan,
+      acceptedPlans: readonly FanoutRoutePlan[],
+    ): boolean =>
+      staticallyClear(plan) &&
+      acceptedPlans.every((other) => clearOf(plan, other)),
     // Blocker discovery shares the exact route-pair checks and spatial indexes.
     // A mutual-only query cannot establish a statically clear baseline.
     mutuallyClear: (plans: readonly FanoutRoutePlan[]): boolean =>

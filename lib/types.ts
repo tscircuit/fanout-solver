@@ -326,15 +326,23 @@ export interface PreparedConnection {
   targetPoint: ConnectionPoint
   /** Preferred downstream point used to choose the boundary exit track. */
   exitTargetPoint?: Point2D & { readonly layer?: string }
+  /** Whether the caller supplied the exit target, including an unlayered target. */
+  hasExplicitExitTarget?: boolean
   /** Whether the caller supplied the layered handoff metadata needed to coordinate winding. */
   hasExplicitLayeredExitTarget?: boolean
 }
 
 export interface PreparedBus {
+  /** Physical landing and lead constraints for an eligible singleton plane escape. */
+  acceptsPlaneEscape?: (plan: FanoutRoutePlan) => boolean
   busId: string
+  /** Resolved copper width for a mixed group of single-pad escapes. */
+  singletonTraceWidth?: number
   /** Maximum permitted routed copper length difference in millimeters. */
   maxLengthSkew?: number
   direction: FanoutDirection
+  /** Caller-specified lead direction, when the resolved direction was not inferred. */
+  requestedDirection?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   /** Explicit final boundary edge. Omitted for legacy direction-based exits. */
   exitEdge?: FanoutEdge
@@ -430,6 +438,8 @@ export type SimpleRouteJsonWithFanoutPlanes = Omit<
 }
 
 export interface AssignmentAttempt {
+  /** Inferred headings changed by a strategy that can choose a different exit. */
+  busDirections?: FanoutSolverOutput["busDirections"]
   summary: FanoutAttemptSummary
   plans: FanoutRoutePlan[]
   outputSrj: SimpleRouteJsonWithFanoutPlanes

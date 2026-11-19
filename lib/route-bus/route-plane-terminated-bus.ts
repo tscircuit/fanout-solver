@@ -20,6 +20,23 @@ import {
 } from "./plane-endpoint"
 import type { RouteBusParams, ViaHandedness } from "./types"
 
+// A cached request rejection belongs to the immutable predicate that checked
+// the route. The same caller-owned cache can be used with another bus request.
+const planeRequestKeys = new WeakMap<
+  (plan: FanoutRoutePlan) => boolean,
+  number
+>()
+let nextRequestKey = 0
+function getPlaneRequestPrefix(check?: (plan: FanoutRoutePlan) => boolean) {
+  if (!check) return ""
+  let key = planeRequestKeys.get(check)
+  if (key === undefined) {
+    key = ++nextRequestKey
+    planeRequestKeys.set(check, key)
+  }
+  return `request${key}:`
+}
+
 export function routePlaneTerminatedBus(
   params: RouteBusParams & {
     collectAlternative?: (plan: FanoutRoutePlan) => boolean
@@ -123,13 +140,14 @@ export function routePlaneTerminatedBus(
               otherPlans: [...acceptedPlans, ...fixedPlans],
               staticClearanceCache,
               blockingBusCounts,
-              cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${fixedViaPoint.x}:${fixedViaPoint.y}:${candidateIndex}`,
+              cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${traceWidth}:${preparedConnection.connectionIndex}:${fixedViaPoint.x}:${fixedViaPoint.y}:${candidateIndex}`,
               srj,
               sharedBoundary: bus.sharedBoundary,
               clearance,
               allowBlindAndBuriedVias,
               allowSameNetMerges,
-            }),
+            }) &&
+            (bus.acceptsPlaneEscape?.(candidatePlan) ?? true),
         },
         selection,
       )
@@ -210,13 +228,15 @@ export function routePlaneTerminatedBus(
             clearance,
             allowBlindAndBuriedVias,
             allowSameNetMerges,
-          }),
+          }) &&
+          (bus.acceptsPlaneEscape?.(candidatePlan) ?? true),
       },
       selection,
     )
     if (clearPlan) return [clearPlan]
   }
 
+  const requestPrefix = getPlaneRequestPrefix(bus.acceptsPlaneEscape)
   const candidateDirections: FanoutDirection[] = [
     bus.direction,
     ...(["left", "right", "up", "down"] as const).filter(
@@ -275,7 +295,7 @@ export function routePlaneTerminatedBus(
               viaDiameter,
               clearance,
             })
-            const cacheKeyPrefix = `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}`
+            const cacheKeyPrefix = `${requestPrefix}plane:${bus.busId}:${targetLayer}:${direction}:${traceWidth}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}`
             // The base plan follows every endpoint variant in the cache order.
             const basePlanIndex = endpointViaCandidates.length
             const basePlanCacheKey = `${cacheKeyPrefix}:${basePlanIndex}`
@@ -333,6 +353,7 @@ export function routePlaneTerminatedBus(
                 isClear: (candidatePlan, candidateIndex) =>
                   planIsClear({
                     plan: candidatePlan,
+                    acceptsStaticPlan: bus.acceptsPlaneEscape,
                     otherPlans: [...acceptedPlans, ...candidatePlans],
                     staticClearanceCache,
                     blockingBusCounts,
