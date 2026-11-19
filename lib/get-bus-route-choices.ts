@@ -13,7 +13,12 @@ function getAllowedHeadings(bus: PreparedBus): readonly FanoutDirection[] {
     bus.connections.some((connection) => connection.hasExplicitExitTarget)
   )
     return [bus.direction]
-  return ["left", "right", "up", "down"]
+  return [
+    bus.direction,
+    ...(["left", "right", "up", "down"] as const).filter(
+      (direction) => direction !== bus.direction,
+    ),
+  ]
 }
 
 function getAllowedLayers(bus: PreparedBus): readonly string[] {
