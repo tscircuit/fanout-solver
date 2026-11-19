@@ -891,6 +891,7 @@ function prepareConnection(params: {
         x: targetPoint.x,
         y: targetPoint.y,
       },
+      hasExplicitExitTarget: exitTargetPoint !== undefined,
       hasExplicitLayeredExitTarget: exitTargetPoint?.layer !== undefined,
     }
   }
