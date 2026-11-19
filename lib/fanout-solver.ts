@@ -1062,8 +1062,12 @@ function getCandidateEscapeLayersForBus(params: {
   if (individuallyRoutableLayers.length > 0) return individuallyRoutableLayers
   // Plain analytic tracks cannot gain static clearance from more copper.
   // Keep one failed assignment; local route repair retains all allowed layers.
-  const hasCornerTracks = getCornerBandSide(bus.exitEdge, bus.preferredExit)
-  return hasCornerTracks ? allowedEscapeLayers : allowedEscapeLayers.slice(0, 1)
+  const canChangeTracksWithAcceptedCopper =
+    config.allowSameNetMerges ||
+    Boolean(getCornerBandSide(bus.exitEdge, bus.preferredExit))
+  return canChangeTracksWithAcceptedCopper
+    ? allowedEscapeLayers
+    : allowedEscapeLayers.slice(0, 1)
 }
 
 export class FanoutSolver extends BaseSolver {
