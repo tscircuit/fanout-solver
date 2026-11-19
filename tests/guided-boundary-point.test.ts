@@ -39,7 +39,13 @@ test("native boundary inference respects caller-specified exit coordinates", asy
         allowBlindAndBuriedVias: false,
       })
     : undefined
-  if (copperDrc) expect(copperDrc).toMatchObject({ valid: true, issues: [] })
+  expect(solver.solved).toBe(true)
+  expect(output?.validation).toMatchObject({ valid: true, issues: [] })
+  expect(copperDrc).toMatchObject({
+    valid: true,
+    checkedViaCount: 0,
+    issues: [],
+  })
 
   const viewport = { minX: 1, maxX: 4.8, minY: 10.3, maxY: 13.2 }
   // Crop only the drawing; every original obstacle participates in routing.
