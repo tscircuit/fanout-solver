@@ -21,11 +21,13 @@ export function getPlaneSourceEscapePaths(
     preparedConnection,
     viaHandedness,
     candidateTier = "ordinary",
+    collectingAlternatives = false,
   }: Pick<BuildPlanParams, "preparedConnection" | "viaHandedness"> & {
     candidateTier?: "ordinary" | "expanded"
+    collectingAlternatives?: boolean
   },
   route: RouteBusParams,
-): Point2D[][] {
+): Iterable<Point2D[]> {
   const {
     bus: directionalBus,
     targetLayer,
@@ -34,7 +36,10 @@ export function getPlaneSourceEscapePaths(
     clearance,
   } = route
   if (candidateTier === "expanded") {
-    return getExpandedPlaneSourcePaths(preparedConnection, route)
+    return getExpandedPlaneSourcePaths(
+      { connection: preparedConnection, collectingAlternatives },
+      route,
+    )
   }
   const direction = directionalBus.direction
   const adjacentViaPoint = getInitialViaPoint({
