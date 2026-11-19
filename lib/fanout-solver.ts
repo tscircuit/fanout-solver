@@ -3,6 +3,7 @@ import { preparePeripheralSourceReservations } from "./prepare-peripheral-source
 import { routePeripheralBusesSteps } from "./route-peripheral-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
+import { isOrdinaryMixedSingletonFanout } from "./is-ordinary-mixed-singleton-fanout"
 import { selectCompatibleCandidates } from "./select-compatible-candidates"
 import { refineAdaptivePlaneReservationCore } from "./refine-adaptive-plane-reservations"
 import { shouldUseAdaptiveDensePlaneRouting } from "./should-use-adaptive-dense-plane-routing"
@@ -1120,6 +1121,20 @@ export class FanoutSolver extends BaseSolver {
     }
     this.config = resolveConfig(inputSrj, options)
     this.preparedBuses = prepareFanoutBuses(this.routingSrj, options)
+    if (
+      isOrdinaryMixedSingletonFanout({
+        buses: this.preparedBuses,
+        densePlaneReservationBusIds: this.config.densePlaneReservationBusIds,
+        denseUnrestrictedPlaneRoutingBusIds:
+          this.config.denseUnrestrictedPlaneRoutingBusIds,
+      })
+    ) {
+      this.preparedBuses = this.preparedBuses.map((bus) =>
+        bus.termination.type === "plane"
+          ? { ...bus, allowNeighboringPlaneViaSites: true }
+          : bus,
+      )
+    }
     validateCornerBandCapacities(this.preparedBuses, this.config)
     for (const bus of this.preparedBuses) {
       for (const connection of bus.connections) {

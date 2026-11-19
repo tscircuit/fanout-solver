@@ -59,6 +59,7 @@ export function getPlaneSourceEscapePaths(
   )
   const perpendicularPitch = getPerpendicularPitch(directionalBus)
   const isSingleTerminalPlane =
+    directionalBus.allowNeighboringPlaneViaSites === true &&
     directionalBus.connections.length === 1 &&
     preparedConnection.connection.pointsToConnect.length === 1
   const sourceEscapePaths: Point2D[][] = []
