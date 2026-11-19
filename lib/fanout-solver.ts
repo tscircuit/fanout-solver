@@ -5856,9 +5856,16 @@ export class FanoutSolver extends BaseSolver {
         blockingBusCounts: currentBusBlockingCounts,
       }
       const busPlans = routeBus(routeParams)
+      const repairedPlans =
+        !busPlans && currentBusBlockingCounts.size > 0
+          ? repairSingletonEscape({
+              route: routeParams,
+              buses: this.preparedBuses,
+            })
+          : null
       const nextPlans = busPlans
         ? [...plans, ...busPlans]
-        : repairSingletonEscape({ route: routeParams, buses: this.preparedBuses })
+        : repairedPlans
       if (!nextPlans) {
         failedBusIds.push(bus.busId)
         for (const [blockingBusId, count] of currentBusBlockingCounts) {
