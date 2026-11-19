@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
-import { getSingletonRouteCandidates } from "lib/get-singleton-route-candidates"
+import { getBusRouteChoices } from "lib/get-bus-route-choices"
 import { createTwoViaWindows } from "./fixtures/two-via-windows"
 
 test("free exits explore other edges while declared exits retain their heading", () => {
@@ -22,13 +22,16 @@ test("free exits explore other edges while declared exits retain their heading",
     )
     const solver = new FanoutSolver(input, options)
     const bus = solver.preparedBuses.find((bus) => bus.busId === "signal")!
-    const candidates = getSingletonRouteCandidates({
-      ...solver.config,
-      srj: input,
-      bus,
-      targetLayer: "top",
-      acceptedPlans: [],
-    })
+    const candidates = getBusRouteChoices(
+      {
+        ...solver.config,
+        srj: input,
+        bus,
+        targetLayer: "top",
+        acceptedPlans: [],
+      },
+      solver.config.maxLayerCombinations,
+    ).flat()
     const headings = new Set(candidates.map((plan) => plan.direction))
     if (constrained) {
       expect(headings).toEqual(new Set(["left"]))

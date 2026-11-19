@@ -56,7 +56,7 @@ import {
   routeBusAlternativesSteps,
 } from "./route-bus"
 import { routePeripheralSourceEscapesSteps } from "./route-peripheral-source-escapes"
-import { routeCompatibleSingletonEscapesSteps } from "./route-compatible-singleton-escapes"
+import { repairFailedBusRoutesSteps } from "./repair-failed-bus-routes"
 import { routeStagedPerimeterBusSteps } from "./route-staged-perimeter-bus"
 import { routeReservedSourceBusesSteps } from "./route-reserved-source-buses"
 import { routeLayerReservedBusesSteps } from "./route-layer-reserved-buses"
@@ -125,11 +125,7 @@ interface MixedTerminationState {
   stopAfterCompleteValidation?: true
 }
 
-type RoutingStrategy =
-  | "default"
-  | "group-by-layer"
-  | "deep-first"
-  | "compatible-singletons"
+type RoutingStrategy = "default" | "group-by-layer" | "deep-first"
 
 type FanoutWorkYield = undefined | SubsolverRequest
 
@@ -1028,7 +1024,6 @@ export function getDenseBoundaryPairRoutingPriorityKeys(params: {
 
 function getCandidateEscapeLayersForBus(params: {
   bus: PreparedBus
-  collapseBlockedLayers: boolean
   srj: SimpleRouteJson
   config: ResolvedFanoutConfig
   staticClearanceCache: RouteBusStaticClearanceCache
@@ -1064,11 +1059,10 @@ function getCandidateEscapeLayersForBus(params: {
 
   // Existing plans only add clearance constraints, so a layer that cannot
   // route this bus by itself cannot become viable later in an assignment.
-  // Keep a failed layer candidate so impossible problems still produce the
-  // usual failed-solver result. The singleton pool searches all allowed layers.
-  if (individuallyRoutableLayers.length > 0) return individuallyRoutableLayers
-  return params.collapseBlockedLayers
-    ? allowedEscapeLayers.slice(0, 1)
+  // Preserve the original candidates when none route so impossible problems
+  // still produce the usual failed-solver result instead of throwing here.
+  return individuallyRoutableLayers.length > 0
+    ? individuallyRoutableLayers
     : allowedEscapeLayers
 }
 
@@ -1080,7 +1074,6 @@ export class FanoutSolver extends BaseSolver {
   private readonly routingSrj: SimpleRouteJson
   private readonly escapeLayersByBusId: Record<string, readonly string[]> = {}
   private readonly boundaryBuses: PreparedBus[]
-  private readonly collapseBlockedLayers: boolean
   private readonly fixedPlaneAssignments: Readonly<Record<string, string>>
   private readonly evaluatedAssignmentKeys = new Set<string>()
   private readonly queuedAssignmentKeys = new Set<string>()
@@ -1200,19 +1193,6 @@ export class FanoutSolver extends BaseSolver {
     this.boundaryBuses = this.preparedBuses.filter(
       (bus) => bus.termination.type === "boundary",
     )
-    // The independent singleton pool still searches every allowed layer.
-    // Ordinary blocked tracks need only one failed fallback assignment.
-    this.collapseBlockedLayers =
-      !this.config.allowBlindAndBuriedVias &&
-      isOrdinaryMixedSingletonFanout({
-        ...this.config,
-        buses: this.preparedBuses,
-      }) &&
-      this.boundaryBuses.every(
-        (bus) =>
-          !busUsesCoordinatedWinding(bus) &&
-          !getCornerBandSide(bus.exitEdge, bus.preferredExit),
-      )
     this.fixedPlaneAssignments = Object.fromEntries(
       this.preparedBuses.flatMap((bus) =>
         bus.termination.type === "plane"
@@ -1386,7 +1366,6 @@ export class FanoutSolver extends BaseSolver {
     if (bus) {
       this.escapeLayersByBusId[bus.busId] = getCandidateEscapeLayersForBus({
         bus,
-        collapseBlockedLayers: this.collapseBlockedLayers,
         srj: this.routingSrj,
         config: this.config,
         staticClearanceCache: this.routeStaticClearanceCache,
@@ -5825,33 +5804,11 @@ export class FanoutSolver extends BaseSolver {
       }
     }
 
-    if (routingStrategy === "compatible-singletons") {
-      const compatiblePlans = yield* routeCompatibleSingletonEscapesSteps({
-        srj: this.routingSrj,
-        buses: this.preparedBuses,
-        busLayerAssignments,
-        routeConfig: {
-          ...this.config,
-          staticClearanceCache: this.routeStaticClearanceCache,
-        },
-      })
-      mixedTerminationState = {
-        plans: compatiblePlans,
-        failedBusIds: this.preparedBuses
-          .filter(
-            (bus) => !compatiblePlans.some((plan) => plan.busId === bus.busId),
-          )
-          .map((bus) => bus.busId),
-      }
-    }
     if (mixedTerminationState) {
       plans = mixedTerminationState.plans
       failedBusIds = mixedTerminationState.failedBusIds
       this.setInProgressPlans({
-        phase:
-          routingStrategy === "compatible-singletons"
-            ? "route-compatible-singletons"
-            : "route-dense-mixed-terminations",
+        phase: "route-dense-mixed-terminations",
         plans,
         strategy: routingStrategy,
         unitIndex: this.preparedBuses.length,
@@ -5938,6 +5895,28 @@ export class FanoutSolver extends BaseSolver {
       yield
     }
 
+    if (
+      assignmentIndex === 0 &&
+      routingStrategy === "default" &&
+      !useSingleLayerPushAndShove &&
+      !mixedTerminationState &&
+      failedBusIds.length > 0
+    ) {
+      plans = yield* repairFailedBusRoutesSteps({
+        srj: this.routingSrj,
+        buses: this.preparedBuses,
+        plans,
+        maximumSearchStates: this.config.maxLayerCombinations,
+        routeConfig: {
+          ...this.config,
+          staticClearanceCache: this.routeStaticClearanceCache,
+        },
+      })
+      failedBusIds = this.preparedBuses
+        .filter((bus) => !plans.some((plan) => plan.busId === bus.busId))
+        .map((bus) => bus.busId)
+    }
+
     let validationIssues: FanoutAttemptSummary["validationIssues"]
     const stopAfterCompleteValidation =
       mixedTerminationState?.stopAfterCompleteValidation === true &&
@@ -6012,15 +5991,10 @@ export class FanoutSolver extends BaseSolver {
     }
 
     const routedBusCount = this.preparedBuses.length - failedBusIds.length
-    const routedBusLayerAssignments =
-      routingStrategy === "compatible-singletons"
-        ? {
-            ...busLayerAssignments,
-            ...Object.fromEntries(
-              plans.map((plan) => [plan.busId, plan.targetLayer]),
-            ),
-          }
-        : busLayerAssignments
+    const routedBusLayerAssignments = {
+      ...busLayerAssignments,
+      ...Object.fromEntries(plans.map((plan) => [plan.busId, plan.targetLayer])),
+    }
     const routeLength = plans.reduce((total, plan) => total + plan.length, 0)
     const unroutedConnectionCount =
       this.inputSrj.connections.length - plans.length
@@ -6052,18 +6026,12 @@ export class FanoutSolver extends BaseSolver {
     return {
       summary,
       plans,
-      ...(routingStrategy === "compatible-singletons"
-        ? {
-            busDirections: {
-              ...Object.fromEntries(
-                this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
-              ),
-              ...Object.fromEntries(
-                plans.map((plan) => [plan.busId, plan.direction]),
-              ),
-            },
-          }
-        : {}),
+      busDirections: {
+        ...Object.fromEntries(
+          this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
+        ),
+        ...Object.fromEntries(plans.map((plan) => [plan.busId, plan.direction])),
+      },
       ...(mixedTerminationState?.stopAfterCompleteValidation &&
       validation?.valid
         ? { stopAfterCompleteValidation: true as const }
@@ -6094,16 +6062,7 @@ export class FanoutSolver extends BaseSolver {
       return bestAttempt
     }
 
-    const strategies: RoutingStrategy[] = ["group-by-layer", "deep-first"]
-    const tryCompatibleSingletons =
-      assignmentIndex === 0 &&
-      !this.config.allowBlindAndBuriedVias &&
-      isOrdinaryMixedSingletonFanout({
-        ...this.config,
-        buses: this.preparedBuses,
-      })
-    if (tryCompatibleSingletons) strategies.push("compatible-singletons")
-    for (const routingStrategy of strategies) {
+    for (const routingStrategy of ["group-by-layer", "deep-first"] as const) {
       const attempt = yield* this.evaluateAssignmentWithStrategySteps(
         assignmentIndex,
         busLayerAssignments,
