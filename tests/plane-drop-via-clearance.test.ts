@@ -47,7 +47,8 @@ test("plane drops retain terminal-layer pour and through-via copper clearance", 
     { layer: "inner1", isCopperPour: true, routeClear: true, drcClear: true },
     { layer: "bottom", isCopperPour: true, routeClear: true, drcClear: true },
     { layer: "top", isCopperPour: true, routeClear: false, drcClear: false },
-    { layer: "inner2", isCopperPour: true, routeClear: true, drcClear: false },
+    // The drop terminates on inner2, so foreign pour copper blocks the via.
+    { layer: "inner2", isCopperPour: true, routeClear: false, drcClear: false },
     {
       layer: "bottom",
       isCopperPour: false,
