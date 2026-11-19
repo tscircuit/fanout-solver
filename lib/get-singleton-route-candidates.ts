@@ -25,7 +25,8 @@ export function* getOrdinarySingletonCandidates(
   maximumAlternatives = 2,
 ): Generator<FanoutRoutePlan> {
   const traceWidth = route.bus.singletonTraceWidth ?? route.traceWidth
-  for (const direction of getSingletonCandidateHeadings(route.bus)) {
+  const headings = getSingletonCandidateHeadings(route.bus)
+  for (const direction of headings) {
     const bus =
       direction === route.bus.direction
         ? route.bus
@@ -38,6 +39,7 @@ export function* getOrdinarySingletonCandidates(
         if (plans.length !== 1)
           throw new Error("Expected one plan per singleton escape candidate")
         const plan = plans[0]!
+        if (!headings.includes(plan.direction)) continue
         const preservesWidth = getPlanSegments(plan).every(
           (segment) => Math.abs(segment.width - traceWidth) <= 1e-9,
         )

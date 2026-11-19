@@ -5,7 +5,6 @@ export function getSingletonCandidateHeadings(
 ): readonly FanoutDirection[] {
   const connection = bus.connections[0]!
   if (
-    bus.termination.type === "plane" ||
     bus.exitEdge ||
     bus.preferredExit ||
     bus.requestedDirection ||
