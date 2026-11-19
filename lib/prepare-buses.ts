@@ -7,6 +7,7 @@ import type {
 import { borderTargetIncludesEdge, getCornerBandSide } from "./boundary-exit"
 import { getFanoutExitPositionConfig } from "./fanout-exit-position"
 import { distance, pointIsInsideObstacle } from "./geometry"
+import { pointIsInsideBounds } from "./route-bus/directions"
 import type {
   Bounds,
   FanoutAvailableCornerAndSideInput,
@@ -1093,6 +1094,7 @@ function validateExplicitExitAvailability(params: {
 
 function resolveBusDirection(params: {
   busId: string
+  termination?: FanoutBusTermination
   explicitDirection?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   connections: PreparedConnection[]
@@ -1101,6 +1103,7 @@ function resolveBusDirection(params: {
 }): { direction: FanoutDirection; preferredExit?: FanoutBorderTarget } {
   const {
     busId,
+    termination,
     explicitDirection,
     preferredExit,
     connections,
@@ -1118,6 +1121,20 @@ function resolveBusDirection(params: {
     })
   }
   if (!preferredExit) {
+    if (!explicitDirection && termination?.type !== "plane") {
+      // Core insets automatic boundary points by 0.0001mm; allow roundoff.
+      const boundaryPointTolerance = 1e-4 + 1e-9
+      const directions = (["left", "right", "up", "down"] as const).filter(
+        (direction) =>
+          connections.every((connection) => {
+            const target = connection.exitTargetPoint ?? connection.targetPoint
+            if (!pointIsInsideBounds(target, sharedBoundary)) return false
+            const gap = getDistanceToBoundary(target, direction, sharedBoundary)
+            return Math.abs(gap) <= boundaryPointTolerance
+          }),
+      )
+      if (directions.length === 1) return { direction: directions[0]! }
+    }
     return {
       direction: explicitDirection ?? inferDirection(busId, connections),
     }
@@ -1246,6 +1263,7 @@ export function prepareFanoutBuses(
     }
     const resolvedExit = resolveBusDirection({
       busId: busSpec.busId,
+      termination: busSpec.termination,
       explicitDirection:
         busSpec.direction ?? options.busDirections?.[busSpec.busId],
       preferredExit: busSpec.preferredExit,
