@@ -1,4 +1,5 @@
 import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
+import { getTraceWidth } from "./get-trace-width"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
 import { routePeripheralBusesSteps } from "./route-peripheral-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
@@ -218,10 +219,10 @@ function resolveConfig(
   srj: SimpleRouteJson,
   options: FanoutSolverOptions,
 ): ResolvedFanoutConfig {
-  const traceWidth = resolvePositiveNumber(
-    "traceWidth",
-    options.traceWidth ?? srj.nominalTraceWidth ?? srj.minTraceWidth,
-  )
+  const traceWidth = getTraceWidth({
+    srj,
+    configuredTraceWidth: options.traceWidth,
+  })
   const viaDiameter = resolvePositiveNumber(
     "viaDiameter",
     options.viaDiameter ??
