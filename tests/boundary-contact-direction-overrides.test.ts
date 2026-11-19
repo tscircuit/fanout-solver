@@ -58,31 +58,6 @@ test("boundary contact preserves explicit exits and ambiguous-target inference",
       prepareFanoutBuses(originalInference, solverOptions)[0].direction,
     ).toBe("left")
   }
-  expect(
-    prepareFanoutBuses(srj, { ...solverOptions, traceWidth: 0.0001 })[0]
-      .direction,
-  ).toBe("left")
-  const justOutsideInput = {
-    ...srj,
-    connections: [
-      {
-        ...connection,
-        pointsToConnect: [
-          connection.pointsToConnect[0],
-          { ...target, y: srj.bounds.minY - 0.0000005 },
-        ],
-      },
-    ],
-  }
-  for (const [traceWidth, direction] of [
-    [0.0000001, "left"],
-    [0.000002, "down"],
-  ] as const) {
-    expect(
-      prepareFanoutBuses(justOutsideInput, { ...solverOptions, traceWidth })[0]
-        .direction,
-    ).toBe(direction)
-  }
   const planeOptions = {
     ...solverOptions,
     buses: [

@@ -1231,8 +1231,6 @@ export function prepareFanoutBuses(
     options.availableCornersAndSides,
   )
   const buses: PreparedBus[] = []
-  const traceWidth =
-    options.traceWidth ?? srj.nominalTraceWidth ?? srj.minTraceWidth
 
   for (const {
     busSpec,
@@ -1259,7 +1257,6 @@ export function prepareFanoutBuses(
         : inferBoundaryContactDirection({
             connections: preparedConnections,
             sharedBoundary,
-            traceWidth,
           })
     const resolvedExit = resolveBusDirection({
       busId: busSpec.busId,
