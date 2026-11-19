@@ -14,7 +14,7 @@ export function* routeBusAlternativesSteps(
 ): Generator<RouteBusAlternativesProgress, FanoutRoutePlan[][], void> {
   params = {
     ...params,
-    traceWidth: params.bus.singletonTraceWidth ?? params.traceWidth,
+    traceWidth: params.bus.traceWidth ?? params.traceWidth,
   }
   const {
     bus,

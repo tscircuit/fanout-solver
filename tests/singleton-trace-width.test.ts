@@ -2,13 +2,13 @@ import { expect, test } from "bun:test"
 import { FanoutSolver } from "lib/fanout-solver"
 import { createTwoViaWindows } from "./fixtures/two-via-windows"
 
-test("uses per-connection widths only for mixed singleton escapes", () => {
+test("uses requested conductor widths independently of unrelated plane buses", () => {
   for (const [mixed, request, configuredWidth, expectedWidth] of [
     [true, { width: 0.14 }, undefined, 0.14],
     [true, { nominalTraceWidth: 0.12, width: 0.14 }, undefined, 0.12],
     [true, { nominalTraceWidth: 0.12 }, 0.14, 0.14],
     [true, { nominalTraceWidth: 0.05 }, undefined, 0.1],
-    [false, { nominalTraceWidth: 0.14 }, undefined, 0.1],
+    [false, { nominalTraceWidth: 0.14 }, undefined, 0.14],
     [false, { nominalTraceWidth: 0.14 }, 0.12, 0.12],
   ] as const) {
     const { input, options } = createTwoViaWindows()

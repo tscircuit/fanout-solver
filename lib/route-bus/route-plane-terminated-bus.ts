@@ -26,10 +26,6 @@ export function routePlaneTerminatedBus(
     collectAlternative?: (plan: FanoutRoutePlan) => boolean
   },
 ): FanoutRoutePlan[] | null {
-  params = {
-    ...params,
-    traceWidth: params.bus.singletonTraceWidth ?? params.traceWidth,
-  }
   const {
     srj,
     bus,
