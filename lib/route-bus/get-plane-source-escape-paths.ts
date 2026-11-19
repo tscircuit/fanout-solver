@@ -142,5 +142,24 @@ export function getPlaneSourceEscapePaths(
       }
     }
   }
+  // Nearby via windows can fall between the ordinary pad-grid sites.
+  if (
+    directionalBus.connections.length === 1 &&
+    preparedConnection.connection.pointsToConnect.length === 1 &&
+    viaHandedness !== -1
+  ) {
+    for (const trackOffset of [-1, 0, 1]) {
+      const viaPoint = makePoint({
+        axis: getAxis(sourcePoint, direction) + sign * viaDiameter,
+        perpendicularAxis:
+          getPerpendicularAxis(sourcePoint, direction) +
+          (trackOffset * perpendicularPitch) / 2,
+        direction,
+      })
+      sourceEscapePaths.push(
+        ...getStraightOr45ConnectorVariants(sourcePoint, viaPoint),
+      )
+    }
+  }
   return sourceEscapePaths
 }

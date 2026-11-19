@@ -86,8 +86,21 @@ test("a bent plane escape leaves a through-via window for the boundary signal", 
     0,
     ...solver.attempts.map((attempt) => attempt.routedConnectionCount),
   )
-  expect(solver.failed).toBe(true)
-  expect(routed).toBe(1)
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(routed).toBe(2)
+  expect(
+    validateRoutedCopperDrc({
+      ...params,
+      inputSrj: input,
+      routedSrj: solver.getOutput().simpleRouteJson,
+    }),
+  ).toMatchObject({
+    valid: true,
+    checkedTraceCount: 2,
+    checkedViaCount: 2,
+    issues: [],
+  })
   const graphics = solver.visualize()
   graphics.texts = [
     ...(graphics.texts ?? []),
