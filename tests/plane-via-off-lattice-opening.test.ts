@@ -54,18 +54,22 @@ test("a plane drop finds an opening away from the pad lattice", async () => {
     landing,
   ]
   const solver = new FanoutSolver(input, options)
+  const planeRoute = {
+    ...solver.config,
+    srj: input,
+    bus: solver.preparedBuses[0]!,
+    targetLayer: "inner1",
+    acceptedPlans: [],
+  }
+  expect(
+    routeBusAlternatives(planeRoute, solver.config.maxLayerCombinations),
+  ).toHaveLength(0)
   expect(
     routeBusAlternatives(
-      {
-        ...solver.config,
-        srj: input,
-        bus: solver.preparedBuses[0]!,
-        targetLayer: "inner1",
-        acceptedPlans: [],
-      },
+      { ...planeRoute, searchPlaneGeometry: true },
       solver.config.maxLayerCombinations,
-    ),
-  ).toHaveLength(0)
+    ).length,
+  ).toBeGreaterThan(0)
   solver.solve()
   const output = solver.solved ? solver.getOutput() : undefined
   const traces = output?.fanoutTraces ?? []
