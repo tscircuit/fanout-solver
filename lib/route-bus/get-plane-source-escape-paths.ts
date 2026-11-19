@@ -25,7 +25,7 @@ export function getPlaneSourceEscapePaths(
     candidateTier?: "ordinary" | "expanded"
   },
   route: RouteBusParams,
-): Point2D[][] {
+): Iterable<Point2D[]> {
   const {
     bus: directionalBus,
     targetLayer,
