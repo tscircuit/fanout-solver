@@ -22,6 +22,7 @@ test("native iCE/Pi boundary contact guides the default escape", async (): Promi
         allowBlindAndBuriedVias: false,
       })
     : undefined
+  if (copperDrc) expect(copperDrc.valid).toBe(true)
   const viewport = { minX: 1, maxX: 4.8, minY: 10.3, maxY: 13.2 }
   // Crop only the drawing; every original obstacle participates in routing.
   const graphics = visualizeSimpleRouteJson({
