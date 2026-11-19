@@ -1,5 +1,5 @@
 import { circleFitsInsideObstacle } from "../geometry"
-import type { FanoutDirection, FanoutRoutePlan } from "../types"
+import type { FanoutDirection, FanoutRoutePlan, PreparedConnection } from "../types"
 import { buildPlan } from "./build-plan"
 import {
   busIsOnOutwardComponentEdge,
@@ -12,7 +12,10 @@ import {
   getPerpendicularAxis,
   isHorizontal,
 } from "./directions"
-import { getPlaneSourceEscapePaths } from "./get-plane-source-escape-paths"
+import {
+  getPreparedPlaneSourcePaths,
+  type PreparedPlaneSourcePaths,
+} from "./get-prepared-plane-source-paths"
 import { planIsClear } from "./plan-clearance"
 import {
   addPlaneEndpointTerminal,
@@ -252,6 +255,10 @@ export function routePlaneTerminatedBus(
         : [1, -1]
 
     for (const viaHandedness of viaHandednesses) {
+      const sourcePathsByConnection = new Map<
+        PreparedConnection,
+        PreparedPlaneSourcePaths
+      >()
       for (const connectionOrder of getConnectionOrders(directionalBus)) {
         const candidatePlans: FanoutRoutePlan[] = []
         let orderIsClear = true
@@ -260,10 +267,11 @@ export function routePlaneTerminatedBus(
             preparedConnection.sourcePoint,
             direction,
           )
-          const sourceEscapePaths = getPlaneSourceEscapePaths(
-            { preparedConnection, viaHandedness },
+          const preparedSourcePaths = getPreparedPlaneSourcePaths(
+            { preparedConnection, viaHandedness, sourcePathsByConnection },
             { ...params, bus: directionalBus },
           )
+          const { sourceEscapePaths } = preparedSourcePaths
           let plan: FanoutRoutePlan | undefined
           for (const [
             pathIndex,
@@ -275,7 +283,9 @@ export function routePlaneTerminatedBus(
               viaDiameter,
               clearance,
             })
-            const cacheKeyPrefix = `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}`
+            const cacheKeyPrefix =
+              (preparedSourcePaths.pathCacheKeyPrefixes[pathIndex] ??=
+                `${preparedSourcePaths.connectionCacheKeyPrefix}:${pathIndex}`)
             // The base plan follows every endpoint variant in the cache order.
             const basePlanIndex = endpointViaCandidates.length
             const basePlanCacheKey = `${cacheKeyPrefix}:${basePlanIndex}`
