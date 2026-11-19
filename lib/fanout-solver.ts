@@ -1028,6 +1028,7 @@ export function getDenseBoundaryPairRoutingPriorityKeys(params: {
 
 function getCandidateEscapeLayersForBus(params: {
   bus: PreparedBus
+  collapseBlockedLayers: boolean
   srj: SimpleRouteJson
   config: ResolvedFanoutConfig
   staticClearanceCache: RouteBusStaticClearanceCache
@@ -1063,13 +1064,12 @@ function getCandidateEscapeLayersForBus(params: {
 
   // Existing plans only add clearance constraints, so a layer that cannot
   // route this bus by itself cannot become viable later in an assignment.
-  // Preserve the original candidates when none route so impossible problems
-  // still produce the usual failed-solver result instead of throwing here.
-  const candidateLayers =
-    individuallyRoutableLayers.length > 0
-      ? individuallyRoutableLayers
-      : allowedEscapeLayers
-  return candidateLayers
+  // Keep a failed layer candidate so impossible problems still produce the
+  // usual failed-solver result. The singleton pool searches all allowed layers.
+  if (individuallyRoutableLayers.length > 0) return individuallyRoutableLayers
+  return params.collapseBlockedLayers
+    ? allowedEscapeLayers.slice(0, 1)
+    : allowedEscapeLayers
 }
 
 export class FanoutSolver extends BaseSolver {
@@ -1080,6 +1080,7 @@ export class FanoutSolver extends BaseSolver {
   private readonly routingSrj: SimpleRouteJson
   private readonly escapeLayersByBusId: Record<string, readonly string[]> = {}
   private readonly boundaryBuses: PreparedBus[]
+  private readonly collapseBlockedLayers: boolean
   private readonly fixedPlaneAssignments: Readonly<Record<string, string>>
   private readonly evaluatedAssignmentKeys = new Set<string>()
   private readonly queuedAssignmentKeys = new Set<string>()
@@ -1208,6 +1209,19 @@ export class FanoutSolver extends BaseSolver {
     this.boundaryBuses = this.preparedBuses.filter(
       (bus) => bus.termination.type === "boundary",
     )
+    // The independent singleton pool still searches every allowed layer.
+    // Ordinary blocked tracks need only one failed fallback assignment.
+    this.collapseBlockedLayers =
+      !this.config.allowBlindAndBuriedVias &&
+      isOrdinaryMixedSingletonFanout({
+        ...this.config,
+        buses: this.preparedBuses,
+      }) &&
+      this.boundaryBuses.every(
+        (bus) =>
+          !busUsesCoordinatedWinding(bus) &&
+          !getCornerBandSide(bus.exitEdge, bus.preferredExit),
+      )
     this.fixedPlaneAssignments = Object.fromEntries(
       this.preparedBuses.flatMap((bus) =>
         bus.termination.type === "plane"
@@ -1381,6 +1395,7 @@ export class FanoutSolver extends BaseSolver {
     if (bus) {
       this.escapeLayersByBusId[bus.busId] = getCandidateEscapeLayersForBus({
         bus,
+        collapseBlockedLayers: this.collapseBlockedLayers,
         srj: this.routingSrj,
         config: this.config,
         staticClearanceCache: this.routeStaticClearanceCache,
