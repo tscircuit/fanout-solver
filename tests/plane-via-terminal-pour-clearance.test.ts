@@ -46,6 +46,25 @@ test("native plane via eligibility respects terminal pours", async () => {
       planIsStaticallyClear({ ...clearance, srj: { ...srj, obstacles } }),
     ).toBe(true)
   }
+  const via = plan.via!
+  for (const [offset, expected] of [[0, true], [1, false]] as const) {
+    const ownPlane = {
+      type: "rect" as const,
+      isCopperPour: true,
+      layers: [via.toLayer],
+      center: { x: via.center.x + offset, y: via.center.y },
+      width: via.diameter,
+      height: via.diameter,
+      connectedTo: [plan.connectionName],
+    }
+    const obstacles = [
+      ...srj.obstacles.filter((obstacle) => !obstacle.isCopperPour),
+      ownPlane,
+    ]
+    expect(
+      planIsStaticallyClear({ ...clearance, srj: { ...srj, obstacles } }),
+    ).toBe(expected)
+  }
   // Clip only the drawing; validation uses the original native pour geometry.
   const obstacles = srj.obstacles.map((obstacle) => {
     if (!obstacle.isCopperPour) return obstacle

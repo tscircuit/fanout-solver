@@ -176,16 +176,33 @@ export function planIsStaticallyClear(params: {
     if (!clear) return false
   }
   for (const via of getPlanVias(plan)) {
+    const planeLayer =
+      plan.termination.type === "plane" ? plan.termination.layer : undefined
+    let hasPlaneCopper = false
+    let touchesPlaneCopper = false
     for (const obstacle of srj.obstacles) {
       if (obstacle.isCopperPour) {
+        const sameNet = obstacleSharesElectricalNet(
+          srj,
+          obstacle,
+          plan.connectionName,
+        )
+        if (
+          sameNet &&
+          planeLayer &&
+          obstacle.layers.includes(planeLayer) &&
+          (via.fromLayer === planeLayer || via.toLayer === planeLayer)
+        ) {
+          hasPlaneCopper = true
+          touchesPlaneCopper ||=
+            distancePointToObstacle(via.center, obstacle) <
+            via.diameter / 2 - 1e-9
+        }
         const touchesViaTerminal =
           obstacle.layers.includes(via.fromLayer) ||
           obstacle.layers.includes(via.toLayer)
         // Crossed pours form antipads; terminal pours must clear foreign vias.
-        if (
-          !touchesViaTerminal ||
-          obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
-        ) {
+        if (!touchesViaTerminal || sameNet) {
           continue
         }
       }
@@ -212,6 +229,7 @@ export function planIsStaticallyClear(params: {
         return false
       }
     }
+    if (hasPlaneCopper && !touchesPlaneCopper) return false
   }
 
   for (const traceCopper of getAllRoutedTraceCopper(
