@@ -331,6 +331,7 @@ export interface PreparedConnection {
 }
 
 export interface PreparedBus {
+  readonly allowNeighboringPlaneViaSites?: boolean
   busId: string
   /** Maximum permitted routed copper length difference in millimeters. */
   maxLengthSkew?: number
