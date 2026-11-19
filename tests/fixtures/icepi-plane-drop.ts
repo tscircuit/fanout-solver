@@ -38,7 +38,7 @@ export function createIcepiPlaneDrop(): RouteBusParams {
     targetLayer: bus.termination.layer,
     acceptedPlans: [],
     layerNames: getCopperLayerNames(srj.layerCount),
-    traceWidth: srj.minTraceWidth,
+    traceWidth: bus.traceWidth ?? srj.minTraceWidth,
     viaDiameter: srj.minViaPadDiameter,
     viaHoleDiameter: srj.minViaHoleDiameter,
     clearance: srj.minViaEdgeToPadEdgeClearance,

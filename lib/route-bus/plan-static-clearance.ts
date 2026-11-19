@@ -177,12 +177,11 @@ export function planIsStaticallyClear(params: {
   }
   for (const via of getPlanVias(plan)) {
     for (const obstacle of srj.obstacles) {
-      // Other-layer pour reservations form antipads, as in dogbone matching.
-      if (
-        obstacle.isCopperPour &&
-        !obstacle.layers.includes(plan.sourceLayer)
-      ) {
-        continue
+      if (obstacle.isCopperPour) {
+        const touchesTerminalLayer =
+          obstacle.layers.includes(via.fromLayer) ||
+          obstacle.layers.includes(via.toLayer)
+        if (!touchesTerminalLayer) continue
       }
       if (
         allowsViaInPad(srj) &&
@@ -194,18 +193,18 @@ export function planIsStaticallyClear(params: {
       if (!obstacle.layers.some((layer) => via.spanLayers.includes(layer))) {
         continue
       }
+      const violatesClearance =
+        distancePointToObstacle(via.center, obstacle) <
+        via.diameter / 2 + clearance - 1e-9
+      if (!violatesClearance) continue
       if (
-        allowSameNetMerges &&
-        obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
+        (obstacle.isCopperPour || allowSameNetMerges) &&
+        (obstacle.connectedTo.includes(plan.connectionName) ||
+          obstacleSharesElectricalNet(srj, obstacle, plan.connectionName))
       ) {
         continue
       }
-      if (
-        distancePointToObstacle(via.center, obstacle) <
-        via.diameter / 2 + clearance - 1e-9
-      ) {
-        return false
-      }
+      return false
     }
   }
 
