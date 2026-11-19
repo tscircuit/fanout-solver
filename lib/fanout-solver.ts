@@ -122,7 +122,11 @@ interface MixedTerminationState {
   stopAfterCompleteValidation?: true
 }
 
-type RoutingStrategy = "default" | "group-by-layer" | "deep-first"
+type RoutingStrategy =
+  | "default"
+  | "group-by-layer"
+  | "deep-first"
+  | "plane-first"
 
 type FanoutWorkYield = undefined | SubsolverRequest
 
@@ -5721,7 +5725,8 @@ export class FanoutSolver extends BaseSolver {
         comparePlaneRoutingPriority(
           a,
           b,
-          this.config.allowBlindAndBuriedVias,
+          this.config.allowBlindAndBuriedVias ||
+            routingStrategy === "plane-first",
         ) ||
         Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
         (aUsesCoordinatedWinding && bUsesCoordinatedWinding
@@ -6016,7 +6021,17 @@ export class FanoutSolver extends BaseSolver {
       return bestAttempt
     }
 
-    for (const routingStrategy of ["group-by-layer", "deep-first"] as const) {
+    const strategies: RoutingStrategy[] = ["group-by-layer", "deep-first"]
+    const tryPlanesFirst =
+      assignmentIndex === 0 &&
+      !this.config.allowBlindAndBuriedVias &&
+      this.config.densePlaneReservationBusIds.length === 0 &&
+      this.config.denseUnrestrictedPlaneRoutingBusIds.length === 0 &&
+      this.preparedBuses.every((bus) => bus.connections.length === 1) &&
+      this.preparedBuses.some((bus) => bus.termination.type === "plane") &&
+      this.preparedBuses.some((bus) => bus.termination.type === "boundary")
+    if (tryPlanesFirst) strategies.push("plane-first")
+    for (const routingStrategy of strategies) {
       const attempt = yield* this.evaluateAssignmentWithStrategySteps(
         assignmentIndex,
         busLayerAssignments,
