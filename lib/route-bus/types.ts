@@ -12,6 +12,7 @@ import type { getCornerLaneOffsets } from "./boundary-tracks"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 
 export type RouteBusStaticClearanceCache = Map<PlanClearanceKey, boolean>
+export type PlaneSourceEscapeTier = "ordinary" | "expanded" | "geometry"
 
 export interface RouteBusParams {
   srj: SimpleRouteJson

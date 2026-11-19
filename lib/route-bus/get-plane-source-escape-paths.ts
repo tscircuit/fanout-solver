@@ -1,5 +1,6 @@
 import type { Point2D } from "../types"
 import { getExpandedPlaneSourcePaths } from "./get-expanded-plane-source-paths"
+import { getPlaneGeometrySourcePaths } from "./get-plane-geometry-source-paths"
 import {
   directionSign,
   getAxis,
@@ -14,17 +15,19 @@ import {
   getInitialViaPoint,
   getStraightOr45ConnectorVariants,
 } from "./source-escape"
-import type { BuildPlanParams, RouteBusParams } from "./types"
+import type {
+  BuildPlanParams,
+  PlaneSourceEscapeTier,
+  RouteBusParams,
+} from "./types"
 
 export function getPlaneSourceEscapePaths(
   {
     preparedConnection,
     viaHandedness,
     candidateTier = "ordinary",
-    collectingAlternatives = false,
   }: Pick<BuildPlanParams, "preparedConnection" | "viaHandedness"> & {
-    candidateTier?: "ordinary" | "expanded"
-    collectingAlternatives?: boolean
+    candidateTier?: PlaneSourceEscapeTier
   },
   route: RouteBusParams,
 ): Iterable<Point2D[]> {
@@ -36,10 +39,10 @@ export function getPlaneSourceEscapePaths(
     clearance,
   } = route
   if (candidateTier === "expanded") {
-    return getExpandedPlaneSourcePaths(
-      { connection: preparedConnection, collectingAlternatives },
-      route,
-    )
+    return getExpandedPlaneSourcePaths(preparedConnection, route)
+  }
+  if (candidateTier === "geometry") {
+    return getPlaneGeometrySourcePaths(preparedConnection, route)
   }
   const direction = directionalBus.direction
   const adjacentViaPoint = getInitialViaPoint({

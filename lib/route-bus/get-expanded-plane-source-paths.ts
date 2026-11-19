@@ -1,5 +1,4 @@
 import type { Point2D, PreparedConnection } from "../types"
-import { getPlaneGeometrySourcePaths } from "./get-plane-geometry-source-paths"
 import {
   directionSign,
   getAxis,
@@ -11,10 +10,7 @@ import { getStraightOr45ConnectorVariants } from "./source-escape"
 import type { RouteBusParams } from "./types"
 
 export function* getExpandedPlaneSourcePaths(
-  {
-    connection,
-    collectingAlternatives,
-  }: { connection: PreparedConnection; collectingAlternatives: boolean },
+  connection: PreparedConnection,
   route: RouteBusParams,
 ): Generator<Point2D[]> {
   if (
@@ -39,6 +35,4 @@ export function* getExpandedPlaneSourcePaths(
     })
     yield* getStraightOr45ConnectorVariants(source, site)
   }
-  if (collectingAlternatives)
-    yield* getPlaneGeometrySourcePaths(connection, route)
 }

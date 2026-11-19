@@ -19,12 +19,16 @@ import {
   addPlaneEndpointTerminal,
   getPlaneEndpointViaCandidates,
 } from "./plane-endpoint"
-import type { RouteBusParams, ViaHandedness } from "./types"
+import type {
+  PlaneSourceEscapeTier,
+  RouteBusParams,
+  ViaHandedness,
+} from "./types"
 
 export function routePlaneTerminatedBus(
   params: RouteBusParams & {
     collectAlternative?: (plan: FanoutRoutePlan) => boolean
-    candidateTier?: "ordinary" | "expanded"
+    candidateTier?: PlaneSourceEscapeTier
   },
 ): FanoutRoutePlan[] | null {
   const {
@@ -48,8 +52,10 @@ export function routePlaneTerminatedBus(
   if (!sourceObstacle || bus.termination.type !== "plane") return null
   const sourceLayer = bus.connections[0]!.sourceLayer
   if (targetLayer === sourceLayer) return null
+  const usesOrdinaryCandidates =
+    params.candidateTier === undefined || params.candidateTier === "ordinary"
   if (
-    params.candidateTier === "expanded" &&
+    !usesOrdinaryCandidates &&
     (fixedViaPointsByConnectionIndex || params.sourceEscapePaths)
   )
     return null
@@ -153,7 +159,7 @@ export function routePlaneTerminatedBus(
   }
 
   if (
-    params.candidateTier !== "expanded" &&
+    usesOrdinaryCandidates &&
     allowsViaInPad(srj) &&
     bus.connections.length === 1 &&
     circleFitsInsideObstacle({
@@ -256,8 +262,16 @@ export function routePlaneTerminatedBus(
       centeredOutward: false,
       candidateTier: "expanded" as const,
     })),
+    ...candidateDirections.map((direction) => ({
+      direction,
+      centeredOutward: false,
+      candidateTier: "geometry" as const,
+    })),
   ].filter(
-    (pass) => !params.candidateTier || pass.candidateTier === params.candidateTier,
+    (pass) =>
+      params.candidateTier
+        ? pass.candidateTier === params.candidateTier
+        : pass.candidateTier !== "geometry",
   )
   for (const {
     direction,
@@ -275,7 +289,7 @@ export function routePlaneTerminatedBus(
     let viaHandednesses: readonly ViaHandedness[] = pairChannelFitsVia
       ? [0]
       : [1, -1]
-    if (candidateTier === "expanded") {
+    if (candidateTier !== "ordinary") {
       viaHandednesses = [0]
     } else if (centeredOutward) {
       const canUseCenteredOutward =
@@ -283,7 +297,7 @@ export function routePlaneTerminatedBus(
       viaHandednesses = canUseCenteredOutward ? [0] : []
     }
     const candidateFamily =
-      candidateTier === "ordinary" ? "plane" : "plane-expanded"
+      candidateTier === "ordinary" ? "plane" : `plane-${candidateTier}`
 
     for (const viaHandedness of viaHandednesses) {
       for (const connectionOrder of getConnectionOrders(directionalBus)) {
@@ -299,7 +313,6 @@ export function routePlaneTerminatedBus(
               preparedConnection,
               viaHandedness,
               candidateTier,
-              collectingAlternatives: Boolean(params.collectAlternative),
             },
             { ...params, bus: directionalBus },
           )

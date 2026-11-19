@@ -6,7 +6,11 @@ import { routeBoundarySideViaSteps } from "./route-boundary-side-via-steps"
 import { routeCoordinatedBoundarySteps } from "./route-coordinated-boundary-steps"
 import { routePlaneTerminatedBus } from "./route-plane-terminated-bus"
 import { routeSingletonBoundarySteps } from "./route-singleton-boundary-steps"
-import type { RouteBusAlternativesProgress, RouteBusParams } from "./types"
+import type {
+  PlaneSourceEscapeTier,
+  RouteBusAlternativesProgress,
+  RouteBusParams,
+} from "./types"
 
 type PlaneAlternativeKey = string
 type PlaneLeadHeading = number
@@ -15,7 +19,7 @@ function getPlaneTierAlternatives(
   {
     candidateTier,
     maxAlternatives,
-  }: { candidateTier: "ordinary" | "expanded"; maxAlternatives: number },
+  }: { candidateTier: PlaneSourceEscapeTier; maxAlternatives: number },
   params: RouteBusParams,
 ): FanoutRoutePlan[][] {
   const alternatives: FanoutRoutePlan[][] = []
@@ -27,7 +31,7 @@ function getPlaneTierAlternatives(
     candidateTier,
     planeCandidateSkipCount: 0,
     collectAlternative: (plan) => {
-      if (candidateTier === "expanded" && plan.via) {
+      if (candidateTier === "geometry" && plan.via) {
         const lead = plan.segments.find(
           (segment) =>
             segment.layer === plan.sourceLayer &&
@@ -101,19 +105,16 @@ export function* routeBusAlternativesSteps(
   if (bus.termination.type === "plane") {
     const alternatives: FanoutRoutePlan[][] = []
     if (bus.connections.length === 1 && maxAlternatives > 1) {
-      const ordinary = getPlaneTierAlternatives(
-        { candidateTier: "ordinary", maxAlternatives },
-        params,
+      const tiers = (["ordinary", "expanded", "geometry"] as const).map(
+        (candidateTier) =>
+          getPlaneTierAlternatives({ candidateTier, maxAlternatives }, params),
       )
-      const expanded = getPlaneTierAlternatives(
-        { candidateTier: "expanded", maxAlternatives },
-        params,
-      )
-      // Keep the legacy winner first and give both search domains room.
+      // Preserve the legacy winner and share the budget across source families.
       const seen = new Set<PlaneAlternativeKey>()
       for (let index = 0; alternatives.length < maxAlternatives; index++) {
-        if (!ordinary[index] && !expanded[index]) break
-        for (const candidate of [ordinary[index], expanded[index]]) {
+        if (tiers.every((tier) => !tier[index])) break
+        for (const tier of tiers) {
+          const candidate = tier[index]
           if (!candidate) continue
           const key = JSON.stringify(
             candidate.map((plan) => [
