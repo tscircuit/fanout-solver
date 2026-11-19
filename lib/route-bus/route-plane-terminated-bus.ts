@@ -223,18 +223,29 @@ export function routePlaneTerminatedBus(
       (direction) => direction !== bus.direction,
     ),
   ]
-  // Try existing candidates first, then centered escapes away from the component.
+  // Exhaust every existing direction/hand family before adding nearby sites.
   const candidateDirectionPasses = [
     ...candidateDirections.map((direction) => ({
       direction,
       centeredOutward: false,
+      nearbyOnly: false,
     })),
     ...candidateDirections.map((direction) => ({
       direction,
       centeredOutward: true,
+      nearbyOnly: false,
+    })),
+    ...candidateDirections.map((direction) => ({
+      direction,
+      centeredOutward: false,
+      nearbyOnly: true,
     })),
   ]
-  for (const { direction, centeredOutward } of candidateDirectionPasses) {
+  for (const {
+    direction,
+    centeredOutward,
+    nearbyOnly,
+  } of candidateDirectionPasses) {
     const directionalBus =
       direction === bus.direction ? bus : { ...bus, direction }
     const directionalPadSize = isHorizontal(direction)
@@ -251,7 +262,11 @@ export function routePlaneTerminatedBus(
         ? [0]
         : [1, -1]
 
-    for (const viaHandedness of viaHandednesses) {
+    const sourceViaHandednesses: readonly ViaHandedness[] = nearbyOnly
+      ? [0]
+      : viaHandednesses
+    const candidateFamily = nearbyOnly ? "plane-nearby" : "plane"
+    for (const viaHandedness of sourceViaHandednesses) {
       for (const connectionOrder of getConnectionOrders(directionalBus)) {
         const candidatePlans: FanoutRoutePlan[] = []
         let orderIsClear = true
@@ -261,7 +276,7 @@ export function routePlaneTerminatedBus(
             direction,
           )
           const sourceEscapePaths = getPlaneSourceEscapePaths(
-            { preparedConnection, viaHandedness },
+            { preparedConnection, viaHandedness, nearbyOnly },
             { ...params, bus: directionalBus },
           )
           let plan: FanoutRoutePlan | undefined
@@ -275,7 +290,7 @@ export function routePlaneTerminatedBus(
               viaDiameter,
               clearance,
             })
-            const cacheKeyPrefix = `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}`
+            const cacheKeyPrefix = `${candidateFamily}:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}`
             // The base plan follows every endpoint variant in the cache order.
             const basePlanIndex = endpointViaCandidates.length
             const basePlanCacheKey = `${cacheKeyPrefix}:${basePlanIndex}`

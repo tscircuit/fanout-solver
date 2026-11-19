@@ -19,7 +19,10 @@ export function getPlaneSourceEscapePaths(
   {
     preparedConnection,
     viaHandedness,
-  }: Pick<BuildPlanParams, "preparedConnection" | "viaHandedness">,
+    nearbyOnly = false,
+  }: Pick<BuildPlanParams, "preparedConnection" | "viaHandedness"> & {
+    nearbyOnly?: boolean
+  },
   {
     bus: directionalBus,
     targetLayer,
@@ -51,6 +54,23 @@ export function getPlaneSourceEscapePaths(
   const sourcePoint = {
     x: preparedConnection.sourcePoint.x,
     y: preparedConnection.sourcePoint.y,
+  }
+  if (nearbyOnly) {
+    if (
+      directionalBus.connections.length !== 1 ||
+      preparedConnection.connection.pointsToConnect.length !== 1
+    )
+      return []
+    return [-1, 0, 1].flatMap((trackOffset) => {
+      const site = makePoint({
+        axis: getAxis(sourcePoint, direction) + sign * viaDiameter,
+        perpendicularAxis:
+          getPerpendicularAxis(sourcePoint, direction) +
+          (trackOffset * getPerpendicularPitch(directionalBus)) / 2,
+        direction,
+      })
+      return getStraightOr45ConnectorVariants(sourcePoint, site)
+    })
   }
   const adjacentAxis = getAxis(adjacentViaPoint, direction)
   const adjacentPerpendicularAxis = getPerpendicularAxis(
