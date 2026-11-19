@@ -331,6 +331,9 @@ export interface PreparedConnection {
 }
 
 export interface PreparedBus {
+  /** Common conductor width resolved by prepareFanoutBuses. */
+  readonly traceWidth?: number
+  readonly requestedDirection?: FanoutDirection
   busId: string
   /** Maximum permitted routed copper length difference in millimeters. */
   maxLengthSkew?: number
