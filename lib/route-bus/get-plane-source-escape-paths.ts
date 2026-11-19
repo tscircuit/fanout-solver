@@ -1,4 +1,5 @@
 import type { Point2D } from "../types"
+import { getExpandedPlaneSourcePaths } from "./get-expanded-plane-source-paths"
 import {
   directionSign,
   getAxis,
@@ -19,15 +20,22 @@ export function getPlaneSourceEscapePaths(
   {
     preparedConnection,
     viaHandedness,
-  }: Pick<BuildPlanParams, "preparedConnection" | "viaHandedness">,
-  {
+    candidateTier = "ordinary",
+  }: Pick<BuildPlanParams, "preparedConnection" | "viaHandedness"> & {
+    candidateTier?: "ordinary" | "expanded"
+  },
+  route: RouteBusParams,
+): Point2D[][] {
+  const {
     bus: directionalBus,
     targetLayer,
     traceWidth,
     viaDiameter,
     clearance,
-  }: RouteBusParams,
-): Point2D[][] {
+  } = route
+  if (candidateTier === "expanded") {
+    return getExpandedPlaneSourcePaths(preparedConnection, route)
+  }
   const direction = directionalBus.direction
   const adjacentViaPoint = getInitialViaPoint({
     preparedConnection,
@@ -58,10 +66,6 @@ export function getPlaneSourceEscapePaths(
     direction,
   )
   const perpendicularPitch = getPerpendicularPitch(directionalBus)
-  const isSingleTerminalPlane =
-    directionalBus.allowNeighboringPlaneViaSites === true &&
-    directionalBus.connections.length === 1 &&
-    preparedConnection.connection.pointsToConnect.length === 1
   const sourceEscapePaths: Point2D[][] = []
   const maximumCandidatePaths = 128
   for (
@@ -144,21 +148,6 @@ export function getPlaneSourceEscapePaths(
         )
         if (sourceEscapePaths.length >= maximumCandidatePaths) break
       }
-    }
-  }
-  // Nearby plane-via windows can fall between the ordinary pad-grid sites.
-  if (isSingleTerminalPlane && viaHandedness !== -1) {
-    for (const trackOffset of [-1, 0, 1]) {
-      const viaPoint = makePoint({
-        axis: getAxis(sourcePoint, direction) + sign * viaDiameter,
-        perpendicularAxis:
-          getPerpendicularAxis(sourcePoint, direction) +
-          (trackOffset * perpendicularPitch) / 2,
-        direction,
-      })
-      sourceEscapePaths.push(
-        ...getStraightOr45ConnectorVariants(sourcePoint, viaPoint),
-      )
     }
   }
   return sourceEscapePaths
