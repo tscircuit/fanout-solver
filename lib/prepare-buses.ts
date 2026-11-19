@@ -7,6 +7,7 @@ import type {
 import { borderTargetIncludesEdge, getCornerBandSide } from "./boundary-exit"
 import { getFanoutExitPositionConfig } from "./fanout-exit-position"
 import { distance, pointIsInsideObstacle } from "./geometry"
+import { pointIsInsideBounds } from "./route-bus/directions"
 import type {
   Bounds,
   FanoutAvailableCornerAndSideInput,
@@ -898,6 +899,30 @@ function prepareConnection(params: {
   )
 }
 
+/** Prefer the boundary edge already touched by every target's copper. */
+function inferBoundaryContactDirection(params: {
+  connections: PreparedConnection[]
+  sharedBoundary: Bounds
+  traceWidth: number
+}): FanoutDirection | undefined {
+  const { connections, sharedBoundary, traceWidth } = params
+  let direction: FanoutDirection | undefined
+  for (const connection of connections) {
+    const target = connection.exitTargetPoint ?? connection.targetPoint
+    if (!pointIsInsideBounds(target, sharedBoundary)) return undefined
+    const contacts = (["left", "right", "up", "down"] as const).filter(
+      (candidate) =>
+        getDistanceToBoundary(target, candidate, sharedBoundary) <=
+        traceWidth / 2,
+    )
+    // A corner or a bus spanning different edges keeps displacement inference.
+    if (contacts.length !== 1) return undefined
+    if (direction !== undefined && direction !== contacts[0]) return undefined
+    direction = contacts[0]
+  }
+  return direction
+}
+
 function inferDirection(
   busId: string,
   connections: PreparedConnection[],
@@ -1094,6 +1119,7 @@ function validateExplicitExitAvailability(params: {
 function resolveBusDirection(params: {
   busId: string
   explicitDirection?: FanoutDirection
+  boundaryContactDirection?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   connections: PreparedConnection[]
   sharedBoundary: Bounds
@@ -1102,6 +1128,7 @@ function resolveBusDirection(params: {
   const {
     busId,
     explicitDirection,
+    boundaryContactDirection,
     preferredExit,
     connections,
     sharedBoundary,
@@ -1119,7 +1146,10 @@ function resolveBusDirection(params: {
   }
   if (!preferredExit) {
     return {
-      direction: explicitDirection ?? inferDirection(busId, connections),
+      direction:
+        explicitDirection ??
+        boundaryContactDirection ??
+        inferDirection(busId, connections),
     }
   }
 
@@ -1248,6 +1278,15 @@ export function prepareFanoutBuses(
       busId: busSpec.busId,
       explicitDirection:
         busSpec.direction ?? options.busDirections?.[busSpec.busId],
+      boundaryContactDirection:
+        busSpec.termination?.type === "plane"
+          ? undefined
+          : inferBoundaryContactDirection({
+              connections: preparedConnections,
+              sharedBoundary,
+              traceWidth:
+                options.traceWidth ?? srj.nominalTraceWidth ?? srj.minTraceWidth,
+            }),
       preferredExit: busSpec.preferredExit,
       connections: preparedConnections,
       sharedBoundary,
