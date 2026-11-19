@@ -1,4 +1,5 @@
 import { circleFitsInsideObstacle } from "../geometry"
+import { planeEscapeStartsInDirection } from "../plane-escape-starts-in-direction"
 import type { FanoutDirection, FanoutRoutePlan } from "../types"
 import { buildPlan } from "./build-plan"
 import {
@@ -23,6 +24,7 @@ import type { RouteBusParams, ViaHandedness } from "./types"
 export function routePlaneTerminatedBus(
   params: RouteBusParams & {
     collectAlternative?: (plan: FanoutRoutePlan) => boolean
+    candidateTier?: "ordinary" | "expanded"
   },
 ): FanoutRoutePlan[] | null {
   const {
@@ -46,6 +48,16 @@ export function routePlaneTerminatedBus(
   if (!sourceObstacle || bus.termination.type !== "plane") return null
   const sourceLayer = bus.connections[0]!.sourceLayer
   if (targetLayer === sourceLayer) return null
+  if (
+    params.candidateTier === "expanded" &&
+    (fixedViaPointsByConnectionIndex || params.sourceEscapePaths)
+  )
+    return null
+  const requestedDirection =
+    bus.connections.length === 1 &&
+    bus.connections[0]!.connection.pointsToConnect.length === 1
+      ? bus.requestedDirection
+      : undefined
   const selection = {
     remainingPlaneCandidatesToSkip: planeCandidateSkipCount,
     collectAlternative: params.collectAlternative,
@@ -118,6 +130,11 @@ export function routePlaneTerminatedBus(
         {
           plans: plansToTry,
           isClear: (candidatePlan, candidateIndex) =>
+            (!requestedDirection ||
+              planeEscapeStartsInDirection(
+                candidatePlan,
+                requestedDirection,
+              )) &&
             planIsClear({
               plan: candidatePlan,
               otherPlans: [...acceptedPlans, ...fixedPlans],
@@ -140,6 +157,7 @@ export function routePlaneTerminatedBus(
   }
 
   if (
+    params.candidateTier !== "expanded" &&
     allowsViaInPad(srj) &&
     bus.connections.length === 1 &&
     circleFitsInsideObstacle({
@@ -199,6 +217,8 @@ export function routePlaneTerminatedBus(
       {
         plans: plansToTry,
         isClear: (candidatePlan, candidateIndex) =>
+          (!requestedDirection ||
+            planeEscapeStartsInDirection(candidatePlan, requestedDirection)) &&
           planIsClear({
             plan: candidatePlan,
             otherPlans: acceptedPlans,
@@ -223,18 +243,31 @@ export function routePlaneTerminatedBus(
       (direction) => direction !== bus.direction,
     ),
   ]
-  // Try existing candidates first, then centered escapes away from the component.
+  // Exhaust legacy direction/hand families before widening source geometry.
   const candidateDirectionPasses = [
     ...candidateDirections.map((direction) => ({
       direction,
       centeredOutward: false,
+      candidateTier: "ordinary" as const,
     })),
     ...candidateDirections.map((direction) => ({
       direction,
       centeredOutward: true,
+      candidateTier: "ordinary" as const,
     })),
-  ]
-  for (const { direction, centeredOutward } of candidateDirectionPasses) {
+    ...candidateDirections.map((direction) => ({
+      direction,
+      centeredOutward: false,
+      candidateTier: "expanded" as const,
+    })),
+  ].filter(
+    (pass) => !params.candidateTier || pass.candidateTier === params.candidateTier,
+  )
+  for (const {
+    direction,
+    centeredOutward,
+    candidateTier,
+  } of candidateDirectionPasses) {
     const directionalBus =
       direction === bus.direction ? bus : { ...bus, direction }
     const directionalPadSize = isHorizontal(direction)
@@ -243,13 +276,18 @@ export function routePlaneTerminatedBus(
     const pairChannelFitsVia =
       getDirectionalPitch(directionalBus) / 2 - directionalPadSize / 2 >=
       viaDiameter / 2 + clearance - 1e-9
-    const viaHandednesses: readonly ViaHandedness[] = centeredOutward
-      ? !pairChannelFitsVia && busIsOnOutwardComponentEdge(directionalBus)
-        ? [0]
-        : []
-      : pairChannelFitsVia
-        ? [0]
-        : [1, -1]
+    let viaHandednesses: readonly ViaHandedness[] = pairChannelFitsVia
+      ? [0]
+      : [1, -1]
+    if (candidateTier === "expanded") {
+      viaHandednesses = [0]
+    } else if (centeredOutward) {
+      const canUseCenteredOutward =
+        !pairChannelFitsVia && busIsOnOutwardComponentEdge(directionalBus)
+      viaHandednesses = canUseCenteredOutward ? [0] : []
+    }
+    const candidateFamily =
+      candidateTier === "ordinary" ? "plane" : "plane-expanded"
 
     for (const viaHandedness of viaHandednesses) {
       for (const connectionOrder of getConnectionOrders(directionalBus)) {
@@ -261,7 +299,7 @@ export function routePlaneTerminatedBus(
             direction,
           )
           const sourceEscapePaths = getPlaneSourceEscapePaths(
-            { preparedConnection, viaHandedness },
+            { preparedConnection, viaHandedness, candidateTier },
             { ...params, bus: directionalBus },
           )
           let plan: FanoutRoutePlan | undefined
@@ -275,7 +313,7 @@ export function routePlaneTerminatedBus(
               viaDiameter,
               clearance,
             })
-            const cacheKeyPrefix = `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}`
+            const cacheKeyPrefix = `${candidateFamily}:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}`
             // The base plan follows every endpoint variant in the cache order.
             const basePlanIndex = endpointViaCandidates.length
             const basePlanCacheKey = `${cacheKeyPrefix}:${basePlanIndex}`
@@ -331,6 +369,11 @@ export function routePlaneTerminatedBus(
               {
                 plans: plansToTry,
                 isClear: (candidatePlan, candidateIndex) =>
+                  (!requestedDirection ||
+                    planeEscapeStartsInDirection(
+                      candidatePlan,
+                      requestedDirection,
+                    )) &&
                   planIsClear({
                     plan: candidatePlan,
                     otherPlans: [...acceptedPlans, ...candidatePlans],
