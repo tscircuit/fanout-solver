@@ -326,6 +326,8 @@ export interface PreparedConnection {
   targetPoint: ConnectionPoint
   /** Preferred downstream point used to choose the boundary exit track. */
   exitTargetPoint?: Point2D & { readonly layer?: string }
+  /** Whether the caller supplied a fixed exit target, including an unlayered one. */
+  readonly hasExplicitExitTarget?: boolean
   /** Whether the caller supplied the layered handoff metadata needed to coordinate winding. */
   hasExplicitLayeredExitTarget?: boolean
 }
@@ -434,6 +436,7 @@ export type SimpleRouteJsonWithFanoutPlanes = Omit<
 }
 
 export interface AssignmentAttempt {
+  readonly busDirections?: FanoutSolverOutput["busDirections"]
   summary: FanoutAttemptSummary
   plans: FanoutRoutePlan[]
   outputSrj: SimpleRouteJsonWithFanoutPlanes

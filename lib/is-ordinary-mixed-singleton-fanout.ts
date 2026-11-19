@@ -5,11 +5,7 @@ export function isOrdinaryMixedSingletonFanout(params: {
   densePlaneReservationBusIds: readonly string[]
   denseUnrestrictedPlaneRoutingBusIds: readonly string[]
 }): boolean {
-  const {
-    buses,
-    densePlaneReservationBusIds,
-    denseUnrestrictedPlaneRoutingBusIds,
-  } = params
+  const { buses, densePlaneReservationBusIds, denseUnrestrictedPlaneRoutingBusIds } = params
   return (
     densePlaneReservationBusIds.length === 0 &&
     denseUnrestrictedPlaneRoutingBusIds.length === 0 &&
