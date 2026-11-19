@@ -12,10 +12,5 @@ export function getSingletonCandidateHeadings(
     connection.hasExplicitLayeredExitTarget
   )
     return [bus.direction]
-  return [
-    bus.direction,
-    ...(["left", "right", "up", "down"] as const).filter(
-      (direction) => direction !== bus.direction,
-    ),
-  ]
+  return ["left", "right", "up", "down"]
 }
