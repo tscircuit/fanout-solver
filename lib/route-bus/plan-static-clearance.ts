@@ -177,12 +177,17 @@ export function planIsStaticallyClear(params: {
   }
   for (const via of getPlanVias(plan)) {
     for (const obstacle of srj.obstacles) {
-      // Other-layer pour reservations form antipads, as in dogbone matching.
-      if (
-        obstacle.isCopperPour &&
-        !obstacle.layers.includes(plan.sourceLayer)
-      ) {
-        continue
+      if (obstacle.isCopperPour) {
+        const touchesViaTerminal =
+          obstacle.layers.includes(via.fromLayer) ||
+          obstacle.layers.includes(via.toLayer)
+        // Crossed pours form antipads; terminal pours must clear foreign vias.
+        if (
+          !touchesViaTerminal ||
+          obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
+        ) {
+          continue
+        }
       }
       if (
         allowsViaInPad(srj) &&
