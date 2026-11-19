@@ -35,6 +35,8 @@ export interface RouteBusParams {
   fixedBoundaryTracksByConnectionIndex?: ReadonlyMap<number, number>
   /** Actual copper before the first via for previously reserved source escapes. */
   sourceEscapePaths?: ReadonlyMap<number, readonly Point2D[]>
+  /** Widen independent ordinary repair with obstacle-derived plane paths. */
+  searchPlaneGeometry?: boolean
   /** Exact winding spacing for staged narrow-channel routing. */
   windingGridStep?: number
   reservedVias?: readonly ViaMinimalWindingReservedVia[]
