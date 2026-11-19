@@ -1,18 +1,33 @@
 import { expect, test } from "bun:test"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { FanoutSolver } from "lib/fanout-solver"
+import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import { createCompetingSingletonViaWindows } from "./fixtures/competing-singleton-via-windows"
 
 test("a signal reroutes around the plane via", async (): Promise<void> => {
   const { input, options } = createCompetingSingletonViaWindows()
   const solver = new FanoutSolver(input, options)
   solver.solve()
-  expect(solver.failed).toBe(true)
+  expect(solver.solved).toBe(true)
+  const output = solver.getOutput()
+  expect(output.validation).toMatchObject({
+    valid: true,
+    brokenOutConnectionCount: 2,
+    issues: [],
+  })
   expect(
-    Math.max(
-      ...solver.attempts.map((attempt) => attempt.routedConnectionCount),
-    ),
-  ).toBe(1)
+    validateRoutedCopperDrc({
+      inputSrj: input,
+      routedSrj: output.simpleRouteJson,
+      clearance: solver.config.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({
+    valid: true,
+    checkedTraceCount: 2,
+    checkedViaCount: 2,
+    issues: [],
+  })
   const graphics = solver.visualize()
   const routed = Math.max(
     ...solver.attempts.map((attempt) => attempt.routedConnectionCount),

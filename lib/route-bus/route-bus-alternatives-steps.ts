@@ -1,4 +1,5 @@
-import type { FanoutRoutePlan } from "../types"
+import { distance, pointIsInsideObstacle } from "../geometry"
+import type { FanoutRoutePlan, Point2D } from "../types"
 import { createBoundaryRoutingContext } from "./boundary-routing-context"
 import { routeAnalyticBoundaryAlternatives } from "./route-analytic-boundary-alternatives"
 import { routeBoundarySideViaSteps } from "./route-boundary-side-via-steps"
@@ -8,6 +9,7 @@ import { routeSingletonBoundarySteps } from "./route-singleton-boundary-steps"
 import type { RouteBusAlternativesProgress, RouteBusParams } from "./types"
 
 type PlaneAlternativeKey = string
+type PlaneLeadHeading = number
 
 function getPlaneTierAlternatives(
   {
@@ -18,11 +20,34 @@ function getPlaneTierAlternatives(
 ): FanoutRoutePlan[][] {
   const alternatives: FanoutRoutePlan[][] = []
   const seen = new Set<PlaneAlternativeKey>()
+  const acceptedSites = new Map<PlaneLeadHeading, Point2D[]>()
+  const minimumSiteSeparation = params.viaDiameter / 2
   routePlaneTerminatedBus({
     ...params,
     candidateTier,
     planeCandidateSkipCount: 0,
     collectAlternative: (plan) => {
+      if (candidateTier === "expanded" && plan.via) {
+        const lead = plan.segments.find(
+          (segment) =>
+            segment.layer === plan.sourceLayer &&
+            !pointIsInsideObstacle(segment.end, plan.sourceObstacle),
+        )
+        if (lead) {
+          const heading = Math.round(
+            Math.atan2(lead.end.y - lead.start.y, lead.end.x - lead.start.x) /
+              (Math.PI / 4),
+          )
+          const nearby = acceptedSites.get(heading) ?? []
+          const site = plan.via.center
+          if (
+            nearby.some((point) => distance(point, site) < minimumSiteSeparation)
+          )
+            return false
+          nearby.push(site)
+          acceptedSites.set(heading, nearby)
+        }
+      }
       const key = JSON.stringify([
         plan.trace.route,
         plan.planeEndpointTrace?.route,
