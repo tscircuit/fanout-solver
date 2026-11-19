@@ -43,8 +43,25 @@ export function segmentIsClearOfObstacles(params: {
     obstacles,
     clearance,
   } = params
+  const segmentMinX = Math.min(segment.start.x, segment.end.x)
+  const segmentMaxX = Math.max(segment.start.x, segment.end.x)
+  const segmentMinY = Math.min(segment.start.y, segment.end.y)
+  const segmentMaxY = Math.max(segment.start.y, segment.end.y)
   for (const obstacle of obstacles) {
     if (!obstacle.layers.includes(segment.layer)) continue
+    // The half-width plus half-height contains every rotation of the obstacle.
+    const obstacleRadiusBound =
+      (Math.abs(obstacle.width) + Math.abs(obstacle.height)) / 2
+    const broadPhaseDistance =
+      obstacleRadiusBound + segment.width / 2 + clearance + 1e-9
+    if (
+      obstacle.center.x < segmentMinX - broadPhaseDistance ||
+      obstacle.center.x > segmentMaxX + broadPhaseDistance ||
+      obstacle.center.y < segmentMinY - broadPhaseDistance ||
+      obstacle.center.y > segmentMaxY + broadPhaseDistance
+    ) {
+      continue
+    }
     const violatesClearance =
       distanceSegmentToObstacle(segment, obstacle) <
       segment.width / 2 + clearance - 1e-9
