@@ -40,6 +40,6 @@ export function* getExpandedPlaneSourcePaths(
     })
     yield* getStraightOr45ConnectorVariants(source, site)
   }
-  if (collectingAlternatives)
+  if (collectingAlternatives && route.searchPlaneGeometry)
     yield* getPlaneGeometrySourcePaths(connection, route)
 }

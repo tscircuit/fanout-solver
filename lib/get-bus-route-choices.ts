@@ -63,6 +63,7 @@ export function getBusRouteChoices(
               ? route.bus
               : { ...route.bus, direction: domain.direction },
           targetLayer: domain.targetLayer,
+          searchPlaneGeometry: true,
         },
         choicesPerDomain,
       )

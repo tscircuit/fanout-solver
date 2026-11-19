@@ -35,7 +35,11 @@ function getPlaneTierAlternatives(
     candidateTier,
     planeCandidateSkipCount: 0,
     collectAlternative: (plan) => {
-      if (candidateTier === "expanded" && plan.via) {
+      if (
+        params.searchPlaneGeometry &&
+        candidateTier === "expanded" &&
+        plan.via
+      ) {
         const lead = plan.segments.find(
           (segment) =>
             segment.layer === plan.sourceLayer &&
