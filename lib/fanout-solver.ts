@@ -1,8 +1,10 @@
 import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
+import { getConnectionTraceWidth } from "./get-connection-trace-width"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
 import { routePeripheralBusesSteps } from "./route-peripheral-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { BaseSolver } from "@tscircuit/solver-utils"
+import { isOrdinaryMixedSingletonFanout } from "./is-ordinary-mixed-singleton-fanout"
 import { selectCompatibleCandidates } from "./select-compatible-candidates"
 import { refineAdaptivePlaneReservationCore } from "./refine-adaptive-plane-reservations"
 import { shouldUseAdaptiveDensePlaneRouting } from "./should-use-adaptive-dense-plane-routing"
@@ -1115,6 +1117,28 @@ export class FanoutSolver extends BaseSolver {
     }
     this.config = resolveConfig(inputSrj, options)
     this.preparedBuses = prepareFanoutBuses(this.routingSrj, options)
+    if (
+      isOrdinaryMixedSingletonFanout({
+        buses: this.preparedBuses,
+        densePlaneReservationBusIds: this.config.densePlaneReservationBusIds,
+        denseUnrestrictedPlaneRoutingBusIds:
+          this.config.denseUnrestrictedPlaneRoutingBusIds,
+      })
+    ) {
+      this.preparedBuses = this.preparedBuses.map((bus) => {
+        const singletonTraceWidth = getConnectionTraceWidth({
+          connection: bus.connections[0]!.connection,
+          defaultTraceWidth: this.config.traceWidth,
+          minimumTraceWidth: inputSrj.minTraceWidth,
+          configuredTraceWidth: options.traceWidth,
+        })
+        return {
+          ...bus,
+          singletonTraceWidth,
+          allowNeighboringPlaneViaSites: bus.termination.type === "plane",
+        }
+      })
+    }
     validateCornerBandCapacities(this.preparedBuses, this.config)
     for (const bus of this.preparedBuses) {
       for (const connection of bus.connections) {

@@ -1,4 +1,5 @@
 import { circleFitsInsideObstacle } from "../geometry"
+import { planeEscapeStartsInDirection } from "../plane-escape-starts-in-direction"
 import type { FanoutDirection, FanoutRoutePlan } from "../types"
 import { buildPlan } from "./build-plan"
 import {
@@ -25,6 +26,10 @@ export function routePlaneTerminatedBus(
     collectAlternative?: (plan: FanoutRoutePlan) => boolean
   },
 ): FanoutRoutePlan[] | null {
+  params = {
+    ...params,
+    traceWidth: params.bus.singletonTraceWidth ?? params.traceWidth,
+  }
   const {
     srj,
     bus,
@@ -46,6 +51,9 @@ export function routePlaneTerminatedBus(
   if (!sourceObstacle || bus.termination.type !== "plane") return null
   const sourceLayer = bus.connections[0]!.sourceLayer
   if (targetLayer === sourceLayer) return null
+  const requestedDirection = bus.allowNeighboringPlaneViaSites
+    ? bus.requestedDirection
+    : undefined
   const selection = {
     remainingPlaneCandidatesToSkip: planeCandidateSkipCount,
     collectAlternative: params.collectAlternative,
@@ -118,6 +126,11 @@ export function routePlaneTerminatedBus(
         {
           plans: plansToTry,
           isClear: (candidatePlan, candidateIndex) =>
+            (!requestedDirection ||
+              planeEscapeStartsInDirection(
+                candidatePlan,
+                requestedDirection,
+              )) &&
             planIsClear({
               plan: candidatePlan,
               otherPlans: [...acceptedPlans, ...fixedPlans],
@@ -199,6 +212,8 @@ export function routePlaneTerminatedBus(
       {
         plans: plansToTry,
         isClear: (candidatePlan, candidateIndex) =>
+          (!requestedDirection ||
+            planeEscapeStartsInDirection(candidatePlan, requestedDirection)) &&
           planIsClear({
             plan: candidatePlan,
             otherPlans: acceptedPlans,
@@ -331,6 +346,11 @@ export function routePlaneTerminatedBus(
               {
                 plans: plansToTry,
                 isClear: (candidatePlan, candidateIndex) =>
+                  (!requestedDirection ||
+                    planeEscapeStartsInDirection(
+                      candidatePlan,
+                      requestedDirection,
+                    )) &&
                   planIsClear({
                     plan: candidatePlan,
                     otherPlans: [...acceptedPlans, ...candidatePlans],

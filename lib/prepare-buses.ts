@@ -1271,6 +1271,7 @@ export function prepareFanoutBuses(
     }
     buses.push({
       busId: busSpec.busId,
+      requestedDirection: busSpec.direction,
       ...(busSpec.maxLengthSkew === undefined
         ? {}
         : { maxLengthSkew: busSpec.maxLengthSkew }),
