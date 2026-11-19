@@ -892,6 +892,7 @@ function prepareConnection(params: {
         y: targetPoint.y,
       },
       hasExplicitLayeredExitTarget: exitTargetPoint?.layer !== undefined,
+      hasExplicitExitTarget: exitTargetPoint !== undefined,
     }
   }
   throw new Error(
@@ -1313,6 +1314,7 @@ export function prepareFanoutBuses(
         ? {}
         : { maxLengthSkew: busSpec.maxLengthSkew }),
       direction: resolvedExit.direction,
+      requestedDirection: busSpec.direction,
       preferredExit: resolvedExit.preferredExit,
       ...(busSpec.exitEdge ? { exitEdge: busSpec.exitEdge } : {}),
       cornerBandConnectionCount: 0,
