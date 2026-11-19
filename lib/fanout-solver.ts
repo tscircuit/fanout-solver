@@ -6616,7 +6616,7 @@ export class FanoutSolver extends BaseSolver {
         this.bestAttempt.summary.routedConnectionCount
     ) {
       this.prioritizeFailedBusRepairs(
-        assignment,
+        attempt.summary.busLayerAssignments,
         attempt.summary.failedBusIds,
         attempt.blockingBusIds,
       )
