@@ -368,15 +368,16 @@ function getLayerLoadPenaltyWeight(config: ResolvedFanoutConfig): number {
   return config.balanceLayerLoadByConnectionCount ? 0.25 : 0.01
 }
 
-function comparePlaneRoutingPriority(
-  first: PreparedBus,
-  second: PreparedBus,
-  allowBlindAndBuriedVias: boolean,
-): number {
+function comparePlaneRoutingPriority(params: {
+  first: PreparedBus
+  second: PreparedBus
+  prioritizePlanes: boolean
+}): number {
+  const { first, second, prioritizePlanes } = params
   const planeDifference =
     Number(first.termination.type === "plane") -
     Number(second.termination.type === "plane")
-  return allowBlindAndBuriedVias ? -planeDifference : planeDifference
+  return prioritizePlanes ? -planeDifference : planeDifference
 }
 
 function getPlanViaCount(plans: readonly FanoutRoutePlan[]): number {
@@ -5712,6 +5713,8 @@ export class FanoutSolver extends BaseSolver {
       })
       yield
     }
+    const prioritizePlanes =
+      this.config.allowBlindAndBuriedVias || routingStrategy === "plane-first"
     const busesInRoutingOrder = [...this.preparedBuses].sort((a, b) => {
       const aUsesCoordinatedWinding = busUsesCoordinatedWinding(a)
       const bUsesCoordinatedWinding = busUsesCoordinatedWinding(b)
@@ -5722,12 +5725,7 @@ export class FanoutSolver extends BaseSolver {
         busLayerAssignments[b.busId] ?? "",
       )
       return (
-        comparePlaneRoutingPriority(
-          a,
-          b,
-          this.config.allowBlindAndBuriedVias ||
-            routingStrategy === "plane-first",
-        ) ||
+        comparePlaneRoutingPriority({ first: a, second: b, prioritizePlanes }) ||
         Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
         (aUsesCoordinatedWinding && bUsesCoordinatedWinding
           ? bLayerIndex - aLayerIndex
@@ -6106,11 +6104,11 @@ export class FanoutSolver extends BaseSolver {
           : (this.escapeLayersByBusId[b.busId]?.length ??
             this.config.escapeLayers.length)
       return (
-        comparePlaneRoutingPriority(
-          a,
-          b,
-          this.config.allowBlindAndBuriedVias,
-        ) ||
+        comparePlaneRoutingPriority({
+          first: a,
+          second: b,
+          prioritizePlanes: this.config.allowBlindAndBuriedVias,
+        }) ||
         Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
         (aUsesCoordinatedWinding && bUsesCoordinatedWinding
           ? getMaximumViaSpan(b) - getMaximumViaSpan(a)
