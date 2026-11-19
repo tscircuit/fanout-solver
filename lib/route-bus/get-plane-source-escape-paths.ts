@@ -1,4 +1,5 @@
 import type { Point2D } from "../types"
+import { getExpandedPlaneSourcePaths } from "./get-expanded-plane-source-paths"
 import {
   directionSign,
   getAxis,
@@ -19,15 +20,22 @@ export function getPlaneSourceEscapePaths(
   {
     preparedConnection,
     viaHandedness,
-  }: Pick<BuildPlanParams, "preparedConnection" | "viaHandedness">,
-  {
+    candidateTier = "ordinary",
+  }: Pick<BuildPlanParams, "preparedConnection" | "viaHandedness"> & {
+    candidateTier?: "ordinary" | "expanded"
+  },
+  route: RouteBusParams,
+): Point2D[][] {
+  const {
     bus: directionalBus,
     targetLayer,
     traceWidth,
     viaDiameter,
     clearance,
-  }: RouteBusParams,
-): Point2D[][] {
+  } = route
+  if (candidateTier === "expanded") {
+    return getExpandedPlaneSourcePaths(preparedConnection, route)
+  }
   const direction = directionalBus.direction
   const adjacentViaPoint = getInitialViaPoint({
     preparedConnection,
