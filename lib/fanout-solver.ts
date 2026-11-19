@@ -55,6 +55,7 @@ import {
   routeBusAlternativesSteps,
 } from "./route-bus"
 import { routePeripheralSourceEscapesSteps } from "./route-peripheral-source-escapes"
+import { repairFailedBusRoutesSteps } from "./repair-failed-bus-routes"
 import { routeStagedPerimeterBusSteps } from "./route-staged-perimeter-bus"
 import { routeReservedSourceBusesSteps } from "./route-reserved-source-buses"
 import { routeLayerReservedBusesSteps } from "./route-layer-reserved-buses"
@@ -1057,13 +1058,15 @@ function getCandidateEscapeLayersForBus(params: {
 
   // Existing plans only add clearance constraints, so a layer that cannot
   // route this bus by itself cannot become viable later in an assignment.
-  // Preserve the original candidates when none route so impossible problems
-  // still produce the usual failed-solver result instead of throwing here.
-  const candidateLayers =
-    individuallyRoutableLayers.length > 0
-      ? individuallyRoutableLayers
-      : allowedEscapeLayers
-  return candidateLayers
+  if (individuallyRoutableLayers.length > 0) return individuallyRoutableLayers
+  // Plain analytic tracks cannot gain static clearance from more copper.
+  // Keep one failed assignment; local route repair retains all allowed layers.
+  const canChangeTracksWithAcceptedCopper =
+    config.allowSameNetMerges ||
+    Boolean(getCornerBandSide(bus.exitEdge, bus.preferredExit))
+  return canChangeTracksWithAcceptedCopper
+    ? allowedEscapeLayers
+    : allowedEscapeLayers.slice(0, 1)
 }
 
 export class FanoutSolver extends BaseSolver {
@@ -5882,6 +5885,28 @@ export class FanoutSolver extends BaseSolver {
       yield
     }
 
+    if (
+      assignmentIndex === 0 &&
+      routingStrategy === "default" &&
+      !useSingleLayerPushAndShove &&
+      !mixedTerminationState &&
+      failedBusIds.length > 0
+    ) {
+      plans = yield* repairFailedBusRoutesSteps({
+        srj: this.routingSrj,
+        buses: this.preparedBuses,
+        plans,
+        maximumSearchStates: this.config.maxLayerCombinations,
+        routeConfig: {
+          ...this.config,
+          staticClearanceCache: this.routeStaticClearanceCache,
+        },
+      })
+      failedBusIds = this.preparedBuses
+        .filter((bus) => !plans.some((plan) => plan.busId === bus.busId))
+        .map((bus) => bus.busId)
+    }
+
     let validationIssues: FanoutAttemptSummary["validationIssues"]
     const stopAfterCompleteValidation =
       mixedTerminationState?.stopAfterCompleteValidation === true &&
@@ -5956,6 +5981,12 @@ export class FanoutSolver extends BaseSolver {
     }
 
     const routedBusCount = this.preparedBuses.length - failedBusIds.length
+    const routedBusLayerAssignments = {
+      ...busLayerAssignments,
+      ...Object.fromEntries(
+        plans.map((plan) => [plan.busId, plan.targetLayer]),
+      ),
+    }
     const routeLength = plans.reduce((total, plan) => total + plan.length, 0)
     const unroutedConnectionCount =
       this.inputSrj.connections.length - plans.length
@@ -5965,14 +5996,14 @@ export class FanoutSolver extends BaseSolver {
       routeLength +
       getPlanViaCount(plans) * 0.1 +
       assignmentLoadPenalty(
-        busLayerAssignments,
+        routedBusLayerAssignments,
         this.preparedBuses,
         this.config.balanceLayerLoadByConnectionCount,
       ) *
         getLayerLoadPenaltyWeight(this.config)
     const summary: FanoutAttemptSummary = {
       assignmentIndex,
-      busLayerAssignments,
+      busLayerAssignments: routedBusLayerAssignments,
       routedBusCount,
       routedConnectionCount: plans.length,
       failedBusIds,
@@ -5987,6 +6018,14 @@ export class FanoutSolver extends BaseSolver {
     return {
       summary,
       plans,
+      busDirections: {
+        ...Object.fromEntries(
+          this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
+        ),
+        ...Object.fromEntries(
+          plans.map((plan) => [plan.busId, plan.direction]),
+        ),
+      },
       ...(mixedTerminationState?.stopAfterCompleteValidation &&
       validation?.valid
         ? { stopAfterCompleteValidation: true as const }
@@ -6571,7 +6610,7 @@ export class FanoutSolver extends BaseSolver {
         this.bestAttempt.summary.routedConnectionCount
     ) {
       this.prioritizeFailedBusRepairs(
-        assignment,
+        attempt.summary.busLayerAssignments,
         attempt.summary.failedBusIds,
         attempt.blockingBusIds,
       )
@@ -6880,9 +6919,11 @@ export class FanoutSolver extends BaseSolver {
           : [],
       ),
       busLayerAssignments: this.bestAttempt.summary.busLayerAssignments,
-      busDirections: Object.fromEntries(
-        this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
-      ),
+      busDirections:
+        this.bestAttempt.busDirections ??
+        Object.fromEntries(
+          this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
+        ),
       attempts: [...this.attempts],
       validation,
     }

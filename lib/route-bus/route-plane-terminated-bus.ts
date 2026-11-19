@@ -296,14 +296,18 @@ export function routePlaneTerminatedBus(
             direction,
           )
           const sourceEscapePaths = getPlaneSourceEscapePaths(
-            { preparedConnection, viaHandedness, candidateTier },
+            {
+              preparedConnection,
+              viaHandedness,
+              candidateTier,
+              collectingAlternatives: Boolean(params.collectAlternative),
+            },
             { ...params, bus: directionalBus },
           )
           let plan: FanoutRoutePlan | undefined
-          for (const [
-            pathIndex,
-            sourceEscapePath,
-          ] of sourceEscapePaths.entries()) {
+          let pathIndex = -1
+          for (const sourceEscapePath of sourceEscapePaths) {
+            pathIndex++
             const endpointViaCandidates = getPlaneEndpointViaCandidates({
               preparedConnection,
               bus: directionalBus,
