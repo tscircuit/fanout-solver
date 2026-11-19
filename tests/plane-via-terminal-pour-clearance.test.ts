@@ -47,7 +47,10 @@ test("native plane via eligibility respects terminal pours", async () => {
     ).toBe(true)
   }
   const via = plan.via!
-  for (const [offset, expected] of [[0, true], [1, false]] as const) {
+  for (const [offset, expected] of [
+    [0, true],
+    [1, false],
+  ] as const) {
     const ownPlane = {
       type: "rect" as const,
       isCopperPour: true,

@@ -19,11 +19,13 @@ test("ordinary fanout honors requested widths and an explicit override", () => {
     )
     solver.solve()
     expect(solver.solved).toBe(true)
-    const widths = solver.getOutput().fanoutTraces.flatMap((trace) =>
-      trace.route.flatMap((point) =>
-        point.route_type === "wire" ? [point.width] : [],
-      ),
-    )
+    const widths = solver
+      .getOutput()
+      .fanoutTraces.flatMap((trace) =>
+        trace.route.flatMap((point) =>
+          point.route_type === "wire" ? [point.width] : [],
+        ),
+      )
     expect(new Set(widths)).toEqual(new Set([expectedWidth]))
   }
 
