@@ -9,6 +9,14 @@ import type { RouteBusAlternativesProgress, RouteBusParams } from "./types"
 
 type PlaneAlternativeKey = string
 
+function getPlaneAlternativeKey(
+  plans: readonly FanoutRoutePlan[],
+): PlaneAlternativeKey {
+  return JSON.stringify(
+    plans.map((plan) => [plan.trace.route, plan.planeEndpointTrace?.route]),
+  )
+}
+
 function getPlaneTierAlternatives(
   {
     candidateTier,
@@ -23,11 +31,8 @@ function getPlaneTierAlternatives(
     candidateTier,
     planeCandidateSkipCount: 0,
     collectAlternative: (plan) => {
-      const key = JSON.stringify([
-        plan.trace.route,
-        plan.planeEndpointTrace?.route,
-      ])
-      if (seen.has(key)) return false
+      const key = getPlaneAlternativeKey([plan])
+      if (candidateTier === "expanded" && seen.has(key)) return false
       seen.add(key)
       alternatives.push([plan])
       return alternatives.length >= maxAlternatives
@@ -80,27 +85,22 @@ export function* routeBusAlternativesSteps(
         { candidateTier: "ordinary", maxAlternatives },
         params,
       )
+      if (ordinary.length === maxAlternatives) return ordinary
       const expanded = getPlaneTierAlternatives(
         { candidateTier: "expanded", maxAlternatives },
         params,
       )
-      // Keep the legacy winner first and give both search domains room.
-      const seen = new Set<PlaneAlternativeKey>()
-      for (let index = 0; alternatives.length < maxAlternatives; index++) {
-        if (!ordinary[index] && !expanded[index]) break
-        for (const candidate of [ordinary[index], expanded[index]]) {
-          if (!candidate) continue
-          const key = JSON.stringify(
-            candidate.map((plan) => [
-              plan.trace.route,
-              plan.planeEndpointTrace?.route,
-            ]),
-          )
-          if (seen.has(key)) continue
-          seen.add(key)
-          alternatives.push(candidate)
-          if (alternatives.length >= maxAlternatives) break
-        }
+      // Preserve the published prefix, including repeated legacy candidates.
+      alternatives.push(...ordinary)
+      const seen = new Set<PlaneAlternativeKey>(
+        ordinary.map(getPlaneAlternativeKey),
+      )
+      for (const candidate of expanded) {
+        const key = getPlaneAlternativeKey(candidate)
+        if (seen.has(key)) continue
+        seen.add(key)
+        alternatives.push(candidate)
+        if (alternatives.length >= maxAlternatives) break
       }
       return alternatives
     }
