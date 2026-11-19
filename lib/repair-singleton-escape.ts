@@ -27,7 +27,7 @@ export function repairSingletonEscape(params: {
       staticClearanceCache: undefined,
       blockingBusCounts: undefined,
     },
-    8,
+    2,
   )
   for (const [addition] of alternatives) {
     if (!addition) throw new Error("Expected one plan for a singleton escape")
@@ -57,7 +57,7 @@ export function repairSingletonEscape(params: {
           staticClearanceCache: undefined,
           blockingBusCounts: undefined,
         },
-        8,
+        2,
       ).map(([replacement]) => {
         if (!replacement)
           throw new Error("Expected one plan for a singleton replacement")

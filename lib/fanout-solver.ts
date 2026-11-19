@@ -5821,6 +5821,8 @@ export class FanoutSolver extends BaseSolver {
 
     let routingPrefixKey = `${routingStrategy}|`
     let routedBusIndex = 0
+    let remainingSingletonRepairs =
+      assignmentIndex === 0 && routingStrategy === "default" ? 3 : 0
     for (const bus of useSingleLayerPushAndShove || mixedTerminationState
       ? []
       : busesInRoutingOrder) {
@@ -5871,13 +5873,20 @@ export class FanoutSolver extends BaseSolver {
         blockingBusCounts: currentBusBlockingCounts,
       }
       const busPlans = routeBus(routeParams)
-      const repairedPlans =
-        !busPlans && currentBusBlockingCounts.size > 0
-          ? repairSingletonEscape({
-              route: routeParams,
-              buses: this.preparedBuses,
-            })
-          : null
+      let repairedPlans: FanoutRoutePlan[] | null = null
+      if (
+        !busPlans &&
+        currentBusBlockingCounts.size > 0 &&
+        remainingSingletonRepairs > 0 &&
+        this.config.densePlaneReservationBusIds.length === 0 &&
+        this.config.denseUnrestrictedPlaneRoutingBusIds.length === 0
+      ) {
+        remainingSingletonRepairs--
+        repairedPlans = repairSingletonEscape({
+          route: routeParams,
+          buses: this.preparedBuses,
+        })
+      }
       const nextPlans = busPlans
         ? [...plans, ...busPlans]
         : repairedPlans
