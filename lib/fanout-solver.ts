@@ -56,6 +56,7 @@ import {
   routeBusAlternativesSteps,
 } from "./route-bus"
 import { routePeripheralSourceEscapesSteps } from "./route-peripheral-source-escapes"
+import { routeCompatibleSingletonEscapesSteps } from "./route-compatible-singleton-escapes"
 import { routeStagedPerimeterBusSteps } from "./route-staged-perimeter-bus"
 import { routeReservedSourceBusesSteps } from "./route-reserved-source-buses"
 import { routeLayerReservedBusesSteps } from "./route-layer-reserved-buses"
@@ -124,7 +125,11 @@ interface MixedTerminationState {
   stopAfterCompleteValidation?: true
 }
 
-type RoutingStrategy = "default" | "group-by-layer" | "deep-first"
+type RoutingStrategy =
+  | "default"
+  | "group-by-layer"
+  | "deep-first"
+  | "compatible-singletons"
 
 type FanoutWorkYield = undefined | SubsolverRequest
 
@@ -5814,11 +5819,33 @@ export class FanoutSolver extends BaseSolver {
       }
     }
 
+    if (routingStrategy === "compatible-singletons") {
+      const compatiblePlans = yield* routeCompatibleSingletonEscapesSteps({
+        srj: this.routingSrj,
+        buses: this.preparedBuses,
+        busLayerAssignments,
+        routeConfig: {
+          ...this.config,
+          staticClearanceCache: this.routeStaticClearanceCache,
+        },
+      })
+      mixedTerminationState = {
+        plans: compatiblePlans,
+        failedBusIds: this.preparedBuses
+          .filter(
+            (bus) => !compatiblePlans.some((plan) => plan.busId === bus.busId),
+          )
+          .map((bus) => bus.busId),
+      }
+    }
     if (mixedTerminationState) {
       plans = mixedTerminationState.plans
       failedBusIds = mixedTerminationState.failedBusIds
       this.setInProgressPlans({
-        phase: "route-dense-mixed-terminations",
+        phase:
+          routingStrategy === "compatible-singletons"
+            ? "route-compatible-singletons"
+            : "route-dense-mixed-terminations",
         plans,
         strategy: routingStrategy,
         unitIndex: this.preparedBuses.length,
@@ -5979,6 +6006,15 @@ export class FanoutSolver extends BaseSolver {
     }
 
     const routedBusCount = this.preparedBuses.length - failedBusIds.length
+    const routedBusLayerAssignments =
+      routingStrategy === "compatible-singletons"
+        ? {
+            ...busLayerAssignments,
+            ...Object.fromEntries(
+              plans.map((plan) => [plan.busId, plan.targetLayer]),
+            ),
+          }
+        : busLayerAssignments
     const routeLength = plans.reduce((total, plan) => total + plan.length, 0)
     const unroutedConnectionCount =
       this.inputSrj.connections.length - plans.length
@@ -5988,14 +6024,14 @@ export class FanoutSolver extends BaseSolver {
       routeLength +
       getPlanViaCount(plans) * 0.1 +
       assignmentLoadPenalty(
-        busLayerAssignments,
+        routedBusLayerAssignments,
         this.preparedBuses,
         this.config.balanceLayerLoadByConnectionCount,
       ) *
         getLayerLoadPenaltyWeight(this.config)
     const summary: FanoutAttemptSummary = {
       assignmentIndex,
-      busLayerAssignments,
+      busLayerAssignments: routedBusLayerAssignments,
       routedBusCount,
       routedConnectionCount: plans.length,
       failedBusIds,
@@ -6010,6 +6046,18 @@ export class FanoutSolver extends BaseSolver {
     return {
       summary,
       plans,
+      ...(routingStrategy === "compatible-singletons"
+        ? {
+            busDirections: {
+              ...Object.fromEntries(
+                this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
+              ),
+              ...Object.fromEntries(
+                plans.map((plan) => [plan.busId, plan.direction]),
+              ),
+            },
+          }
+        : {}),
       ...(mixedTerminationState?.stopAfterCompleteValidation &&
       validation?.valid
         ? { stopAfterCompleteValidation: true as const }
@@ -6040,7 +6088,16 @@ export class FanoutSolver extends BaseSolver {
       return bestAttempt
     }
 
-    for (const routingStrategy of ["group-by-layer", "deep-first"] as const) {
+    const strategies: RoutingStrategy[] = ["group-by-layer", "deep-first"]
+    const tryCompatibleSingletons =
+      assignmentIndex === 0 &&
+      !this.config.allowBlindAndBuriedVias &&
+      isOrdinaryMixedSingletonFanout({
+        ...this.config,
+        buses: this.preparedBuses,
+      })
+    if (tryCompatibleSingletons) strategies.push("compatible-singletons")
+    for (const routingStrategy of strategies) {
       const attempt = yield* this.evaluateAssignmentWithStrategySteps(
         assignmentIndex,
         busLayerAssignments,
@@ -6903,9 +6960,11 @@ export class FanoutSolver extends BaseSolver {
           : [],
       ),
       busLayerAssignments: this.bestAttempt.summary.busLayerAssignments,
-      busDirections: Object.fromEntries(
-        this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
-      ),
+      busDirections:
+        this.bestAttempt.busDirections ??
+        Object.fromEntries(
+          this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
+        ),
       attempts: [...this.attempts],
       validation,
     }
