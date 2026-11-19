@@ -3,10 +3,7 @@ import {
   createFanoutPlanClearanceValidator,
   type RouteBusParams,
 } from "./route-bus"
-import {
-  getOrdinarySingletonCandidates,
-  getSingletonRouteCandidates,
-} from "./get-singleton-route-candidates"
+import { getSingletonRouteCandidates } from "./get-singleton-route-candidates"
 import type { BusId } from "./route-bus/types"
 import {
   repairCompatibleSingletonEscapes,
@@ -69,25 +66,6 @@ export function routeCompatibleSingletonEscapes(params: {
         ),
       )
       .filter((candidates) => candidates.length > 0)
-  }
-  for (const bus of buses.toSorted(
-    (first, second) =>
-      Number(second.termination.type === "plane") -
-      Number(first.termination.type === "plane"),
-  )) {
-    if (accepted.some((plan) => plan.busId === bus.busId)) continue
-    const route = {
-      ...routeConfig,
-      srj,
-      bus,
-      targetLayer: busLayerAssignments[bus.busId]!,
-      acceptedPlans: accepted,
-    }
-    for (const plan of getOrdinarySingletonCandidates(route, 1)) {
-      accepted.push(plan)
-      context.candidatesByBus.get(bus.busId)!.push(plan)
-      break
-    }
   }
   accepted = repairCompatibleSingletonEscapes(accepted, context)
   if (!context.clearPlans(accepted))
