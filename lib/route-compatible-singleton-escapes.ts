@@ -8,10 +8,10 @@ import {
   getSingletonRouteCandidates,
 } from "./get-singleton-route-candidates"
 import type { BusId } from "./route-bus/types"
-import {
-  repairCompatibleSingletonEscapes,
-  type SingletonEscapeContext,
-} from "./repair-compatible-singleton-escapes"
+type SingletonEscapeContext = {
+  candidatesByBus: Map<BusId, FanoutRoutePlan[]>
+  clearPlans: ReturnType<typeof createFanoutPlanClearanceValidator>
+}
 import type { FanoutRoutePlan, PreparedBus } from "./types"
 
 export function routeCompatibleSingletonEscapes(params: {
@@ -89,7 +89,6 @@ export function routeCompatibleSingletonEscapes(params: {
       break
     }
   }
-  accepted = repairCompatibleSingletonEscapes(accepted, context)
   if (!context.clearPlans(accepted))
     throw new Error("Compatible singleton candidates produced invalid copper")
   return accepted
