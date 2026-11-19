@@ -23,10 +23,14 @@ export function repairBusRouteComponent(
   let selection = [addition]
   while (component.size > 0) {
     if (context.remainingSearchStates <= 0) return
-    const domains = [...component].map((busId) => [
-      acceptedByBus.get(busId)!,
-      ...getCachedBusRouteChoices(busId, context),
-    ])
+    const domains = [...component].map((busId) =>
+      [
+        acceptedByBus.get(busId)!,
+        ...getCachedBusRouteChoices(busId, context),
+      ].filter((plans) =>
+        context.clearPlans.mutuallyClear([...addition, ...plans]),
+      ),
+    )
     const choicesPerBus = Math.max(
       1,
       Math.floor(context.maximumChoices / domains.length),
