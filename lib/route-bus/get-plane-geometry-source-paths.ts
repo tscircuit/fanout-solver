@@ -12,6 +12,8 @@ export function* getPlaneGeometrySourcePaths(
   route: RouteBusParams,
 ): Generator<Point2D[]> {
   const { srj, bus, targetLayer, traceWidth } = route
+  if (bus.requestedDirection && bus.direction !== bus.requestedDirection)
+    return
   if (
     bus.termination.type !== "plane" ||
     bus.connections.length !== 1 ||
