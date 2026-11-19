@@ -1,5 +1,6 @@
 import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
 import { getTraceWidth } from "./get-trace-width"
+import { canEnumerateIndependentBusRoutes } from "./can-enumerate-independent-bus-routes"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
 import { routePeripheralBusesSteps } from "./route-peripheral-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
@@ -367,15 +368,16 @@ function getLayerLoadPenaltyWeight(config: ResolvedFanoutConfig): number {
   return config.balanceLayerLoadByConnectionCount ? 0.25 : 0.01
 }
 
-function comparePlaneRoutingPriority(
-  first: PreparedBus,
-  second: PreparedBus,
-  allowBlindAndBuriedVias: boolean,
-): number {
+function comparePlaneRoutingPriority(params: {
+  first: PreparedBus
+  second: PreparedBus
+  planesFirst: boolean
+}): number {
+  const { first, second, planesFirst } = params
   const planeDifference =
     Number(first.termination.type === "plane") -
     Number(second.termination.type === "plane")
-  return allowBlindAndBuriedVias ? -planeDifference : planeDifference
+  return planesFirst ? -planeDifference : planeDifference
 }
 
 function getPlanViaCount(plans: readonly FanoutRoutePlan[]): number {
@@ -5714,6 +5716,10 @@ export class FanoutSolver extends BaseSolver {
       })
       yield
     }
+    const planesFirst =
+      this.config.allowBlindAndBuriedVias ||
+      (routingStrategy === "deep-first" &&
+        this.preparedBuses.every(canEnumerateIndependentBusRoutes))
     const busesInRoutingOrder = [...this.preparedBuses].sort((a, b) => {
       const aUsesCoordinatedWinding = busUsesCoordinatedWinding(a)
       const bUsesCoordinatedWinding = busUsesCoordinatedWinding(b)
@@ -5724,11 +5730,7 @@ export class FanoutSolver extends BaseSolver {
         busLayerAssignments[b.busId] ?? "",
       )
       return (
-        comparePlaneRoutingPriority(
-          a,
-          b,
-          this.config.allowBlindAndBuriedVias,
-        ) ||
+        comparePlaneRoutingPriority({ first: a, second: b, planesFirst }) ||
         Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
         (aUsesCoordinatedWinding && bUsesCoordinatedWinding
           ? bLayerIndex - aLayerIndex
@@ -6133,11 +6135,11 @@ export class FanoutSolver extends BaseSolver {
           : (this.escapeLayersByBusId[b.busId]?.length ??
             this.config.escapeLayers.length)
       return (
-        comparePlaneRoutingPriority(
-          a,
-          b,
-          this.config.allowBlindAndBuriedVias,
-        ) ||
+        comparePlaneRoutingPriority({
+          first: a,
+          second: b,
+          planesFirst: this.config.allowBlindAndBuriedVias,
+        }) ||
         Number(bUsesCoordinatedWinding) - Number(aUsesCoordinatedWinding) ||
         (aUsesCoordinatedWinding && bUsesCoordinatedWinding
           ? getMaximumViaSpan(b) - getMaximumViaSpan(a)

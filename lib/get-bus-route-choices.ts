@@ -1,8 +1,5 @@
 import { routeBusAlternatives, type RouteBusParams } from "./route-bus"
-import {
-  busUsesCoordinatedWindingChannel,
-  getCornerSide,
-} from "./route-bus/directions"
+import { canEnumerateIndependentBusRoutes } from "./can-enumerate-independent-bus-routes"
 import type { FanoutDirection, FanoutRoutePlan, PreparedBus } from "./types"
 
 type BusRouteKey = string
@@ -41,13 +38,7 @@ export function getBusRouteChoices(
   route: Omit<RouteBusParams, "targetLayer">,
   maximumChoices: number,
 ): FanoutRoutePlan[][] {
-  // Winding vias and packed corner lane offsets require coordinated context.
-  // Their existing routing paths must plan them against accepted copper.
-  if (
-    busUsesCoordinatedWindingChannel(route.bus) ||
-    (route.bus.termination.type === "boundary" && getCornerSide(route.bus))
-  )
-    return []
+  if (!canEnumerateIndependentBusRoutes(route.bus)) return []
   const headings = getAllowedHeadings(route.bus)
   const layers = getAllowedLayers(route.bus)
   const choices = headings.flatMap((direction) =>
