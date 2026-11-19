@@ -1,0 +1,27 @@
+name: Export reviewed macOS snapshot
+on:
+  push:
+    branches: [codex/concerns-mac-artifact-2427]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-snapshots-6
+          run-id: 44622847827
+          github-token: ${{ github.token }}
+          path: received
+      - name: Export exact SVG
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib
+          from pathlib import Path
+          for path in Path('received').rglob('*.actual.svg'):
+              data = path.read_bytes()
+              print('MAC_SVG_SHA256 ' + path.name + ' ' + hashlib.sha256(data).hexdigest())
+              print('MAC_SVG_BASE64 ' + base64.b64encode(data).decode())
+          PY
