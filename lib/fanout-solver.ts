@@ -32,6 +32,7 @@ import {
 import { matchBusPlanLengths } from "./match-bus-lengths"
 import { normalizeFanoutPlanCorners } from "./normalize-fanout-plan-corners"
 import { repairSourcePadReentries } from "./repair-source-pad-reentries"
+import { repairSingletonEscape } from "./repair-singleton-escape"
 import { getSourcePadReentries } from "./source-pad-reentry"
 import {
   getComponentDogboneViaSiteCandidates,
@@ -5853,7 +5854,7 @@ export class FanoutSolver extends BaseSolver {
         continue
       }
       const currentBusBlockingCounts = new Map<string, number>()
-      const busPlans = routeBus({
+      const routeParams = {
         srj: this.routingSrj,
         bus,
         targetLayer,
@@ -5868,8 +5869,12 @@ export class FanoutSolver extends BaseSolver {
         allowSameNetMerges: this.config.allowSameNetMerges,
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
-      })
-      if (!busPlans) {
+      }
+      const busPlans = routeBus(routeParams)
+      const nextPlans = busPlans
+        ? [...plans, ...busPlans]
+        : repairSingletonEscape({ route: routeParams, buses: this.preparedBuses })
+      if (!nextPlans) {
         failedBusIds.push(bus.busId)
         for (const [blockingBusId, count] of currentBusBlockingCounts) {
           blockingBusCounts.set(
@@ -5878,7 +5883,7 @@ export class FanoutSolver extends BaseSolver {
           )
         }
       } else {
-        plans.push(...busPlans)
+        plans = nextPlans
       }
       this.routingPrefixCache.set(routingPrefixKey, {
         plans: [...plans],
