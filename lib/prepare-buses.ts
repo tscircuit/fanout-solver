@@ -8,6 +8,7 @@ import { borderTargetIncludesEdge, getCornerBandSide } from "./boundary-exit"
 import { getFanoutExitPositionConfig } from "./fanout-exit-position"
 import { getBusTraceWidth } from "./get-bus-trace-width"
 import { distance, pointIsInsideObstacle } from "./geometry"
+import { inferBoundaryContactDirection } from "./infer-boundary-contact-direction"
 import type {
   Bounds,
   FanoutAvailableCornerAndSideInput,
@@ -1096,6 +1097,7 @@ function validateExplicitExitAvailability(params: {
 function resolveBusDirection(params: {
   busId: string
   explicitDirection?: FanoutDirection
+  boundaryContactDirection?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   connections: PreparedConnection[]
   sharedBoundary: Bounds
@@ -1104,6 +1106,7 @@ function resolveBusDirection(params: {
   const {
     busId,
     explicitDirection,
+    boundaryContactDirection,
     preferredExit,
     connections,
     sharedBoundary,
@@ -1121,7 +1124,10 @@ function resolveBusDirection(params: {
   }
   if (!preferredExit) {
     return {
-      direction: explicitDirection ?? inferDirection(busId, connections),
+      direction:
+        explicitDirection ??
+        boundaryContactDirection ??
+        inferDirection(busId, connections),
     }
   }
 
@@ -1253,10 +1259,18 @@ export function prepareFanoutBuses(
       },
       { srj, configuredTraceWidth: options.traceWidth },
     )
+    const boundaryContactDirection =
+      busSpec.termination?.type === "plane"
+        ? undefined
+        : inferBoundaryContactDirection({
+            connections: preparedConnections,
+            sharedBoundary,
+          })
     const resolvedExit = resolveBusDirection({
       busId: busSpec.busId,
       explicitDirection:
         busSpec.direction ?? options.busDirections?.[busSpec.busId],
+      boundaryContactDirection,
       preferredExit: busSpec.preferredExit,
       connections: preparedConnections,
       sharedBoundary,
