@@ -19,6 +19,7 @@ import {
   obstacleSharesElectricalNet,
 } from "./net-identity"
 import type {
+  Bounds,
   FanoutRoutePlan,
   Point2D,
   PreparedBus,
@@ -235,7 +236,7 @@ type ShapeAwareObstacle = Obstacle & {
   ccwRotationDegrees?: number
 }
 
-function getObstacleAxisAlignedBounds(
+export function getObstacleAxisAlignedBounds(
   obstacle: Obstacle,
 ): Omit<IndexedObstacle, "obstacle"> {
   const shapeAwareObstacle = obstacle as ShapeAwareObstacle
@@ -292,12 +293,20 @@ export class ObstacleSpatialIndex {
   }
 
   querySegment(segment: RoutedSegment, margin: number): Obstacle[] {
-    const segmentMinX = Math.min(segment.start.x, segment.end.x)
-    const segmentMaxX = Math.max(segment.start.x, segment.end.x)
-    const segmentMinY = Math.min(segment.start.y, segment.end.y)
-    const segmentMaxY = Math.max(segment.start.y, segment.end.y)
-    const minimumCenterX = segmentMinX - margin - this.maximumXRadius
-    const maximumCenterX = segmentMaxX + margin + this.maximumXRadius
+    return this.queryBounds(
+      {
+        minX: Math.min(segment.start.x, segment.end.x),
+        maxX: Math.max(segment.start.x, segment.end.x),
+        minY: Math.min(segment.start.y, segment.end.y),
+        maxY: Math.max(segment.start.y, segment.end.y),
+      },
+      margin,
+    )
+  }
+
+  queryBounds(bounds: Bounds, margin: number): Obstacle[] {
+    const minimumCenterX = bounds.minX - margin - this.maximumXRadius
+    const maximumCenterX = bounds.maxX + margin + this.maximumXRadius
     let low = 0
     let high = this.obstaclesByCenterX.length
     while (low < high) {
@@ -318,10 +327,10 @@ export class ObstacleSpatialIndex {
       const indexedObstacle = this.obstaclesByCenterX[obstacleIndex]!
       if (indexedObstacle.obstacle.center.x > maximumCenterX) break
       if (
-        indexedObstacle.maxX < segmentMinX - margin ||
-        indexedObstacle.minX > segmentMaxX + margin ||
-        indexedObstacle.maxY < segmentMinY - margin ||
-        indexedObstacle.minY > segmentMaxY + margin
+        indexedObstacle.maxX < bounds.minX - margin ||
+        indexedObstacle.minX > bounds.maxX + margin ||
+        indexedObstacle.maxY < bounds.minY - margin ||
+        indexedObstacle.minY > bounds.maxY + margin
       ) {
         continue
       }
