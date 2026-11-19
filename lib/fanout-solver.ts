@@ -5993,7 +5993,9 @@ export class FanoutSolver extends BaseSolver {
     const routedBusCount = this.preparedBuses.length - failedBusIds.length
     const routedBusLayerAssignments = {
       ...busLayerAssignments,
-      ...Object.fromEntries(plans.map((plan) => [plan.busId, plan.targetLayer])),
+      ...Object.fromEntries(
+        plans.map((plan) => [plan.busId, plan.targetLayer]),
+      ),
     }
     const routeLength = plans.reduce((total, plan) => total + plan.length, 0)
     const unroutedConnectionCount =
@@ -6030,7 +6032,9 @@ export class FanoutSolver extends BaseSolver {
         ...Object.fromEntries(
           this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
         ),
-        ...Object.fromEntries(plans.map((plan) => [plan.busId, plan.direction])),
+        ...Object.fromEntries(
+          plans.map((plan) => [plan.busId, plan.direction]),
+        ),
       },
       ...(mixedTerminationState?.stopAfterCompleteValidation &&
       validation?.valid
