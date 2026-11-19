@@ -30,6 +30,7 @@ export function* repairFailedBusRoutesSteps(params: {
   buses: readonly PreparedBus[]
   plans: FanoutRoutePlan[]
   maximumSearchStates: number
+  choicesByBus: Map<BusId, FanoutRoutePlan[][]>
   routeConfig: Omit<
     RouteBusParams,
     "srj" | "bus" | "targetLayer" | "acceptedPlans"
@@ -39,7 +40,7 @@ export function* repairFailedBusRoutesSteps(params: {
   let accepted = params.plans
   const context: BusRouteRepairContext = {
     busesById: new Map(buses.map((bus) => [bus.busId, bus])),
-    choicesByBus: new Map(),
+    choicesByBus: params.choicesByBus,
     route: { ...routeConfig, srj },
     clearPlans: createFanoutPlanClearanceValidator({
       ...routeConfig,
