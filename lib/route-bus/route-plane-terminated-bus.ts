@@ -53,11 +53,7 @@ export function routePlaneTerminatedBus(
     (fixedViaPointsByConnectionIndex || params.sourceEscapePaths)
   )
     return null
-  const requestedDirection =
-    bus.connections.length === 1 &&
-    bus.connections[0]!.connection.pointsToConnect.length === 1
-      ? bus.requestedDirection
-      : undefined
+  const requestedDirection = bus.requestedDirection
   const selection = {
     remainingPlaneCandidatesToSkip: planeCandidateSkipCount,
     collectAlternative: params.collectAlternative,
