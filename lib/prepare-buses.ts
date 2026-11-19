@@ -6,6 +6,7 @@ import type {
 } from "@tscircuit/capacity-autorouter"
 import { borderTargetIncludesEdge, getCornerBandSide } from "./boundary-exit"
 import { getFanoutExitPositionConfig } from "./fanout-exit-position"
+import { getBusTraceWidth } from "./get-bus-trace-width"
 import { distance, pointIsInsideObstacle } from "./geometry"
 import type {
   Bounds,
@@ -1244,6 +1245,13 @@ export function prepareFanoutBuses(
         `FanoutSolver: bus "${busSpec.busId}" exitEdge "${busSpec.exitEdge}" is incompatible with preferredExit "${busSpec.preferredExit}"`,
       )
     }
+    const traceWidth = getBusTraceWidth(
+      {
+        busId: busSpec.busId,
+        connections: preparedConnections.map(({ connection }) => connection),
+      },
+      { srj, configuredTraceWidth: options.traceWidth },
+    )
     const resolvedExit = resolveBusDirection({
       busId: busSpec.busId,
       explicitDirection:
@@ -1271,6 +1279,7 @@ export function prepareFanoutBuses(
     }
     buses.push({
       busId: busSpec.busId,
+      traceWidth,
       requestedDirection: busSpec.direction,
       ...(busSpec.maxLengthSkew === undefined
         ? {}

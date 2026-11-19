@@ -1,5 +1,5 @@
 import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
-import { getConnectionTraceWidth } from "./get-connection-trace-width"
+import { getTraceWidth } from "./get-trace-width"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
 import { routePeripheralBusesSteps } from "./route-peripheral-buses"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
@@ -220,10 +220,10 @@ function resolveConfig(
   srj: SimpleRouteJson,
   options: FanoutSolverOptions,
 ): ResolvedFanoutConfig {
-  const traceWidth = resolvePositiveNumber(
-    "traceWidth",
-    options.traceWidth ?? srj.nominalTraceWidth ?? srj.minTraceWidth,
-  )
+  const traceWidth = getTraceWidth({
+    srj,
+    configuredTraceWidth: options.traceWidth,
+  })
   const viaDiameter = resolvePositiveNumber(
     "viaDiameter",
     options.viaDiameter ??
@@ -1125,19 +1125,10 @@ export class FanoutSolver extends BaseSolver {
           this.config.denseUnrestrictedPlaneRoutingBusIds,
       })
     ) {
-      this.preparedBuses = this.preparedBuses.map((bus) => {
-        const singletonTraceWidth = getConnectionTraceWidth({
-          connection: bus.connections[0]!.connection,
-          defaultTraceWidth: this.config.traceWidth,
-          minimumTraceWidth: inputSrj.minTraceWidth,
-          configuredTraceWidth: options.traceWidth,
-        })
-        return {
-          ...bus,
-          singletonTraceWidth,
-          allowNeighboringPlaneViaSites: bus.termination.type === "plane",
-        }
-      })
+      this.preparedBuses = this.preparedBuses.map((bus) => ({
+        ...bus,
+        allowNeighboringPlaneViaSites: bus.termination.type === "plane",
+      }))
     }
     validateCornerBandCapacities(this.preparedBuses, this.config)
     for (const bus of this.preparedBuses) {
