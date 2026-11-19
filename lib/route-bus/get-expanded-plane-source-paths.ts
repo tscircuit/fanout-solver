@@ -11,7 +11,10 @@ import { getStraightOr45ConnectorVariants } from "./source-escape"
 import type { RouteBusParams } from "./types"
 
 export function* getExpandedPlaneSourcePaths(
-  connection: PreparedConnection,
+  {
+    connection,
+    collectingAlternatives,
+  }: { connection: PreparedConnection; collectingAlternatives: boolean },
   route: RouteBusParams,
 ): Generator<Point2D[]> {
   if (
@@ -36,5 +39,6 @@ export function* getExpandedPlaneSourcePaths(
     })
     yield* getStraightOr45ConnectorVariants(source, site)
   }
-  yield* getPlaneGeometrySourcePaths(connection, route)
+  if (collectingAlternatives)
+    yield* getPlaneGeometrySourcePaths(connection, route)
 }
