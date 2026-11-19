@@ -331,6 +331,8 @@ export interface PreparedConnection {
 }
 
 export interface PreparedBus {
+  /** Requested conductor width shared by every connection in the bus. */
+  traceWidth?: number
   busId: string
   /** Maximum permitted routed copper length difference in millimeters. */
   maxLengthSkew?: number
