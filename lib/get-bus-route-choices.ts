@@ -4,6 +4,12 @@ import type { FanoutDirection, FanoutRoutePlan, PreparedBus } from "./types"
 
 type BusRouteKey = string
 
+type BusRouteDomain = {
+  direction: FanoutDirection
+  targetLayer: string
+  alternatives?: FanoutRoutePlan[][]
+}
+
 function getAllowedHeadings(bus: PreparedBus): readonly FanoutDirection[] {
   if (
     bus.termination.type === "plane" ||
@@ -41,28 +47,26 @@ export function getBusRouteChoices(
   if (!canEnumerateIndependentBusRoutes(route.bus)) return []
   const headings = getAllowedHeadings(route.bus)
   const layers = getAllowedLayers(route.bus)
-  const choices = headings.flatMap((direction) =>
+  const domains: BusRouteDomain[] = headings.flatMap((direction) =>
     layers.map((targetLayer) => ({ direction, targetLayer })),
   )
-  if (choices.length === 0) return []
-  const choicesPerDomain = Math.ceil(maximumChoices / choices.length)
-  const domains = choices.map(({ direction, targetLayer }) =>
-    routeBusAlternatives(
-      {
-        ...route,
-        bus:
-          direction === route.bus.direction
-            ? route.bus
-            : { ...route.bus, direction },
-        targetLayer,
-      },
-      choicesPerDomain,
-    ),
-  )
+  if (domains.length === 0) return []
+  const choicesPerDomain = Math.ceil(maximumChoices / domains.length)
   const unique = new Map<BusRouteKey, FanoutRoutePlan[]>()
   for (let rank = 0; rank < choicesPerDomain; rank++) {
     for (const domain of domains) {
-      const plans = domain[rank]
+      domain.alternatives ??= routeBusAlternatives(
+        {
+          ...route,
+          bus:
+            domain.direction === route.bus.direction
+              ? route.bus
+              : { ...route.bus, direction: domain.direction },
+          targetLayer: domain.targetLayer,
+        },
+        choicesPerDomain,
+      )
+      const plans = domain.alternatives[rank]
       if (!plans) continue
       if (plans.length !== route.bus.connections.length)
         throw new Error(
