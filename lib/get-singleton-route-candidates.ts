@@ -3,7 +3,7 @@ import type { FanoutRoutePlan } from "./types"
 
 type SingletonRouteKey = string
 
-function getCandidateLayers(route: RouteBusParams): readonly string[] {
+export function getSingletonCandidateLayers(route: RouteBusParams): readonly string[] {
   const { bus } = route
   if (bus.termination.type === "plane") return [bus.termination.layer]
   const allowed = bus.routableEscapeLayers
@@ -18,7 +18,7 @@ function getCandidateLayers(route: RouteBusParams): readonly string[] {
 export function getSingletonRouteCandidates(
   route: RouteBusParams,
 ): FanoutRoutePlan[] {
-  const allowed = getCandidateLayers(route)
+  const allowed = getSingletonCandidateLayers(route)
   if (!allowed.includes(route.targetLayer))
     throw new Error(
       `Assigned escape layer is unavailable for bus "${route.bus.busId}"`,

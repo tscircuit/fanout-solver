@@ -1,9 +1,13 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import {
   createFanoutPlanClearanceValidator,
+  routeBus,
   type RouteBusParams,
 } from "./route-bus"
-import { getSingletonRouteCandidates } from "./get-singleton-route-candidates"
+import {
+  getSingletonCandidateLayers,
+  getSingletonRouteCandidates,
+} from "./get-singleton-route-candidates"
 import type { BusId } from "./route-bus/types"
 import {
   repairCompatibleSingletonEscapes,
@@ -66,6 +70,26 @@ export function routeCompatibleSingletonEscapes(params: {
         ),
       )
       .filter((candidates) => candidates.length > 0)
+  }
+  for (const bus of buses.toSorted(
+    (first, second) =>
+      Number(second.termination.type === "plane") -
+      Number(first.termination.type === "plane"),
+  )) {
+    if (accepted.some((plan) => plan.busId === bus.busId)) continue
+    const route = {
+      ...routeConfig, srj, bus,
+      targetLayer: busLayerAssignments[bus.busId]!,
+      acceptedPlans: accepted,
+    }
+    for (const targetLayer of getSingletonCandidateLayers(route)) {
+      const plans = routeBus({ ...route, targetLayer })
+      if (!plans) continue
+      if (plans.length !== 1) throw new Error("Expected one residual singleton escape")
+      accepted.push(plans[0]!)
+      context.candidatesByBus.get(bus.busId)!.push(plans[0]!)
+      break
+    }
   }
   accepted = repairCompatibleSingletonEscapes(accepted, context)
   if (!context.clearPlans(accepted))
