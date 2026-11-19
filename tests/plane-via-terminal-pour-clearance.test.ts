@@ -27,7 +27,7 @@ test("native plane via eligibility respects terminal pours", async () => {
     allowSameNetMerges: false,
   }
   const accepted = planIsStaticallyClear({ ...clearance, srj })
-  expect(accepted).toBe(true)
+  expect(accepted).toBe(false)
   // Transit-layer antipads and contact with this net's own plane remain legal.
   for (const [layer, sameNet] of [
     ["inner3", false],

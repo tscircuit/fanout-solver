@@ -7,11 +7,47 @@ import { routePlaneTerminatedBus } from "./route-plane-terminated-bus"
 import { routeSingletonBoundarySteps } from "./route-singleton-boundary-steps"
 import type { RouteBusAlternativesProgress, RouteBusParams } from "./types"
 
+type PlaneAlternativeKey = string
+
+function getPlaneAlternativeKey(
+  plans: readonly FanoutRoutePlan[],
+): PlaneAlternativeKey {
+  return JSON.stringify(
+    plans.map((plan) => [plan.trace.route, plan.planeEndpointTrace?.route]),
+  )
+}
+
+function getPlaneTierAlternatives(
+  {
+    candidateTier,
+    maxAlternatives,
+  }: { candidateTier: "ordinary" | "expanded"; maxAlternatives: number },
+  params: RouteBusParams,
+): FanoutRoutePlan[][] {
+  const alternatives: FanoutRoutePlan[][] = []
+  const seen = new Set<PlaneAlternativeKey>()
+  routePlaneTerminatedBus({
+    ...params,
+    candidateTier,
+    planeCandidateSkipCount: 0,
+    collectAlternative: (plan) => {
+      const key = getPlaneAlternativeKey([plan])
+      if (candidateTier === "expanded" && seen.has(key)) return false
+      seen.add(key)
+      alternatives.push([plan])
+      return alternatives.length >= maxAlternatives
+    },
+  })
+  return alternatives
+}
+
 export function* routeBusAlternativesSteps(
   params: RouteBusParams,
   maxAlternatives = 1,
   includeVisualization = false,
 ): Generator<RouteBusAlternativesProgress, FanoutRoutePlan[][], void> {
+  const traceWidth = params.bus.traceWidth ?? params.traceWidth
+  if (traceWidth !== params.traceWidth) params = { ...params, traceWidth }
   const {
     bus,
     fixedViaPointsByConnectionIndex,
@@ -43,16 +79,27 @@ export function* routeBusAlternativesSteps(
   if (bus.termination.type === "plane") {
     const alternatives: FanoutRoutePlan[][] = []
     if (bus.connections.length === 1 && maxAlternatives > 1) {
-      // Enumerate once instead of rebuilding and skipping every earlier route
-      // for each successive alternative. Keep the original candidate order.
-      routePlaneTerminatedBus({
-        ...params,
-        planeCandidateSkipCount: 0,
-        collectAlternative: (plan) => {
-          alternatives.push([plan])
-          return alternatives.length >= maxAlternatives
-        },
-      })
+      const ordinary = getPlaneTierAlternatives(
+        { candidateTier: "ordinary", maxAlternatives },
+        params,
+      )
+      if (ordinary.length === maxAlternatives) return ordinary
+      const expanded = getPlaneTierAlternatives(
+        { candidateTier: "expanded", maxAlternatives },
+        params,
+      )
+      // Preserve the published prefix, including repeated legacy candidates.
+      alternatives.push(...ordinary)
+      const seen = new Set<PlaneAlternativeKey>(
+        ordinary.map(getPlaneAlternativeKey),
+      )
+      for (const candidate of expanded) {
+        const key = getPlaneAlternativeKey(candidate)
+        if (seen.has(key)) continue
+        seen.add(key)
+        alternatives.push(candidate)
+        if (alternatives.length >= maxAlternatives) break
+      }
       return alternatives
     }
     for (

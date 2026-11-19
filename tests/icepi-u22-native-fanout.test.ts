@@ -20,7 +20,7 @@ test("reproduces the native iCE/Pi U22 fanout", async () => {
     Math.max(
       ...solver.attempts.map((attempt) => attempt.routedConnectionCount),
     ),
-  ).toBe(7)
+  ).toBe(11)
   await expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
     import.meta.path,
   )
