@@ -333,10 +333,8 @@ export interface PreparedConnection {
 }
 
 export interface PreparedBus {
-  /** Resolved physical width for an ordinary mixed singleton request. */
   /** Common conductor width resolved by prepareFanoutBuses. */
   readonly traceWidth?: number
-  readonly allowNeighboringPlaneViaSites?: boolean
   readonly requestedDirection?: FanoutDirection
   busId: string
   /** Maximum permitted routed copper length difference in millimeters. */

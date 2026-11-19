@@ -22,7 +22,9 @@ export function getTraceWidth(
     srj.minTraceWidth
   if (!Number.isFinite(traceWidth) || traceWidth <= 0) {
     const request = connection ? ` for "${connection.name}"` : ""
-    throw new Error(`FanoutSolver: invalid trace width${request}: ${traceWidth}`)
+    throw new Error(
+      `FanoutSolver: invalid trace width${request}: ${traceWidth}`,
+    )
   }
   return Math.max(srj.minTraceWidth, traceWidth)
 }
