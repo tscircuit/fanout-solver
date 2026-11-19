@@ -55,6 +55,7 @@ import {
   routeBusAlternativesSteps,
 } from "./route-bus"
 import { routePeripheralSourceEscapesSteps } from "./route-peripheral-source-escapes"
+import { routeCompatibleSingletonEscapes } from "./route-compatible-singleton-escapes"
 import { routeStagedPerimeterBusSteps } from "./route-staged-perimeter-bus"
 import { routeReservedSourceBusesSteps } from "./route-reserved-source-buses"
 import { routeLayerReservedBusesSteps } from "./route-layer-reserved-buses"
@@ -127,7 +128,7 @@ type RoutingStrategy =
   | "default"
   | "group-by-layer"
   | "deep-first"
-  | "plane-first"
+  | "compatible-singletons"
 
 type FanoutWorkYield = undefined | SubsolverRequest
 
@@ -5728,8 +5729,7 @@ export class FanoutSolver extends BaseSolver {
       })
       yield
     }
-    const prioritizePlanes =
-      this.config.allowBlindAndBuriedVias || routingStrategy === "plane-first"
+    const prioritizePlanes = this.config.allowBlindAndBuriedVias
     const busesInRoutingOrder = [...this.preparedBuses].sort((a, b) => {
       const aUsesCoordinatedWinding = busUsesCoordinatedWinding(a)
       const bUsesCoordinatedWinding = busUsesCoordinatedWinding(b)
@@ -5808,11 +5808,33 @@ export class FanoutSolver extends BaseSolver {
       }
     }
 
+    if (routingStrategy === "compatible-singletons") {
+      const compatiblePlans = routeCompatibleSingletonEscapes({
+        srj: this.routingSrj,
+        buses: this.preparedBuses,
+        busLayerAssignments,
+        routeConfig: {
+          ...this.config,
+          staticClearanceCache: this.routeStaticClearanceCache,
+        },
+      })
+      mixedTerminationState = {
+        plans: compatiblePlans,
+        failedBusIds: this.preparedBuses
+          .filter(
+            (bus) => !compatiblePlans.some((plan) => plan.busId === bus.busId),
+          )
+          .map((bus) => bus.busId),
+      }
+    }
     if (mixedTerminationState) {
       plans = mixedTerminationState.plans
       failedBusIds = mixedTerminationState.failedBusIds
       this.setInProgressPlans({
-        phase: "route-dense-mixed-terminations",
+        phase:
+          routingStrategy === "compatible-singletons"
+            ? "route-compatible-singletons"
+            : "route-dense-mixed-terminations",
         plans,
         strategy: routingStrategy,
         unitIndex: this.preparedBuses.length,
@@ -6035,14 +6057,14 @@ export class FanoutSolver extends BaseSolver {
     }
 
     const strategies: RoutingStrategy[] = ["group-by-layer", "deep-first"]
-    const tryPlanesFirst =
+    const tryCompatibleSingletons =
       assignmentIndex === 0 &&
       !this.config.allowBlindAndBuriedVias &&
       isOrdinaryMixedSingletonFanout({
         ...this.config,
         buses: this.preparedBuses,
       })
-    if (tryPlanesFirst) strategies.push("plane-first")
+    if (tryCompatibleSingletons) strategies.push("compatible-singletons")
     for (const routingStrategy of strategies) {
       const attempt = yield* this.evaluateAssignmentWithStrategySteps(
         assignmentIndex,
