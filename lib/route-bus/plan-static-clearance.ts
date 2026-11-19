@@ -162,12 +162,14 @@ export function planIsStaticallyClear(params: {
   }
   for (const via of getPlanVias(plan)) {
     for (const obstacle of srj.obstacles) {
-      // Other-layer pour reservations form antipads, as in dogbone matching.
-      if (
-        obstacle.isCopperPour &&
-        !obstacle.layers.includes(plan.sourceLayer)
-      ) {
-        continue
+      if (obstacle.isCopperPour) {
+        const touchesTransitionLayer =
+          obstacle.layers.includes(via.fromLayer) ||
+          obstacle.layers.includes(via.toLayer)
+        if (!touchesTransitionLayer) continue
+        if (obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)) {
+          continue
+        }
       }
       if (
         allowsViaInPad(srj) &&
