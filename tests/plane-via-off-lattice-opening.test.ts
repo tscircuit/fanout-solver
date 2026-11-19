@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import type { Obstacle } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { FanoutSolver } from "lib/fanout-solver"
+import { routeBusAlternatives } from "lib/route-bus"
 import { circleFitsInsideObstacle } from "lib/geometry"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import type { Bounds } from "lib/types"
@@ -53,6 +54,18 @@ test("a plane drop finds an opening away from the pad lattice", async () => {
     landing,
   ]
   const solver = new FanoutSolver(input, options)
+  expect(
+    routeBusAlternatives(
+      {
+        ...solver.config,
+        srj: input,
+        bus: solver.preparedBuses[0]!,
+        targetLayer: "inner1",
+        acceptedPlans: [],
+      },
+      solver.config.maxLayerCombinations,
+    ),
+  ).toHaveLength(0)
   solver.solve()
   const output = solver.solved ? solver.getOutput() : undefined
   const traces = output?.fanoutTraces ?? []
