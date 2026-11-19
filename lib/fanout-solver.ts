@@ -54,6 +54,7 @@ import {
   routeBusAlternatives,
   routeBusAlternativesSteps,
 } from "./route-bus"
+import type { BusId } from "./route-bus/types"
 import { routePeripheralSourceEscapesSteps } from "./route-peripheral-source-escapes"
 import { repairFailedBusRoutesSteps } from "./repair-failed-bus-routes"
 import { routeStagedPerimeterBusSteps } from "./route-staged-perimeter-bus"
@@ -1086,6 +1087,7 @@ export class FanoutSolver extends BaseSolver {
   > = []
   private readonly routeStaticClearanceCache: RouteBusStaticClearanceCache =
     new Map()
+  private readonly repairRouteChoicesByBus = new Map<BusId, FanoutRoutePlan[][]>()
   private readonly routingPrefixCache = new Map<
     string,
     {
@@ -5887,7 +5889,6 @@ export class FanoutSolver extends BaseSolver {
 
     if (
       assignmentIndex === 0 &&
-      routingStrategy === "default" &&
       !useSingleLayerPushAndShove &&
       !mixedTerminationState &&
       failedBusIds.length > 0
@@ -5897,6 +5898,7 @@ export class FanoutSolver extends BaseSolver {
         buses: this.preparedBuses,
         plans,
         maximumSearchStates: this.config.maxLayerCombinations,
+        choicesByBus: this.repairRouteChoicesByBus,
         routeConfig: {
           ...this.config,
           staticClearanceCache: this.routeStaticClearanceCache,
