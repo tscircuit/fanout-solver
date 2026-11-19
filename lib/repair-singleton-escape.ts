@@ -40,7 +40,7 @@ export function repairSingletonEscape(params: {
           allowSameNetMerges: route.allowSameNetMerges,
         }),
     )
-    if (blockers.length > 2) continue
+    if (blockers.length === 0 || blockers.length > 2) continue
     const fixedPlans = [
       ...route.acceptedPlans.filter((plan) => !blockers.includes(plan)),
       addition,
@@ -64,19 +64,17 @@ export function repairSingletonEscape(params: {
         return replacement
       })
     })
-    const selection = blockers.length
-      ? selectCompatibleCandidates({
-          candidateSets,
-          areCompatible: (first, second) =>
-            fanoutPlansAreMutuallyClear({
-              plans: [first, second],
-              srj: route.srj,
-              clearance: route.clearance,
-              allowSameNetMerges: route.allowSameNetMerges,
-            }),
-          maximumSearchStates: 64,
-        }).selection
-      : []
+    const { selection } = selectCompatibleCandidates({
+      candidateSets,
+      areCompatible: (first, second) =>
+        fanoutPlansAreMutuallyClear({
+          plans: [first, second],
+          srj: route.srj,
+          clearance: route.clearance,
+          allowSameNetMerges: route.allowSameNetMerges,
+        }),
+      maximumSearchStates: 64,
+    })
     if (!selection) continue
     const repairedPlans = [...fixedPlans, ...selection]
     if (
