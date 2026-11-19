@@ -6038,11 +6038,10 @@ export class FanoutSolver extends BaseSolver {
     const tryPlanesFirst =
       assignmentIndex === 0 &&
       !this.config.allowBlindAndBuriedVias &&
-      this.config.densePlaneReservationBusIds.length === 0 &&
-      this.config.denseUnrestrictedPlaneRoutingBusIds.length === 0 &&
-      this.preparedBuses.every((bus) => bus.connections.length === 1) &&
-      this.preparedBuses.some((bus) => bus.termination.type === "plane") &&
-      this.preparedBuses.some((bus) => bus.termination.type === "boundary")
+      isOrdinaryMixedSingletonFanout({
+        ...this.config,
+        buses: this.preparedBuses,
+      })
     if (tryPlanesFirst) strategies.push("plane-first")
     for (const routingStrategy of strategies) {
       const attempt = yield* this.evaluateAssignmentWithStrategySteps(
