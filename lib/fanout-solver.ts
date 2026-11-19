@@ -1059,11 +1059,11 @@ function getCandidateEscapeLayersForBus(params: {
 
   // Existing plans only add clearance constraints, so a layer that cannot
   // route this bus by itself cannot become viable later in an assignment.
-  // Preserve the original candidates when none route so impossible problems
-  // still produce the usual failed-solver result instead of throwing here.
-  return individuallyRoutableLayers.length > 0
-    ? individuallyRoutableLayers
-    : allowedEscapeLayers
+  if (individuallyRoutableLayers.length > 0) return individuallyRoutableLayers
+  // Plain analytic tracks cannot gain static clearance from more copper.
+  // Keep one failed assignment; local route repair retains all allowed layers.
+  const hasCornerTracks = getCornerBandSide(bus.exitEdge, bus.preferredExit)
+  return hasCornerTracks ? allowedEscapeLayers : allowedEscapeLayers.slice(0, 1)
 }
 
 export class FanoutSolver extends BaseSolver {
