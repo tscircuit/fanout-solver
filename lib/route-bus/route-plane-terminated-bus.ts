@@ -269,6 +269,25 @@ export function routePlaneTerminatedBus(
             pathIndex,
             sourceEscapePath,
           ] of sourceEscapePaths.entries()) {
+            const endpointViaCandidates = getPlaneEndpointViaCandidates({
+              preparedConnection,
+              bus: directionalBus,
+              viaDiameter,
+              clearance,
+            })
+            const cacheKeyPrefix = `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}`
+            if (
+              staticClearanceCache?.get(
+                `${cacheKeyPrefix}:${endpointViaCandidates.length}`,
+              ) === false &&
+              endpointViaCandidates.every(
+                (_, candidateIndex) =>
+                  staticClearanceCache.get(
+                    `${cacheKeyPrefix}:${candidateIndex}`,
+                  ) === false,
+              )
+            )
+              continue
             const basePlan = buildPlan({
               preparedConnection,
               bus: directionalBus,
@@ -289,12 +308,6 @@ export function routePlaneTerminatedBus(
               terminateAtVia: true,
               allowBlindAndBuriedVias,
               sourceEscapePath,
-            })
-            const endpointViaCandidates = getPlaneEndpointViaCandidates({
-              preparedConnection,
-              bus: directionalBus,
-              viaDiameter,
-              clearance,
             })
             const plansToTry = [
               ...endpointViaCandidates.map((viaPoint) =>
@@ -321,7 +334,7 @@ export function routePlaneTerminatedBus(
                     otherPlans: [...acceptedPlans, ...candidatePlans],
                     staticClearanceCache,
                     blockingBusCounts,
-                    cacheKey: `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}:${candidateIndex}`,
+                    cacheKey: `${cacheKeyPrefix}:${candidateIndex}`,
                     srj,
                     sharedBoundary: bus.sharedBoundary,
                     clearance,
