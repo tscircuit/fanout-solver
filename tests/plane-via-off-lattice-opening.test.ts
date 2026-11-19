@@ -2,6 +2,8 @@ import { expect, test } from "bun:test"
 import type { Obstacle } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { FanoutSolver } from "lib/fanout-solver"
+import { circleFitsInsideObstacle } from "lib/geometry"
+import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import type { Bounds } from "lib/types"
 import { createTwoViaWindows } from "./fixtures/two-via-windows"
 
@@ -10,8 +12,8 @@ function foreignCopper(bounds: Bounds): Obstacle {
     type: "rect",
     layers: ["inner2"],
     center: {
-        x: (bounds.minX + bounds.maxX) / 2,
-        y: (bounds.minY + bounds.maxY) / 2,
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2,
     },
     width: bounds.maxX - bounds.minX,
     height: bounds.maxY - bounds.minY,
@@ -31,6 +33,15 @@ test("a plane drop finds an opening away from the pad lattice", async () => {
     { minX: -1.1, maxX: -0.6, minY: 0.025, maxY: 0.385 },
     { minX: -0.24, maxX: 1.7, minY: 0.025, maxY: 0.385 },
   ]
+  const landing: Obstacle = {
+    type: "rect",
+    layers: ["inner1"],
+    center: { x: -0.42, y: 0.205 },
+    width: 0.36,
+    height: 0.36,
+    connectedTo: ["GND"],
+    isCopperPour: true,
+  }
   input.obstacles = [
     ...input.obstacles.filter((obstacle) => obstacle.componentId === "U1"),
     ...borders.map(foreignCopper),
@@ -39,22 +50,43 @@ test("a plane drop finds an opening away from the pad lattice", async () => {
       layers: ["inner1"],
       isCopperPour: true,
     })),
-    {
-      type: "rect",
-      layers: ["inner1"],
-      center: { x: -0.42, y: 0.205 },
-      width: 0.36,
-      height: 0.36,
-      connectedTo: ["GND"],
-      isCopperPour: true,
-    },
+    landing,
   ]
   const solver = new FanoutSolver(input, options)
   solver.solve()
-  expect(solver.solved).toBe(false)
-  const routed = Math.max(
-    ...solver.attempts.map((attempt) => attempt.routedConnectionCount),
-  )
+  const output = solver.solved ? solver.getOutput() : undefined
+  const traces = output?.fanoutTraces ?? []
+  const terminations = output?.planeTerminations ?? []
+  expect(
+    validateRoutedCopperDrc({
+      inputSrj: input,
+      routedSrj: output?.simpleRouteJson ?? { ...input, traces: [] },
+      clearance: solver.config.clearance,
+      allowBlindAndBuriedVias: false,
+    }),
+  ).toMatchObject({
+    valid: true,
+    checkedTraceCount: traces.length,
+    checkedViaCount: terminations.length,
+    issues: [],
+  })
+  for (const trace of traces) {
+    for (const point of trace.route) {
+      if (point.route_type === "wire") expect(point.width).toBeCloseTo(0.1)
+    }
+  }
+  for (const { layer, via } of terminations) {
+    expect(layer).toBe("inner1")
+    expect(via.diameter).toBeCloseTo(0.2)
+    expect(
+      circleFitsInsideObstacle({
+        center: via.center,
+        diameter: via.diameter,
+        obstacle: landing,
+      }),
+    ).toBe(true)
+  }
+  const routed = traces.length
   const graphics = solver.visualize()
   graphics.texts = [
     {
