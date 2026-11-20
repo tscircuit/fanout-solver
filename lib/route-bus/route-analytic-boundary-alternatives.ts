@@ -135,7 +135,7 @@ export function searchConnectionOrder(
     )
   for (let trackIndex = 0; trackIndex < trackCandidates.length; trackIndex++) {
     const track = trackCandidates[trackIndex]!
-    const plan = buildPlan({
+    const planParams = {
       preparedConnection,
       bus,
       targetLayer,
@@ -159,22 +159,32 @@ export function searchConnectionOrder(
       allowBlindAndBuriedVias,
       cornerBandTargetTrackOffset,
       fixedBoundaryTracksByConnectionIndex,
-    })
-    if (
-      !planIsClear({
-        plan,
-        otherPlans: [...acceptedPlans, ...candidatePlans],
-        staticClearanceCache,
-        blockingBusCounts,
-        cacheKey: `boundary:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
-        srj,
-        sharedBoundary: bus.sharedBoundary,
-        clearance,
-        allowBlindAndBuriedVias,
-        allowSameNetMerges,
+    }
+    let plan = buildPlan(planParams)
+    const clearanceParams = {
+      plan,
+      otherPlans: [...acceptedPlans, ...candidatePlans],
+      staticClearanceCache,
+      blockingBusCounts,
+      cacheKey: `boundary:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
+      srj,
+      sharedBoundary: bus.sharedBoundary,
+      clearance,
+      allowBlindAndBuriedVias,
+      allowSameNetMerges,
+    }
+    if (!planIsClear(clearanceParams)) {
+      if (targetLayer !== preparedConnection.sourceLayer) continue
+      plan = buildPlan({
+        ...planParams,
+        initialViaPoint: preparedConnection.sourcePoint,
       })
-    ) {
-      continue
+      const sourceOriginIsClear = planIsClear({
+        ...clearanceParams,
+        plan,
+        cacheKey: `${clearanceParams.cacheKey}:source-origin`,
+      })
+      if (!sourceOriginIsClear) continue
     }
     searchConnectionOrder(
       {

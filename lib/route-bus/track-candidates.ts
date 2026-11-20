@@ -96,7 +96,7 @@ export function getTrackCandidates(params: {
     bus.direction,
   )
   const componentCenter = (coordinates[0]! + coordinates.at(-1)!) / 2
-  return tracks
+  const candidates = tracks
     .filter((track) => Math.abs(track.value - sourceTrack) <= maximumJog + 1e-9)
     .filter(
       (track, index, candidates) =>
@@ -112,6 +112,16 @@ export function getTrackCandidates(params: {
           Math.abs(b.value - componentCenter)) *
           1e-3,
     )
+  for (let index = 1; index < coordinates.length; index++) {
+    const midpointTrack = (coordinates[index - 1]! + coordinates[index]!) / 2
+    if (
+      Math.abs(midpointTrack - sourceTrack) <= maximumJog + 1e-9 &&
+      !candidates.some((candidate) => Math.abs(candidate.value - midpointTrack) < 1e-9)
+    ) {
+      candidates.push({ value: midpointTrack, kind: "gap" })
+    }
+  }
+  return candidates
 }
 
 export function getPreferredTrack(params: {
