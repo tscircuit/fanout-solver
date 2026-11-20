@@ -10,6 +10,7 @@ test("native U22 plane drop retains reserved pours during route search", async (
   expect(params.viaDiameter).toBe(0.45)
   expect(params.viaHoleDiameter).toBe(0.2)
   expect(params.clearance).toBe(0.1)
+  expect(params.traceWidth).toBe(0.15)
   expect(params.srj).toHaveProperty("allowViaInPad", false)
   expect(params.srj.obstacles.some((obstacle) => obstacle.isCopperPour)).toBe(
     true,

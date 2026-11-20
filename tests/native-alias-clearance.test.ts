@@ -56,7 +56,7 @@ test("native U22 escape checks captured pad aliases without changing copper", as
       start: sourceEscapePath[index],
       end,
       layer: "top",
-      width: 0.1,
+      width: params.traceWidth,
     })),
   )
   expect(plans[0].via).toMatchObject({

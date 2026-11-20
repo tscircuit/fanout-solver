@@ -27,7 +27,7 @@ test("native plane via eligibility respects terminal pours", async () => {
     allowSameNetMerges: false,
   }
   const accepted = planIsStaticallyClear({ ...clearance, srj })
-  expect(accepted).toBe(true)
+  expect(accepted).toBe(false)
   // Transit-layer antipads and contact with this net's own plane remain legal.
   for (const [layer, sameNet] of [
     ["inner3", false],
@@ -45,6 +45,28 @@ test("native plane via eligibility respects terminal pours", async () => {
     expect(
       planIsStaticallyClear({ ...clearance, srj: { ...srj, obstacles } }),
     ).toBe(true)
+  }
+  const via = plan.via!
+  for (const [offset, expected] of [
+    [0, true],
+    [1, false],
+  ] as const) {
+    const ownPlane = {
+      type: "rect" as const,
+      isCopperPour: true,
+      layers: [via.toLayer],
+      center: { x: via.center.x + offset, y: via.center.y },
+      width: via.diameter,
+      height: via.diameter,
+      connectedTo: [plan.connectionName],
+    }
+    const obstacles = [
+      ...srj.obstacles.filter((obstacle) => !obstacle.isCopperPour),
+      ownPlane,
+    ]
+    expect(
+      planIsStaticallyClear({ ...clearance, srj: { ...srj, obstacles } }),
+    ).toBe(expected)
   }
   // Clip only the drawing; validation uses the original native pour geometry.
   const obstacles = srj.obstacles.map((obstacle) => {

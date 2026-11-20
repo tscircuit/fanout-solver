@@ -12,6 +12,8 @@ export function* routeBusAlternativesSteps(
   maxAlternatives = 1,
   includeVisualization = false,
 ): Generator<RouteBusAlternativesProgress, FanoutRoutePlan[][], void> {
+  const traceWidth = params.bus.traceWidth ?? params.traceWidth
+  if (traceWidth !== params.traceWidth) params = { ...params, traceWidth }
   const {
     bus,
     fixedViaPointsByConnectionIndex,
