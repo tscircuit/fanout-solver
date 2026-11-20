@@ -1,17 +1,18 @@
-import { expect, test } from "bun:test"
+import { expect, spyOn, test } from "bun:test"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { FanoutSolver } from "lib/fanout-solver"
+import type { RouteBusStaticClearanceCache } from "lib/route-bus"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 
-test("an enclosed i.MX6 pad repeats equivalent failed layer assignments", async () => {
-  // U10.B2's captured 3x3 neighborhood, translated to the origin in board mm.
-  // The outer A1 pad is a routable control; B2 is enclosed under these rules.
+test("failed i.MX6 layer choices repeat routing work after enclosed pads", async () => {
+  // Captured U10 pad size, pitch and rules in a 5x3 field in board-world mm.
+  // A1 is a routable edge control; the B2 and B4 pads are enclosed.
   const input: SimpleRouteJson = {
     layerCount: 4,
     minTraceWidth: 0.119,
-    bounds: { minX: -1.4, maxX: 1.4, minY: -1.1, maxY: 1.1 },
-    obstacles: [-0.5, 0, 0.5].flatMap((x, column) =>
+    bounds: { minX: -1.4, maxX: 2.4, minY: -1.1, maxY: 1.1 },
+    obstacles: [-0.5, 0, 0.5, 1, 1.5].flatMap((x, column) =>
       [0.5, 0, -0.5].map((y, row) => ({
         type: "rect" as const,
         shape: "circle" as const,
@@ -28,7 +29,14 @@ test("an enclosed i.MX6 pad repeats equivalent failed layer assignments", async 
         name: "B2",
         pointsToConnect: [
           { x: 0, y: 0, layer: "top", pcb_port_id: "B2" },
-          { x: 1.4, y: 0, layer: "bottom" },
+          { x: 2.4, y: 0, layer: "bottom" },
+        ],
+      },
+      {
+        name: "B4",
+        pointsToConnect: [
+          { x: 1, y: 0, layer: "top", pcb_port_id: "B4" },
+          { x: 2.4, y: 0, layer: "bottom" },
         ],
       },
       {
@@ -47,7 +55,14 @@ test("an enclosed i.MX6 pad repeats equivalent failed layer assignments", async 
     allowBlindAndBuriedVias: false,
     sharedBoundary: input.bounds,
   })
+  const clearanceCache = Reflect.get(
+    solver,
+    "routeStaticClearanceCache",
+  ) as RouteBusStaticClearanceCache
+  const clearanceLookups = spyOn(clearanceCache, "get")
   solver.solve()
+  const lookupCount = clearanceLookups.mock.calls.length
+  clearanceLookups.mockRestore()
   expect(solver.failed).toBe(true)
   expect(() => solver.getOutput()).toThrow()
   const bestAttempt = Reflect.get(solver, "bestAttempt") as {
@@ -77,7 +92,7 @@ test("an enclosed i.MX6 pad repeats equivalent failed layer assignments", async 
     {
       x: -1.4,
       y: 1.15,
-      text: `${solver.attempts.length} assignments | 0.119mm trace and clearance`,
+      text: `${lookupCount} clearance lookups | ${solver.attempts.length} assignments`,
       fontSize: 0.08,
       color: "#475569",
       anchorSide: "center_left",
