@@ -10,53 +10,45 @@ import {
 } from "./track-candidates"
 import type { RouteBusBoundaryContext, ViaHandedness } from "./types"
 
+const searchConnectionOrders = (
+  context: RouteBusBoundaryContext,
+  { startAtSource = false }: { startAtSource?: boolean } = {},
+): void => {
+  for (const viaHandedness of context.viaHandednesses) {
+    for (const connectionOrder of getConnectionOrders(context.bus)) {
+      searchConnectionOrder(
+        {
+          connectionOrder,
+          viaHandedness,
+          connectionIndex: 0,
+          candidatePlans: [],
+          startAtSource,
+        },
+        context,
+      )
+      if (context.alternatives.length >= context.maxAlternatives) return
+    }
+  }
+}
+
 export function routeAnalyticBoundaryAlternatives(
   context: RouteBusBoundaryContext,
 ): void {
-  const {
-    bus,
-    fixedViaPointsByConnectionIndex,
-    reservedVias,
-    viaMinimalOnly,
-    viaHandednesses,
-    alternatives,
-    maxAlternatives,
-  } = context
-  // The analytic fallback chooses its own dogbone and checks accepted copper
-  // only. It cannot replace an explicit source prefix or occupy a future hard
-  // reservation after the reservation-aware winding alternatives have failed.
+  // The analytic fallback cannot replace an explicit source prefix or occupy
+  // a future hard reservation after reservation-aware winding has failed.
   if (
-    viaMinimalOnly ||
-    fixedViaPointsByConnectionIndex ||
+    context.viaMinimalOnly ||
+    context.fixedViaPointsByConnectionIndex ||
     context.sourceEscapePaths ||
-    reservedVias.length > 0
+    context.reservedVias.length > 0
   )
     return
 
-  // Try a zero-length source prefix only after the ordinary candidates fail.
-  const directSourcePaths = new Map(
-    bus.connections.map((connection) => [
-      connection.connectionIndex,
-      [connection.sourcePoint, connection.sourcePoint],
-    ]),
-  )
-  for (const sourceEscapePaths of [undefined, directSourcePaths]) {
-    for (const viaHandedness of viaHandednesses) {
-      for (const connectionOrder of getConnectionOrders(bus)) {
-        searchConnectionOrder(
-          {
-            connectionOrder,
-            viaHandedness,
-            connectionIndex: 0,
-            candidatePlans: [],
-          },
-          { ...context, sourceEscapePaths },
-        )
-        if (alternatives.length >= maxAlternatives) return
-      }
-    }
-    if (alternatives.length > 0 || context.targetUsesVia) return
-  }
+  searchConnectionOrders(context)
+  if (context.alternatives.length > 0 || context.targetUsesVia) return
+
+  // A same-layer trace can turn at the pad when the ordinary escape is blocked.
+  searchConnectionOrders(context, { startAtSource: true })
 }
 
 export function searchConnectionOrder(
@@ -65,11 +57,13 @@ export function searchConnectionOrder(
     viaHandedness,
     connectionIndex,
     candidatePlans,
+    startAtSource = false,
   }: {
     connectionOrder: PreparedConnection[]
     viaHandedness: ViaHandedness
     connectionIndex: number
     candidatePlans: FanoutRoutePlan[]
+    startAtSource?: boolean
   },
   context: RouteBusBoundaryContext,
 ): void {
@@ -135,7 +129,7 @@ export function searchConnectionOrder(
         preferredTrack,
         traceWidth,
         clearance,
-        includePadGapMidpoints: context.sourceEscapePaths !== undefined,
+        includePadGapMidpoints: startAtSource,
       }),
     )
     .filter(
@@ -168,9 +162,9 @@ export function searchConnectionOrder(
       clearance,
       terminateAtVia: false,
       allowBlindAndBuriedVias,
-      sourceEscapePath: context.sourceEscapePaths?.get(
-        preparedConnection.connectionIndex,
-      ),
+      initialViaPoint: startAtSource
+        ? preparedConnection.sourcePoint
+        : undefined,
       cornerBandTargetTrackOffset,
       fixedBoundaryTracksByConnectionIndex,
     })
@@ -180,7 +174,7 @@ export function searchConnectionOrder(
         otherPlans: [...acceptedPlans, ...candidatePlans],
         staticClearanceCache,
         blockingBusCounts,
-        cacheKey: `boundary:${Boolean(context.sourceEscapePaths)}:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
+        cacheKey: `boundary:${startAtSource}:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
         srj,
         sharedBoundary: bus.sharedBoundary,
         clearance,
@@ -196,6 +190,7 @@ export function searchConnectionOrder(
         viaHandedness,
         connectionIndex: connectionIndex + 1,
         candidatePlans: [...candidatePlans, plan],
+        startAtSource,
       },
       context,
     )
