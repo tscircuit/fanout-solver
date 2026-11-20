@@ -21,7 +21,7 @@ test("reproduces the native iCE/Pi U22 fanout", async () => {
   const routed = Math.max(
     ...solver.attempts.map((attempt) => attempt.routedConnectionCount),
   )
-  expect(routed).toBe(7)
+  expect(routed).toBe(9)
   const bestAttempt = Reflect.get(solver, "bestAttempt") as {
     outputSrj: SimpleRouteJson
   }
