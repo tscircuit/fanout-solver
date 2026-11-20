@@ -4,6 +4,7 @@ import { getSvgFromGraphicsObject } from "graphics-debug"
 import { buildOutputSimpleRouteJson } from "lib/build-output"
 import { prepareFanoutBuses } from "lib/prepare-buses"
 import { routeBus } from "lib/route-bus"
+import { getPlanVias } from "lib/route-bus/plan-copper"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
 
@@ -24,7 +25,7 @@ test("iCE/Pi eMMC B5 can turn into the gap between perimeter pads", async () => 
         height: 0.24,
         componentId: "U22",
         layers: ["top"],
-        connectedTo: [`B${x * 2 + 5}`],
+        connectedTo: [`B${5 - x * 2}`],
       })),
       ...[-0.5, 0, 0.5].map((x) => ({
         type: "rect" as const,
@@ -33,7 +34,7 @@ test("iCE/Pi eMMC B5 can turn into the gap between perimeter pads", async () => 
         height: 0.3,
         componentId: "U22",
         layers: ["top"],
-        connectedTo: [`A${x * 2 + 5}`],
+        connectedTo: [`A${5 - x * 2}`],
       })),
     ],
     connections: [
@@ -73,11 +74,12 @@ test("iCE/Pi eMMC B5 can turn into the gap between perimeter pads", async () => 
     validateRoutedCopperDrc({ inputSrj: srj, routedSrj, ...rules }),
   ).toMatchObject({ valid: true, issues: [] })
   const graphics = visualizeSimpleRouteJson(routedSrj)
+  const viaCount = plans.flatMap(getPlanVias).length
   graphics.texts = [
     {
       x: 0,
       y: 0.8,
-      text: `iCE/Pi U22.B5: ${plans.length}/1 escape; 0 vias`,
+      text: `iCE/Pi U22.B5: ${plans.length}/1 escape; ${viaCount} vias`,
       fontSize: 0.12,
       anchorSide: "bottom_center",
       color: "#0f172a",
