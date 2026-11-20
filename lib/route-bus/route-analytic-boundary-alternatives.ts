@@ -2,6 +2,11 @@ import type { FanoutRoutePlan, PreparedConnection } from "../types"
 import { addAlternative } from "./boundary-routing-context"
 import { buildPlan } from "./build-plan"
 import { getConnectionOrders, getConnectionRank } from "./connection-order"
+import {
+  busUsesCoordinatedWindingChannel,
+  getCornerSide,
+  getLocalCornerSide,
+} from "./directions"
 import { planIsClear } from "./plan-clearance"
 import {
   getLegacyPreferredTrack,
@@ -10,43 +15,53 @@ import {
 } from "./track-candidates"
 import type { RouteBusBoundaryContext, ViaHandedness } from "./types"
 
-export function routeAnalyticBoundaryAlternatives(
+const searchConnectionOrders = (
   context: RouteBusBoundaryContext,
-): void {
-  const {
-    bus,
-    fixedViaPointsByConnectionIndex,
-    reservedVias,
-    viaMinimalOnly,
-    viaHandednesses,
-    alternatives,
-    maxAlternatives,
-  } = context
-  // The analytic fallback chooses its own dogbone and checks accepted copper
-  // only. It cannot replace an explicit source prefix or occupy a future hard
-  // reservation after the reservation-aware winding alternatives have failed.
-  if (
-    viaMinimalOnly ||
-    fixedViaPointsByConnectionIndex ||
-    context.sourceEscapePaths ||
-    reservedVias.length > 0
-  )
-    return
-
-  for (const viaHandedness of viaHandednesses) {
-    for (const connectionOrder of getConnectionOrders(bus)) {
+  { startAtSource = false }: { startAtSource?: boolean } = {},
+): void => {
+  for (const viaHandedness of context.viaHandednesses) {
+    for (const connectionOrder of getConnectionOrders(context.bus)) {
       searchConnectionOrder(
         {
           connectionOrder,
           viaHandedness,
           connectionIndex: 0,
           candidatePlans: [],
+          startAtSource,
         },
         context,
       )
-      if (alternatives.length >= maxAlternatives) return
+      if (context.alternatives.length >= context.maxAlternatives) return
     }
   }
+}
+
+export function routeAnalyticBoundaryAlternatives(
+  context: RouteBusBoundaryContext,
+): void {
+  // The analytic fallback cannot replace an explicit source prefix or occupy
+  // a future hard reservation after reservation-aware winding has failed.
+  if (
+    context.viaMinimalOnly ||
+    context.fixedViaPointsByConnectionIndex ||
+    context.sourceEscapePaths ||
+    context.reservedVias.length > 0
+  )
+    return
+
+  searchConnectionOrders(context)
+  const sourceTrackIsGuided =
+    Boolean(getCornerSide(context.bus) || getLocalCornerSide(context.bus)) ||
+    busUsesCoordinatedWindingChannel(context.bus)
+  if (
+    context.alternatives.length > 0 ||
+    context.targetUsesVia ||
+    sourceTrackIsGuided
+  )
+    return
+
+  // A same-layer trace can turn at the pad when the ordinary escape is blocked.
+  searchConnectionOrders(context, { startAtSource: true })
 }
 
 export function searchConnectionOrder(
@@ -55,11 +70,13 @@ export function searchConnectionOrder(
     viaHandedness,
     connectionIndex,
     candidatePlans,
+    startAtSource = false,
   }: {
     connectionOrder: PreparedConnection[]
     viaHandedness: ViaHandedness
     connectionIndex: number
     candidatePlans: FanoutRoutePlan[]
+    startAtSource?: boolean
   },
   context: RouteBusBoundaryContext,
 ): void {
@@ -125,6 +142,7 @@ export function searchConnectionOrder(
         preferredTrack,
         traceWidth,
         clearance,
+        includePadGapMidpoints: startAtSource,
       }),
     )
     .filter(
@@ -157,6 +175,9 @@ export function searchConnectionOrder(
       clearance,
       terminateAtVia: false,
       allowBlindAndBuriedVias,
+      initialViaPoint: startAtSource
+        ? preparedConnection.sourcePoint
+        : undefined,
       cornerBandTargetTrackOffset,
       fixedBoundaryTracksByConnectionIndex,
     })
@@ -166,7 +187,7 @@ export function searchConnectionOrder(
         otherPlans: [...acceptedPlans, ...candidatePlans],
         staticClearanceCache,
         blockingBusCounts,
-        cacheKey: `boundary:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
+        cacheKey: `boundary:${startAtSource}:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
         srj,
         sharedBoundary: bus.sharedBoundary,
         clearance,
@@ -182,6 +203,7 @@ export function searchConnectionOrder(
         viaHandedness,
         connectionIndex: connectionIndex + 1,
         candidatePlans: [...candidatePlans, plan],
+        startAtSource,
       },
       context,
     )
