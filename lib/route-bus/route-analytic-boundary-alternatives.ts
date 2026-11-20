@@ -2,6 +2,11 @@ import type { FanoutRoutePlan, PreparedConnection } from "../types"
 import { addAlternative } from "./boundary-routing-context"
 import { buildPlan } from "./build-plan"
 import { getConnectionOrders, getConnectionRank } from "./connection-order"
+import {
+  busUsesCoordinatedWindingChannel,
+  getCornerSide,
+  getLocalCornerSide,
+} from "./directions"
 import { planIsClear } from "./plan-clearance"
 import {
   getLegacyPreferredTrack,
@@ -45,7 +50,15 @@ export function routeAnalyticBoundaryAlternatives(
     return
 
   searchConnectionOrders(context)
-  if (context.alternatives.length > 0 || context.targetUsesVia) return
+  const sourceTrackIsGuided =
+    Boolean(getCornerSide(context.bus) || getLocalCornerSide(context.bus)) ||
+    busUsesCoordinatedWindingChannel(context.bus)
+  if (
+    context.alternatives.length > 0 ||
+    context.targetUsesVia ||
+    sourceTrackIsGuided
+  )
+    return
 
   // A same-layer trace can turn at the pad when the ordinary escape is blocked.
   searchConnectionOrders(context, { startAtSource: true })
