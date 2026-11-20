@@ -72,7 +72,9 @@ export function getPlaneSourceEscapePaths(
       direction,
     })
     if (totalSteps === 0) {
-      sourceEscapePaths.push([sourcePoint, adjacentViaPoint])
+      sourceEscapePaths.push(
+        ...getStraightOr45ConnectorVariants(sourcePoint, adjacentViaPoint),
+      )
     } else {
       for (const connector of getStraightOr45ConnectorVariants(
         sourcePoint,
