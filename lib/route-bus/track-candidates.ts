@@ -38,6 +38,7 @@ export function getTrackCandidates(params: {
   preferredTrack: number
   traceWidth: number
   clearance: number
+  includeMidpointTracks?: boolean
 }): TrackCandidate[] {
   const { bus, connection, preferredTrack, traceWidth, clearance } = params
   const coordinates = (
@@ -112,13 +113,17 @@ export function getTrackCandidates(params: {
           Math.abs(b.value - componentCenter)) *
           1e-3,
     )
-  for (let index = 1; index < coordinates.length; index++) {
-    const midpointTrack = (coordinates[index - 1]! + coordinates[index]!) / 2
-    if (
-      Math.abs(midpointTrack - sourceTrack) <= maximumJog + 1e-9 &&
-      !candidates.some((candidate) => Math.abs(candidate.value - midpointTrack) < 1e-9)
-    ) {
-      candidates.push({ value: midpointTrack, kind: "gap" })
+  if (params.includeMidpointTracks) {
+    for (let index = 1; index < coordinates.length; index++) {
+      const midpointTrack = (coordinates[index - 1]! + coordinates[index]!) / 2
+      if (
+        Math.abs(midpointTrack - sourceTrack) <= maximumJog + 1e-9 &&
+        !candidates.some(
+          (candidate) => Math.abs(candidate.value - midpointTrack) < 1e-9,
+        )
+      ) {
+        candidates.push({ value: midpointTrack, kind: "gap" })
+      }
     }
   }
   return candidates

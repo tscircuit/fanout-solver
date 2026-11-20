@@ -12,6 +12,7 @@ import type { RouteBusBoundaryContext, ViaHandedness } from "./types"
 
 export function routeAnalyticBoundaryAlternatives(
   context: RouteBusBoundaryContext,
+  startAtSource = false,
 ): void {
   const {
     bus,
@@ -41,11 +42,21 @@ export function routeAnalyticBoundaryAlternatives(
           viaHandedness,
           connectionIndex: 0,
           candidatePlans: [],
+          startAtSource,
         },
         context,
       )
       if (alternatives.length >= maxAlternatives) return
     }
+  }
+  if (
+    !startAtSource &&
+    alternatives.length === 0 &&
+    bus.connections.every(
+      (connection) => connection.sourceLayer === context.targetLayer,
+    )
+  ) {
+    routeAnalyticBoundaryAlternatives(context, true)
   }
 }
 
@@ -55,11 +66,13 @@ export function searchConnectionOrder(
     viaHandedness,
     connectionIndex,
     candidatePlans,
+    startAtSource,
   }: {
     connectionOrder: PreparedConnection[]
     viaHandedness: ViaHandedness
     connectionIndex: number
     candidatePlans: FanoutRoutePlan[]
+    startAtSource: boolean
   },
   context: RouteBusBoundaryContext,
 ): void {
@@ -125,6 +138,7 @@ export function searchConnectionOrder(
         preferredTrack,
         traceWidth,
         clearance,
+        includeMidpointTracks: startAtSource,
       }),
     )
     .filter(
@@ -135,7 +149,7 @@ export function searchConnectionOrder(
     )
   for (let trackIndex = 0; trackIndex < trackCandidates.length; trackIndex++) {
     const track = trackCandidates[trackIndex]!
-    const planParams = {
+    const plan = buildPlan({
       preparedConnection,
       bus,
       targetLayer,
@@ -159,32 +173,23 @@ export function searchConnectionOrder(
       allowBlindAndBuriedVias,
       cornerBandTargetTrackOffset,
       fixedBoundaryTracksByConnectionIndex,
-    }
-    let plan = buildPlan(planParams)
-    const clearanceParams = {
-      plan,
-      otherPlans: [...acceptedPlans, ...candidatePlans],
-      staticClearanceCache,
-      blockingBusCounts,
-      cacheKey: `boundary:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
-      srj,
-      sharedBoundary: bus.sharedBoundary,
-      clearance,
-      allowBlindAndBuriedVias,
-      allowSameNetMerges,
-    }
-    if (!planIsClear(clearanceParams)) {
-      if (targetLayer !== preparedConnection.sourceLayer) continue
-      plan = buildPlan({
-        ...planParams,
-        initialViaPoint: preparedConnection.sourcePoint,
-      })
-      const sourceOriginIsClear = planIsClear({
-        ...clearanceParams,
+      initialViaPoint: startAtSource ? preparedConnection.sourcePoint : undefined,
+    })
+    if (
+      !planIsClear({
         plan,
-        cacheKey: `${clearanceParams.cacheKey}:source-origin`,
+        otherPlans: [...acceptedPlans, ...candidatePlans],
+        staticClearanceCache,
+        blockingBusCounts,
+        cacheKey: `boundary:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}${startAtSource ? ":source-origin" : ""}`,
+        srj,
+        sharedBoundary: bus.sharedBoundary,
+        clearance,
+        allowBlindAndBuriedVias,
+        allowSameNetMerges,
       })
-      if (!sourceOriginIsClear) continue
+    ) {
+      continue
     }
     searchConnectionOrder(
       {
@@ -192,6 +197,7 @@ export function searchConnectionOrder(
         viaHandedness,
         connectionIndex: connectionIndex + 1,
         candidatePlans: [...candidatePlans, plan],
+        startAtSource,
       },
       context,
     )
