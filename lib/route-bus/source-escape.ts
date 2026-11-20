@@ -172,6 +172,7 @@ export function getInitialViaPoint(params: {
     preparedConnection,
     bus,
     targetLayer,
+    traceWidth,
     viaDiameter,
     clearance,
     viaHandedness,
@@ -181,20 +182,25 @@ export function getInitialViaPoint(params: {
     y: preparedConnection.sourcePoint.y,
   }
   const targetUsesVia = targetLayer !== preparedConnection.sourceLayer
-  // Same-layer traces can turn directly out of the source pad.
-  if (!targetUsesVia) return sourcePoint
   const directionalPitch = getDirectionalPitch(bus)
   const perpendicularPitch = getPerpendicularPitch(bus)
   const directionalPadSize = isHorizontal(bus.direction)
     ? preparedConnection.sourceObstacle.width
     : preparedConnection.sourceObstacle.height
-  let initialEscapeDistance = directionalPitch * 0.5
-  const sourcePadFillsPitch = directionalPadSize >= directionalPitch
-  if (sourcePadFillsPitch || busIsOnOutwardComponentEdge(bus)) {
-    const viaClearanceFromPad =
-      directionalPadSize / 2 + viaDiameter / 2 + clearance + 1e-3
-    initialEscapeDistance = Math.max(initialEscapeDistance, viaClearanceFromPad)
-  }
+  const initialEscapeDistance =
+    targetUsesVia && !busIsOnOutwardComponentEdge(bus)
+      ? directionalPadSize >= directionalPitch
+        ? directionalPadSize / 2 + viaDiameter / 2 + clearance + 1e-3
+        : directionalPitch * 0.5
+      : !targetUsesVia
+        ? directionalPadSize / 2 + traceWidth / 2 + clearance + 1e-3
+        : Math.max(
+            directionalPitch * 0.5,
+            directionalPadSize / 2 +
+              (targetUsesVia ? viaDiameter : traceWidth) / 2 +
+              clearance +
+              1e-3,
+          )
   const viaAxis =
     getAxis(sourcePoint, bus.direction) +
     directionSign(bus.direction) * initialEscapeDistance

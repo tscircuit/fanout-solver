@@ -33,19 +33,29 @@ export function routeAnalyticBoundaryAlternatives(
   )
     return
 
-  for (const viaHandedness of viaHandednesses) {
-    for (const connectionOrder of getConnectionOrders(bus)) {
-      searchConnectionOrder(
-        {
-          connectionOrder,
-          viaHandedness,
-          connectionIndex: 0,
-          candidatePlans: [],
-        },
-        context,
-      )
-      if (alternatives.length >= maxAlternatives) return
+  // Try a zero-length source prefix only after the ordinary candidates fail.
+  const directSourcePaths = new Map(
+    bus.connections.map((connection) => [
+      connection.connectionIndex,
+      [connection.sourcePoint, connection.sourcePoint],
+    ]),
+  )
+  for (const sourceEscapePaths of [undefined, directSourcePaths]) {
+    for (const viaHandedness of viaHandednesses) {
+      for (const connectionOrder of getConnectionOrders(bus)) {
+        searchConnectionOrder(
+          {
+            connectionOrder,
+            viaHandedness,
+            connectionIndex: 0,
+            candidatePlans: [],
+          },
+          { ...context, sourceEscapePaths },
+        )
+        if (alternatives.length >= maxAlternatives) return
+      }
     }
+    if (alternatives.length > 0 || context.targetUsesVia) return
   }
 }
 
@@ -125,6 +135,7 @@ export function searchConnectionOrder(
         preferredTrack,
         traceWidth,
         clearance,
+        includePadGapMidpoints: context.sourceEscapePaths !== undefined,
       }),
     )
     .filter(
@@ -157,6 +168,9 @@ export function searchConnectionOrder(
       clearance,
       terminateAtVia: false,
       allowBlindAndBuriedVias,
+      sourceEscapePath: context.sourceEscapePaths?.get(
+        preparedConnection.connectionIndex,
+      ),
       cornerBandTargetTrackOffset,
       fixedBoundaryTracksByConnectionIndex,
     })
@@ -166,7 +180,7 @@ export function searchConnectionOrder(
         otherPlans: [...acceptedPlans, ...candidatePlans],
         staticClearanceCache,
         blockingBusCounts,
-        cacheKey: `boundary:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
+        cacheKey: `boundary:${Boolean(context.sourceEscapePaths)}:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
         srj,
         sharedBoundary: bus.sharedBoundary,
         clearance,

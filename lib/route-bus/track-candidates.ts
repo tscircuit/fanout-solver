@@ -38,6 +38,7 @@ export function getTrackCandidates(params: {
   preferredTrack: number
   traceWidth: number
   clearance: number
+  includePadGapMidpoints?: boolean
 }): TrackCandidate[] {
   const { bus, connection, preferredTrack, traceWidth, clearance } = params
   const coordinates = (
@@ -70,11 +71,12 @@ export function getTrackCandidates(params: {
   for (let index = 0; index < coordinates.length; index++) {
     tracks.push({ value: coordinates[index]!, kind: "corridor" })
     if (index < coordinates.length - 1) {
-      // Mixed pad sizes can leave gaps hidden by the largest component pad.
-      tracks.push({
-        value: (coordinates[index]! + coordinates[index + 1]!) / 2,
-        kind: "gap",
-      })
+      if (params.includePadGapMidpoints) {
+        tracks.push({
+          value: (coordinates[index]! + coordinates[index + 1]!) / 2,
+          kind: "gap",
+        })
+      }
       tracks.push(
         ...getTracksInSpan(
           coordinates[index]! + obstacleHalfSize,
