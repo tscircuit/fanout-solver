@@ -182,6 +182,8 @@ export function getInitialViaPoint(params: {
     y: preparedConnection.sourcePoint.y,
   }
   const targetUsesVia = targetLayer !== preparedConnection.sourceLayer
+  // Same-layer traces can turn directly out of the source pad.
+  if (!targetUsesVia) return sourcePoint
   const directionalPitch = getDirectionalPitch(bus)
   const perpendicularPitch = getPerpendicularPitch(bus)
   const directionalPadSize = isHorizontal(bus.direction)
