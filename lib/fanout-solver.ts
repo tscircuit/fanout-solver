@@ -1034,6 +1034,8 @@ function getCandidateEscapeLayersForBus(params: {
   // committed escape vias present. Testing it in isolation is both expensive
   // and can reject a layer whose shared via field guides a valid bus ordering.
   if (busUsesCoordinatedWinding(bus)) return allowedEscapeLayers
+  // Extra turns must not change layer preference during bounded assignment
+  // screening. Try them only after a layer has been assigned.
   const individuallyRoutableLayers = allowedEscapeLayers.filter(
     (targetLayer) =>
       routeBus({
@@ -1049,6 +1051,7 @@ function getCandidateEscapeLayersForBus(params: {
         compactBusTracks: config.compactBusTracks,
         allowBlindAndBuriedVias: config.allowBlindAndBuriedVias,
         allowSameNetMerges: config.allowSameNetMerges,
+        allowSourceOriginTurns: false,
         staticClearanceCache,
       }) !== null,
   )

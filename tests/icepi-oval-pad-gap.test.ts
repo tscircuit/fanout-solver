@@ -54,7 +54,7 @@ test("iCE/Pi B2 escapes between the outer oval pads", async () => {
     busDirections: { DATA: "down" },
   })
   solver.solve()
-  expect(solver.solved).toBe(false)
+  expect(solver.solved).toBe(true)
   const output = solver.solved ? solver.getOutput() : undefined
   const copperDrc = output
     ? validateRoutedCopperDrc({

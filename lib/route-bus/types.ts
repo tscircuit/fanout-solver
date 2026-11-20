@@ -26,6 +26,8 @@ export interface RouteBusParams {
   compactBusTracks: boolean
   allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
+  /** Try immediate same-layer turns after the original analytic candidates. */
+  allowSourceOriginTurns?: boolean
   staticClearanceCache?: RouteBusStaticClearanceCache
   blockingBusCounts?: Map<BusId, number>
   rejectedViaMinimalCandidates?: FanoutRoutePlan[][]
