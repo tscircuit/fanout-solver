@@ -41,7 +41,7 @@ test("native ButterStick plane escape reaches its adjacent via", async () => {
     const dy = Math.abs(end.y - start.y)
     return dx > 1e-7 && dy > 1e-7 && Math.abs(dx - dy) > 1e-7
   })
-  expect(obliqueSegments).toHaveLength(1)
+  expect(obliqueSegments).toHaveLength(0)
   const routedSrj = { ...solverParams, traces: [plan.trace] }
   expect(
     validateRoutedCopperDrc({
