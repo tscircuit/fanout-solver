@@ -1055,12 +1055,12 @@ function getCandidateEscapeLayersForBus(params: {
 
   // Existing plans only add clearance constraints, so a layer that cannot
   // route this bus by itself cannot become viable later in an assignment.
-  // Preserve the original candidates when none route so impossible problems
-  // still produce the usual failed-solver result instead of throwing here.
+  // Keep one allowed layer when none route so the bus still reports failure
+  // without multiplying equivalent failed layer assignments.
   const candidateLayers =
     individuallyRoutableLayers.length > 0
       ? individuallyRoutableLayers
-      : allowedEscapeLayers
+      : allowedEscapeLayers.slice(0, 1)
   return candidateLayers
 }
 
@@ -5854,21 +5854,7 @@ export class FanoutSolver extends BaseSolver {
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
       }
-      let busPlans = routeBus(routeParams)
-      const canRetryHeading =
-        !busPlans &&
-        bus.termination.type === "boundary" &&
-        !bus.requestedDirection &&
-        !bus.preferredExit &&
-        !bus.exitEdge &&
-        !bus.connections.some((connection) => connection.hasExplicitExitTarget)
-      if (canRetryHeading) {
-        for (const direction of ["left", "right", "up", "down"] as const) {
-          if (direction === bus.direction) continue
-          busPlans = routeBus({ ...routeParams, bus: { ...bus, direction } })
-          if (busPlans) break
-        }
-      }
+      const busPlans = routeBus(routeParams)
       if (!busPlans) {
         failedBusIds.push(bus.busId)
         for (const [blockingBusId, count] of currentBusBlockingCounts) {
