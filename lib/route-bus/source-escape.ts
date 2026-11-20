@@ -193,10 +193,7 @@ export function getInitialViaPoint(params: {
   if (sourcePadFillsPitch || busIsOnOutwardComponentEdge(bus)) {
     const viaClearanceFromPad =
       directionalPadSize / 2 + viaDiameter / 2 + clearance + 1e-3
-    initialEscapeDistance = Math.max(
-      initialEscapeDistance,
-      viaClearanceFromPad,
-    )
+    initialEscapeDistance = Math.max(initialEscapeDistance, viaClearanceFromPad)
   }
   const viaAxis =
     getAxis(sourcePoint, bus.direction) +
