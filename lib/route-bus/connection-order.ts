@@ -99,5 +99,13 @@ export function getConnectionOrders(bus: PreparedBus): PreparedConnection[][] {
       ...outwardFirst.slice(0, offset),
     ])
   }
-  return orders
+  const seenOrders = new Set<string>()
+  return orders.filter((order) => {
+    const orderKey = order
+      .map((connection) => connection.connectionIndex)
+      .join(",")
+    if (seenOrders.has(orderKey)) return false
+    seenOrders.add(orderKey)
+    return true
+  })
 }

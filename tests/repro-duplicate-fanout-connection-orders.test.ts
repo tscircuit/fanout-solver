@@ -2,12 +2,14 @@ import { expect, spyOn, test } from "bun:test"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { buildOutputSimpleRouteJson } from "lib/build-output"
 import { routeBus, type RouteBusStaticClearanceCache } from "lib/route-bus"
+import { getConnectionOrders } from "lib/route-bus/connection-order"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
 import { createIcepiPlaneDrop } from "./fixtures/icepi-plane-drop"
 
 test("native U22 plane search repeats identical singleton connection orders", async () => {
   const params = createIcepiPlaneDrop()
+  expect(getConnectionOrders(params.bus)).toEqual([params.bus.connections])
   const originalInput = JSON.stringify(params.srj)
   const staticClearanceCache: RouteBusStaticClearanceCache = new Map()
   const clearanceReads = spyOn(staticClearanceCache, "get")
