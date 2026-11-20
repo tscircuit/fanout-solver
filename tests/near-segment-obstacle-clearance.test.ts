@@ -37,6 +37,9 @@ test("near native escape obstacles retain exact clearance and ownership exemptio
     layers: ["top"],
     connectedTo: ["foreign-segment-net"],
   }
+  const wireClearance = firstSegment.width / 2 + params.clearance
+  const circularPadOffset = wireClearance + foreignPad.width / 2
+  const rotatedPadOffset = wireClearance + 0.03
   const cases = [
     {
       label: "foreign pad intersects the source wire",
@@ -50,8 +53,8 @@ test("near native escape obstacles retain exact clearance and ownership exemptio
         ...foreignPad,
         shape: "circle",
         center: {
-          x: midpoint.x + Math.SQRT1_2 * 0.2,
-          y: midpoint.y + Math.SQRT1_2 * 0.2,
+          x: midpoint.x + Math.SQRT1_2 * circularPadOffset,
+          y: midpoint.y + Math.SQRT1_2 * circularPadOffset,
         },
       },
       allowSameNetMerges: false,
@@ -65,8 +68,8 @@ test("near native escape obstacles retain exact clearance and ownership exemptio
         height: 0.02,
         ccwRotationDegrees: -45,
         center: {
-          x: midpoint.x + Math.SQRT1_2 * 0.18,
-          y: midpoint.y + Math.SQRT1_2 * 0.18,
+          x: midpoint.x + Math.SQRT1_2 * rotatedPadOffset,
+          y: midpoint.y + Math.SQRT1_2 * rotatedPadOffset,
         },
       },
       allowSameNetMerges: false,
