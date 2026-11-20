@@ -328,6 +328,7 @@ export interface PreparedConnection {
   exitTargetPoint?: Point2D & { readonly layer?: string }
   /** Whether the caller supplied the layered handoff metadata needed to coordinate winding. */
   hasExplicitLayeredExitTarget?: boolean
+  readonly hasExplicitExitTarget?: boolean
 }
 
 export interface PreparedBus {
@@ -337,6 +338,7 @@ export interface PreparedBus {
   /** Maximum permitted routed copper length difference in millimeters. */
   maxLengthSkew?: number
   direction: FanoutDirection
+  readonly requestedDirection?: FanoutDirection
   preferredExit?: FanoutBorderTarget
   /** Explicit final boundary edge. Omitted for legacy direction-based exits. */
   exitEdge?: FanoutEdge

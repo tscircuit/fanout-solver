@@ -5838,7 +5838,7 @@ export class FanoutSolver extends BaseSolver {
         continue
       }
       const currentBusBlockingCounts = new Map<string, number>()
-      const busPlans = routeBus({
+      const routeParams = {
         srj: this.routingSrj,
         bus,
         targetLayer,
@@ -5853,7 +5853,22 @@ export class FanoutSolver extends BaseSolver {
         allowSameNetMerges: this.config.allowSameNetMerges,
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
-      })
+      }
+      let busPlans = routeBus(routeParams)
+      const canRetryHeading =
+        !busPlans &&
+        bus.termination.type === "boundary" &&
+        !bus.requestedDirection &&
+        !bus.preferredExit &&
+        !bus.exitEdge &&
+        !bus.connections.some((connection) => connection.hasExplicitExitTarget)
+      if (canRetryHeading) {
+        for (const direction of ["left", "right", "up", "down"] as const) {
+          if (direction === bus.direction) continue
+          busPlans = routeBus({ ...routeParams, bus: { ...bus, direction } })
+          if (busPlans) break
+        }
+      }
       if (!busPlans) {
         failedBusIds.push(bus.busId)
         for (const [blockingBusId, count] of currentBusBlockingCounts) {
@@ -6879,7 +6894,7 @@ export class FanoutSolver extends BaseSolver {
       ),
       busLayerAssignments: this.bestAttempt.summary.busLayerAssignments,
       busDirections: Object.fromEntries(
-        this.preparedBuses.map((bus) => [bus.busId, bus.direction]),
+        this.bestAttempt.plans.map((plan) => [plan.busId, plan.direction]),
       ),
       attempts: [...this.attempts],
       validation,
