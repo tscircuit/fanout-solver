@@ -5820,12 +5820,22 @@ export class FanoutSolver extends BaseSolver {
       // prefix belonging to a different bus and duplicate or drop plans when
       // buses contain multiple connections. Include the bus identity so the
       // cache remains valid for grouped power/signal lanes.
+      const failedRoutingPrefixKey = `${routingPrefixKey}${bus.busId.length}:${bus.busId};failed;`
       routingPrefixKey += `${bus.busId.length}:${bus.busId};${targetLayer.length}:${targetLayer};`
       const cachedPrefix = this.routingPrefixCache.get(routingPrefixKey)
       if (cachedPrefix) {
         plans = [...cachedPrefix.plans]
         failedBusIds = [...cachedPrefix.failedBusIds]
-        blockingBusCounts = new Map(cachedPrefix.blockingBusCounts)
+        // Replay this bus's blockers without replacing earlier failures' counts.
+        for (const [blockingBusId, count] of cachedPrefix.blockingBusCounts) {
+          blockingBusCounts.set(
+            blockingBusId,
+            (blockingBusCounts.get(blockingBusId) ?? 0) + count,
+          )
+        }
+        if (failedBusIds.includes(bus.busId)) {
+          routingPrefixKey = failedRoutingPrefixKey
+        }
         this.setInProgressPlans({
           phase: "route-assignment",
           plans,
@@ -5883,8 +5893,12 @@ export class FanoutSolver extends BaseSolver {
       this.routingPrefixCache.set(routingPrefixKey, {
         plans: [...plans],
         failedBusIds: [...failedBusIds],
-        blockingBusCounts: new Map(blockingBusCounts),
+        blockingBusCounts: busPlans
+          ? new Map()
+          : new Map(currentBusBlockingCounts),
       })
+      // A checked failure adds no copper, so its layer cannot affect later routes.
+      if (!busPlans) routingPrefixKey = failedRoutingPrefixKey
       this.setInProgressPlans({
         phase: "route-assignment",
         plans,
