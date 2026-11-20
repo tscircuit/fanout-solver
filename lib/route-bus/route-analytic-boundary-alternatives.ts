@@ -133,8 +133,21 @@ export function searchConnectionOrder(
           (candidate) => Math.abs(candidate.value - track.value) < 1e-9,
         ) === index,
     )
-  for (let trackIndex = 0; trackIndex < trackCandidates.length; trackIndex++) {
-    const track = trackCandidates[trackIndex]!
+  const requiresSourceLayer =
+    preparedConnection.sourceLayer === targetLayer &&
+    bus.allowedLayers?.length === 1 &&
+    bus.allowedLayers[0] === targetLayer
+  const analyticCandidates = [
+    undefined,
+    ...(requiresSourceLayer ? [preparedConnection.sourcePoint] : []),
+  ].flatMap((initialViaPoint) =>
+    trackCandidates.map((track, trackIndex) => ({
+      track,
+      trackIndex,
+      initialViaPoint,
+    })),
+  )
+  for (const { track, trackIndex, initialViaPoint } of analyticCandidates) {
     const plan = buildPlan({
       preparedConnection,
       bus,
@@ -159,6 +172,7 @@ export function searchConnectionOrder(
       allowBlindAndBuriedVias,
       cornerBandTargetTrackOffset,
       fixedBoundaryTracksByConnectionIndex,
+      initialViaPoint,
     })
     if (
       !planIsClear({
@@ -166,7 +180,7 @@ export function searchConnectionOrder(
         otherPlans: [...acceptedPlans, ...candidatePlans],
         staticClearanceCache,
         blockingBusCounts,
-        cacheKey: `boundary:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
+        cacheKey: `boundary:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}${initialViaPoint ? ":source_origin" : ""}`,
         srj,
         sharedBoundary: bus.sharedBoundary,
         clearance,
