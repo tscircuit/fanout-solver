@@ -23,6 +23,8 @@ test("native ButterStick plane escape reaches its adjacent via", async () => {
     viewport: SimpleRouteJson["bounds"]
   }
   const solver = new FanoutSolver(solverParams, solverOptions)
+  solver.solve()
+  expect(solver.solved).toBe(false)
   const bus = solver.preparedBuses[0]!
   if (bus.termination.type !== "plane") throw new Error("Expected a plane drop")
   const plans = routeBus({
@@ -78,4 +80,16 @@ test("native ButterStick plane escape reaches its adjacent via", async () => {
       { backgroundColor: "white" },
     ),
   ).toMatchSvgSnapshot(import.meta.path)
+  const committedTraces = solver.solved ? solver.getOutput().fanoutTraces : []
+  await expect(
+    getSvgFromGraphicsObject(
+      visualizeSimpleRouteJson({
+        ...solverParams,
+        bounds: viewport,
+        obstacles,
+        traces: committedTraces,
+      }),
+      { backgroundColor: "white" },
+    ),
+  ).toMatchSvgSnapshot(import.meta.path, "solver")
 })
