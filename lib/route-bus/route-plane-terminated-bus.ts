@@ -251,8 +251,14 @@ export function routePlaneTerminatedBus(
         ? [0]
         : [1, -1]
 
+    const isFirstRouteSearch =
+      !params.collectAlternative && planeCandidateSkipCount === 0
+    const connectionOrders =
+      bus.connections.length === 1 && isFirstRouteSearch
+        ? [bus.connections]
+        : getConnectionOrders(directionalBus)
     for (const viaHandedness of viaHandednesses) {
-      for (const connectionOrder of getConnectionOrders(directionalBus)) {
+      for (const connectionOrder of connectionOrders) {
         const candidatePlans: FanoutRoutePlan[] = []
         let orderIsClear = true
         for (const preparedConnection of connectionOrder) {
