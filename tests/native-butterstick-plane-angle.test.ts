@@ -24,7 +24,7 @@ test("native ButterStick plane escape reaches its adjacent via", async () => {
   }
   const solver = new FanoutSolver(solverParams, solverOptions)
   solver.solve()
-  expect(solver.solved).toBe(false)
+  expect(solver.solved).toBe(true)
   const bus = solver.preparedBuses[0]!
   if (bus.termination.type !== "plane") throw new Error("Expected a plane drop")
   const plans = routeBus({
