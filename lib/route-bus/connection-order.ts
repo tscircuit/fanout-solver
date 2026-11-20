@@ -65,6 +65,7 @@ export function getConnectionRank(
 }
 
 export function getConnectionOrders(bus: PreparedBus): PreparedConnection[][] {
+  if (bus.connections.length === 1) return [bus.connections]
   const sign = directionSign(bus.direction)
   const outwardFirst = [...bus.connections].sort((a, b) => {
     const directionalDifference =
@@ -99,13 +100,5 @@ export function getConnectionOrders(bus: PreparedBus): PreparedConnection[][] {
       ...outwardFirst.slice(0, offset),
     ])
   }
-  const seenOrders = new Set<string>()
-  return orders.filter((order) => {
-    const orderKey = order
-      .map((connection) => connection.connectionIndex)
-      .join(",")
-    if (seenOrders.has(orderKey)) return false
-    seenOrders.add(orderKey)
-    return true
-  })
+  return orders
 }
