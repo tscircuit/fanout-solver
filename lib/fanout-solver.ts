@@ -1034,34 +1034,44 @@ function getCandidateEscapeLayersForBus(params: {
   // committed escape vias present. Testing it in isolation is both expensive
   // and can reject a layer whose shared via field guides a valid bus ordering.
   if (busUsesCoordinatedWinding(bus)) return allowedEscapeLayers
+  const routeParams = {
+    srj,
+    bus,
+    acceptedPlans: [],
+    layerNames: config.layerNames,
+    traceWidth: config.traceWidth,
+    viaDiameter: config.viaDiameter,
+    viaHoleDiameter: config.viaHoleDiameter,
+    clearance: config.clearance,
+    compactBusTracks: config.compactBusTracks,
+    allowBlindAndBuriedVias: config.allowBlindAndBuriedVias,
+    allowSameNetMerges: config.allowSameNetMerges,
+    staticClearanceCache,
+  }
   const individuallyRoutableLayers = allowedEscapeLayers.filter(
-    (targetLayer) =>
-      routeBus({
-        srj,
-        bus,
-        targetLayer,
-        acceptedPlans: [],
-        layerNames: config.layerNames,
-        traceWidth: config.traceWidth,
-        viaDiameter: config.viaDiameter,
-        viaHoleDiameter: config.viaHoleDiameter,
-        clearance: config.clearance,
-        compactBusTracks: config.compactBusTracks,
-        allowBlindAndBuriedVias: config.allowBlindAndBuriedVias,
-        allowSameNetMerges: config.allowSameNetMerges,
-        staticClearanceCache,
-      }) !== null,
+    (targetLayer) => routeBus({ ...routeParams, targetLayer }) !== null,
   )
+  if (individuallyRoutableLayers.length > 0) return individuallyRoutableLayers
+  if (bus.exitEdge || bus.preferredExit) return allowedEscapeLayers
 
-  // Existing plans only add clearance constraints, so a layer that cannot
-  // route this bus by itself cannot become viable later in an assignment.
-  // Keep one allowed layer when none route so the bus still reports failure
-  // without multiplying equivalent failed layer assignments.
-  const candidateLayers =
-    individuallyRoutableLayers.length > 0
-      ? individuallyRoutableLayers
-      : allowedEscapeLayers.slice(0, 1)
-  return candidateLayers
+  // An inferred heading can change during routing. Preserve its layer choices
+  // if any other heading works, even when the original heading is blocked.
+  for (const direction of ["left", "right", "up", "down"] as const) {
+    if (direction === bus.direction) continue
+    if (
+      allowedEscapeLayers.some(
+        (targetLayer) =>
+          routeBus({
+            ...routeParams,
+            bus: { ...bus, direction },
+            targetLayer,
+          }) !== null,
+      )
+    )
+      return allowedEscapeLayers
+  }
+  // Keep the failed bus without multiplying equivalent failed assignments.
+  return allowedEscapeLayers.slice(0, 1)
 }
 
 export class FanoutSolver extends BaseSolver {
@@ -5854,7 +5864,21 @@ export class FanoutSolver extends BaseSolver {
         staticClearanceCache: this.routeStaticClearanceCache,
         blockingBusCounts: currentBusBlockingCounts,
       }
-      const busPlans = routeBus(routeParams)
+      let busPlans = routeBus(routeParams)
+      const canRetryHeading =
+        !busPlans &&
+        bus.termination.type === "boundary" &&
+        !bus.requestedDirection &&
+        !bus.preferredExit &&
+        !bus.exitEdge &&
+        !bus.connections.some((connection) => connection.hasExplicitExitTarget)
+      if (canRetryHeading) {
+        for (const direction of ["left", "right", "up", "down"] as const) {
+          if (direction === bus.direction) continue
+          busPlans = routeBus({ ...routeParams, bus: { ...bus, direction } })
+          if (busPlans) break
+        }
+      }
       if (!busPlans) {
         failedBusIds.push(bus.busId)
         for (const [blockingBusId, count] of currentBusBlockingCounts) {
