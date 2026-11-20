@@ -44,7 +44,7 @@ test("native plane escape avoids constructing an unused boundary layout", async 
       start: sourceEscapePath[index],
       end,
       layer: "top",
-      width: 0.1,
+      width: params.traceWidth,
     })),
   )
   expect(plans[0].via).toMatchObject({

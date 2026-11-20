@@ -1269,8 +1269,28 @@ export function prepareFanoutBuses(
         availableRegions,
       })
     }
+    const traceWidths = preparedConnections.map(({ connection }) => {
+      const legacyWidth = (
+        connection as SimpleRouteConnection & { width?: number }
+      ).width
+      return Math.max(
+        srj.minTraceWidth,
+        options.traceWidth ??
+          connection.nominalTraceWidth ??
+          legacyWidth ??
+          srj.nominalTraceWidth ??
+          srj.minTraceWidth,
+      )
+    })
+    const traceWidth = traceWidths[0]
+    if (!traceWidths.every((width) => width === traceWidth)) {
+      throw new Error(
+        `FanoutSolver: bus "${busSpec.busId}" requests different trace widths; configure a common traceWidth or split the bus`,
+      )
+    }
     buses.push({
       busId: busSpec.busId,
+      traceWidth,
       ...(busSpec.maxLengthSkew === undefined
         ? {}
         : { maxLengthSkew: busSpec.maxLengthSkew }),

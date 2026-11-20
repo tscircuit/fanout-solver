@@ -176,13 +176,43 @@ export function planIsStaticallyClear(params: {
     if (!clear) return false
   }
   for (const via of getPlanVias(plan)) {
+    const planeLayer =
+      plan.termination.type === "plane" ? plan.termination.layer : undefined
+    let hasPlaneCopper = false
+    let touchesPlaneCopper = false
     for (const obstacle of srj.obstacles) {
-      // Other-layer pour reservations form antipads, as in dogbone matching.
-      if (
-        obstacle.isCopperPour &&
-        !obstacle.layers.includes(plan.sourceLayer)
-      ) {
-        continue
+      if (obstacle.isCopperPour) {
+        const touchesViaTerminal =
+          obstacle.layers.includes(via.fromLayer) ||
+          obstacle.layers.includes(via.toLayer)
+        if (!touchesViaTerminal) continue
+        const needsPlaneModel =
+          planeLayer && obstacle.layers.includes(planeLayer) && !hasPlaneCopper
+        if (
+          !needsPlaneModel &&
+          distancePointToObstacle(via.center, obstacle) >=
+            via.diameter / 2 + clearance - 1e-9
+        ) {
+          continue
+        }
+        const sameNet =
+          obstacle.connectedTo.includes(plan.connectionName) ||
+          obstacleSharesElectricalNet(srj, obstacle, plan.connectionName)
+        if (
+          sameNet &&
+          planeLayer &&
+          obstacle.layers.includes(planeLayer) &&
+          (via.fromLayer === planeLayer || via.toLayer === planeLayer)
+        ) {
+          hasPlaneCopper = true
+          touchesPlaneCopper ||=
+            distancePointToObstacle(via.center, obstacle) <
+            via.diameter / 2 - 1e-9
+        }
+        // Crossed pours form antipads; terminal pours must clear foreign vias.
+        if (sameNet) {
+          continue
+        }
       }
       if (
         allowsViaInPad(srj) &&
@@ -207,6 +237,7 @@ export function planIsStaticallyClear(params: {
         return false
       }
     }
+    if (hasPlaneCopper && !touchesPlaneCopper) return false
   }
 
   for (const traceCopper of getAllRoutedTraceCopper(
