@@ -1,0 +1,57 @@
+<svg width="900" height="700" viewBox="0 0 900 700" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><polyline data-points="0.6,0 0.3,0" data-type="line" data-label="" points="586.6666666666666,413.0769230769231 523.5897435897435,413.0769230769231" fill="none" stroke="#ef4444" stroke-linejoin="round" stroke-width="21.025641025641026"/></g><g><polyline data-points="0.3,0 0.3,0" data-type="line" data-label="" points="523.5897435897435,413.0769230769231 523.5897435897435,413.0769230769231" fill="none" stroke="#9333ea" stroke-linejoin="round" stroke-width="21.025641025641026"/></g><g><polyline data-points="0.3,0 -1.1,0" data-type="line" data-label="" points="523.5897435897435,413.0769230769231 229.2307692307692,413.0769230769231" fill="none" stroke="#9333ea" stroke-linejoin="round" stroke-width="21.025641025641026"/></g><g><rect data-type="rect" data-label="inner2" data-x="0.29999999999999993" data-y="-0.64" x="229.23076923076923" y="450.9230769230769" width="588.7179487179486" height="193.43589743589746" fill="rgba(255,0,0,0.5)" stroke="black" stroke-width="0.00475609756097561"/></g><g><rect data-type="rect" data-label="inner2" data-x="0.29999999999999993" data-y="0.64" x="229.23076923076923" y="181.79487179487182" width="588.7179487179486" height="193.4358974358975" fill="rgba(255,0,0,0.5)" stroke="black" stroke-width="0.00475609756097561"/></g><g><rect data-type="rect" data-label="inner2" data-x="-0.79" data-y="0" x="229.23076923076917" y="375.2307692307692" width="130.3589743589744" height="75.69230769230774" fill="rgba(255,0,0,0.5)" stroke="black" stroke-width="0.00475609756097561"/></g><g><rect data-type="rect" data-label="inner2" data-x="0" data-y="0" x="435.28205128205127" y="375.2307692307692" width="50.46153846153845" height="75.69230769230774" fill="rgba(255,0,0,0.5)" stroke="black" stroke-width="0.00475609756097561"/></g><g><rect data-type="rect" data-label="inner2" data-x="1.0899999999999999" data-y="0" x="561.4358974358975" y="375.2307692307692" width="256.51282051282044" height="75.69230769230774" fill="rgba(255,0,0,0.5)" stroke="black" stroke-width="0.00475609756097561"/></g><g><rect data-type="rect" data-label="top
+DQ
+inner1
+DQ
+inner2
+DQ
+bottom
+DQ" data-x="0.3" data-y="0" x="502.5641025641025" y="392.05128205128204" width="42.0512820512821" height="42.0512820512821" fill="rgba(255,0,0,0.9375)" stroke="black" stroke-width="0.00475609756097561"/></g><circle data-type="circle" data-label="" data-x="0.3" data-y="0" cx="523.5897435897435" cy="413.0769230769231" r="21.025641025641026" fill="blue" stroke="none" stroke-width="0.00475609756097561"/><circle data-type="circle" data-label="" data-x="0" data-y="0" cx="460.5128205128205" cy="413.0769230769231" r="21.025641025641026" fill="rgba(255,0,0,0.5)" stroke="black" stroke-width="0.00475609756097561"/><circle data-type="circle" data-label="" data-x="0.6" data-y="0" cx="586.6666666666666" cy="413.0769230769231" r="21.025641025641026" fill="rgba(255,0,0,0.5)" stroke="black" stroke-width="0.00475609756097561"/><circle data-type="circle" data-label="" data-x="0" data-y="-0.6" cx="460.5128205128205" cy="539.2307692307693" r="21.025641025641026" fill="rgba(255,0,0,0.5)" stroke="black" stroke-width="0.00475609756097561"/><circle data-type="circle" data-label="" data-x="0.6" data-y="-0.6" cx="586.6666666666666" cy="539.2307692307693" r="21.025641025641026" fill="rgba(255,0,0,0.5)" stroke="black" stroke-width="0.00475609756097561"/><text data-type="text" data-label="Signal and ground must share two via openings." data-x="-1.1" data-y="1.6500000000000001" x="229.2307692307692" y="66.15384615384613" fill="#0f172a" font-size="21.025641025641026" font-family="sans-serif" text-anchor="start" dominant-baseline="central">Signal and ground must share two via openings.</text><text data-type="text" data-label="FAIL: Only 1/2 connections escape; one is blocked." data-x="-1.1" data-y="1.4000000000000001" x="229.2307692307692" y="118.71794871794873" fill="#b91c1c" font-size="21.025641025641026" font-family="sans-serif" text-anchor="start" dominant-baseline="central">FAIL: Only 1/2 connections escape; one is blocked.</text><g><circle data-type="point" data-label="GND
+GND
+top" data-x="0" data-y="0" cx="460.5128205128205" cy="413.0769230769231" r="3" fill="hsl(0, 100%, 50%)"/></g><g><circle data-type="point" data-label="DQ
+DQ
+bottom" data-x="-1.1" data-y="0" cx="229.2307692307692" cy="413.0769230769231" r="3" fill="hsl(170, 100%, 50%)"/></g><g><circle data-type="point" data-label="DQ
+DQ
+bottom" data-x="-2" data-y="0" cx="40" cy="413.0769230769231" r="3" fill="hsl(170, 100%, 50%)"/></g><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="700" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="900" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+              document.currentScript.parentElement.addEventListener('mousemove', (e) => {
+                const svg = e.currentTarget;
+                const rect = svg.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const crosshair = svg.getElementById('crosshair');
+                const h = svg.getElementById('crosshair-h');
+                const v = svg.getElementById('crosshair-v');
+                const coords = svg.getElementById('coordinates');
+                
+                crosshair.style.display = 'block';
+                h.setAttribute('x1', '0');
+                h.setAttribute('x2', '900');
+                h.setAttribute('y1', y);
+                h.setAttribute('y2', y);
+                v.setAttribute('x1', x);
+                v.setAttribute('x2', x);
+                v.setAttribute('y1', '0');
+                v.setAttribute('y2', '700');
+
+                // Calculate real coordinates using inverse transformation
+                const matrix = {"a":210.25641025641025,"c":0,"e":460.5128205128205,"b":0,"d":-210.25641025641025,"f":413.0769230769231};
+                // Manually invert and apply the affine transform
+                // Since we only use translate and scale, we can directly compute:
+                // x' = (x - tx) / sx
+                // y' = (y - ty) / sy
+                const sx = matrix.a;
+                const sy = matrix.d;
+                const tx = matrix.e; 
+                const ty = matrix.f;
+                const realPoint = {
+                  x: (x - tx) / sx,
+                  y: (y - ty) / sy // Flip y back since we used negative scale
+                }
+                
+                coords.textContent = `(${realPoint.x.toFixed(2)}, ${realPoint.y.toFixed(2)})`;
+                coords.setAttribute('x', (x + 5).toString());
+                coords.setAttribute('y', (y - 5).toString());
+              });
+              document.currentScript.parentElement.addEventListener('mouseleave', () => {
+                document.currentScript.parentElement.getElementById('crosshair').style.display = 'none';
+              });
+            ]]></script></svg>
