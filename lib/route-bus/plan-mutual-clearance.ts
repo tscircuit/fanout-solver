@@ -1,10 +1,29 @@
 import { distance, distancePointToSegment, segmentsAreClear } from "../geometry"
 import { connectionsShareElectricalNet } from "../net-identity"
 import { RouteSegmentSpatialIndex } from "../route-segment-spatial-index"
-import type { FanoutRoutePlan } from "../types"
+import type { FanoutRoutePlan, RoutedSegment, RoutedVia } from "../types"
 import { getPlanSegments, getPlanVias } from "./plan-copper"
 import type { BusId } from "./types"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
+
+function viaIsNearSegment({
+  via,
+  segment,
+  clearance,
+}: {
+  via: RoutedVia
+  segment: RoutedSegment
+  clearance: number
+}): boolean {
+  // Overlapping bounds still require the exact distance check below.
+  const margin = (via.diameter + segment.width) / 2 + clearance + 1e-9
+  return (
+    via.center.x >= Math.min(segment.start.x, segment.end.x) - margin &&
+    via.center.x <= Math.max(segment.start.x, segment.end.x) + margin &&
+    via.center.y >= Math.min(segment.start.y, segment.end.y) - margin &&
+    via.center.y <= Math.max(segment.start.y, segment.end.y) + margin
+  )
+}
 
 export function planIsClearOfPlans(params: {
   plan: FanoutRoutePlan
@@ -70,6 +89,7 @@ export function planIsClearOfPlans(params: {
       for (const otherVia of otherVias) {
         if (
           otherVia.spanLayers.includes(segment.layer) &&
+          viaIsNearSegment({ via: otherVia, segment, clearance }) &&
           distancePointToSegment(otherVia.center, segment.start, segment.end) <
             otherVia.diameter / 2 + segment.width / 2 + clearance - 1e-9
         ) {
@@ -83,6 +103,11 @@ export function planIsClearOfPlans(params: {
         otherSegments) {
         if (
           planVia.spanLayers.includes(otherSegment.layer) &&
+          viaIsNearSegment({
+            via: planVia,
+            segment: otherSegment,
+            clearance,
+          }) &&
           distancePointToSegment(
             planVia.center,
             otherSegment.start,
