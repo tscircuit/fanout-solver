@@ -153,6 +153,8 @@ export function searchConnectionOrder(
     )
   for (let trackIndex = 0; trackIndex < trackCandidates.length; trackIndex++) {
     const track = trackCandidates[trackIndex]!
+    const cacheKey = `boundary:${startAtSource}:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`
+    if (staticClearanceCache?.get(cacheKey) === false) continue
     const plan = buildPlan({
       preparedConnection,
       bus,
@@ -187,7 +189,7 @@ export function searchConnectionOrder(
         otherPlans: [...acceptedPlans, ...candidatePlans],
         staticClearanceCache,
         blockingBusCounts,
-        cacheKey: `boundary:${startAtSource}:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`,
+        cacheKey,
         srj,
         sharedBoundary: bus.sharedBoundary,
         clearance,
