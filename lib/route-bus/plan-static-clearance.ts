@@ -214,6 +214,16 @@ export function planIsStaticallyClear(params: {
           continue
         }
       }
+      const obstacleRadiusBound =
+        (Math.abs(obstacle.width) + Math.abs(obstacle.height)) / 2
+      const broadPhaseDistance =
+        obstacleRadiusBound + via.diameter / 2 + clearance + 1e-9
+      if (
+        Math.abs(via.center.x - obstacle.center.x) > broadPhaseDistance ||
+        Math.abs(via.center.y - obstacle.center.y) > broadPhaseDistance
+      ) {
+        continue
+      }
       if (
         allowsViaInPad(srj) &&
         obstacle === plan.sourceObstacle &&
