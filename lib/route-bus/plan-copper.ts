@@ -10,6 +10,9 @@ export function getPlanSegments(plan: FanoutRoutePlan): RoutedSegment[] {
 export function getPlanVias(
   plan: FanoutRoutePlan,
 ): NonNullable<FanoutRoutePlan["via"]>[] {
+  if (!plan.additionalVias?.length && !plan.planeEndpointVia) {
+    return plan.via ? [plan.via] : []
+  }
   return [
     plan.via,
     ...(plan.additionalVias ?? []),
