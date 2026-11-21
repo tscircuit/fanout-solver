@@ -3,16 +3,11 @@ import type {
   SimpleRouteJson,
   SimpleRouteConnection,
 } from "@tscircuit/capacity-autorouter"
-import {
-  distancePointToObstacle,
-  distance,
-  distancePointToSegment,
-  segmentsAreClear,
-} from "./geometry"
+import { distancePointToObstacle } from "./geometry"
 import { prepareFanoutBuses } from "./prepare-buses"
 import {
-  matchComponentDogboneViaSites,
-  getComponentDogboneViaSiteCandidates,
+  candidatesAreMutuallyClear,
+  matchDogboneViaSites,
 } from "./match-component-dogbone-via-sites"
 import {
   getCopperLayerNames,
@@ -20,8 +15,10 @@ import {
   getRouteViaSpanLayers,
 } from "./layer-names"
 import type {
+  Bounds,
   FanoutSimplifiedPcbTrace,
   FanoutBusSpec,
+  Point2D,
   RoutedSegment,
 } from "./types"
 
@@ -33,6 +30,25 @@ export interface LocalSignalDogboneOptions {
   clearance: number
   holeToHoleClearance?: number
   boardEdgeClearance?: number
+}
+
+function outlineMatchesBounds(outline: readonly Point2D[], bounds: Bounds) {
+  const [first, second, third, fourth, closing] = outline
+  if (!first || !second || !third || !fourth || outline.length > 5) return false
+  if (closing && (closing.x !== first.x || closing.y !== first.y)) return false
+
+  const corners = [first, second, third, fourth]
+  return corners.every((corner, index) => {
+    const next = corners[(index + 1) % corners.length]!
+    const opposite = corners[(index + 2) % corners.length]!
+    return (
+      (corner.x === bounds.minX || corner.x === bounds.maxX) &&
+      (corner.y === bounds.minY || corner.y === bounds.maxY) &&
+      (corner.x === next.x || corner.y === next.y) &&
+      corner.x !== opposite.x &&
+      corner.y !== opposite.y
+    )
+  })
 }
 
 /** Local signal escapes in board-world mm (+X right, +Y up). All geometry is
@@ -57,11 +73,10 @@ export function routeLocalSignalDogbones(
     if (connection.pointsToConnect.length !== 2)
       throw Error(`${connection.name}: two terminals required`)
     for (const [pointIndex, point] of connection.pointsToConnect.entries()) {
-      const available = "layer" in point ? [point.layer] : point.layers
-      if (available.includes(target)) {
-        const { layers: _layers, ...metadata } = point as typeof point & {
-          layers?: string[]
-        }
+      if ("layer" in point) {
+        if (point.layer === target) continue
+      } else if (point.layers.includes(target)) {
+        const { layers: _layers, ...metadata } = point
         connection.pointsToConnect[pointIndex] = { ...metadata, layer: target }
         continue
       }
@@ -158,7 +173,8 @@ export function routeLocalSignalDogbones(
     diameter: number
     spanLayers: string[]
   }> = []
-  for (const trace of input.traces ?? []) {
+  const fixedTraces: readonly FanoutSimplifiedPcbTrace[] = input.traces ?? []
+  for (const trace of fixedTraces) {
     for (const [i, point] of trace.route.entries()) {
       if (point.route_type === "via") {
         blockingVias.push({
@@ -168,9 +184,9 @@ export function routeLocalSignalDogbones(
           spanLayers: getRouteViaSpanLayers({
             fromLayer: point.from_layer,
             toLayer: point.to_layer,
-            layers: (point as typeof point & { layers?: string[] }).layers,
+            layers: point.layers,
             layerNames: layers,
-            allowBlindAndBuriedVias: allowBlindAndBuriedVias,
+            allowBlindAndBuriedVias,
           }),
         })
         const next = trace.route[i + 1]
@@ -211,21 +227,39 @@ export function routeLocalSignalDogbones(
     }
   }
   const allPrepared = prepared.flatMap((bus) => bus.connections)
+  const preparedByIndex = new Map(
+    allPrepared.map((connection) => [connection.connectionIndex, connection]),
+  )
   const viaLayersByConnectionIndex = new Map(
     endpoints.map((endpoint, index) => {
       const connection = connections[endpoint.connectionIndex]!
-      const source = allPrepared.find((c) => c.connectionIndex === index)!
+      const source = preparedByIndex.get(index)!
       return [
         index,
         getViaSpanLayers({
           fromLayer: source.sourceLayer,
           toLayer: options.targetLayers.get(connection.name)!,
           layerNames: layers,
-          allowBlindAndBuriedVias: allowBlindAndBuriedVias,
+          allowBlindAndBuriedVias,
         }),
       ] as const
     }),
   )
+  const margin = options.viaDiameter / 2 + (options.boardEdgeClearance ?? 0)
+  const viaBounds = {
+    minX: input.bounds.minX + margin,
+    maxX: input.bounds.maxX - margin,
+    minY: input.bounds.minY + margin,
+    maxY: input.bounds.maxY - margin,
+  }
+  let rectangularViaBounds: Bounds | undefined
+  // An inset rectangle is sufficient only when it matches the board outline.
+  if (
+    !input.outline?.length ||
+    outlineMatchesBounds(input.outline, input.bounds)
+  ) {
+    rectangularViaBounds = viaBounds
+  }
   const geometryRules = {
     viaLayersByConnectionIndex,
     viaDiameter: options.viaDiameter,
@@ -237,83 +271,37 @@ export function routeLocalSignalDogbones(
     blockingSegments,
     blockingVias,
   }
-  const candidates = getComponentDogboneViaSiteCandidates(
-    prepared,
-    geometryRules,
-  )
-  const preferredViaPointsByConnectionIndex = new Map<
-    number,
-    { x: number; y: number }
-  >()
-  // A consistent interstitial quadrant avoids opposing stubs competing for
-  // the same via site. These are preferences, not forced assignments.
-  for (const connection of prepared.flatMap((b) => b.connections)) {
-    const choices = candidates.filter(
-      (c) => c.connectionIndex === connection.connectionIndex,
-    )
-    const origin = connection.sourcePoint
-    const rank = (p: { x: number; y: number }) =>
-      Number(p.x < origin.x) * 2 +
-      Number(p.y > origin.y) * 2 +
-      Math.hypot(p.x - origin.x, p.y - origin.y)
-    choices.sort((a, b) => rank(a.point) - rank(b.point))
-    if (choices[0])
-      preferredViaPointsByConnectionIndex.set(
-        connection.connectionIndex,
-        choices[0].point,
-      )
-  }
-  const sites = matchComponentDogboneViaSites(prepared, {
+  const sites = matchDogboneViaSites(prepared, {
     ...geometryRules,
-    preferredViaPointsByConnectionIndex,
+    localSignal: { rectangularViaBounds },
   })
   if (!sites) throw Error("No collision-free local dogbone assignment")
   // The matcher works component by component. Check interactions across those
   // assignments too: through vias can collide even on different signal layers.
-  for (let i = 0; i < allPrepared.length; i++)
-    for (let j = 0; j < i; j++) {
-      const a = allPrepared[i]!,
-        b = allPrepared[j]!,
-        p = sites.get(a.connectionIndex)!,
-        q = sites.get(b.connectionIndex)!
-      const stubA = {
-        start: a.sourcePoint,
-        end: p,
-        layer: a.sourceLayer,
-        width: options.traceWidth,
+  const assigned = allPrepared.map(
+    ({ connectionIndex, sourcePoint, sourceLayer }) => {
+      const point = sites.get(connectionIndex)!
+      return {
+        connectionIndex,
+        point,
+        viaLayers: viaLayersByConnectionIndex.get(connectionIndex)!,
+        sourceSegment: {
+          start: sourcePoint,
+          end: point,
+          layer: sourceLayer,
+          width: options.traceWidth,
+        },
       }
-      const stubB = {
-        start: b.sourcePoint,
-        end: q,
-        layer: b.sourceLayer,
-        width: options.traceWidth,
-      }
-      const viaSeparation = Math.max(
-        options.viaDiameter + options.clearance,
-        options.viaHoleDiameter +
-          (options.holeToHoleClearance ?? options.clearance),
-      )
-      const viaTrace =
-        options.viaDiameter / 2 + options.traceWidth / 2 + options.clearance
+    },
+  )
+  for (const [index, first] of assigned.entries())
+    for (let previousIndex = 0; previousIndex < index; previousIndex++) {
       if (
-        (viaLayersByConnectionIndex
-          .get(a.connectionIndex)!
-          .some((layer) =>
-            viaLayersByConnectionIndex.get(b.connectionIndex)!.includes(layer),
-          ) &&
-          distance(p, q) < viaSeparation - 1e-9) ||
-        (viaLayersByConnectionIndex
-          .get(a.connectionIndex)!
-          .includes(stubB.layer) &&
-          distancePointToSegment(p, stubB.start, stubB.end) <
-            viaTrace - 1e-9) ||
-        (viaLayersByConnectionIndex
-          .get(b.connectionIndex)!
-          .includes(stubA.layer) &&
-          distancePointToSegment(q, stubA.start, stubA.end) <
-            viaTrace - 1e-9) ||
-        (a.sourceLayer === b.sourceLayer &&
-          !segmentsAreClear(stubA, stubB, options.clearance))
+        !candidatesAreMutuallyClear({
+          first,
+          second: assigned[previousIndex]!,
+          rules: geometryRules,
+        })
       )
         throw Error("Local dogbones collide between components")
     }
@@ -321,18 +309,15 @@ export function routeLocalSignalDogbones(
   for (const [endpointIndex, endpoint] of endpoints.entries()) {
     const connection = connections[endpoint.connectionIndex]!
     const source = connection.pointsToConnect[endpoint.pointIndex]!
-    const preparedConnection = prepared
-      .flatMap((b) => b.connections)
-      .find((c) => c.connectionIndex === endpointIndex)!
+    const preparedConnection = preparedByIndex.get(endpointIndex)!
     const fromLayer = preparedConnection.sourceLayer
     const toLayer = options.targetLayers.get(connection.name)!
     const site = sites.get(endpointIndex)!
-    const margin = options.viaDiameter / 2 + (options.boardEdgeClearance ?? 0)
     if (
-      site.x < input.bounds.minX + margin ||
-      site.x > input.bounds.maxX - margin ||
-      site.y < input.bounds.minY + margin ||
-      site.y > input.bounds.maxY - margin
+      site.x < viaBounds.minX ||
+      site.x > viaBounds.maxX ||
+      site.y < viaBounds.minY ||
+      site.y > viaBounds.maxY
     )
       throw Error(`${connection.name}: dogbone outside board bounds`)
     const span = viaLayersByConnectionIndex.get(endpointIndex)!
