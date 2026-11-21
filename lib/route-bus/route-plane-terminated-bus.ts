@@ -251,8 +251,21 @@ export function routePlaneTerminatedBus(
         ? [0]
         : [1, -1]
 
+    const isFirstRouteSearch =
+      !params.collectAlternative && planeCandidateSkipCount === 0
+    const originalConnectionOrders = getConnectionOrders(directionalBus)
+    const connectionOrders =
+      bus.connections.length === 1 && isFirstRouteSearch
+        ? [bus.connections]
+        : originalConnectionOrders
+    const skippedOrderCount =
+      originalConnectionOrders.length - connectionOrders.length
     for (const viaHandedness of viaHandednesses) {
-      for (const connectionOrder of getConnectionOrders(directionalBus)) {
+      const initialBlockingBusCounts =
+        skippedOrderCount > 0 && blockingBusCounts
+          ? new Map(blockingBusCounts)
+          : undefined
+      for (const connectionOrder of connectionOrders) {
         const candidatePlans: FanoutRoutePlan[] = []
         let orderIsClear = true
         for (const preparedConnection of connectionOrder) {
@@ -355,6 +368,16 @@ export function routePlaneTerminatedBus(
           candidatePlans.push(plan)
         }
         if (orderIsClear) return candidatePlans
+      }
+      if (initialBlockingBusCounts && blockingBusCounts) {
+        for (const [busId, count] of blockingBusCounts) {
+          const addedBlockerCount =
+            count - (initialBlockingBusCounts.get(busId) ?? 0)
+          blockingBusCounts.set(
+            busId,
+            count + addedBlockerCount * skippedOrderCount,
+          )
+        }
       }
     }
   }
