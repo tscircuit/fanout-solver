@@ -14,6 +14,7 @@ import {
 import { getCopperLayerNames, getRouteViaSpanLayers } from "./layer-names"
 import {
   connectionsShareElectricalNet,
+  invalidateElectricalNetIdentity,
   obstacleSharesElectricalNet,
 } from "./net-identity"
 import type { Point2D, RoutedSegment } from "./types"
@@ -257,6 +258,9 @@ export function validateRoutedCopperDrc(params: {
     clearance,
     allowBlindAndBuriedVias = true,
   } = params
+  // Callers may edit connectivity in place between audits. Rebuild ownership
+  // lazily for this audit, then reuse it throughout the synchronous checks.
+  invalidateElectricalNetIdentity(inputSrj)
   const issues: RoutedCopperDrcIssue[] = []
   const layerNames = getCopperLayerNames(routedSrj.layerCount)
   const traceCopper: TraceCopper[] = []
