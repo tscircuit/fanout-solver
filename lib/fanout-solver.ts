@@ -5960,15 +5960,17 @@ export class FanoutSolver extends BaseSolver {
         blockingBusCounts.clear()
       }
     }
-    let outputSrj = buildOutputSimpleRouteJson({
-      inputSrj: this.inputSrj,
-      plans,
-      layerNames: this.config.layerNames,
-    })
-    const validation =
+    let outputSrj =
       plans.length === this.inputSrj.connections.length
-        ? this.validateCompletePlans(plans, outputSrj)
-        : null
+        ? buildOutputSimpleRouteJson({
+            inputSrj: this.inputSrj,
+            plans,
+            layerNames: this.config.layerNames,
+          })
+        : undefined
+    const validation = outputSrj
+      ? this.validateCompletePlans(plans, outputSrj)
+      : null
     if (validation && !validation.valid) {
       // Every route-producing strategy must pass the same final layer-aware,
       // same-net-aware copper validation before it can be scored as complete.
@@ -5976,11 +5978,7 @@ export class FanoutSolver extends BaseSolver {
       plans = []
       failedBusIds = this.preparedBuses.map((bus) => bus.busId)
       blockingBusCounts.clear()
-      outputSrj = buildOutputSimpleRouteJson({
-        inputSrj: this.inputSrj,
-        plans,
-        layerNames: this.config.layerNames,
-      })
+      outputSrj = undefined
     }
 
     const routedBusCount = this.preparedBuses.length - failedBusIds.length
@@ -6012,6 +6010,11 @@ export class FanoutSolver extends BaseSolver {
       plans,
       strategy: routingStrategy,
     })
+    const outputParams = {
+      inputSrj: this.inputSrj,
+      plans,
+      layerNames: this.config.layerNames,
+    }
     return {
       summary,
       plans,
@@ -6022,7 +6025,9 @@ export class FanoutSolver extends BaseSolver {
       blockingBusIds: [...blockingBusCounts.entries()]
         .toSorted(([, firstCount], [, secondCount]) => secondCount - firstCount)
         .map(([busId]) => busId),
-      outputSrj,
+      get outputSrj() {
+        return (outputSrj ??= buildOutputSimpleRouteJson(outputParams))
+      },
     }
   }
 
