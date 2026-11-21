@@ -120,12 +120,17 @@ export function planIsClearOfPlans(params: {
         }
       }
       for (const otherVia of otherVias) {
+        const requiredDistance =
+          (planVia.diameter + otherVia.diameter) / 2 + clearance
         if (
+          Math.abs(planVia.center.x - otherVia.center.x) <=
+            requiredDistance + 1e-9 &&
+          Math.abs(planVia.center.y - otherVia.center.y) <=
+            requiredDistance + 1e-9 &&
           planVia.spanLayers.some((layer) =>
             otherVia.spanLayers.includes(layer),
           ) &&
-          distance(planVia.center, otherVia.center) <
-            (planVia.diameter + otherVia.diameter) / 2 + clearance - 1e-9
+          distance(planVia.center, otherVia.center) < requiredDistance - 1e-9
         ) {
           recordBlocker()
           return false
