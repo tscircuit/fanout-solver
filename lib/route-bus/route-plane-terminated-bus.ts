@@ -269,6 +269,11 @@ export function routePlaneTerminatedBus(
         const candidatePlans: FanoutRoutePlan[] = []
         let orderIsClear = true
         for (const preparedConnection of connectionOrder) {
+          const sourcePathsCacheKey = `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}`
+          if (staticClearanceCache?.get(sourcePathsCacheKey) === false) {
+            orderIsClear = false
+            break
+          }
           const sourceTrack = getPerpendicularAxis(
             preparedConnection.sourcePoint,
             direction,
@@ -277,6 +282,7 @@ export function routePlaneTerminatedBus(
             { preparedConnection, viaHandedness },
             { ...params, bus: directionalBus },
           )
+          let allSourcePathsAreStaticallyRejected = true
           let plan: FanoutRoutePlan | undefined
           for (const [
             pathIndex,
@@ -288,7 +294,7 @@ export function routePlaneTerminatedBus(
               viaDiameter,
               clearance,
             })
-            const cacheKeyPrefix = `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}:${pathIndex}`
+            const cacheKeyPrefix = `${sourcePathsCacheKey}:${pathIndex}`
             // The base plan follows every endpoint variant in the cache order.
             const basePlanIndex = endpointViaCandidates.length
             const basePlanCacheKey = `${cacheKeyPrefix}:${basePlanIndex}`
@@ -303,6 +309,7 @@ export function routePlaneTerminatedBus(
                 return endpointPlanIsStaticallyRejected
               })
             if (allVariantsAreStaticallyRejected) continue
+            allSourcePathsAreStaticallyRejected = false
             const basePlan = buildPlan({
               preparedConnection,
               bus: directionalBus,
@@ -360,6 +367,9 @@ export function routePlaneTerminatedBus(
               selection,
             )
             if (plan) break
+          }
+          if (allSourcePathsAreStaticallyRejected) {
+            staticClearanceCache?.set(sourcePathsCacheKey, false)
           }
           if (!plan) {
             orderIsClear = false
