@@ -1,0 +1,630 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1066.6666666666667">
+<style>
+</style>
+<rect class="boundary" x="0" y="0" fill="#000" width="1000" height="1066.6666666666667" data-type="pcb_background" data-pcb-layer="global"/>
+<rect class="pcb-boundary" fill="none" stroke="#fff" stroke-width="0.3" x="21.276595744680833" y="22.695035460992813" width="957.4468085106382" height="1021.2765957446809" data-type="pcb_boundary" data-pcb-layer="global"/>
+<path class="pcb-board" d="M 21.276595744680833 1043.9716312056737 L 978.7234042553191 1043.9716312056737 L 978.7234042553191 22.695035460992813 L 21.276595744680833 22.695035460992813 Z" fill="none" stroke="rgba(255, 255, 255, 0.5)" stroke-width="2.127659574468085" data-type="pcb_board" data-pcb-layer="board"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="361.70240425531915" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="375.5318936170213" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="389.36138297872344" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="403.1908723404255" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="417.0203617021277" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="430.84985106382976" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="444.6793404255319" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="458.50882978723405" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="472.3383191489362" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="486.1678085106383" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="499.9972978723404" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="513.8267872340425" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="527.6562765957447" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="541.4857659574468" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="555.315255319149" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="569.1447446808511" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="582.9742340425532" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="596.8037234042554" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="610.6332127659574" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="446.09480141843966" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="404.6063333333333" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="363.11786524822685" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="321.62939716312053" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="280.1409290780141" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="624.4627021276596" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="501.4181631205673" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="487.58326950354603" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="473.7537801418439" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="459.92429078014175" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="432.2653120567375" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="418.43582269503537" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="390.77684397163114" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="376.947354609929" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="349.28837588652476" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="335.4588865248227" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="307.7999078014184" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="293.97041843971624" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="266.31143971631195" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="252.48195035460986" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="238.65246099290778" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="638.2975957446808" cy="224.82297163120558" r="2.6383574468085107" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="660.9958652482269" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="678.0192695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="695.037269503546" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="712.0606737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="729.0786737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="746.1020780141844" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="763.1254822695034" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="780.1434822695035" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="797.1668865248225" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="814.1848865248226" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="831.2082907801419" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="848.2316950354609" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="865.249695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="882.27309929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="899.29109929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="431.9171914893617" cy="916.3145035460992" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="660.9958652482269" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="678.0192695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="695.037269503546" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="712.0606737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="729.0786737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="746.1020780141844" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="763.1254822695034" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="780.1434822695035" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="797.1668865248225" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="814.1848865248226" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="831.2082907801419" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="848.2316950354609" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="865.249695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="882.27309929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="899.29109929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="448.9351914893617" cy="916.3145035460992" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="660.9958652482269" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="678.0192695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="695.037269503546" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="712.0606737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="729.0786737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="746.1020780141844" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="763.1254822695034" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="780.1434822695035" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="797.1668865248225" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="814.1848865248226" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="831.2082907801419" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="848.2316950354609" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="865.249695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="882.27309929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="899.29109929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="465.95859574468085" cy="916.3145035460992" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="660.9958652482269" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="678.0192695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="695.037269503546" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="712.0606737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="729.0786737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="746.1020780141844" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="763.1254822695034" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="780.1434822695035" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="797.1668865248225" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="814.1848865248226" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="831.2082907801419" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="848.2316950354609" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="865.249695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="882.27309929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="899.29109929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="534.0414042553191" cy="916.3145035460992" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="660.9958652482269" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="678.0192695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="695.037269503546" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="712.0606737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="729.0786737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="746.1020780141844" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="763.1254822695034" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="780.1434822695035" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="797.1668865248225" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="814.1848865248226" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="831.2082907801419" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="848.2316950354609" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="865.249695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="882.27309929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="899.29109929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="551.0648085106383" cy="916.3145035460992" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="660.9958652482269" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="678.0192695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="695.037269503546" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="712.0606737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="729.0786737588652" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="746.1020780141844" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="763.1254822695034" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="780.1434822695035" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="797.1668865248225" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="814.1848865248226" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="831.2082907801419" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="848.2316950354609" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="865.249695035461" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="882.27309929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="899.29109929078" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<circle class="pcb-pad" fill="rgb(200, 52, 52)" cx="568.0828085106383" cy="916.3145035460992" r="3.723531914893617" data-type="pcb_smtpad" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 499.9972978723404 459.92429078014175 L 506.9148936170213 466.8439716312056" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 474.468085106383 771.6312056737588 L 465.95859574468085 763.1254822695034" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 499.9972978723404 473.7537801418439 L 506.9148936170213 480.67375886524815" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 474.468085106383 754.6099290780141 L 465.95859574468085 746.1020780141844" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 527.6562765957447 473.7537801418439 L 534.5744680851064 480.67375886524815" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 542.5531914893617 737.5886524822695 L 534.0414042553191 729.0786737588652" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 472.3383191489362 459.92429078014175 L 479.25531914893617 466.8439716312056" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 542.5531914893617 754.6099290780141 L 534.0414042553191 746.1020780141844" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 486.1678085106383 459.92429078014175 L 493.0851063829787 466.8439716312056" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 457.4468085106383 771.6312056737588 L 448.9351914893617 763.1254822695034" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 472.3383191489362 473.7537801418439 L 479.25531914893617 480.67375886524815" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 457.4468085106383 788.6524822695035 L 448.9351914893617 780.1434822695035" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 486.1678085106383 473.7537801418439 L 493.0851063829787 480.67375886524815" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 559.5744680851064 788.6524822695035 L 551.0648085106383 780.1434822695035" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 527.6562765957447 459.92429078014175 L 534.5744680851064 466.8439716312056" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 542.5531914893617 788.6524822695035 L 534.0414042553191 780.1434822695035" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 541.4857659574468 473.7537801418439 L 548.4042553191489 480.67375886524815" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 542.5531914893617 805.6737588652481 L 534.0414042553191 797.1668865248225" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 541.4857659574468 459.92429078014175 L 548.4042553191489 466.8439716312056" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 474.468085106383 788.6524822695035 L 465.95859574468085 780.1434822695035" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 513.8267872340425 459.92429078014175 L 520.7446808510639 466.8439716312056" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 474.468085106383 805.6737588652481 L 465.95859574468085 797.1668865248225" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-silkscreen pcb-silkscreen-top" d="M 349.4369063829789 212.55855460992916 L 650.5512042553194 212.55855460992916 L 650.5512042553194 513.6728524822698 L 349.4369063829789 513.6728524822698 L 349.4369063829789 212.55855460992916 Z" fill="none" stroke="#f2eda1" stroke-width="2.127659574468085" stroke-linecap="round" stroke-linejoin="round" data-pcb-component-id="pcb_component_0" data-pcb-silkscreen-path-id="pcb_silkscreen_path_0" data-type="pcb_silkscreen_path" data-pcb-layer="top"/>
+<path class="pcb-silkscreen pcb-silkscreen-top" d="M 344.5730765957449 505.1622312056736 L 344.5730765957449 518.5366822695037 L 357.94752765957463 518.5366822695037" fill="none" stroke="#f2eda1" stroke-width="2.127659574468085" stroke-linecap="round" stroke-linejoin="round" data-pcb-component-id="pcb_component_0" data-pcb-silkscreen-path-id="pcb_silkscreen_path_1" data-type="pcb_silkscreen_path" data-pcb-layer="top"/>
+<circle cx="332.2113829787234" cy="513.929014184397" r="2.1292765957446806" class="pcb-silkscreen-circle pcb-silkscreen-top" fill="none" stroke="#f2eda1" stroke-width="2.127659574468085" data-pcb-silkscreen-circle-id="pcb_silkscreen_circle_0" data-type="pcb_silkscreen_circle" data-pcb-layer="top"/>
+<text x="0" y="0" dx="0" dy="0" fill="#f2eda1" font-family="Arial, sans-serif" font-size="21.27659574468085" text-anchor="middle" dominant-baseline="central" transform="matrix(1,0,0,1,490.39934042553193,191.46246099290772)" class="pcb-silkscreen-text pcb-silkscreen-top" data-pcb-silkscreen-text-id="pcb_silkscreen_text_0" stroke="none" data-type="pcb_silkscreen_text" data-pcb-layer="top">U1</text>
+<circle cx="410.82978723404256" cy="661.655184397163" r="2.1292765957446806" class="pcb-silkscreen-circle pcb-silkscreen-top" fill="none" stroke="#f2eda1" stroke-width="2.127659574468085" data-pcb-silkscreen-circle-id="pcb_silkscreen_circle_1" data-type="pcb_silkscreen_circle" data-pcb-layer="top"/>
+<rect x="420.21157446808513" y="650.3548865248226" width="159.57685106382976" height="276.5951914893617" class="pcb-silkscreen-rect pcb-silkscreen-top" data-pcb-silkscreen-rect-id="pcb_silkscreen_rect_0" data-type="pcb_silkscreen_rect" data-pcb-layer="top" fill="none" stroke="#f2eda1" stroke-width="4.255310638297872"/>
+<text x="0" y="0" dx="0" dy="0" fill="#f2eda1" font-family="Arial, sans-serif" font-size="21.27659574468085" text-anchor="middle" dominant-baseline="central" transform="matrix(1,0,0,1,494.32553191489365,628.4892269503546)" class="pcb-silkscreen-text pcb-silkscreen-top" data-pcb-silkscreen-text-id="pcb_silkscreen_text_1" stroke="none" data-type="pcb_silkscreen_text" data-pcb-layer="top">U2</text>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="506.9148936170213" cy="466.8439716312056" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="506.9148936170213" cy="466.8439716312056" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="474.468085106383" cy="771.6312056737588" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="474.468085106383" cy="771.6312056737588" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="506.9148936170213" cy="480.67375886524815" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="506.9148936170213" cy="480.67375886524815" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="474.468085106383" cy="754.6099290780141" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="474.468085106383" cy="754.6099290780141" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="534.5744680851064" cy="480.67375886524815" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="534.5744680851064" cy="480.67375886524815" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="542.5531914893617" cy="737.5886524822695" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="542.5531914893617" cy="737.5886524822695" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="479.25531914893617" cy="466.8439716312056" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="479.25531914893617" cy="466.8439716312056" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="542.5531914893617" cy="754.6099290780141" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="542.5531914893617" cy="754.6099290780141" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="493.0851063829787" cy="466.8439716312056" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="493.0851063829787" cy="466.8439716312056" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="457.4468085106383" cy="771.6312056737588" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="457.4468085106383" cy="771.6312056737588" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="479.25531914893617" cy="480.67375886524815" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="479.25531914893617" cy="480.67375886524815" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="457.4468085106383" cy="788.6524822695035" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="457.4468085106383" cy="788.6524822695035" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="493.0851063829787" cy="480.67375886524815" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="493.0851063829787" cy="480.67375886524815" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="559.5744680851064" cy="788.6524822695035" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="559.5744680851064" cy="788.6524822695035" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="534.5744680851064" cy="466.8439716312056" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="534.5744680851064" cy="466.8439716312056" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="542.5531914893617" cy="788.6524822695035" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="542.5531914893617" cy="788.6524822695035" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="548.4042553191489" cy="480.67375886524815" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="548.4042553191489" cy="480.67375886524815" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="542.5531914893617" cy="805.6737588652481" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="542.5531914893617" cy="805.6737588652481" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="548.4042553191489" cy="466.8439716312056" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="548.4042553191489" cy="466.8439716312056" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="474.468085106383" cy="788.6524822695035" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="474.468085106383" cy="788.6524822695035" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="520.7446808510639" cy="466.8439716312056" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="520.7446808510639" cy="466.8439716312056" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="474.468085106383" cy="805.6737588652481" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="474.468085106383" cy="805.6737588652481" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<path class="pcb-fabrication-note-path" stroke="rgba(255,255,255,0.5)" fill="none" d="M 332.46754468085123 530.6530226950356 L 364.89307659574484 530.6530226950356 L 332.46754468085123 498.2274907801419 Z" stroke-width="0" data-pcb-component-id="pcb_component_0" data-pcb-fabrication-note-path-id="pcb_fabrication_note_path_0" data-type="pcb_fabrication_note_path" data-pcb-layer="overlay"/>
+</svg>
