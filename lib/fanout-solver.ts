@@ -80,6 +80,7 @@ import type {
   SimpleRouteJsonWithFanoutPlanes,
 } from "./types"
 import { validateFanoutSolution } from "./validate-fanout-solution"
+import { cropGraphicsToBounds, expandBounds } from "./visualize-fanout-region"
 import { visualizeSimpleRouteJson } from "./visualize-simple-route-json"
 
 // Browser Web Workers do not expose Node's `process` global. Keep a local,
@@ -6965,5 +6966,45 @@ export class FanoutSolver extends BaseSolver {
 
   override visualize(): GraphicsObject {
     return this.activeSubSolver?.visualize() ?? this.visualizeCurrentState()
+  }
+
+  /**
+   * The same drawing as `visualize()`, framed on the fanout itself: the shared
+   * breakout boundary plus `margin` mm (default: a tenth of its longer side,
+   * at least 1 mm). Everything outside that frame is omitted, so the escapes
+   * fill the image instead of shrinking under the rest of the board and the
+   * far downstream endpoints. The boundary is outlined.
+   */
+  visualizeFanoutRegion(options: { margin?: number } = {}): GraphicsObject {
+    const boundaries = this.preparedBuses.map((bus) => bus.sharedBoundary)
+    const boundary: Bounds = boundaries.length
+      ? {
+          minX: Math.min(...boundaries.map((bounds) => bounds.minX)),
+          maxX: Math.max(...boundaries.map((bounds) => bounds.maxX)),
+          minY: Math.min(...boundaries.map((bounds) => bounds.minY)),
+          maxY: Math.max(...boundaries.map((bounds) => bounds.maxY)),
+        }
+      : this.inputSrj.bounds
+    const width = boundary.maxX - boundary.minX
+    const height = boundary.maxY - boundary.minY
+    const margin = options.margin ?? Math.max(1, Math.max(width, height) / 10)
+    return mergeGraphics(
+      cropGraphicsToBounds(this.visualize(), expandBounds(boundary, margin)),
+      {
+        rects: [
+          {
+            center: {
+              x: (boundary.minX + boundary.maxX) / 2,
+              y: (boundary.minY + boundary.maxY) / 2,
+            },
+            width,
+            height,
+            fill: "rgba(0, 0, 0, 0)",
+            stroke: "rgba(14, 165, 233, 0.8)",
+            label: "shared breakout boundary",
+          },
+        ],
+      },
+    )
   }
 }
