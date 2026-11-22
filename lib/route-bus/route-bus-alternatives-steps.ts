@@ -3,6 +3,7 @@ import { createBoundaryRoutingContext } from "./boundary-routing-context"
 import { routeAnalyticBoundaryAlternatives } from "./route-analytic-boundary-alternatives"
 import { routeBoundarySideViaSteps } from "./route-boundary-side-via-steps"
 import { routeCoordinatedBoundarySteps } from "./route-coordinated-boundary-steps"
+import { getPlaneViaReuseAlternative } from "./get-plane-via-reuse-alternative"
 import { routePlaneTerminatedBus } from "./route-plane-terminated-bus"
 import { routeSingletonBoundarySteps } from "./route-singleton-boundary-steps"
 import type { RouteBusAlternativesProgress, RouteBusParams } from "./types"
@@ -55,19 +56,23 @@ export function* routeBusAlternativesSteps(
           return alternatives.length >= maxAlternatives
         },
       })
-      return alternatives
+    } else {
+      for (
+        let planeCandidateSkipCount = 0;
+        planeCandidateSkipCount < maxAlternatives;
+        planeCandidateSkipCount++
+      ) {
+        const plan = routePlaneTerminatedBus({
+          ...params,
+          planeCandidateSkipCount,
+        })
+        if (!plan) break
+        alternatives.push(plan)
+      }
     }
-    for (
-      let planeCandidateSkipCount = 0;
-      planeCandidateSkipCount < maxAlternatives;
-      planeCandidateSkipCount++
-    ) {
-      const plan = routePlaneTerminatedBus({
-        ...params,
-        planeCandidateSkipCount,
-      })
-      if (!plan) break
-      alternatives.push(plan)
+    if (params.allowSameNetPlaneMerges && !fixedViaPointsByConnectionIndex) {
+      const reused = getPlaneViaReuseAlternative(params, alternatives[0])
+      if (reused) return [reused, ...alternatives].slice(0, maxAlternatives)
     }
     return alternatives
   }

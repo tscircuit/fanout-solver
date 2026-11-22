@@ -57,7 +57,7 @@ test("native U22 via clearance preserves physical copper", async () => {
     clearance: solver.config.clearance,
     allowBlindAndBuriedVias: false,
   })
-  expect(drc).toMatchObject({ valid: true, checkedViaCount: 15, issues: [] })
+  expect(drc).toMatchObject({ valid: true, checkedViaCount: 11, issues: [] })
 
   const graphics = visualizeSimpleRouteJson({
     ...best.outputSrj,

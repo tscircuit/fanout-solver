@@ -28,7 +28,7 @@ test("native U22 via collection preserves routed copper", async () => {
   const viaLists = best.plans.map(getPlanVias)
   const filterCount = filters.mock.calls.length
   filters.mockRestore()
-  expect(viaLists.flat()).toHaveLength(15)
+  expect(viaLists.flat()).toHaveLength(11)
   const drc = validateRoutedCopperDrc({
     inputSrj: input,
     routedSrj: best.outputSrj,

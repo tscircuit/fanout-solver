@@ -25,7 +25,7 @@ test("native U22 fanout uses the empty positions inside its pad field", async ()
     clearance: solver.config.clearance,
     allowBlindAndBuriedVias: false,
   })
-  expect(drc).toMatchObject({ valid: true, issues: [] })
+  expect(drc).toMatchObject({ valid: true, checkedViaCount: 11, issues: [] })
 
   const graphics = visualizeSimpleRouteJson({
     ...attempt.outputSrj,

@@ -1,4 +1,4 @@
-import { circleFitsInsideObstacle } from "../geometry"
+import { circleFitsInsideObstacle, distance } from "../geometry"
 import type { FanoutDirection, FanoutRoutePlan } from "../types"
 import { buildPlan } from "./build-plan"
 import { getConnectionOrders } from "./connection-order"
@@ -9,6 +9,7 @@ import {
   getPerpendicularAxis,
   isHorizontal,
 } from "./directions"
+import { getExistingPlaneVias } from "./get-existing-plane-vias"
 import { getPlaneSourceEscapePaths } from "./get-plane-source-escape-paths"
 import { planIsClear } from "./plan-clearance"
 import {
@@ -60,10 +61,15 @@ export function routePlaneTerminatedBus(
         x: preparedConnection.sourcePoint.x,
         y: preparedConnection.sourcePoint.y,
       }
+      const reusesVia =
+        allowSameNetPlaneMerges &&
+        getExistingPlaneVias(params, preparedConnection).some(
+          (via) => distance(via.center, fixedViaPoint) <= 1e-9,
+        )
       const basePlan = buildPlan({
         preparedConnection,
         bus,
-        targetLayer,
+        targetLayer: reusesVia ? preparedConnection.sourceLayer : targetLayer,
         track: getPerpendicularAxis(sourcePoint, bus.direction),
         exitAxis: getExitAxis(bus),
         layerNames,
@@ -90,6 +96,7 @@ export function routePlaneTerminatedBus(
             ]
           : [sourcePoint, fixedViaPoint],
       })
+      basePlan.targetLayer = targetLayer
       const endpointViaCandidates = getPlaneEndpointViaCandidates({
         preparedConnection,
         bus,
