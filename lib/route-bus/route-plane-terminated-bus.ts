@@ -1,10 +1,7 @@
 import { circleFitsInsideObstacle } from "../geometry"
 import type { FanoutDirection, FanoutRoutePlan } from "../types"
 import { buildPlan } from "./build-plan"
-import {
-  busIsOnOutwardComponentEdge,
-  getConnectionOrders,
-} from "./connection-order"
+import { getConnectionOrders } from "./connection-order"
 import {
   allowsViaInPad,
   getDirectionalPitch,
@@ -223,18 +220,18 @@ export function routePlaneTerminatedBus(
       (direction) => direction !== bus.direction,
     ),
   ]
-  // Try existing candidates first, then centered escapes away from the component.
+  // Keep existing candidates first, then try centered escapes through pad gaps.
   const candidateDirectionPasses = [
     ...candidateDirections.map((direction) => ({
       direction,
-      centeredOutward: false,
+      centeredEscape: false,
     })),
     ...candidateDirections.map((direction) => ({
       direction,
-      centeredOutward: true,
+      centeredEscape: true,
     })),
   ]
-  for (const { direction, centeredOutward } of candidateDirectionPasses) {
+  for (const { direction, centeredEscape } of candidateDirectionPasses) {
     const directionalBus =
       direction === bus.direction ? bus : { ...bus, direction }
     const directionalPadSize = isHorizontal(direction)
@@ -243,8 +240,8 @@ export function routePlaneTerminatedBus(
     const pairChannelFitsVia =
       getDirectionalPitch(directionalBus) / 2 - directionalPadSize / 2 >=
       viaDiameter / 2 + clearance - 1e-9
-    const viaHandednesses: readonly ViaHandedness[] = centeredOutward
-      ? !pairChannelFitsVia && busIsOnOutwardComponentEdge(directionalBus)
+    const viaHandednesses: readonly ViaHandedness[] = centeredEscape
+      ? !pairChannelFitsVia
         ? [0]
         : []
       : pairChannelFitsVia

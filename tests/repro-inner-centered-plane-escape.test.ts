@@ -9,6 +9,7 @@ import { createIcepiPlaneDrop } from "./fixtures/icepi-plane-drop"
 test("native interior U22 pad can reach its ground plane", async () => {
   const params = createIcepiPlaneDrop("ESC_U22_pin115")
   const plans = routeBus(params)
+  expect(plans).toHaveLength(1)
   const output = buildOutputSimpleRouteJson({
     inputSrj: params.srj,
     plans: plans ?? [],
