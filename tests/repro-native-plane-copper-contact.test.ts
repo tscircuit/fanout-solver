@@ -7,10 +7,11 @@ import { distance } from "lib/geometry"
 import { getPlanVias } from "lib/route-bus/plan-copper"
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import type { AssignmentAttempt, FanoutSolverOptions } from "lib/types"
+import { validateOriginalEndpointConnectivity } from "lib/validate-original-endpoint-connectivity"
 import { validateRoutedCopperDrc } from "lib/validate-routed-copper-drc"
 import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
 
-test("native GND drops complete without merging their drilled holes", async () => {
+test("native GND drops share an existing plane via", async () => {
   const { solverParams, solverOptions } = JSON.parse(
     gunzipSync(
       readFileSync(
@@ -18,10 +19,7 @@ test("native GND drops complete without merging their drilled holes", async () =
       ),
     ).toString(),
   ) as {
-    solverParams: SimpleRouteJson & {
-      minViaHoleEdgeToViaHoleEdgeClearance?: number
-      minPlatedHoleDrillEdgeToDrillEdgeClearance?: number
-    }
+    solverParams: SimpleRouteJson
     solverOptions: FanoutSolverOptions
   }
   const busIds = ["ESC_U22_pin34", "ESC_U22_pin54", "ESC_U22_pin65"]
@@ -37,8 +35,8 @@ test("native GND drops complete without merging their drilled holes", async () =
   })
   solver.solve()
   const best = Reflect.get(solver, "bestAttempt") as AssignmentAttempt
-  expect(solver.solved).toBe(false)
-  expect(best.plans).toHaveLength(2)
+  expect(solver.solved).toBe(true)
+  expect(best.plans).toHaveLength(3)
   expect(
     validateRoutedCopperDrc({
       inputSrj: solverParams,
@@ -46,8 +44,15 @@ test("native GND drops complete without merging their drilled holes", async () =
       clearance: solver.config.clearance,
       allowBlindAndBuriedVias: false,
     }),
-  ).toMatchObject({ valid: true, issues: [] })
+  ).toMatchObject({ valid: true, checkedViaCount: 2, issues: [] })
+  expect(
+    validateOriginalEndpointConnectivity({
+      inputSrj: solverParams,
+      routedSrj: solver.getOutput().simpleRouteJson,
+    }),
+  ).toMatchObject({ valid: true, connectedConnectionCount: 3 })
   const vias = best.plans.flatMap(getPlanVias)
+  expect(vias).toHaveLength(2)
   const drillClearance = Math.max(
     solverParams.minViaHoleEdgeToViaHoleEdgeClearance ?? 0,
     solverParams.minPlatedHoleDrillEdgeToDrillEdgeClearance ?? 0,
@@ -74,7 +79,7 @@ test("native GND drops complete without merging their drilled holes", async () =
     {
       x: 0.5,
       y: 15.4,
-      text: `iCE/Pi GND: ${best.plans.length}/3 connected; fanout ${solver.solved ? "complete" : "failed"}`,
+      text: `iCE/Pi GND: ${best.plans.length}/3 connected; ${vias.length} vias; fanout ${solver.solved ? "complete" : "failed"}`,
       fontSize: 0.12,
       color: "#0f172a",
       anchorSide: "center_left",
