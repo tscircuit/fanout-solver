@@ -86,6 +86,7 @@ test("local signal dogbones escape both pad fields without boundary routes", asy
           ...p,
           ...rotate(p),
           layer,
+          layers: undefined,
         })),
       }))
       const escaped = routeLocalSignalDogbones(rotated, options)

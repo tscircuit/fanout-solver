@@ -96,7 +96,7 @@ test("segment obstacle bounds retain exact rotated, circular and near-clearance 
       layers: index % 17 === 0 ? ["bottom"] : ["top"],
       connectedTo: ["foreign"],
       componentId: "foreign",
-      shape: index % 2 === 0 ? "circle" : undefined,
+      shape: index % 2 === 0 ? ("circle" as const) : undefined,
       ccwRotationDegrees: angle * 720 - 360,
     }
     expectExactObstacleClearance(

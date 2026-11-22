@@ -178,6 +178,7 @@ export function* routeBottomCrossbarBusSteps(
             ...connection.sourcePoint,
             ...viaPoint,
             layer: "top",
+            layers: undefined,
           },
           sourceObstacle: ownObstacle,
           sourceLayer: "top",

@@ -60,7 +60,7 @@ function fixture(
     obstacles: [
       ...sources.map((source, i) => ({
         type: "rect" as const,
-        shape: "circle",
+        shape: "circle" as const,
         center: source,
         width: 0.254,
         height: 0.254,
@@ -71,7 +71,7 @@ function fixture(
       })),
       {
         type: "rect",
-        shape: "circle",
+        shape: "circle" as const,
         center: { x: 0.45, y: 0.25 },
         width: 0.24,
         height: 0.24,

@@ -19,10 +19,7 @@ test("native GND drops share an existing plane via", async () => {
       ),
     ).toString(),
   ) as {
-    solverParams: SimpleRouteJson & {
-      minViaHoleEdgeToViaHoleEdgeClearance?: number
-      minPlatedHoleDrillEdgeToDrillEdgeClearance?: number
-    }
+    solverParams: SimpleRouteJson
     solverOptions: FanoutSolverOptions
   }
   const busIds = ["ESC_U22_pin34", "ESC_U22_pin54", "ESC_U22_pin65"]

@@ -151,7 +151,7 @@ export function* routeAdaptiveLeftCrossbarBusSteps(
       .map((o) => ({ ...o, layers: ["top"] })),
     ...sourceEscapes.map((source) => ({
       type: "rect" as const,
-      shape: "circle",
+      shape: "circle" as const,
       center: source.via.center,
       width: source.via.diameter,
       height: source.via.diameter,

@@ -78,7 +78,7 @@ function pointTouchesObstacle(
   point: ConnectionPoint,
   obstacle: Obstacle,
 ): boolean {
-  const pointLayers = "layers" in point ? point.layers : [point.layer]
+  const pointLayers = point.layers !== undefined ? point.layers : [point.layer]
   if (!pointLayers.some((layer) => obstacle.layers.includes(layer)))
     return false
 

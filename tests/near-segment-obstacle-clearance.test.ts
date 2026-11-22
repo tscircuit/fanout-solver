@@ -51,7 +51,7 @@ test("near native escape obstacles retain exact clearance and ownership exemptio
       label: "circular pad at exact configured clearance",
       obstacle: {
         ...foreignPad,
-        shape: "circle",
+        shape: "circle" as const,
         center: {
           x: midpoint.x + Math.SQRT1_2 * circularPadOffset,
           y: midpoint.y + Math.SQRT1_2 * circularPadOffset,

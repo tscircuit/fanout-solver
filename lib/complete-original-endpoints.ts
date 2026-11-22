@@ -40,7 +40,7 @@ function getPointLayer(
   point: ConnectionPoint,
   preferredLayer?: string,
 ): string {
-  if ("layer" in point) return point.layer
+  if (point.layer !== undefined) return point.layer
   if (preferredLayer && point.layers.includes(preferredLayer)) {
     return preferredLayer
   }

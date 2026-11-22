@@ -35,7 +35,7 @@ test("normalizes plane source corners without moving pads, physical vias, or nei
     obstacles: sources.flatMap((source, i) => [
       {
         type: "rect" as const,
-        shape: "circle",
+        shape: "circle" as const,
         center: source,
         width: 0.254,
         height: 0.254,
@@ -50,7 +50,7 @@ test("normalizes plane source corners without moving pads, physical vias, or nei
         { x: source.x, y: 0.5 },
       ].map((center, j) => ({
         type: "rect" as const,
-        shape: "circle",
+        shape: "circle" as const,
         center,
         width: 0.254,
         height: 0.254,

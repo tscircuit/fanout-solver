@@ -36,7 +36,7 @@ export function createPlaneAndSignalEscapes() {
     obstacles: [
       ...pads.map((pad) => ({
         type: "rect" as const,
-        shape: "circle",
+        shape: "circle" as const,
         componentId: "U1",
         obstacleId: `pad-${pad.name}`,
         center: { x: pad.x, y: pad.y },
