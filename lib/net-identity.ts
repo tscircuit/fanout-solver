@@ -11,6 +11,10 @@ interface ElectricalNetIdentity {
 
 const identityCache = new WeakMap<SimpleRouteJson, ElectricalNetIdentity>()
 
+export function invalidateElectricalNetIdentity(srj: SimpleRouteJson): void {
+  identityCache.delete(srj)
+}
+
 export function getConnectionNetKey(connection: SimpleRouteConnection): string {
   return (
     connection.netConnectionName ??
