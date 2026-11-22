@@ -42,6 +42,10 @@ export type {
   SimpleRouteJsonWithFanoutPlanes,
 } from "./types"
 export { validateFanoutSolution } from "./validate-fanout-solution"
+export {
+  cropGraphicsToBounds,
+  expandBounds,
+} from "./visualize-fanout-region"
 export type {
   OriginalEndpointConnectivityIssue,
   OriginalEndpointConnectivityReport,

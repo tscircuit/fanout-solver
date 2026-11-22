@@ -29,37 +29,49 @@ test("records the current SoC and DRAM northeast breakout failures", async () =>
     const directions = [
       ...new Set(solver.preparedBuses.map((bus) => bus.direction)),
     ].join(", ")
-    const sharedBoundary = solver.preparedBuses[0]?.sharedBoundary
-    const annotationX = input.bounds.minX
-    const annotationY = input.bounds.maxY + 1
-    const visualization = mergeGraphics(solver.visualize(), {
-      texts: [
-        {
-          x: annotationX,
-          y: annotationY + 2,
-          text: `${fixture.id.toUpperCase()} · ${input.connections.length} connections · ${input.buses?.length ?? 0} buses · ${input.layerCount} layers`,
-          color: "#0f172a",
-          fontSize: 0.75,
-          anchorSide: "bottom_left",
-        },
-        {
-          x: annotationX,
-          y: annotationY + 1,
-          text: `solved=${solver.solved} · failed=${solver.failed} · attempts=${solver.attempts.length} · best=${bestRoutedConnectionCount}/${input.connections.length}`,
-          color: "#b91c1c",
-          fontSize: 0.75,
-          anchorSide: "bottom_left",
-        },
-        {
-          x: annotationX,
-          y: annotationY,
-          text: `${String(solver.error)} · directions=${directions} · boundary=${JSON.stringify(sharedBoundary)}`,
-          color: "#b91c1c",
-          fontSize: 0.75,
-          anchorSide: "bottom_left",
-        },
-      ],
-    })
+    // Frame the breakout itself and size the annotations to that frame, so
+    // the routed escapes stay legible instead of shrinking under the board.
+    const sharedBoundary =
+      solver.preparedBuses[0]?.sharedBoundary ?? input.bounds
+    const frameSize = Math.max(
+      sharedBoundary.maxX - sharedBoundary.minX,
+      sharedBoundary.maxY - sharedBoundary.minY,
+    )
+    const fontSize = frameSize * 0.02
+    const lineHeight = fontSize * 1.4
+    const annotationX = sharedBoundary.minX
+    const annotationY = sharedBoundary.maxY + lineHeight
+    const visualization = mergeGraphics(
+      solver.visualizeFanoutRegion({ margin: lineHeight * 5 }),
+      {
+        texts: [
+          {
+            x: annotationX,
+            y: annotationY + 2 * lineHeight,
+            text: `${fixture.id.toUpperCase()} · ${input.connections.length} connections · ${input.buses?.length ?? 0} buses · ${input.layerCount} layers`,
+            color: "#0f172a",
+            fontSize,
+            anchorSide: "bottom_left",
+          },
+          {
+            x: annotationX,
+            y: annotationY + lineHeight,
+            text: `solved=${solver.solved} · failed=${solver.failed} · attempts=${solver.attempts.length} · best=${bestRoutedConnectionCount}/${input.connections.length}`,
+            color: "#b91c1c",
+            fontSize,
+            anchorSide: "bottom_left",
+          },
+          {
+            x: annotationX,
+            y: annotationY,
+            text: `${String(solver.error)} · directions=${directions}`,
+            color: "#b91c1c",
+            fontSize,
+            anchorSide: "bottom_left",
+          },
+        ],
+      },
+    )
 
     await expect(getSvgFromGraphicsObject(visualization)).toMatchSvgSnapshot(
       import.meta.path,
