@@ -32,7 +32,7 @@ test("reproduces the native iCE/Pi U22 fanout", async () => {
       clearance: solver.config.clearance,
       allowBlindAndBuriedVias: solver.config.allowBlindAndBuriedVias,
     }),
-  ).toMatchObject({ valid: true, issues: [] })
+  ).toMatchObject({ valid: true, checkedViaCount: 11, issues: [] })
   const graphics = solver.visualize()
   const requestCount = solverParams.connections.length
   const remaining = requestCount - routed
