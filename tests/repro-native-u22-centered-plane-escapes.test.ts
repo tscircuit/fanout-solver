@@ -10,7 +10,9 @@ import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
 test("native U22 fanout uses the empty positions inside its pad field", async () => {
   const { solverParams, solverOptions } = JSON.parse(
     gunzipSync(
-      readFileSync(new URL("./fixtures/icepi-plane-drop.json.gz", import.meta.url)),
+      readFileSync(
+        new URL("./fixtures/icepi-plane-drop.json.gz", import.meta.url),
+      ),
     ).toString(),
   )
   const solver = new FanoutSolver(solverParams, solverOptions)
