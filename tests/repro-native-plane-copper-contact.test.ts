@@ -37,8 +37,8 @@ test("native GND drops complete without merging their drilled holes", async () =
   })
   solver.solve()
   const best = Reflect.get(solver, "bestAttempt") as AssignmentAttempt
-  expect(solver.solved).toBe(false)
-  expect(best.plans).toHaveLength(2)
+  expect(solver.solved).toBe(true)
+  expect(best.plans).toHaveLength(3)
   expect(
     validateRoutedCopperDrc({
       inputSrj: solverParams,

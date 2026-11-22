@@ -28,8 +28,12 @@ function viaIsNearSegment({
 export function planIsClearOfPlans(params: {
   plan: FanoutRoutePlan
   otherPlans: FanoutRoutePlan[]
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & {
+    minViaHoleEdgeToViaHoleEdgeClearance?: number
+    minPlatedHoleDrillEdgeToDrillEdgeClearance?: number
+  }
   allowSameNetMerges: boolean
+  allowSameNetPlaneMerges?: boolean
   clearance: number
   segmentIndexes?: WeakMap<FanoutRoutePlan, RouteSegmentSpatialIndex>
   blockingBusCounts?: Map<BusId, number>
@@ -39,6 +43,7 @@ export function planIsClearOfPlans(params: {
     otherPlans,
     srj,
     allowSameNetMerges,
+    allowSameNetPlaneMerges = false,
     clearance,
     blockingBusCounts,
     segmentIndexes,
@@ -69,6 +74,19 @@ export function planIsClearOfPlans(params: {
         (blockingBusCounts.get(otherPlan.busId) ?? 0) + 1,
       )
     }
+    const sharePlaneCopper =
+      allowSameNetPlaneMerges &&
+      plan.termination.type === "plane" &&
+      otherPlan.termination.type === "plane" &&
+      connectionsShareElectricalNet(
+        srj,
+        plan.connectionName,
+        otherPlan.connectionName,
+      )
+    const drillClearance = Math.max(
+      srj.minViaHoleEdgeToViaHoleEdgeClearance ?? 0,
+      srj.minPlatedHoleDrillEdgeToDrillEdgeClearance ?? 0,
+    )
     const otherSegments = getPlanSegments(otherPlan)
     const otherVias = getPlanVias(otherPlan)
     let segmentIndex = segmentIndexes?.get(otherPlan)
@@ -76,7 +94,7 @@ export function planIsClearOfPlans(params: {
       segmentIndex = new RouteSegmentSpatialIndex(otherSegments)
       segmentIndexes.set(otherPlan, segmentIndex)
     }
-    for (const segment of planSegments) {
+    for (const segment of sharePlaneCopper ? [] : planSegments) {
       for (const otherSegment of segmentIndex?.querySegment(
         segment,
         clearance,
@@ -99,8 +117,10 @@ export function planIsClearOfPlans(params: {
       }
     }
     for (const planVia of planVias) {
-      for (const otherSegment of segmentIndex?.queryVia(planVia, clearance) ??
-        otherSegments) {
+      const nearbySegments = sharePlaneCopper
+        ? []
+        : (segmentIndex?.queryVia(planVia, clearance) ?? otherSegments)
+      for (const otherSegment of nearbySegments) {
         if (
           planVia.spanLayers.includes(otherSegment.layer) &&
           viaIsNearSegment({
@@ -120,8 +140,9 @@ export function planIsClearOfPlans(params: {
         }
       }
       for (const otherVia of otherVias) {
-        const requiredDistance =
-          (planVia.diameter + otherVia.diameter) / 2 + clearance
+        const requiredDistance = sharePlaneCopper
+          ? (planVia.holeDiameter + otherVia.holeDiameter) / 2 + drillClearance
+          : (planVia.diameter + otherVia.diameter) / 2 + clearance
         if (
           Math.abs(planVia.center.x - otherVia.center.x) <=
             requiredDistance + 1e-9 &&

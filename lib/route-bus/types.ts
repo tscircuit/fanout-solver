@@ -26,6 +26,7 @@ export interface RouteBusParams {
   compactBusTracks: boolean
   allowBlindAndBuriedVias?: boolean
   allowSameNetMerges?: boolean
+  allowSameNetPlaneMerges?: boolean
   staticClearanceCache?: RouteBusStaticClearanceCache
   blockingBusCounts?: Map<BusId, number>
   rejectedViaMinimalCandidates?: FanoutRoutePlan[][]

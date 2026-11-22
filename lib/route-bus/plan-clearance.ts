@@ -21,6 +21,7 @@ export function planIsClear(params: {
   clearance: number
   allowBlindAndBuriedVias: boolean
   allowSameNetMerges: boolean
+  allowSameNetPlaneMerges?: boolean
 }): boolean {
   const {
     plan,
@@ -33,6 +34,7 @@ export function planIsClear(params: {
     clearance,
     allowBlindAndBuriedVias,
     allowSameNetMerges,
+    allowSameNetPlaneMerges = false,
   } = params
   let staticallyClear = staticClearanceCache?.get(cacheKey)
   if (staticallyClear === undefined) {
@@ -53,6 +55,7 @@ export function planIsClear(params: {
       otherPlans,
       srj,
       allowSameNetMerges,
+      allowSameNetPlaneMerges,
       clearance,
       blockingBusCounts,
     })
@@ -115,6 +118,7 @@ export function fanoutPlansAreClear(params: {
     )
     if (
       !planIsClearOfPlans({
+        allowSameNetPlaneMerges,
         plan,
         otherPlans,
         srj,
@@ -208,6 +212,7 @@ export function createFanoutPlanClearanceValidator(
       const reverse =
         getPlanSegments(plan).length > getPlanSegments(other).length
       clear = planIsClearOfPlans({
+        allowSameNetPlaneMerges,
         plan: reverse ? other : plan,
         otherPlans: [reverse ? plan : other],
         segmentIndexes,

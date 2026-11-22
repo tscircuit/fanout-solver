@@ -26,7 +26,7 @@ test("native U22 via clearance preserves physical copper", async () => {
   const best = Reflect.get(solver, "bestAttempt") as AssignmentAttempt
   expect(solver.failed).toBe(true)
   expect(() => solver.getOutput()).toThrow()
-  expect(best.plans).toHaveLength(19)
+  expect(best.plans).toHaveLength(23)
 
   const pointChecks = spyOn(geometry, "distancePointToObstacle")
   const clear = fanoutPlansAreClear({
@@ -57,7 +57,7 @@ test("native U22 via clearance preserves physical copper", async () => {
     clearance: solver.config.clearance,
     allowBlindAndBuriedVias: false,
   })
-  expect(drc).toMatchObject({ valid: true, checkedViaCount: 11, issues: [] })
+  expect(drc).toMatchObject({ valid: true, checkedViaCount: 15, issues: [] })
 
   const graphics = visualizeSimpleRouteJson({
     ...best.outputSrj,

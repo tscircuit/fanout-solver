@@ -28,7 +28,7 @@ test("reproduces the complete native ButterStick fanout input", async () => {
     plans: FanoutRoutePlan[]
     outputSrj: SimpleRouteJson
   }
-  expect(best.plans).toHaveLength(62)
+  expect(best.plans).toHaveLength(63)
   const affected = best.plans.find(
     (plan) => plan.connectionName === "source_trace_18",
   )!

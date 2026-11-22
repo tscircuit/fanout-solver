@@ -22,13 +22,13 @@ test("native U22 via collection preserves routed copper", async () => {
   const best = Reflect.get(solver, "bestAttempt") as AssignmentAttempt
   expect(solver.failed).toBe(true)
   expect(() => solver.getOutput()).toThrow()
-  expect(best.plans).toHaveLength(19)
+  expect(best.plans).toHaveLength(23)
 
   const filters = spyOn(Array.prototype, "filter")
   const viaLists = best.plans.map(getPlanVias)
   const filterCount = filters.mock.calls.length
   filters.mockRestore()
-  expect(viaLists.flat()).toHaveLength(11)
+  expect(viaLists.flat()).toHaveLength(15)
   const drc = validateRoutedCopperDrc({
     inputSrj: input,
     routedSrj: best.outputSrj,
