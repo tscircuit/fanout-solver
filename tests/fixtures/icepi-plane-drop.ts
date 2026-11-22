@@ -7,7 +7,7 @@ import type { RouteBusParams } from "lib/route-bus"
 import type { FanoutSolverOptions } from "lib/types"
 
 // Native fanout-region cut; the capture metadata records the bounds and halo.
-export function createIcepiPlaneDrop(): RouteBusParams {
+export function createIcepiPlaneDrop(busId = "ESC_U22_pin101"): RouteBusParams {
   const captured: {
     solverParams: SimpleRouteJson
     solverOptions: FanoutSolverOptions
@@ -20,10 +20,10 @@ export function createIcepiPlaneDrop(): RouteBusParams {
   )
   const srj = captured.solverParams
   const bus = prepareFanoutBuses(srj, captured.solverOptions).find(
-    (prepared) => prepared.busId === "ESC_U22_pin101",
+    (prepared) => prepared.busId === busId,
   )
   if (!bus || bus.termination.type !== "plane") {
-    throw new Error("Native iCE/Pi U22 ground plane drop is missing")
+    throw new Error(`Native iCE/Pi plane drop ${busId} is missing`)
   }
   if (
     srj.minViaPadDiameter === undefined ||
