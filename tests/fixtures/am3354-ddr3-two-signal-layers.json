@@ -1,0 +1,4369 @@
+{
+  "description": "AM3354 (324-ball, 0.8 mm) DDR3 interface: 50 signals in the five ball columns nearest the left package edge, grouped by ball column. Four-layer board whose inner layers are reference planes, so only top and bottom carry signals. Processor-centred coordinates in mm (+X right, +Y up); each connection's second point is the memory ball it reaches.",
+  "simpleRouteJson": {
+    "layerCount": 4,
+    "minTraceWidth": 0.1,
+    "minViaDiameter": 0.3,
+    "minViaPadDiameter": 0.3,
+    "minViaHoleDiameter": 0.15,
+    "minTraceToPadEdgeClearance": 0.1,
+    "allowBlindAndBuriedVias": false,
+    "bounds": {
+      "minX": -26.9801,
+      "maxX": 8.9801,
+      "minY": -8.9801,
+      "maxY": 8.9801
+    },
+    "obstacles": [
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B1", "DDR_A5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C1", "DDR_A9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D1", "DDR_CKn"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E1", "DDR_BA1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F1", "DDR_CASn"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G1", "DDR_ODT"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H1", "DDR_A1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J1", "DDR_D8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K1", "DDR_D9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L1", "DDR_DQS1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M1", "DDR_D15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N1", "DDR_D2"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P1", "DDR_DQS0"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6.8001, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A2"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B2", "DDR_WEn"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C2", "DDR_A4"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D2", "DDR_CK"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E2", "DDR_A7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F2", "DDR_A11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G2", "DDR_RESETn"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H2", "DDR_CSn0"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J2", "DDR_DQM1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K2", "DDR_D10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L2", "DDR_DQSn1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M2", "DDR_DQM0"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N2", "DDR_D3"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P2", "DDR_DQSn0"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R2"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T2"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U2"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -6, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V2"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A3"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B3", "DDR_BA2"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C3", "DDR_A3"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D3", "DDR_A15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E3", "DDR_A12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F3", "DDR_A0"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G3", "DDR_CKE"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H3", "DDR_A13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J3"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K3", "DDR_D11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L3", "DDR_D13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M3", "DDR_D0"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N3", "DDR_D4"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P3", "DDR_D6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R3"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T3"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U3"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -5.1999, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V3"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A4"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B4"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C4", "DDR_BA0"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D4", "DDR_A8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E4", "DDR_A2"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F4", "DDR_A10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G4", "DDR_RASn"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H4", "DDR_A14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J4"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K4", "DDR_D12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L4", "DDR_D14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M4", "DDR_D1"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N4", "DDR_D5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P4", "DDR_D7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R4"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T4"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U4"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -4.4, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V4"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D5", "DDR_A6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -3.5999, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V5"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2.8001, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V6"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -2, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V7"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -1.1999, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V8"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": -0.4001, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V9"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 0.4001, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V10"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 1.1999, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V11"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V12"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 2.8001, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V13"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 3.5999, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V14"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 4.4, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V15"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 5.1999, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V16"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V17"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": 6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_A18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": 6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_B18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": 5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_C18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": 4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_D18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": 3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_E18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": 2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_F18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": 2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_G18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": 1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_H18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": 0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_J18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": -0.4001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_K18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": -1.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_L18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": -2 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_M18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": -2.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_N18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": -3.5999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_P18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": -4.4 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_R18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": -5.1999 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_T18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": -6 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_U18"]
+      },
+      {
+        "type": "rect",
+        "shape": "circle",
+        "componentId": "U1",
+        "layers": ["top"],
+        "center": { "x": 6.8001, "y": -6.8001 },
+        "width": 0.36,
+        "height": 0.36,
+        "connectedTo": ["U1_V18"]
+      }
+    ],
+    "connections": [
+      {
+        "name": "DDR_D13",
+        "source_trace_id": "DDR_D13",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": -1.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_L3",
+            "pointId": "U1_L3"
+          },
+          { "x": -19.2, "y": 2.4, "layer": "top", "pointId": "memory_DDR_D13" }
+        ]
+      },
+      {
+        "name": "DDR_D15",
+        "source_trace_id": "DDR_D15",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": -2,
+            "layer": "top",
+            "pcb_port_id": "U1_M1",
+            "pointId": "U1_M1"
+          },
+          {
+            "x": -19.2,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_D15"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D12",
+        "source_trace_id": "DDR_D12",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": -0.4001,
+            "layer": "top",
+            "pcb_port_id": "U1_K4",
+            "pointId": "U1_K4"
+          },
+          {
+            "x": -19.2,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_D12"
+          }
+        ]
+      },
+      {
+        "name": "DDR_DQSn1",
+        "source_trace_id": "DDR_DQSn1",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": -1.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_L2",
+            "pointId": "U1_L2"
+          },
+          {
+            "x": -20.0001,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_DQSn1"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D14",
+        "source_trace_id": "DDR_D14",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": -1.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_L4",
+            "pointId": "U1_L4"
+          },
+          {
+            "x": -20.0001,
+            "y": -2.4,
+            "layer": "top",
+            "pointId": "memory_DDR_D14"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D11",
+        "source_trace_id": "DDR_D11",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": -0.4001,
+            "layer": "top",
+            "pcb_port_id": "U1_K3",
+            "pointId": "U1_K3"
+          },
+          { "x": -20.8, "y": 2.4, "layer": "top", "pointId": "memory_DDR_D11" }
+        ]
+      },
+      {
+        "name": "DDR_D9",
+        "source_trace_id": "DDR_D9",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": -0.4001,
+            "layer": "top",
+            "pcb_port_id": "U1_K1",
+            "pointId": "U1_K1"
+          },
+          {
+            "x": -20.8,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_D9"
+          }
+        ]
+      },
+      {
+        "name": "DDR_DQS1",
+        "source_trace_id": "DDR_DQS1",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": -1.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_L1",
+            "pointId": "U1_L1"
+          },
+          {
+            "x": -20.8,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_DQS1"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D10",
+        "source_trace_id": "DDR_D10",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": -0.4001,
+            "layer": "top",
+            "pcb_port_id": "U1_K2",
+            "pointId": "U1_K2"
+          },
+          { "x": -20.8, "y": -2.4, "layer": "top", "pointId": "memory_DDR_D10" }
+        ]
+      },
+      {
+        "name": "DDR_DQM1",
+        "source_trace_id": "DDR_DQM1",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": 0.4001,
+            "layer": "top",
+            "pcb_port_id": "U1_J2",
+            "pointId": "U1_J2"
+          },
+          {
+            "x": -21.6001,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_DQM1"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D8",
+        "source_trace_id": "DDR_D8",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": 0.4001,
+            "layer": "top",
+            "pcb_port_id": "U1_J1",
+            "pointId": "U1_J1"
+          },
+          {
+            "x": -21.6001,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_D8"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D0",
+        "source_trace_id": "DDR_D0",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": -2,
+            "layer": "top",
+            "pcb_port_id": "U1_M3",
+            "pointId": "U1_M3"
+          },
+          {
+            "x": -22.3999,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_D0"
+          }
+        ]
+      },
+      {
+        "name": "DDR_DQM0",
+        "source_trace_id": "DDR_DQM0",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": -2,
+            "layer": "top",
+            "pcb_port_id": "U1_M2",
+            "pointId": "U1_M2"
+          },
+          {
+            "x": -22.3999,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_DQM0"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D2",
+        "source_trace_id": "DDR_D2",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": -2.8001,
+            "layer": "top",
+            "pcb_port_id": "U1_N1",
+            "pointId": "U1_N1"
+          },
+          { "x": -23.2, "y": 2.4, "layer": "top", "pointId": "memory_DDR_D2" }
+        ]
+      },
+      {
+        "name": "DDR_DQS0",
+        "source_trace_id": "DDR_DQS0",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": -3.5999,
+            "layer": "top",
+            "pcb_port_id": "U1_P1",
+            "pointId": "U1_P1"
+          },
+          {
+            "x": -23.2,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_DQS0"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D1",
+        "source_trace_id": "DDR_D1",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": -2,
+            "layer": "top",
+            "pcb_port_id": "U1_M4",
+            "pointId": "U1_M4"
+          },
+          {
+            "x": -23.2,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_D1"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D7",
+        "source_trace_id": "DDR_D7",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": -3.5999,
+            "layer": "top",
+            "pcb_port_id": "U1_P4",
+            "pointId": "U1_P4"
+          },
+          { "x": -23.2, "y": -2.4, "layer": "top", "pointId": "memory_DDR_D7" }
+        ]
+      },
+      {
+        "name": "DDR_D6",
+        "source_trace_id": "DDR_D6",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": -3.5999,
+            "layer": "top",
+            "pcb_port_id": "U1_P3",
+            "pointId": "U1_P3"
+          },
+          {
+            "x": -24.0001,
+            "y": 2.4,
+            "layer": "top",
+            "pointId": "memory_DDR_D6"
+          }
+        ]
+      },
+      {
+        "name": "DDR_DQSn0",
+        "source_trace_id": "DDR_DQSn0",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": -3.5999,
+            "layer": "top",
+            "pcb_port_id": "U1_P2",
+            "pointId": "U1_P2"
+          },
+          {
+            "x": -24.0001,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_DQSn0"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D4",
+        "source_trace_id": "DDR_D4",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": -2.8001,
+            "layer": "top",
+            "pcb_port_id": "U1_N3",
+            "pointId": "U1_N3"
+          },
+          {
+            "x": -24.8,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_D4"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D3",
+        "source_trace_id": "DDR_D3",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": -2.8001,
+            "layer": "top",
+            "pcb_port_id": "U1_N2",
+            "pointId": "U1_N2"
+          },
+          {
+            "x": -24.8,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_D3"
+          }
+        ]
+      },
+      {
+        "name": "DDR_D5",
+        "source_trace_id": "DDR_D5",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": -2.8001,
+            "layer": "top",
+            "pcb_port_id": "U1_N4",
+            "pointId": "U1_N4"
+          },
+          { "x": -24.8, "y": -2.4, "layer": "top", "pointId": "memory_DDR_D5" }
+        ]
+      },
+      {
+        "name": "DDR_RASn",
+        "source_trace_id": "DDR_RASn",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": 2,
+            "layer": "top",
+            "pcb_port_id": "U1_G4",
+            "pointId": "U1_G4"
+          },
+          {
+            "x": -25.6,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_RASn"
+          }
+        ]
+      },
+      {
+        "name": "DDR_CK",
+        "source_trace_id": "DDR_CK",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": 4.4,
+            "layer": "top",
+            "pcb_port_id": "U1_D2",
+            "pointId": "U1_D2"
+          },
+          {
+            "x": -25.6,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_CK"
+          }
+        ]
+      },
+      {
+        "name": "DDR_ODT",
+        "source_trace_id": "DDR_ODT",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": 2,
+            "layer": "top",
+            "pcb_port_id": "U1_G1",
+            "pointId": "U1_G1"
+          },
+          {
+            "x": -26.3999,
+            "y": 3.1999,
+            "layer": "top",
+            "pointId": "memory_DDR_ODT"
+          }
+        ]
+      },
+      {
+        "name": "DDR_CASn",
+        "source_trace_id": "DDR_CASn",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": 2.8001,
+            "layer": "top",
+            "pcb_port_id": "U1_F1",
+            "pointId": "U1_F1"
+          },
+          {
+            "x": -26.3999,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_CASn"
+          }
+        ]
+      },
+      {
+        "name": "DDR_CKn",
+        "source_trace_id": "DDR_CKn",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": 4.4,
+            "layer": "top",
+            "pcb_port_id": "U1_D1",
+            "pointId": "U1_D1"
+          },
+          {
+            "x": -26.3999,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_CKn"
+          }
+        ]
+      },
+      {
+        "name": "DDR_CKE",
+        "source_trace_id": "DDR_CKE",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": 2,
+            "layer": "top",
+            "pcb_port_id": "U1_G3",
+            "pointId": "U1_G3"
+          },
+          {
+            "x": -26.3999,
+            "y": -3.1999,
+            "layer": "top",
+            "pointId": "memory_DDR_CKE"
+          }
+        ]
+      },
+      {
+        "name": "DDR_CSn0",
+        "source_trace_id": "DDR_CSn0",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": 1.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_H2",
+            "pointId": "U1_H2"
+          },
+          { "x": -27.2, "y": 2.4, "layer": "top", "pointId": "memory_DDR_CSn0" }
+        ]
+      },
+      {
+        "name": "DDR_WEn",
+        "source_trace_id": "DDR_WEn",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": 6,
+            "layer": "top",
+            "pcb_port_id": "U1_B2",
+            "pointId": "U1_B2"
+          },
+          {
+            "x": -27.2,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_WEn"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A10",
+        "source_trace_id": "DDR_A10",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": 2.8001,
+            "layer": "top",
+            "pcb_port_id": "U1_F4",
+            "pointId": "U1_F4"
+          },
+          {
+            "x": -27.2,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_A10"
+          }
+        ]
+      },
+      {
+        "name": "DDR_BA0",
+        "source_trace_id": "DDR_BA0",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": 5.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_C4",
+            "pointId": "U1_C4"
+          },
+          {
+            "x": -28.0001,
+            "y": 2.4,
+            "layer": "top",
+            "pointId": "memory_DDR_BA0"
+          }
+        ]
+      },
+      {
+        "name": "DDR_BA2",
+        "source_trace_id": "DDR_BA2",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": 6,
+            "layer": "top",
+            "pcb_port_id": "U1_B3",
+            "pointId": "U1_B3"
+          },
+          {
+            "x": -28.0001,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_BA2"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A15",
+        "source_trace_id": "DDR_A15",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": 4.4,
+            "layer": "top",
+            "pcb_port_id": "U1_D3",
+            "pointId": "U1_D3"
+          },
+          {
+            "x": -28.0001,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_A15"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A3",
+        "source_trace_id": "DDR_A3",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": 5.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_C3",
+            "pointId": "U1_C3"
+          },
+          {
+            "x": -28.7999,
+            "y": 2.4,
+            "layer": "top",
+            "pointId": "memory_DDR_A3"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A0",
+        "source_trace_id": "DDR_A0",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": 2.8001,
+            "layer": "top",
+            "pcb_port_id": "U1_F3",
+            "pointId": "U1_F3"
+          },
+          {
+            "x": -28.7999,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_A0"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A12",
+        "source_trace_id": "DDR_A12",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": 3.5999,
+            "layer": "top",
+            "pcb_port_id": "U1_E3",
+            "pointId": "U1_E3"
+          },
+          {
+            "x": -28.7999,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_A12"
+          }
+        ]
+      },
+      {
+        "name": "DDR_BA1",
+        "source_trace_id": "DDR_BA1",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": 3.5999,
+            "layer": "top",
+            "pcb_port_id": "U1_E1",
+            "pointId": "U1_E1"
+          },
+          {
+            "x": -28.7999,
+            "y": -2.4,
+            "layer": "top",
+            "pointId": "memory_DDR_BA1"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A5",
+        "source_trace_id": "DDR_A5",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": 6,
+            "layer": "top",
+            "pcb_port_id": "U1_B1",
+            "pointId": "U1_B1"
+          },
+          { "x": -29.6, "y": 2.4, "layer": "top", "pointId": "memory_DDR_A5" }
+        ]
+      },
+      {
+        "name": "DDR_A2",
+        "source_trace_id": "DDR_A2",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": 3.5999,
+            "layer": "top",
+            "pcb_port_id": "U1_E4",
+            "pointId": "U1_E4"
+          },
+          {
+            "x": -29.6,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_A2"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A1",
+        "source_trace_id": "DDR_A1",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": 1.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_H1",
+            "pointId": "U1_H1"
+          },
+          {
+            "x": -29.6,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_A1"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A4",
+        "source_trace_id": "DDR_A4",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": 5.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_C2",
+            "pointId": "U1_C2"
+          },
+          { "x": -29.6, "y": -2.4, "layer": "top", "pointId": "memory_DDR_A4" }
+        ]
+      },
+      {
+        "name": "DDR_A7",
+        "source_trace_id": "DDR_A7",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": 3.5999,
+            "layer": "top",
+            "pcb_port_id": "U1_E2",
+            "pointId": "U1_E2"
+          },
+          {
+            "x": -30.3999,
+            "y": 2.4,
+            "layer": "top",
+            "pointId": "memory_DDR_A7"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A9",
+        "source_trace_id": "DDR_A9",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6.8001,
+            "y": 5.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_C1",
+            "pointId": "U1_C1"
+          },
+          {
+            "x": -30.3999,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_A9"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A11",
+        "source_trace_id": "DDR_A11",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": 2.8001,
+            "layer": "top",
+            "pcb_port_id": "U1_F2",
+            "pointId": "U1_F2"
+          },
+          {
+            "x": -30.3999,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_A11"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A6",
+        "source_trace_id": "DDR_A6",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -3.5999,
+            "y": 4.4,
+            "layer": "top",
+            "pcb_port_id": "U1_D5",
+            "pointId": "U1_D5"
+          },
+          {
+            "x": -30.3999,
+            "y": -2.4,
+            "layer": "top",
+            "pointId": "memory_DDR_A6"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A13",
+        "source_trace_id": "DDR_A13",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -5.1999,
+            "y": 1.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_H3",
+            "pointId": "U1_H3"
+          },
+          {
+            "x": -31.2,
+            "y": 1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_A13"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A14",
+        "source_trace_id": "DDR_A14",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": 1.1999,
+            "layer": "top",
+            "pcb_port_id": "U1_H4",
+            "pointId": "U1_H4"
+          },
+          {
+            "x": -31.2,
+            "y": -1.5999,
+            "layer": "top",
+            "pointId": "memory_DDR_A14"
+          }
+        ]
+      },
+      {
+        "name": "DDR_A8",
+        "source_trace_id": "DDR_A8",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -4.4,
+            "y": 4.4,
+            "layer": "top",
+            "pcb_port_id": "U1_D4",
+            "pointId": "U1_D4"
+          },
+          { "x": -31.2, "y": -2.4, "layer": "top", "pointId": "memory_DDR_A8" }
+        ]
+      },
+      {
+        "name": "DDR_RESETn",
+        "source_trace_id": "DDR_RESETn",
+        "nominalTraceWidth": 0.1,
+        "width": 0.1,
+        "pointsToConnect": [
+          {
+            "x": -6,
+            "y": 2,
+            "layer": "top",
+            "pcb_port_id": "U1_G2",
+            "pointId": "U1_G2"
+          },
+          {
+            "x": -31.2,
+            "y": 2.4,
+            "layer": "top",
+            "pointId": "memory_DDR_RESETn"
+          }
+        ]
+      }
+    ],
+    "buses": [],
+    "differentialPairs": [],
+    "traces": []
+  },
+  "solverOptions": {
+    "sourceComponentId": "U1",
+    "componentBounds": {
+      "U1": { "minX": -6.9801, "maxX": 6.9801, "minY": -6.9801, "maxY": 6.9801 }
+    },
+    "sharedBoundary": {
+      "minX": -9.9801,
+      "maxX": 7.9801,
+      "minY": -7.9801,
+      "maxY": 7.9801
+    },
+    "escapeLayers": ["top", "bottom"],
+    "maxLayerCombinations": 256,
+    "allowBlindAndBuriedVias": false,
+    "traceWidth": 0.1,
+    "clearance": 0.1,
+    "viaDiameter": 0.3,
+    "viaHoleDiameter": 0.15,
+    "buses": [
+      {
+        "busId": "DDR_BALL_COLUMN_1",
+        "connectionNames": [
+          "DDR_D15",
+          "DDR_D9",
+          "DDR_DQS1",
+          "DDR_D8",
+          "DDR_D2",
+          "DDR_DQS0",
+          "DDR_ODT",
+          "DDR_CASn",
+          "DDR_CKn",
+          "DDR_BA1",
+          "DDR_A5",
+          "DDR_A1",
+          "DDR_A9"
+        ],
+        "sourceComponentId": "U1",
+        "direction": "left"
+      },
+      {
+        "busId": "DDR_BALL_COLUMN_2",
+        "connectionNames": [
+          "DDR_DQSn1",
+          "DDR_D10",
+          "DDR_DQM1",
+          "DDR_DQM0",
+          "DDR_DQSn0",
+          "DDR_D3",
+          "DDR_CK",
+          "DDR_CSn0",
+          "DDR_WEn",
+          "DDR_A4",
+          "DDR_A7",
+          "DDR_A11",
+          "DDR_RESETn"
+        ],
+        "sourceComponentId": "U1",
+        "direction": "left"
+      },
+      {
+        "busId": "DDR_BALL_COLUMN_3",
+        "connectionNames": [
+          "DDR_D13",
+          "DDR_D11",
+          "DDR_D0",
+          "DDR_D6",
+          "DDR_D4",
+          "DDR_CKE",
+          "DDR_BA2",
+          "DDR_A15",
+          "DDR_A3",
+          "DDR_A0",
+          "DDR_A12",
+          "DDR_A13"
+        ],
+        "sourceComponentId": "U1",
+        "direction": "left"
+      },
+      {
+        "busId": "DDR_BALL_COLUMN_4",
+        "connectionNames": [
+          "DDR_D12",
+          "DDR_D14",
+          "DDR_D1",
+          "DDR_D7",
+          "DDR_D5",
+          "DDR_RASn",
+          "DDR_A10",
+          "DDR_BA0",
+          "DDR_A2",
+          "DDR_A14",
+          "DDR_A8"
+        ],
+        "sourceComponentId": "U1",
+        "direction": "left"
+      },
+      {
+        "busId": "DDR_BALL_COLUMN_5",
+        "connectionNames": ["DDR_A6"],
+        "sourceComponentId": "U1",
+        "direction": "left"
+      }
+    ]
+  }
+}
