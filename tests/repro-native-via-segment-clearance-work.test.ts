@@ -28,7 +28,7 @@ test("native U22 clearance measures distant via-to-trace pairs", async () => {
   const best = Reflect.get(solver, "bestAttempt") as AssignmentAttempt
   expect(solver.failed).toBe(true)
   expect(() => solver.getOutput()).toThrow()
-  expect(best.plans).toHaveLength(14)
+  expect(best.plans).toHaveLength(19)
   const checks = spyOn(geometry, "distancePointToSegment")
   const clear = fanoutPlansAreMutuallyClear({
     plans: best.plans,
