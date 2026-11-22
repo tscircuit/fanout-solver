@@ -16,7 +16,7 @@ const fixture: CapturedFixture = JSON.parse(
   ),
 )
 
-test("reproduces the AM3354 DDR3 breakout failing on two signal layers", async () => {
+test("breaks out the AM3354 DDR3 balls on two signal layers", async () => {
   const { simpleRouteJson, solverOptions } = fixture
   expect(simpleRouteJson.layerCount).toBe(4)
   expect(simpleRouteJson.obstacles).toHaveLength(324)
@@ -45,21 +45,38 @@ test("reproduces the AM3354 DDR3 breakout failing on two signal layers", async (
   )
   solver.solve()
 
-  // The two outer ball columns fit on top, so the three inner columns have to
-  // share the bottom layer. The third column is never offered the bottom
-  // layer: its target-aligned tracks all funnel through the one channel beside
-  // the column, so the bus cannot route there even on an empty layer.
-  expect(solver.solved).toBe(false)
-  expect(solver.error).toBe(
-    "FanoutSolver: best layer assignment routed 38/50 connections",
-  )
+  // The two outer ball columns fit on top, so the three inner columns share
+  // the bottom layer. Their target-aligned tracks cannot coexist in the
+  // channel beside each column; they leave side by side on source-aligned
+  // tracks instead.
+  expect(solver.error).toBeNull()
+  expect(solver.solved).toBe(true)
+  const output = solver.getOutput()
+  expect(output.validation.valid).toBe(true)
+  expect(output.fanoutTraces).toHaveLength(50)
+  expect(output.busLayerAssignments).toEqual({
+    DDR_BALL_COLUMN_1: "top",
+    DDR_BALL_COLUMN_2: "top",
+    DDR_BALL_COLUMN_3: "bottom",
+    DDR_BALL_COLUMN_4: "bottom",
+    DDR_BALL_COLUMN_5: "bottom",
+  })
+  // Every signal ends on the shared boundary edge facing the memory.
+  const boundaryX = solverOptions.sharedBoundary!.minX
+  for (const trace of output.fanoutTraces) {
+    const exit = trace.route.at(-1)!
+    expect(exit.x).toBeCloseTo(boundaryX, 6)
+  }
+  // The inner layers stay free of signal copper.
   expect(
-    solver.attempts.every(
-      (attempt) => attempt.busLayerAssignments.DDR_BALL_COLUMN_3 === "top",
+    output.fanoutTraces.every((trace) =>
+      trace.route.every(
+        (point) =>
+          point.route_type !== "wire" ||
+          point.layer === "top" ||
+          point.layer === "bottom",
+      ),
     ),
-  ).toBe(true)
-  expect(
-    solver.attempts.every((attempt) => attempt.failedBusIds.length > 0),
   ).toBe(true)
 
   await expect(
