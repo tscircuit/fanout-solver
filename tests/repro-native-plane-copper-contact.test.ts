@@ -13,7 +13,9 @@ import { visualizeSimpleRouteJson } from "lib/visualize-simple-route-json"
 test("native GND drops complete without merging their drilled holes", async () => {
   const { solverParams, solverOptions } = JSON.parse(
     gunzipSync(
-      readFileSync(new URL("./fixtures/icepi-plane-drop.json.gz", import.meta.url)),
+      readFileSync(
+        new URL("./fixtures/icepi-plane-drop.json.gz", import.meta.url),
+      ),
     ).toString(),
   ) as {
     solverParams: SimpleRouteJson & {
@@ -23,7 +25,7 @@ test("native GND drops complete without merging their drilled holes", async () =
     solverOptions: FanoutSolverOptions
   }
   const busIds = ["ESC_U22_pin34", "ESC_U22_pin54", "ESC_U22_pin65"]
-  const buses = solverOptions.buses.filter((bus) => busIds.includes(bus.busId))
+  const buses = solverOptions.buses!.filter((bus) => busIds.includes(bus.busId))
   const connectionNames = new Set(buses.flatMap((bus) => bus.connectionNames))
   solverParams.connections = solverParams.connections.filter((connection) =>
     connectionNames.has(connection.name),
@@ -52,8 +54,11 @@ test("native GND drops complete without merging their drilled holes", async () =
   )
   for (const [index, via] of vias.entries()) {
     for (const other of vias.slice(index + 1)) {
-      const requiredDistance = (via.holeDiameter + other.holeDiameter) / 2 + drillClearance
-      expect(distance(via.center, other.center)).toBeGreaterThanOrEqual(requiredDistance - 1e-9)
+      const requiredDistance =
+        (via.holeDiameter + other.holeDiameter) / 2 + drillClearance
+      expect(distance(via.center, other.center)).toBeGreaterThanOrEqual(
+        requiredDistance - 1e-9,
+      )
     }
   }
   const graphics = visualizeSimpleRouteJson({
