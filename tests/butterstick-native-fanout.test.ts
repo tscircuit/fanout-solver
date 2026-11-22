@@ -28,7 +28,7 @@ test("reproduces the complete native ButterStick fanout input", async () => {
     plans: FanoutRoutePlan[]
     outputSrj: SimpleRouteJson
   }
-  expect(best.plans).toHaveLength(63)
+  expect(best.plans).toHaveLength(64)
   const affected = best.plans.find(
     (plan) => plan.connectionName === "source_trace_18",
   )!
@@ -45,7 +45,7 @@ test("reproduces the complete native ButterStick fanout input", async () => {
       clearance: solver.config.clearance,
       allowBlindAndBuriedVias: solver.config.allowBlindAndBuriedVias,
     }),
-  ).toMatchObject({ valid: true, issues: [] })
+  ).toMatchObject({ valid: true, checkedViaCount: 42, issues: [] })
   await expectSvgSnapshotWithActual(
     getSvgFromGraphicsObject(solver.visualize()),
     import.meta.path,
