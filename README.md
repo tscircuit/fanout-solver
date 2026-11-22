@@ -168,11 +168,13 @@ bun add https://github.com/tscircuit/fanout-solver
 
 ## Usage
 
+The example uses `AutoroutingPipelineSolver`, the autorouter's default
+pipeline export, instead of a numbered pipeline, so it follows whichever
+pipeline the installed `@tscircuit/capacity-autorouter` release makes the
+default.
+
 ```ts
-import {
-  AutoroutingPipelineSolver6,
-  CapacityMeshSolver,
-} from "@tscircuit/capacity-autorouter"
+import { AutoroutingPipelineSolver } from "@tscircuit/capacity-autorouter"
 import { FanoutSolver } from "@tscircuit/fanout-solver"
 
 const fanoutSolver = new FanoutSolver(simpleRouteJson, {
@@ -197,7 +199,7 @@ const fanoutSolver = new FanoutSolver(simpleRouteJson, {
   compactBusTracks: true,
   completeOriginalEndpoints: true,
   routeDownstreamConnections: (inputSrj, { effort }) => {
-    const downstreamSolver = new AutoroutingPipelineSolver6(inputSrj, {
+    const downstreamSolver = new AutoroutingPipelineSolver(inputSrj, {
       effort,
     })
     downstreamSolver.solve()
@@ -221,7 +223,7 @@ if (fanoutSolver.failed) {
   throw new Error(fanoutSolver.error ?? "Fanout failed")
 }
 
-const autorouter = new CapacityMeshSolver(
+const autorouter = new AutoroutingPipelineSolver(
   fanoutSolver.getOutputSimpleRouteJson(),
 )
 autorouter.solve()
