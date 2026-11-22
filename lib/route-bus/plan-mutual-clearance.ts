@@ -28,10 +28,7 @@ function viaIsNearSegment({
 export function planIsClearOfPlans(params: {
   plan: FanoutRoutePlan
   otherPlans: FanoutRoutePlan[]
-  srj: SimpleRouteJson & {
-    minViaHoleEdgeToViaHoleEdgeClearance?: number
-    minPlatedHoleDrillEdgeToDrillEdgeClearance?: number
-  }
+  srj: SimpleRouteJson
   allowSameNetMerges: boolean
   allowSameNetPlaneMerges?: boolean
   clearance: number
