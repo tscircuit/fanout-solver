@@ -7,6 +7,7 @@ import {
   segmentsAreClear,
 } from "./geometry"
 import type {
+  Bounds,
   FanoutDirection,
   Point2D,
   PreparedBus,
@@ -16,6 +17,8 @@ import type {
 
 const EPSILON = 1e-9
 const DEFAULT_MAXIMUM_SEARCH_STATES = 100_000
+const MAX_LOCAL_ESCAPE_CELLS = 2
+const NON_PREFERRED_LOCAL_VIA_SIDE_PENALTY_MM = 2
 
 export interface DogboneViaSiteGeometryRules {
   viaDiameter: number
@@ -62,6 +65,19 @@ export interface DogboneViaSiteGeometryRules {
     secondConnectionIndex: number,
   ) => boolean
 }
+
+type MatcherRules = DogboneViaSiteGeometryRules & {
+  localSignal?: { rectangularViaBounds: Bounds | undefined }
+}
+
+type ViaSiteSearch =
+  | { type: "adjacent" | "projected-plane" }
+  | {
+      type: "projected-signal"
+      xCoordinates: number[]
+      yCoordinates: number[]
+      maxOffset: number
+    }
 
 interface ComponentConnection {
   preparedConnection: PreparedConnection
@@ -278,6 +294,25 @@ function getAdjacentInterstitialCoordinates(params: {
   )
 }
 
+function getEscapeGridCoordinates(coordinates: number[], pitch: number) {
+  if (!coordinates.length || !Number.isFinite(pitch) || pitch <= EPSILON)
+    return []
+  // Continue the pad pitch beyond the perimeter to include outward escapes.
+  const rows = [
+    coordinates[0]! - pitch,
+    ...coordinates,
+    coordinates.at(-1)! + pitch,
+  ]
+  const lines = uniqueSortedCoordinates([
+    ...rows,
+    ...getInterstitialCoordinates({ coordinates: rows, pitch }),
+  ])
+  return [
+    ...lines,
+    ...lines.slice(1).map((line, index) => (lines[index]! + line) / 2),
+  ]
+}
+
 function directSegmentIsStraightOr45(start: Point2D, end: Point2D): boolean {
   const absoluteX = Math.abs(end.x - start.x)
   const absoluteY = Math.abs(end.y - start.y)
@@ -347,10 +382,15 @@ function sourceSegmentClearsOtherObstacles(params: {
 function getConnectionCandidates(params: {
   connection: ComponentConnection
   component: ComponentMatchingInput
-  rules: DogboneViaSiteGeometryRules
-  includeProjectedSites?: boolean
+  rules: MatcherRules
+  search?: ViaSiteSearch
 }): ViaSiteCandidate[] {
-  const { connection, component, rules, includeProjectedSites = true } = params
+  const {
+    connection,
+    component,
+    rules,
+    search = { type: "projected-plane" },
+  } = params
   const { preparedConnection, direction } = connection
   const obstacles = rules.additionalObstacles
     ? [...new Set([...component.obstacles, ...rules.additionalObstacles])]
@@ -382,7 +422,10 @@ function getConnectionCandidates(params: {
     ...adjacentY.map((y) => ({ x: source.x, y })),
     ...adjacentX.flatMap((x) => adjacentY.map((y) => ({ x, y }))),
   ]
-  if (includeProjectedSites && connection.terminationType === "plane") {
+  if (
+    search.type === "projected-plane" &&
+    connection.terminationType === "plane"
+  ) {
     // A rectangular or rounded imported grid can put an interstitial midpoint
     // off the source's 45-degree rays. Intersect those rays with each adjacent
     // interstitial row/column; all resulting sites still pass normal clearance.
@@ -395,6 +438,29 @@ function getConnectionCandidates(params: {
           { x: source.x + Math.sign(dx) * Math.abs(dy), y },
         )
       }
+    }
+  }
+  if (search.type === "projected-signal") {
+    // Intersect straight and 45-degree escapes with the pad grid and its gaps.
+    for (const x of search.xCoordinates) {
+      const dx = x - source.x
+      if (Math.abs(dx) <= EPSILON || Math.abs(dx) > search.maxOffset + EPSILON)
+        continue
+      rawPoints.push(
+        { x, y: source.y },
+        { x, y: source.y + dx },
+        { x, y: source.y - dx },
+      )
+    }
+    for (const y of search.yCoordinates) {
+      const dy = y - source.y
+      if (Math.abs(dy) <= EPSILON || Math.abs(dy) > search.maxOffset + EPSILON)
+        continue
+      rawPoints.push(
+        { x: source.x, y },
+        { x: source.x + dy, y },
+        { x: source.x - dy, y },
+      )
     }
   }
   const uniquePoints: Point2D[] = []
@@ -421,7 +487,17 @@ function getConnectionCandidates(params: {
       )
     : obstacles
   const candidates: ViaSiteCandidate[] = []
+  const viaBounds = rules.localSignal?.rectangularViaBounds
   for (const point of candidatePoints) {
+    if (
+      viaBounds &&
+      (point.x < viaBounds.minX ||
+        point.x > viaBounds.maxX ||
+        point.y < viaBounds.minY ||
+        point.y > viaBounds.maxY)
+    ) {
+      continue
+    }
     if (
       connection.terminationType === "plane" &&
       !directSegmentIsStraightOr45(source, point)
@@ -530,6 +606,15 @@ function getConnectionCandidates(params: {
     })
   }
 
+  if (search.type === "projected-signal") {
+    return candidates.sort(
+      (first, second) =>
+        distance(source, first.point) - distance(source, second.point) ||
+        first.point.x - second.point.x ||
+        first.point.y - second.point.y,
+    )
+  }
+
   const perpendicularCoordinates =
     direction === "left" || direction === "right"
       ? component.yCoordinates
@@ -575,7 +660,7 @@ function getConnectionCandidates(params: {
         ? 1
         : 2
   }
-  return candidates.toSorted(
+  const ordered = candidates.sort(
     (first, second) =>
       (preferredViaPoint
         ? Number(distance(first.point, preferredViaPoint) > EPSILON) -
@@ -590,11 +675,27 @@ function getConnectionCandidates(params: {
       first.point.x - second.point.x ||
       first.point.y - second.point.y,
   )
+  if (rules.localSignal) {
+    // Promote the preferred quadrant while keeping the order of other sites.
+    let bestIndex = 0
+    let bestRank = Number.POSITIVE_INFINITY
+    for (const [index, { point }] of ordered.entries()) {
+      const rank =
+        NON_PREFERRED_LOCAL_VIA_SIDE_PENALTY_MM *
+          (Number(point.x < source.x) + Number(point.y > source.y)) +
+        distance(point, source)
+      if (rank >= bestRank) continue
+      bestIndex = index
+      bestRank = rank
+    }
+    if (bestIndex > 0) ordered.unshift(...ordered.splice(bestIndex, 1))
+  }
+  return ordered
 }
 
-function candidatesAreMutuallyClear(params: {
-  first: ViaSiteCandidate
-  second: ViaSiteCandidate
+export function candidatesAreMutuallyClear(params: {
+  first: Omit<ViaSiteCandidate, "outwardRank">
+  second: Omit<ViaSiteCandidate, "outwardRank">
   rules: DogboneViaSiteGeometryRules
 }): boolean {
   const { first, second, rules } = params
@@ -650,11 +751,11 @@ function candidatesAreMutuallyClear(params: {
 
 function matchComponent(params: {
   component: ComponentMatchingInput
-  rules: DogboneViaSiteGeometryRules
+  rules: MatcherRules
   consumeSearchState: () => boolean
-  includeProjectedSites: boolean
+  search: ViaSiteSearch
 }): Map<number, Point2D> | null {
-  const { component, rules, consumeSearchState, includeProjectedSites } = params
+  const { component, rules, consumeSearchState, search } = params
   const entries: ConnectionCandidates[] = component.connections.map(
     (connection) => ({
       connection,
@@ -662,7 +763,7 @@ function matchComponent(params: {
         connection,
         component,
         rules,
-        includeProjectedSites,
+        search,
       }),
     }),
   )
@@ -736,26 +837,20 @@ function matchComponent(params: {
     )
   }
 
-  const getViableCandidates = (
-    entry: ConnectionCandidates,
-  ): ViaSiteCandidate[] =>
-    entry.candidates.filter((candidate) =>
-      [...assignedCandidates.values()].every((assignedCandidate) =>
-        candidatesAreCompatible(candidate, assignedCandidate),
-      ),
-    )
-
   const augmentMatching = (): boolean => {
     if (!consumeSearchState()) return false
     if (remaining.size === 0) return true
 
     let selectedEntry: ConnectionCandidates | undefined
     let selectedCandidates: ViaSiteCandidate[] = []
-    for (const connectionIndex of [...remaining].toSorted(
-      (first, second) => first - second,
-    )) {
+    const assigned = [...assignedCandidates.values()]
+    for (const connectionIndex of remaining) {
       const entry = entryByConnectionIndex.get(connectionIndex)!
-      const viableCandidates = getViableCandidates(entry)
+      const viableCandidates = entry.candidates.filter((candidate) =>
+        assigned.every((assignedCandidate) =>
+          candidatesAreCompatible(candidate, assignedCandidate),
+        ),
+      )
       if (viableCandidates.length === 0) return false
       if (
         !selectedEntry ||
@@ -804,6 +899,13 @@ export function matchComponentDogboneViaSites(
   preparedBuses: readonly PreparedBus[],
   rules: DogboneViaSiteGeometryRules,
 ): Map<number, Point2D> | null {
+  return matchDogboneViaSites(preparedBuses, rules)
+}
+
+export function matchDogboneViaSites(
+  preparedBuses: readonly PreparedBus[],
+  rules: MatcherRules,
+): Map<number, Point2D> | null {
   const maximumSearchStates = assertGeometryRules(rules)
   if (preparedBuses.length === 0) return new Map()
 
@@ -815,12 +917,11 @@ export function matchComponentDogboneViaSites(
   const result = new Map<number, Point2D>()
   for (const component of getComponentMatchingInputs(preparedBuses)) {
     // Preserve complete midpoint assignments before expanding the search to
-    // projected 45-degree sites. Both passes share the same search-state limit.
+    // projected sites. All passes share the same search-state limit.
+    const matchInput = { component, rules, consumeSearchState }
     let componentResult = matchComponent({
-      component,
-      rules,
-      consumeSearchState,
-      includeProjectedSites: false,
+      ...matchInput,
+      search: { type: "adjacent" },
     })
     if (
       !componentResult &&
@@ -829,10 +930,24 @@ export function matchComponentDogboneViaSites(
       )
     ) {
       componentResult = matchComponent({
-        component,
-        rules,
-        consumeSearchState,
-        includeProjectedSites: true,
+        ...matchInput,
+        search: { type: "projected-plane" },
+      })
+    }
+    if (
+      !componentResult &&
+      rules.localSignal?.rectangularViaBounds &&
+      (rules.blockingSegments?.length || rules.blockingVias?.length)
+    ) {
+      const { xCoordinates, yCoordinates, pitchX, pitchY } = component
+      componentResult = matchComponent({
+        ...matchInput,
+        search: {
+          type: "projected-signal",
+          xCoordinates: getEscapeGridCoordinates(xCoordinates, pitchX),
+          yCoordinates: getEscapeGridCoordinates(yCoordinates, pitchY),
+          maxOffset: MAX_LOCAL_ESCAPE_CELLS * Math.min(pitchX, pitchY),
+        },
       })
     }
     if (!componentResult) return null

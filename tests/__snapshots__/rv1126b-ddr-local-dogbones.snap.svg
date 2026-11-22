@@ -531,6 +531,8 @@
 <path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 474.468085106383 788.6524822695035 L 465.95859574468085 780.1434822695035" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
 <path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 513.8267872340425 459.92429078014175 L 520.7446808510639 466.8439716312056" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
 <path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 474.468085106383 805.6737588652481 L 465.95859574468085 797.1668865248225" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 486.1678085106383 501.4181631205673 L 510.37234042553195 525.6226950354609" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
+<path class="pcb-trace" stroke="rgb(200, 52, 52)" fill="none" d="M 465.95859574468085 660.9958652482269 L 491.4875531914893 686.5248226950354" stroke-width="1.9148936170212765" stroke-linecap="round" stroke-linejoin="round" shape-rendering="crispEdges" data-type="pcb_trace" data-pcb-layer="top"/>
 <path class="pcb-silkscreen pcb-silkscreen-top" d="M 349.4369063829789 212.55855460992916 L 650.5512042553194 212.55855460992916 L 650.5512042553194 513.6728524822698 L 349.4369063829789 513.6728524822698 L 349.4369063829789 212.55855460992916 Z" fill="none" stroke="#f2eda1" stroke-width="2.127659574468085" stroke-linecap="round" stroke-linejoin="round" data-pcb-component-id="pcb_component_0" data-pcb-silkscreen-path-id="pcb_silkscreen_path_0" data-type="pcb_silkscreen_path" data-pcb-layer="top"/>
 <path class="pcb-silkscreen pcb-silkscreen-top" d="M 344.5730765957449 505.1622312056736 L 344.5730765957449 518.5366822695037 L 357.94752765957463 518.5366822695037" fill="none" stroke="#f2eda1" stroke-width="2.127659574468085" stroke-linecap="round" stroke-linejoin="round" data-pcb-component-id="pcb_component_0" data-pcb-silkscreen-path-id="pcb_silkscreen_path_1" data-type="pcb_silkscreen_path" data-pcb-layer="top"/>
 <circle cx="332.2113829787234" cy="513.929014184397" r="2.1292765957446806" class="pcb-silkscreen-circle pcb-silkscreen-top" fill="none" stroke="#f2eda1" stroke-width="2.127659574468085" data-pcb-silkscreen-circle-id="pcb_silkscreen_circle_0" data-type="pcb_silkscreen_circle" data-pcb-layer="top"/>
@@ -625,6 +627,14 @@
 <g data-type="pcb_via" data-pcb-layer="through">
 <circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="474.468085106383" cy="805.6737588652481" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
 <circle class="pcb-hole-inner" fill="#FF26E2" cx="474.468085106383" cy="805.6737588652481" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="510.37234042553195" cy="525.6226950354609" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="510.37234042553195" cy="525.6226950354609" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
+</g>
+<g data-type="pcb_via" data-pcb-layer="through">
+<circle class="pcb-hole-outer" fill="rgb(200, 52, 52)" cx="491.4875531914893" cy="686.5248226950354" r="4.787234042553192" data-type="pcb_via" data-pcb-layer="top"/>
+<circle class="pcb-hole-inner" fill="#FF26E2" cx="491.4875531914893" cy="686.5248226950354" r="2.127659574468085" data-type="pcb_via" data-pcb-layer="drill"/>
 </g>
 <path class="pcb-fabrication-note-path" stroke="rgba(255,255,255,0.5)" fill="none" d="M 332.46754468085123 530.6530226950356 L 364.89307659574484 530.6530226950356 L 332.46754468085123 498.2274907801419 Z" stroke-width="0" data-pcb-component-id="pcb_component_0" data-pcb-fabrication-note-path-id="pcb_fabrication_note_path_0" data-type="pcb_fabrication_note_path" data-pcb-layer="overlay"/>
 </svg>
