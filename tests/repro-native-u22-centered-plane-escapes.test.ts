@@ -18,14 +18,14 @@ test("native U22 fanout uses the empty positions inside its pad field", async ()
   const solver = new FanoutSolver(solverParams, solverOptions)
   solver.solve()
   const attempt = Reflect.get(solver, "bestAttempt") as AssignmentAttempt
-  expect(attempt.plans).toHaveLength(19)
+  expect(attempt.plans).toHaveLength(23)
   const drc = validateRoutedCopperDrc({
     inputSrj: solverParams,
     routedSrj: attempt.outputSrj,
     clearance: solver.config.clearance,
     allowBlindAndBuriedVias: false,
   })
-  expect(drc).toMatchObject({ valid: true, issues: [] })
+  expect(drc).toMatchObject({ valid: true, checkedViaCount: 11, issues: [] })
 
   const graphics = visualizeSimpleRouteJson({
     ...attempt.outputSrj,

@@ -1,3 +1,4 @@
+import { routeRemainingPlaneBuses } from "./route-remaining-plane-buses"
 import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
 import { routePeripheralBusesSteps } from "./route-peripheral-buses"
@@ -6672,7 +6673,45 @@ export class FanoutSolver extends BaseSolver {
     return assignment
   }
 
+  private routeBestRemainingPlaneBuses(): void {
+    const best = this.bestAttempt
+    if (!best || this.hasCompleteBestAttempt()) return
+    const attempt = routeRemainingPlaneBuses({
+      ...this.config,
+      srj: this.routingSrj,
+      buses: this.preparedBuses,
+      attempt: best,
+      staticClearanceCache: this.routeStaticClearanceCache,
+    })
+    if (attempt === best) return
+    const complete = attempt.plans.length === this.inputSrj.connections.length
+    const plans = complete
+      ? this.normalizeCompletePlanCorners(attempt.plans)
+      : attempt.plans
+    if (!plans) return
+    const outputSrj = buildOutputSimpleRouteJson({
+      inputSrj: this.inputSrj,
+      plans,
+      layerNames: this.config.layerNames,
+    })
+    if (complete && !this.validateCompletePlans(plans, outputSrj).valid) return
+    const summaryIndex = this.attempts.indexOf(best.summary)
+    if (summaryIndex < 0) throw new Error("Best fanout assignment is missing")
+    const routeCostChange =
+      plans.reduce((cost, plan) => cost + plan.length, 0) -
+      attempt.plans.reduce((cost, plan) => cost + plan.length, 0) +
+      (getPlanViaCount(plans) - getPlanViaCount(attempt.plans)) * 0.1
+    const summary = {
+      ...attempt.summary,
+      score: attempt.summary.score + routeCostChange,
+    }
+    this.attempts[summaryIndex] = summary
+    this.bestAttempt = { plans, outputSrj, summary }
+    this.setInProgressPlans({ phase: "complete-plane-drops", plans })
+  }
+
   private finishWithoutAnotherAssignment(): void {
+    this.routeBestRemainingPlaneBuses()
     if (this.hasCompleteBestAttempt()) {
       this.completeBestAttemptEndpoints()
       this.solved = true

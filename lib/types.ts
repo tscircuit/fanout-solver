@@ -9,6 +9,14 @@ import type {
 import type { OriginalEndpointConnectivityReport } from "./validate-original-endpoint-connectivity"
 import type { RoutedCopperDrcReport } from "./validate-routed-copper-drc"
 
+// Backport shared SRJ rules missing from the pinned autorouter's declarations.
+declare module "@tscircuit/capacity-autorouter" {
+  interface SimpleRouteJson {
+    minViaHoleEdgeToViaHoleEdgeClearance?: number
+    minPlatedHoleDrillEdgeToDrillEdgeClearance?: number
+  }
+}
+
 type CapacityRoutePoint = SimplifiedPcbTrace["route"][number]
 
 export type FanoutViaRoutePoint = Extract<

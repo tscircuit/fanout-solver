@@ -27,7 +27,7 @@ test("native U22 search constructs output SRJs for discarded partial attempts", 
   expect(solver.failed).toBe(true)
   expect(() => solver.getOutput()).toThrow()
   expect(solver.attempts).toHaveLength(256)
-  expect(best.plans).toHaveLength(19)
+  expect(best.plans).toHaveLength(23)
   expect(best.outputSrj).toBe(output)
   const drc = validateRoutedCopperDrc({
     inputSrj: input,
