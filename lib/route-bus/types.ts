@@ -15,6 +15,8 @@ export type RouteBusStaticClearanceCache = Map<PlanClearanceKey, boolean>
 
 export interface RouteBusParams {
   srj: SimpleRouteJson
+  /** Prefer source-aligned tracks for compact automatic boundary handoffs. */
+  preferSourceTracks?: boolean
   bus: PreparedBus
   targetLayer: string
   acceptedPlans: FanoutRoutePlan[]

@@ -6,8 +6,10 @@ import {
   busUsesCoordinatedWindingChannel,
   getCornerSide,
   getLocalCornerSide,
+  getPerpendicularAxis,
 } from "./directions"
 import { planIsClear } from "./plan-clearance"
+import { getInitialViaPoint } from "./source-escape"
 import {
   getLegacyPreferredTrack,
   getPreferredTrack,
@@ -113,7 +115,35 @@ export function searchConnectionOrder(
 
   const preparedConnection = connectionOrder[connectionIndex]!
   const connectionRank = getConnectionRank(bus, preparedConnection)
+  const preferSourceTracks =
+    context.preferSourceTracks === true &&
+    compactBusTracks &&
+    !startAtSource &&
+    !getCornerSide(bus) &&
+    !getLocalCornerSide(bus) &&
+    !busUsesCoordinatedWindingChannel(bus) &&
+    !fixedBoundaryTracksByConnectionIndex &&
+    bus.connections.every((connection) => !connection.hasExplicitExitTarget)
+  const sourceAlignedTracks: number[] = []
+  if (preferSourceTracks) {
+    const escapeLayerStart = targetUsesVia
+      ? getInitialViaPoint({
+          preparedConnection,
+          bus,
+          targetLayer,
+          traceWidth,
+          viaDiameter,
+          clearance,
+          viaHandedness,
+        })
+      : preparedConnection.sourcePoint
+    sourceAlignedTracks.push(
+      getPerpendicularAxis(escapeLayerStart, bus.direction),
+      getPerpendicularAxis(preparedConnection.sourcePoint, bus.direction),
+    )
+  }
   const preferredTracks = [
+    ...sourceAlignedTracks,
     getPreferredTrack({
       bus,
       connection: preparedConnection,
@@ -153,7 +183,7 @@ export function searchConnectionOrder(
     )
   for (let trackIndex = 0; trackIndex < trackCandidates.length; trackIndex++) {
     const track = trackCandidates[trackIndex]!
-    const cacheKey = `boundary:${startAtSource}:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`
+    const cacheKey = `boundary:${startAtSource}:${preferSourceTracks}:${bus.busId}:${bus.direction}:${targetLayer}:${preparedConnection.connectionIndex}:${viaHandedness}:${trackIndex}:${bus.exitEdge ?? "legacy"}:${cornerLaneOffsets.exit}:${cornerLaneOffsets.localChannel}:${cornerLaneOffsets.boundaryChannel}:${cornerBandTargetTrackOffset ?? 0}:${fixedBoundaryTracksByConnectionIndex?.get(preparedConnection.connectionIndex) ?? "default"}`
     if (staticClearanceCache?.get(cacheKey) === false) continue
     const plan = buildPlan({
       preparedConnection,

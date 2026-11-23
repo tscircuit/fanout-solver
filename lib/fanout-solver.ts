@@ -1024,8 +1024,9 @@ function getCandidateEscapeLayersForBus(params: {
   srj: SimpleRouteJson
   config: ResolvedFanoutConfig
   staticClearanceCache: RouteBusStaticClearanceCache
+  preferSourceTracks: boolean
 }): string[] {
-  const { bus, srj, config, staticClearanceCache } = params
+  const { bus, srj, config, staticClearanceCache, preferSourceTracks } = params
   const busAllowedLayers = bus.allowedLayers
   const allowedEscapeLayers =
     busAllowedLayers === undefined
@@ -1040,6 +1041,7 @@ function getCandidateEscapeLayersForBus(params: {
       routeBus({
         srj,
         bus,
+        preferSourceTracks,
         targetLayer,
         acceptedPlans: [],
         layerNames: config.layerNames,
@@ -1355,6 +1357,8 @@ export class FanoutSolver extends BaseSolver {
         srj: this.routingSrj,
         config: this.config,
         staticClearanceCache: this.routeStaticClearanceCache,
+        preferSourceTracks:
+          this.boundaryBuses.length === this.preparedBuses.length,
       })
       this.nextCandidateLayerBusIndex++
       this.stats = {
@@ -5860,6 +5864,8 @@ export class FanoutSolver extends BaseSolver {
         viaHoleDiameter: this.config.viaHoleDiameter,
         clearance: this.config.clearance,
         compactBusTracks: this.config.compactBusTracks,
+        preferSourceTracks:
+          this.boundaryBuses.length === this.preparedBuses.length,
         allowBlindAndBuriedVias: this.config.allowBlindAndBuriedVias,
         allowSameNetMerges: this.config.allowSameNetMerges,
         staticClearanceCache: this.routeStaticClearanceCache,
