@@ -1,6 +1,7 @@
 import { distance } from "../geometry"
 import type { FanoutRoutePlan } from "../types"
 import { getExistingPlaneVias } from "./get-existing-plane-vias"
+import { getWindingPlaneViaReuseAlternative } from "./get-winding-plane-via-reuse-alternative"
 import { getAxis, directionSign } from "./directions"
 import { getPlanVias } from "./plan-copper"
 import { routePlaneTerminatedBus } from "./route-plane-terminated-bus"
@@ -64,6 +65,9 @@ export function getPlaneViaReuseAlternative(
         if (!bestPlan || candidatePlan.length < bestPlan.length - 1e-9)
           bestPlan = candidatePlan
       }
+    }
+    if (!bestPlan && !originalPlan) {
+      bestPlan = getWindingPlaneViaReuseAlternative(routeParams, connection)
     }
     if (!bestPlan) return null
     plans.push(bestPlan)

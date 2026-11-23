@@ -45,6 +45,7 @@ export function planIsClear(params: {
       clearance,
       allowBlindAndBuriedVias,
       allowSameNetMerges,
+      allowSameNetPlaneMerges,
     })
     staticClearanceCache?.set(cacheKey, staticallyClear)
   }

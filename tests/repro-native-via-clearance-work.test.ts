@@ -26,7 +26,7 @@ test("native U22 via clearance preserves physical copper", async () => {
   const best = Reflect.get(solver, "bestAttempt") as AssignmentAttempt
   expect(solver.failed).toBe(true)
   expect(() => solver.getOutput()).toThrow()
-  expect(best.plans).toHaveLength(23)
+  expect(best.plans).toHaveLength(26)
 
   const pointChecks = spyOn(geometry, "distancePointToObstacle")
   const clear = fanoutPlansAreClear({

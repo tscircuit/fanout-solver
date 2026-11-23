@@ -114,6 +114,7 @@ export function planIsStaticallyClear(params: {
   clearance: number
   allowBlindAndBuriedVias: boolean
   allowSameNetMerges: boolean
+  allowSameNetPlaneMerges?: boolean
 }): boolean {
   const {
     plan,
@@ -122,6 +123,7 @@ export function planIsStaticallyClear(params: {
     clearance,
     allowBlindAndBuriedVias,
     allowSameNetMerges,
+    allowSameNetPlaneMerges = false,
   } = params
   const routableBounds = getRoutableBounds(srj.bounds, sharedBoundary)
   if (
@@ -165,7 +167,9 @@ export function planIsStaticallyClear(params: {
         plan,
         segmentIndex,
         srj,
-        allowSameNetMerges,
+        allowSameNetMerges:
+          allowSameNetMerges ||
+          (allowSameNetPlaneMerges && plan.termination.type === "plane"),
         obstacles: params.segmentCache
           ? (params.segmentCache.obstaclesByLayer.get(segment.layer) ?? [])
           : srj.obstacles,

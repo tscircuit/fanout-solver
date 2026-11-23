@@ -128,7 +128,7 @@ export function routePlaneTerminatedBus(
               otherPlans: [...acceptedPlans, ...fixedPlans],
               staticClearanceCache,
               blockingBusCounts,
-              cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${preparedConnection.connectionIndex}:${fixedViaPoint.x}:${fixedViaPoint.y}:${candidateIndex}`,
+              cacheKey: `plane-fixed:${bus.busId}:${targetLayer}:${allowSameNetPlaneMerges}:${preparedConnection.connectionIndex}:${fixedViaPoint.x}:${fixedViaPoint.y}:${candidateIndex}`,
               srj,
               sharedBoundary: bus.sharedBoundary,
               clearance,
@@ -210,7 +210,7 @@ export function routePlaneTerminatedBus(
             otherPlans: acceptedPlans,
             staticClearanceCache,
             blockingBusCounts,
-            cacheKey: `plane-via-in-pad:${bus.busId}:${targetLayer}:${candidateIndex}`,
+            cacheKey: `plane-via-in-pad:${bus.busId}:${targetLayer}:${allowSameNetPlaneMerges}:${candidateIndex}`,
             srj,
             sharedBoundary: bus.sharedBoundary,
             clearance,
@@ -276,7 +276,7 @@ export function routePlaneTerminatedBus(
         const candidatePlans: FanoutRoutePlan[] = []
         let orderIsClear = true
         for (const preparedConnection of connectionOrder) {
-          const sourcePathsCacheKey = `plane:${bus.busId}:${targetLayer}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}`
+          const sourcePathsCacheKey = `plane:${bus.busId}:${targetLayer}:${allowSameNetPlaneMerges}:${direction}:${preparedConnection.connectionIndex}:${viaHandedness}`
           if (staticClearanceCache?.get(sourcePathsCacheKey) === false) {
             orderIsClear = false
             break
