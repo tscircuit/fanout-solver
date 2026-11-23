@@ -1,4 +1,8 @@
 import { routeRemainingPlaneBuses } from "./route-remaining-plane-buses"
+import {
+  isAutomaticBoundaryRoutingCandidate,
+  routeAutomaticBoundaryBusesSteps,
+} from "./route-automatic-boundary-buses"
 import { shouldUseSourceOriginRouting } from "./route-source-origin-buses"
 import { preparePeripheralSourceReservations } from "./prepare-peripheral-source-reservations"
 import { routePeripheralBusesSteps } from "./route-peripheral-buses"
@@ -1093,6 +1097,7 @@ export class FanoutSolver extends BaseSolver {
     }
   >()
   private layerReservedRoutingEvaluated = false
+  private automaticBoundaryRoutingEvaluated = false
   private groupedBeamEvaluated = false
   private routingInitialized = false
   private nextCandidateLayerBusIndex = 0
@@ -1345,6 +1350,57 @@ export class FanoutSolver extends BaseSolver {
         routedConnectionCount: plans.length,
         failedBusIds: [],
         score,
+      },
+    }
+  }
+
+  private *evaluateAutomaticBoundaryRoutingSteps(): Generator<
+    FanoutWorkYield,
+    EvaluatedAssignment | null,
+    unknown
+  > {
+    const steps = routeAutomaticBoundaryBusesSteps({
+      ...this.config,
+      srj: this.routingSrj,
+      buses: this.preparedBuses,
+    })
+    let next = steps.next()
+    while (!next.done) {
+      this.stats = {
+        ...this.stats,
+        phase: "route-automatic-boundaries",
+        routedConnections: `${next.value.routedConnectionCount}/${this.inputSrj.connections.length}`,
+      }
+      const output = yield isSubsolverRequest(next.value)
+        ? next.value
+        : undefined
+      next = steps.next(output)
+    }
+    if (!next.value) return null
+    const plans = this.normalizeCompletePlanCorners(next.value)
+    if (!plans) return null
+    const outputSrj = buildOutputSimpleRouteJson({
+      inputSrj: this.inputSrj,
+      plans,
+      layerNames: this.config.layerNames,
+    })
+    if (!this.validateCompletePlans(plans, outputSrj).valid) return null
+    return {
+      plans,
+      outputSrj,
+      blockingBusIds: [],
+      stopAfterCompleteValidation: true,
+      summary: {
+        assignmentIndex: 0,
+        busLayerAssignments: Object.fromEntries(
+          plans.map((plan) => [plan.busId, plan.targetLayer]),
+        ),
+        routedBusCount: this.preparedBuses.length,
+        routedConnectionCount: plans.length,
+        failedBusIds: [],
+        score:
+          plans.reduce((sum, plan) => sum + plan.length, 0) +
+          getPlanViaCount(plans) * 0.1,
       },
     }
   }
@@ -6738,6 +6794,30 @@ export class FanoutSolver extends BaseSolver {
     if (this.activeOperation) {
       this.stepActiveOperation()
       return
+    }
+
+    if (!this.automaticBoundaryRoutingEvaluated) {
+      this.automaticBoundaryRoutingEvaluated = true
+      if (
+        isAutomaticBoundaryRoutingCandidate({
+          ...this.config,
+          srj: this.routingSrj,
+          buses: this.preparedBuses,
+        })
+      ) {
+        this.startOperation({
+          name: "FanoutAutomaticBoundarySolver",
+          generator: this.evaluateAutomaticBoundaryRoutingSteps(),
+          onSolved: (attempt) => {
+            if (!attempt) return
+            const assignment = attempt.summary.busLayerAssignments
+            this.layerAssignments.push(assignment)
+            this.routingInitialized = true
+            this.commitAssignmentAttempt(assignment, attempt)
+          },
+        })
+        return
+      }
     }
 
     if (!this.layerReservedRoutingEvaluated) {

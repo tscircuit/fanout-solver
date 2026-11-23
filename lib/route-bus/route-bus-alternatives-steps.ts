@@ -6,6 +6,7 @@ import { routeCoordinatedBoundarySteps } from "./route-coordinated-boundary-step
 import { getPlaneViaReuseAlternative } from "./get-plane-via-reuse-alternative"
 import { routePlaneTerminatedBus } from "./route-plane-terminated-bus"
 import { routeSingletonBoundarySteps } from "./route-singleton-boundary-steps"
+import { routeAutomaticSourceBoundaryBus } from "./route-automatic-source-boundary-bus"
 import type { RouteBusAlternativesProgress, RouteBusParams } from "./types"
 
 export function* routeBusAlternativesSteps(
@@ -108,5 +109,9 @@ export function* routeBusAlternativesSteps(
   if (yield* routeCoordinatedBoundarySteps(context)) return context.alternatives
   if (yield* routeBoundarySideViaSteps(context)) return context.alternatives
   routeAnalyticBoundaryAlternatives(context)
+  if (context.alternatives.length === 0) {
+    const plans = routeAutomaticSourceBoundaryBus(context)
+    if (plans) context.alternatives.push(plans)
+  }
   return context.alternatives
 }

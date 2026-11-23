@@ -17,6 +17,8 @@ export interface RouteBusParams {
   srj: SimpleRouteJson
   /** Prefer source-aligned tracks for compact automatic boundary handoffs. */
   preferSourceTracks?: boolean
+  /** Enable joint-source fallback only inside automatic BGA recovery. */
+  allowAutomaticSourceBoundaryRecovery?: boolean
   bus: PreparedBus
   targetLayer: string
   acceptedPlans: FanoutRoutePlan[]
