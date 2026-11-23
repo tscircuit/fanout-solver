@@ -1,3 +1,4 @@
+import type { ObstacleSpatialIndex } from "../obstacle-spatial-index"
 import type { CopperLayer } from "./types"
 import {
   distance,
@@ -6,7 +7,10 @@ import {
   distanceSegmentToObstacle,
   segmentsAreClear,
 } from "../geometry"
-import { getAllRoutedTraceCopper } from "../get-routed-trace-copper"
+import {
+  getAllRoutedTraceCopper,
+  type RoutedTraceCopper,
+} from "../get-routed-trace-copper"
 import {
   connectionsShareElectricalNet,
   obstacleSharesElectricalNet,
@@ -96,6 +100,8 @@ export function segmentIsClearOfObstacles(params: {
 }
 
 export interface StaticPlanSegmentCache {
+  obstacleIndex?: ObstacleSpatialIndex
+  routedTraceCopper?: RoutedTraceCopper[]
   obstaclesByLayer: Map<CopperLayer, Obstacle[]>
   byConnection: Map<
     string,
@@ -170,9 +176,14 @@ export function planIsStaticallyClear(params: {
         allowSameNetMerges:
           allowSameNetMerges ||
           (allowSameNetPlaneMerges && plan.termination.type === "plane"),
-        obstacles: params.segmentCache
-          ? (params.segmentCache.obstaclesByLayer.get(segment.layer) ?? [])
-          : srj.obstacles,
+        obstacles:
+          params.segmentCache?.obstacleIndex?.querySegment(
+            segment,
+            clearance,
+          ) ??
+          (params.segmentCache
+            ? (params.segmentCache.obstaclesByLayer.get(segment.layer) ?? [])
+            : srj.obstacles),
         clearance,
       })
       results?.set(segment, clear)
@@ -184,7 +195,10 @@ export function planIsStaticallyClear(params: {
       plan.termination.type === "plane" ? plan.termination.layer : undefined
     let hasPlaneCopper = false
     let touchesPlaneCopper = false
-    for (const obstacle of srj.obstacles) {
+    for (const obstacle of params.segmentCache?.obstacleIndex?.queryVia(
+      via,
+      clearance,
+    ) ?? srj.obstacles) {
       if (obstacle.isCopperPour) {
         const touchesViaTerminal =
           obstacle.layers.includes(via.fromLayer) ||
@@ -254,10 +268,8 @@ export function planIsStaticallyClear(params: {
     if (hasPlaneCopper && !touchesPlaneCopper) return false
   }
 
-  for (const traceCopper of getAllRoutedTraceCopper(
-    srj,
-    allowBlindAndBuriedVias,
-  )) {
+  for (const traceCopper of params.segmentCache?.routedTraceCopper ??
+    getAllRoutedTraceCopper(srj, allowBlindAndBuriedVias)) {
     if (
       plan.connectionName === traceCopper.connectionName ||
       (allowSameNetMerges &&

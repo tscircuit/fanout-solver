@@ -9,7 +9,7 @@ import { routeReservedViaBusesSteps } from "../route-reserved-via-buses"
 import { routeViaMinimalWindingAlternativesSteps } from "../route-via-minimal-winding"
 import type { FanoutRoutePlan } from "../types"
 import { getBoundaryTargetTrack } from "./boundary-tracks"
-import { fanoutPlansAreClear } from "./plan-clearance"
+import { getCachedFanoutPlanClearanceValidator } from "./plan-clearance"
 import type { RouteBusBoundaryContext } from "./types"
 
 /** Route automatic TOP sources and their first vias jointly in board-world mm
@@ -152,11 +152,10 @@ export function routeAutomaticSourceBoundaryBus(
   })
   if (
     !plans ||
-    !fanoutPlansAreClear({
+    !getCachedFanoutPlanClearanceValidator({
       ...context,
-      plans: [...context.acceptedPlans, ...plans],
       sharedBoundary: boundary,
-    })
+    })([...context.acceptedPlans, ...plans])
   )
     return null
   // The derived edge guides this search; it is not an authored exit constraint.

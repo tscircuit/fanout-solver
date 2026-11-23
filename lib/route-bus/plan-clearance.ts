@@ -1,4 +1,6 @@
+import { ObstacleSpatialIndex } from "../obstacle-spatial-index"
 import { connectionsShareElectricalNet } from "../net-identity"
+import { getAllRoutedTraceCopper } from "../get-routed-trace-copper"
 import { RouteSegmentSpatialIndex } from "../route-segment-spatial-index"
 import type { Bounds, FanoutRoutePlan } from "../types"
 import { getPlanSegments } from "./plan-copper"
@@ -38,15 +40,28 @@ export function planIsClear(params: {
   } = params
   let staticallyClear = staticClearanceCache?.get(cacheKey)
   if (staticallyClear === undefined) {
-    staticallyClear = planIsStaticallyClear({
-      plan,
-      srj,
-      sharedBoundary,
-      clearance,
-      allowBlindAndBuriedVias,
-      allowSameNetMerges,
-      allowSameNetPlaneMerges,
-    })
+    // Preserve the wire-only plane policy of the original analytic predicate.
+    staticallyClear =
+      allowSameNetPlaneMerges &&
+      !allowSameNetMerges &&
+      plan.termination.type === "plane"
+        ? planIsStaticallyClear({
+            plan,
+            srj,
+            sharedBoundary,
+            clearance,
+            allowBlindAndBuriedVias,
+            allowSameNetMerges,
+            allowSameNetPlaneMerges,
+          })
+        : getCachedFanoutPlanClearanceValidator({
+            srj,
+            sharedBoundary,
+            clearance,
+            allowBlindAndBuriedVias,
+            allowSameNetMerges,
+            allowSameNetPlaneMerges,
+          }).staticallyClear(plan)
     staticClearanceCache?.set(cacheKey, staticallyClear)
   }
   return (
@@ -140,6 +155,7 @@ export function fanoutPlansAreClear(params: {
 export function createFanoutPlanClearanceValidator(
   params: Omit<Parameters<typeof fanoutPlansAreClear>[0], "plans">,
 ): ((plans: readonly FanoutRoutePlan[]) => boolean) & {
+  staticallyClear(plan: FanoutRoutePlan): boolean
   mutuallyClear(plans: readonly FanoutRoutePlan[]): boolean
 } {
   const {
@@ -151,8 +167,10 @@ export function createFanoutPlanClearanceValidator(
     allowSameNetPlaneMerges = false,
   } = params
   const segmentCache: StaticPlanSegmentCache = {
+    obstacleIndex: new ObstacleSpatialIndex(srj.obstacles),
     obstaclesByLayer: new Map(),
     byConnection: new Map(),
+    routedTraceCopper: getAllRoutedTraceCopper(srj, allowBlindAndBuriedVias),
   }
   for (const obstacle of srj.obstacles)
     for (const layer of obstacle.layers) {
@@ -165,8 +183,10 @@ export function createFanoutPlanClearanceValidator(
   const planeSegmentCache: StaticPlanSegmentCache =
     allowSameNetPlaneMerges && !allowSameNetMerges
       ? {
+          obstacleIndex: segmentCache.obstacleIndex,
           obstaclesByLayer: segmentCache.obstaclesByLayer,
           byConnection: new Map(),
+          routedTraceCopper: segmentCache.routedTraceCopper,
         }
       : segmentCache
   const segmentIndexes = new WeakMap<
@@ -265,6 +285,7 @@ export function createFanoutPlanClearanceValidator(
     return true
   }
   return Object.assign(validate, {
+    staticallyClear,
     // Blocker discovery shares the exact route-pair checks and spatial indexes.
     // A mutual-only query cannot establish a statically clear baseline.
     mutuallyClear: (plans: readonly FanoutRoutePlan[]): boolean =>
@@ -274,4 +295,38 @@ export function createFanoutPlanClearanceValidator(
         ),
       ),
   })
+}
+
+const validatorsBySrj = new WeakMap<
+  SimpleRouteJson,
+  Map<string, ReturnType<typeof createFanoutPlanClearanceValidator>>
+>()
+
+/** Reuse the existing immutable-plan validator inside one fixed routing scope.
+ * Each rule/boundary policy has its own cache; a changed SRJ gets a new scope. */
+export function getCachedFanoutPlanClearanceValidator(
+  params: Omit<Parameters<typeof fanoutPlansAreClear>[0], "plans">,
+) {
+  const { srj, sharedBoundary: bounds } = params
+  const key = JSON.stringify([
+    bounds.minX,
+    bounds.maxX,
+    bounds.minY,
+    bounds.maxY,
+    params.clearance,
+    params.allowBlindAndBuriedVias ?? true,
+    params.allowSameNetMerges ?? false,
+    params.allowSameNetPlaneMerges ?? false,
+  ])
+  let contexts = validatorsBySrj.get(srj)
+  if (!contexts) {
+    contexts = new Map()
+    validatorsBySrj.set(srj, contexts)
+  }
+  let validator = contexts.get(key)
+  if (!validator) {
+    validator = createFanoutPlanClearanceValidator(params)
+    contexts.set(key, validator)
+  }
+  return validator
 }

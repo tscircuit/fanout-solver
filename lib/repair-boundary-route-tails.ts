@@ -1,9 +1,7 @@
 import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import { distance, distanceSegmentToSegment } from "./geometry"
-import {
-  createFanoutPlanClearanceValidator,
-  fanoutPlansAreClear,
-} from "./route-bus"
+import { fanoutPlansAreClear } from "./route-bus"
+import { getCachedFanoutPlanClearanceValidator } from "./route-bus/plan-clearance"
 import { routeViaMinimalWindingAlternativesSteps } from "./route-via-minimal-winding"
 import type {
   Bounds,
@@ -664,7 +662,7 @@ export function repairBoundaryRouteTails(
   // newly emitted copper that must belong to a current connection.
   if (inputSrj.traces?.length && combined.length) {
     const bounds = preparedBuses.map((bus) => bus.sharedBoundary)
-    const clear = createFanoutPlanClearanceValidator({
+    const clear = getCachedFanoutPlanClearanceValidator({
       srj: inputSrj,
       sharedBoundary: {
         minX: Math.min(...bounds.map((b) => b.minX)),
