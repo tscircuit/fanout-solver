@@ -1596,7 +1596,8 @@ function* routeReservedViaBusesWorker(
         routedSrj: {
           ...srj,
           traces: [
-            ...(srj.traces ?? []),
+            // Prior-phase copper stays hard in fanoutPlansAreClear above.
+            // Its connection names need not belong to this routing scope.
             ...[...plans, ...params.acceptedPlans, ...prefixes].flatMap(
               (plan) => [
                 plan.trace,

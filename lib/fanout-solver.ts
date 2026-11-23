@@ -5973,6 +5973,36 @@ export class FanoutSolver extends BaseSolver {
       yield
     }
 
+    let automaticRepairCompleted = false
+    if (
+      plans.length > 0 &&
+      plans.length < this.inputSrj.connections.length &&
+      this.inputSrj.connections.length - plans.length <= 4
+    ) {
+      const recovery = routeAutomaticBoundaryBusesSteps({
+        ...this.config,
+        srj: this.routingSrj,
+        buses: this.preparedBuses,
+        initialPlans: plans,
+      })
+      let next = recovery.next()
+      while (!next.done) {
+        this.stats = {
+          ...this.stats,
+          phase: "repair-automatic-boundaries",
+          routedConnections: `${next.value.routedConnectionCount}/${this.inputSrj.connections.length}`,
+        }
+        const output = yield isSubsolverRequest(next.value)
+          ? next.value
+          : undefined
+        next = recovery.next(output)
+      }
+      if (next.value) {
+        plans = next.value
+        failedBusIds = []
+        automaticRepairCompleted = true
+      }
+    }
     let validationIssues: FanoutAttemptSummary["validationIssues"]
     const stopAfterCompleteValidation =
       mixedTerminationState?.stopAfterCompleteValidation === true &&
@@ -6081,7 +6111,8 @@ export class FanoutSolver extends BaseSolver {
     return {
       summary,
       plans,
-      ...(mixedTerminationState?.stopAfterCompleteValidation &&
+      ...((mixedTerminationState?.stopAfterCompleteValidation ||
+        automaticRepairCompleted) &&
       validation?.valid
         ? { stopAfterCompleteValidation: true as const }
         : {}),

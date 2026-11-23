@@ -7,6 +7,7 @@ import { getDeclaredDifferentialPairs } from "./get-declared-differential-pairs"
 import { packBoundaryBusIntervals } from "./pack-boundary-bus-intervals"
 import { routeBus, type RouteBusParams } from "./route-bus"
 import { getPlanVias } from "./route-bus/plan-copper"
+import { routeLocalAutomaticSourcesSteps } from "./route-local-automatic-sources"
 import {
   routeReservedViaBusesSteps,
   type ReservedViaBusesYield,
@@ -16,6 +17,7 @@ import type { FanoutRoutePlan, PreparedBus } from "./types"
 type Params = Omit<RouteBusParams, "bus" | "targetLayer" | "acceptedPlans"> & {
   buses: readonly PreparedBus[]
   escapeLayers: readonly string[]
+  initialPlans?: readonly FanoutRoutePlan[]
 }
 type Progress =
   | ReservedViaBusesYield
@@ -73,6 +75,28 @@ export function* routeAutomaticBoundaryBusesSteps(
     },
   }))
   const count = buses.reduce((sum, bus) => sum + bus.connections.length, 0)
+  const distanceToEdge = (bus: PreparedBus) =>
+    Math.max(
+      ...bus.connections.map((connection) => {
+        const point = connection.sourcePoint,
+          bounds = bus.sharedBoundary
+        return Math.min(
+          point.x - bounds.minX,
+          bounds.maxX - point.x,
+          point.y - bounds.minY,
+          bounds.maxY - point.y,
+        )
+      }),
+    )
+  // Interior sources need their escape corridors before the outer pad rows.
+  const routingOrder =
+    wide.length < 2
+      ? [...buses].sort(
+          (a, b) =>
+            b.connections.length - a.connections.length ||
+            distanceToEdge(b) - distanceToEdge(a),
+        )
+      : buses
   const jointCount = wide.reduce((sum, bus) => sum + bus.connections.length, 0)
   const byId = new Map(buses.map((bus) => [bus.busId, bus]))
   const layersFor = (bus: PreparedBus) =>
@@ -116,7 +140,7 @@ export function* routeAutomaticBoundaryBusesSteps(
     let improved = true
     while (improved && plans.length < count) {
       improved = false
-      for (const bus of buses) {
+      for (const bus of routingOrder) {
         if (plans.some((plan) => plan.busId === bus.busId)) continue
         const blocking = new Map<string, number>()
         const direct = tryRoute(bus, plans, blocking)
@@ -148,16 +172,78 @@ export function* routeAutomaticBoundaryBusesSteps(
               .map(([id]) => id),
           ]),
         ]
+        const localCohorts: PreparedBus[][] = []
         for (const blockerId of blockers) {
           const displaced = byId.get(blockerId)!
           const kept = plans.filter((plan) => plan.busId !== blockerId)
           const added = tryRoute(bus, kept)
           if (!added) continue
-          const restored = tryRoute(displaced, [...kept, ...added])
-          if (!restored) continue
+          const restoreBlocking = new Map<string, number>()
+          const restored = tryRoute(
+            displaced,
+            [...kept, ...added],
+            restoreBlocking,
+          )
+          if (!restored) {
+            if (
+              bus.connections.length !== 1 ||
+              displaced.connections.length !== 1
+            )
+              continue
+            const origin = displaced.connections[0]!.sourcePoint
+            const nearby = kept
+              .filter((plan) =>
+                getPlanVias(plan).some(
+                  (via) =>
+                    Math.hypot(
+                      via.center.x - origin.x,
+                      via.center.y - origin.y,
+                    ) <=
+                    Math.max(displaced.pitchX, displaced.pitchY) + 1e-9,
+                ),
+              )
+              .map((plan) => plan.busId)
+            const candidates = [
+              ...new Set([
+                ...nearby,
+                ...[...restoreBlocking]
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 4)
+                  .map(([id]) => id),
+              ]),
+            ]
+            for (const secondId of candidates) {
+              const second = byId.get(secondId)
+              if (
+                !second ||
+                second.connections.length !== 1 ||
+                secondId === bus.busId ||
+                secondId === displaced.busId
+              )
+                continue
+              localCohorts.push([bus, displaced, second])
+            }
+            continue
+          }
           plans = [...kept, ...added, ...restored]
           improved = true
           break
+        }
+        if (
+          !plans.some((plan) => plan.busId === bus.busId) &&
+          count - plans.length <= 4
+        ) {
+          for (const cohort of localCohorts.slice(0, 12)) {
+            const repaired = yield* routeLocalAutomaticSourcesSteps({
+              ...params,
+              buses: cohort,
+              plans,
+            })
+            if (!repaired) continue
+            plans = repaired
+            improved = true
+            break
+          }
         }
         yield { routedConnectionCount: plans.length, connectionCount: count }
       }
@@ -165,9 +251,11 @@ export function* routeAutomaticBoundaryBusesSteps(
     if (plans.length === count) return plans
     return null
   }
+  if (params.initialPlans) return yield* complete(params.initialPlans)
   if (wide.length < 2) {
     const completed = yield* complete([])
     if (completed) return completed
+    return null
   }
   if (
     wide.length === 0 ||
