@@ -354,6 +354,8 @@ export function repairBoundaryTerminalEntries(params: {
   splices: ReadonlyMap<string, BoundaryTerminalSplice>
   connectors: ReadonlyMap<string, BoundaryTerminalConnector>
   clearance: number
+  /** Retain the caller's post-normalization join margin during repair. */
+  maximumJoinLength?: number
   segmentIsClear: (segment: RoutedSegment, connectionName: string) => boolean
 }): {
   plans: FanoutRoutePlan[]
@@ -370,7 +372,7 @@ export function repairBoundaryTerminalEntries(params: {
       boundaryTerminalPlanIsSelfClear({
         plan,
         splice,
-        maximumJoinLength: 0,
+        maximumJoinLength: params.maximumJoinLength ?? 0,
         clearance: params.clearance,
       })
     )
@@ -405,7 +407,7 @@ export function repairBoundaryTerminalEntries(params: {
         !boundaryTerminalPlanIsSelfClear({
           plan: candidate,
           splice: nextSplice,
-          maximumJoinLength: 0,
+          maximumJoinLength: params.maximumJoinLength ?? 0,
           clearance: params.clearance,
         })
       )

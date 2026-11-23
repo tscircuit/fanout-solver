@@ -1680,6 +1680,7 @@ function* routeReservedViaBusesWorker(
   }
   const repairTerminalEntries = (
     plans: FanoutRoutePlan[],
+    maximumJoinLength = 0,
   ): FanoutRoutePlan[] | null => {
     if (terminalConnectors.size === 0) return plans
     const result = repairBoundaryTerminalEntries({
@@ -1687,6 +1688,7 @@ function* routeReservedViaBusesWorker(
       splices: terminalSplices,
       connectors: terminalConnectors,
       clearance,
+      maximumJoinLength,
       segmentIsClear: (segment, name) =>
         withinBounds(segment.start) &&
         withinBounds(segment.end) &&
@@ -1848,7 +1850,10 @@ function* routeReservedViaBusesWorker(
       normalizedTargets,
       paths,
     )
-    return validatedPlans(plans, deferredSources)
+    return validatedPlans(
+      plans && repairTerminalEntries(plans, traceWidth / 4),
+      deferredSources,
+    )
   }
   const finalizeRoutes = (inputRoutes: HdRoute[]): FanoutRoutePlan[] | null => {
     if (!restoreTerminalSplices(inputRoutes)) return null
