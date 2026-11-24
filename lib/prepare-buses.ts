@@ -377,14 +377,31 @@ function getPointLayers(point: ConnectionPoint): string[] {
   return "layer" in point ? [point.layer] : point.layers
 }
 
+function isDirectObstacleMatch(
+  obstacle: Obstacle,
+  point: ConnectionPoint,
+  connection: SimpleRouteConnection,
+): boolean {
+  return (
+    obstacle.connectedTo.includes(connection.name) ||
+    (Boolean(point.pointId) && obstacle.connectedTo.includes(point.pointId!)) ||
+    (Boolean(point.pcb_port_id) &&
+      obstacle.connectedTo.includes(point.pcb_port_id!))
+  )
+}
+
 function findPointObstacleMatches(params: {
   point: ConnectionPoint
   connection: SimpleRouteConnection
   componentGrids: ComponentGrid[]
-}): Array<{ grid: ComponentGrid; obstacle: Obstacle }> {
+}): Array<{ grid: ComponentGrid; obstacle: Obstacle; direct: boolean }> {
   const { point, connection, componentGrids } = params
   const pointLayers = getPointLayers(point)
-  const matches: Array<{ grid: ComponentGrid; obstacle: Obstacle }> = []
+  const matches: Array<{
+    grid: ComponentGrid
+    obstacle: Obstacle
+    direct: boolean
+  }> = []
 
   for (const grid of componentGrids) {
     const candidateObstacles = grid.obstacles
@@ -393,19 +410,17 @@ function findPointObstacleMatches(params: {
       )
       .filter((obstacle) => pointIsInsideObstacle(point, obstacle, 1e-5))
       .sort((a, b) => {
-        const aDirect =
-          a.connectedTo.includes(connection.name) ||
-          a.connectedTo.includes(point.pointId ?? "") ||
-          a.connectedTo.includes(point.pcb_port_id ?? "")
-        const bDirect =
-          b.connectedTo.includes(connection.name) ||
-          b.connectedTo.includes(point.pointId ?? "") ||
-          b.connectedTo.includes(point.pcb_port_id ?? "")
+        const aDirect = isDirectObstacleMatch(a, point, connection)
+        const bDirect = isDirectObstacleMatch(b, point, connection)
         if (aDirect !== bDirect) return aDirect ? -1 : 1
         return a.width * a.height - b.width * b.height
       })
     if (candidateObstacles[0]) {
-      matches.push({ grid, obstacle: candidateObstacles[0] })
+      matches.push({
+        grid,
+        obstacle: candidateObstacles[0],
+        direct: isDirectObstacleMatch(candidateObstacles[0], point, connection),
+      })
     }
   }
 
@@ -763,9 +778,11 @@ function chooseSourceGrid(params: {
 }): ComponentGrid {
   const { busSpec, connections, componentGrids } = params
   const matchCountByComponent = new Map<string, number>()
+  const directMatchCountByComponent = new Map<string, number>()
 
   for (const connection of connections) {
     const matchedComponents = new Set<string>()
+    const directMatchedComponents = new Set<string>()
     for (const point of connection.pointsToConnect) {
       for (const match of findPointObstacleMatches({
         point,
@@ -773,12 +790,21 @@ function chooseSourceGrid(params: {
         componentGrids,
       })) {
         matchedComponents.add(match.grid.componentId)
+        if (match.direct) {
+          directMatchedComponents.add(match.grid.componentId)
+        }
       }
     }
     for (const componentId of matchedComponents) {
       matchCountByComponent.set(
         componentId,
         (matchCountByComponent.get(componentId) ?? 0) + 1,
+      )
+    }
+    for (const componentId of directMatchedComponents) {
+      directMatchCountByComponent.set(
+        componentId,
+        (directMatchCountByComponent.get(componentId) ?? 0) + 1,
       )
     }
   }
@@ -788,6 +814,10 @@ function chooseSourceGrid(params: {
       (matchCountByComponent.get(b.componentId) ?? 0) -
       (matchCountByComponent.get(a.componentId) ?? 0)
     if (countDifference !== 0) return countDifference
+    const directCountDifference =
+      (directMatchCountByComponent.get(b.componentId) ?? 0) -
+      (directMatchCountByComponent.get(a.componentId) ?? 0)
+    if (directCountDifference !== 0) return directCountDifference
     return b.obstacles.length - a.obstacles.length
   })[0]
   const requestedGrid = busSpec.sourceComponentId
@@ -853,18 +883,41 @@ function prepareConnection(params: {
     termination,
     exitTargetPoint,
   } = params
-  for (
-    let sourcePointIndex = 0;
-    sourcePointIndex < connection.pointsToConnect.length;
-    sourcePointIndex++
-  ) {
-    const sourcePoint = connection.pointsToConnect[sourcePointIndex]!
-    const sourceMatch = findPointObstacleMatches({
-      point: sourcePoint,
-      connection,
-      componentGrids,
-    }).find((match) => match.grid.componentId === sourceGrid.componentId)
-    if (!sourceMatch) continue
+  const candidateMatches = connection.pointsToConnect
+    .map((sourcePoint, sourcePointIndex) => ({
+      sourcePoint,
+      sourcePointIndex,
+      sourceMatch: findPointObstacleMatches({
+        point: sourcePoint,
+        connection,
+        componentGrids,
+      }).find((match) => match.grid.componentId === sourceGrid.componentId),
+    }))
+    .filter(
+      (
+        entry,
+      ): entry is {
+        sourcePoint: ConnectionPoint
+        sourcePointIndex: number
+        sourceMatch: {
+          grid: ComponentGrid
+          obstacle: Obstacle
+          direct: boolean
+        }
+      } => entry.sourceMatch !== undefined,
+    )
+    .sort((a, b) => {
+      if (a.sourceMatch.direct !== b.sourceMatch.direct) {
+        return a.sourceMatch.direct ? -1 : 1
+      }
+      return a.sourcePointIndex - b.sourcePointIndex
+    })
+
+  for (const {
+    sourcePoint,
+    sourcePointIndex,
+    sourceMatch,
+  } of candidateMatches) {
     const sourceLayer = getPointLayers(sourcePoint).find((layer) =>
       sourceMatch.obstacle.layers.includes(layer),
     )
