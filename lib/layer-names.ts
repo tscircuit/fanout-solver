@@ -72,6 +72,17 @@ export function getRouteViaSpanLayers(params: {
       `FanoutSolver: route via from "${fromLayer}" to "${toLayer}" has an invalid physical layer span`,
     )
   }
+  const layerIndexes = layers.map((layer) => layerNames.indexOf(layer))
+  const firstIndex = Math.min(...layerIndexes)
+  const lastIndex = Math.max(...layerIndexes)
+  if (
+    new Set(layerIndexes).size !== layerIndexes.length ||
+    layerIndexes.length !== lastIndex - firstIndex + 1
+  ) {
+    throw new Error(
+      `FanoutSolver: route via from "${fromLayer}" to "${toLayer}" has an invalid physical layer span`,
+    )
+  }
   if (
     !allowBlindAndBuriedVias &&
     layerNames.some((layer) => !layers.includes(layer))
