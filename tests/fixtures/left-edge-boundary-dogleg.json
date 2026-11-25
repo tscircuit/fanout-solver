@@ -1,0 +1,125 @@
+{
+  "simpleRouteJson": {
+    "bounds": {
+      "minX": -3.5,
+      "maxX": 36.5,
+      "minY": -51.5,
+      "maxY": 3.5
+    },
+    "obstacles": [
+      {
+        "type": "rect",
+        "layers": ["top"],
+        "center": {
+          "x": 7.8298,
+          "y": -21.3851
+        },
+        "width": 0.2199894,
+        "height": 0.2199894,
+        "componentId": "U1",
+        "connectedTo": ["CM4_GPIO3", "U1.AD1"],
+        "shape": "circle"
+      },
+      {
+        "type": "rect",
+        "layers": ["top"],
+        "center": {
+          "x": 7.8298,
+          "y": -22.1849
+        },
+        "width": 0.2199894,
+        "height": 0.2199894,
+        "componentId": "U1",
+        "connectedTo": ["CM4_GPIO2", "U1.AF1"],
+        "shape": "circle"
+      }
+    ],
+    "connections": [
+      {
+        "name": "CM4_GPIO3",
+        "source_trace_id": "CM4_GPIO3",
+        "width": 0.1,
+        "nominalTraceWidth": 0.1,
+        "pointsToConnect": [
+          {
+            "x": 7.8298,
+            "y": -21.3851,
+            "layer": "top",
+            "pointId": "U1.AD1"
+          },
+          {
+            "x": 0.895,
+            "y": -20.5,
+            "layer": "bottom",
+            "pointId": "J1.56"
+          }
+        ]
+      },
+      {
+        "name": "CM4_GPIO2",
+        "source_trace_id": "CM4_GPIO2",
+        "width": 0.1,
+        "nominalTraceWidth": 0.1,
+        "pointsToConnect": [
+          {
+            "x": 7.8298,
+            "y": -22.1849,
+            "layer": "top",
+            "pointId": "U1.AF1"
+          },
+          {
+            "x": 0.895,
+            "y": -20.1,
+            "layer": "bottom",
+            "pointId": "J1.58"
+          }
+        ]
+      }
+    ],
+    "buses": [
+      {
+        "busId": "left_d0",
+        "name": "left_d0",
+        "connectionNames": ["CM4_GPIO3", "CM4_GPIO2"]
+      }
+    ],
+    "layerCount": 6,
+    "allowBlindAndBuriedVias": false,
+    "minTraceWidth": 0.1,
+    "nominalTraceWidth": 0.1,
+    "minViaDiameter": 0.25,
+    "minViaHoleDiameter": 0.15,
+    "minTraceToPadEdgeClearance": 0.1,
+    "minViaEdgeToPadEdgeClearance": 0.1,
+    "minViaHoleEdgeToViaHoleEdgeClearance": 0.2,
+    "minPadEdgeToPadEdgeClearance": 0.15,
+    "traces": []
+  },
+  "solverOptions": {
+    "buses": [
+      {
+        "busId": "left_d0",
+        "name": "left_d0",
+        "connectionNames": ["CM4_GPIO3", "CM4_GPIO2"],
+        "sourceComponentId": "U1",
+        "preferredExit": "left",
+        "allowedLayers": ["top", "inner3", "bottom"]
+      }
+    ],
+    "sourceComponentId": "U1",
+    "sharedBoundary": {
+      "minX": 7.2298,
+      "maxX": 23.2299,
+      "minY": -26.3851,
+      "maxY": -11.584900000000001
+    },
+    "escapeLayers": ["top", "inner3", "bottom"],
+    "allowBlindAndBuriedVias": false,
+    "traceWidth": 0.1,
+    "viaDiameter": 0.25,
+    "viaHoleDiameter": 0.15,
+    "clearance": 0.1,
+    "compactBusTracks": true,
+    "borderDistribution": "even"
+  }
+}
