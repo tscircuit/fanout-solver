@@ -245,17 +245,15 @@ export function routeLocalSignalDogbones(
     number,
     { x: number; y: number }
   >()
-  // A consistent interstitial quadrant avoids opposing stubs competing for
-  // the same via site. These are preferences, not forced assignments.
+  // Prefer short approaches toward the destination. The shared matcher can
+  // still reassign competing sites to keep every dogbone collision-free.
   for (const connection of prepared.flatMap((b) => b.connections)) {
     const choices = candidates.filter(
       (c) => c.connectionIndex === connection.connectionIndex,
     )
     const origin = connection.sourcePoint
-    const rank = (p: { x: number; y: number }) =>
-      Number(p.x < origin.x) * 2 +
-      Number(p.y > origin.y) * 2 +
-      Math.hypot(p.x - origin.x, p.y - origin.y)
+    const rank = (p: { x: number; y: number }): number =>
+      distance(origin, p) + distance(p, connection.targetPoint)
     choices.sort((a, b) => rank(a.point) - rank(b.point))
     if (choices[0])
       preferredViaPointsByConnectionIndex.set(
