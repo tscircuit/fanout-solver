@@ -93,8 +93,9 @@ test("coincident same-net dogbones share one physical via", async () => {
     for (const [connectionIndex, point] of matching ?? []) {
       const source = buses
         .flatMap((bus) => bus.connections)
-        .find((connection) => connection.connectionIndex === connectionIndex)!
-        .sourcePoint
+        .find(
+          (connection) => connection.connectionIndex === connectionIndex,
+        )!.sourcePoint
       graphics.lines!.push({
         points: [
           { x: source.x + shift, y: source.y },
