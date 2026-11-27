@@ -80,7 +80,14 @@ test("coincident same-net dogbones share one physical via", async () => {
       ]),
       canShareCopper: () => scenario.sameNet,
     })
-    if (panel !== 0) expect(matching).toBeNull()
+    if (panel === 0) {
+      expect([...matching!.values()]).toEqual([
+        { x: 0.325, y: 0.325 },
+        { x: 0.325, y: 0.325 },
+      ])
+    } else {
+      expect(matching).toBeNull()
+    }
     const shift = panel * 2.25
     const drawnViaSites = new Set<string>()
     for (const [index, center] of pads.entries()) {

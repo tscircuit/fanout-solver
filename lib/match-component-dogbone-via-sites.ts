@@ -613,6 +613,7 @@ function candidatesAreMutuallyClear(params: {
     first.viaLayers.some((layer) => second.viaLayers!.includes(layer))
   if (
     spansOverlap &&
+    !(canShareCopper && distance(first.point, second.point) <= EPSILON) &&
     distance(first.point, second.point) < requiredViaSeparation - EPSILON
   ) {
     return false
